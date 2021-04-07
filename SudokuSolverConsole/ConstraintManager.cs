@@ -1,10 +1,15 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using System.IO;
 using System.Text;
 using System.Threading.Tasks;
 using SudokuSolver;
 using SudokuSolver.Constraints;
+using System.CodeDom.Compiler;
+using System.Diagnostics;
+using Microsoft.CSharp;
 
 namespace SudokuSolverConsole
 {
@@ -81,8 +86,14 @@ namespace SudokuSolverConsole
 
         private static IEnumerable<Type> GetAllConstraints()
         {
-            return AppDomain.CurrentDomain.GetAssemblies()
-                .SelectMany(assembly => assembly.GetTypes())
+            List<Assembly> assemblies = AppDomain.CurrentDomain.GetAssemblies().ToList();
+
+            // Dynamically include the plugins assembly
+            Assembly assembly = Assembly.LoadFrom(@"./Plugins/Plugins.dll");
+            assemblies.Add(assembly);
+
+            return assemblies
+                .SelectMany(assembly => assembly.GetExportedTypes())
                 .Where(IsValidConstraint);
         }
 

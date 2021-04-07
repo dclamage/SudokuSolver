@@ -4,7 +4,6 @@ using System.Linq;
 using System.Text.Json;
 using Mono.Options;
 using SudokuSolver;
-using SudokuSolver.Constraints;
 using LZStringCSharp;
 using System.IO;
 using static SudokuSolver.SolverUtility;

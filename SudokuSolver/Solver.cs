@@ -11,6 +11,19 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver
 {
+    public record SudokuGroup(string Name, List<(int, int)> Cells)
+    {
+        public override string ToString() => Name;
+    }
+
+    public enum LogicResult
+    {
+        None,
+        Changed,
+        Invalid,
+        PuzzleComplete
+    }
+
     public class Solver
     {
         private uint[,] board;
@@ -373,7 +386,7 @@ namespace SudokuSolver
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        internal LogicResult ClearMask(int i, int j, uint mask)
+        public LogicResult ClearMask(int i, int j, uint mask)
         {
             if (mask == 0)
             {

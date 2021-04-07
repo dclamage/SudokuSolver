@@ -4,4 +4,8 @@
     <TargetFramework>net5.0</TargetFramework>
   </PropertyGroup>
 
+  <Target Name="PostBuild" AfterTargets="PostBuildEvent">
+    <Exec Command="copy &quot;$(TargetPath)&quot; &quot;$(SolutionDir)\Plugins&quot;&#xD;&#xA;cd &quot;$(SolutionDir)\Plugins&quot;&#xD;&#xA;BuildPlugins.bat&#xD;&#xA;" />
+  </Target>
+
 </Project>
