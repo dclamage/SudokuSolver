@@ -89,8 +89,21 @@ namespace SudokuSolverConsole
             List<Assembly> assemblies = AppDomain.CurrentDomain.GetAssemblies().ToList();
 
             // Dynamically include the plugins assembly
-            Assembly assembly = Assembly.LoadFrom(@"./Plugins/Plugins.dll");
-            assemblies.Add(assembly);
+            foreach (string file in Directory.EnumerateFiles(@"./plugins", "*.dll", new EnumerationOptions() { MatchCasing = MatchCasing.CaseInsensitive, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.Directory } ))
+            {
+                if (!file.EndsWith("SudokuSolver.dll"))
+                {
+                    try
+                    {
+                        Assembly assembly = Assembly.LoadFrom(file);
+                        assemblies.Add(assembly);
+                    }
+                    catch (Exception e)
+                    {
+                        Console.Error.WriteLine($"**WARNING** Could not load plugin at {file}: {e.Message}");
+                    }
+                }
+            }
 
             return assemblies
                 .SelectMany(assembly => assembly.GetExportedTypes())

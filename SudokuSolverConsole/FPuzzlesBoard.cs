@@ -37,7 +37,10 @@ namespace SudokuSolverConsole
         bool nonconsecutive,
         FPuzzlesArrowEntry[] arrow,
         FPuzzlesKillerCageEntry[] killercage,
-        FPuzzlesLittleKillerSumEntry[] littlekillersum
+        FPuzzlesLittleKillerSumEntry[] littlekillersum,
+        FPuzzlesCell[] odd,
+        FPuzzlesCell[] even,
+        FPuzzlesExtraRegion[] extraregion
     );
 
     public record FPuzzlesGridEntry(int value, bool given);
@@ -57,4 +60,8 @@ namespace SudokuSolverConsole
         string direction,
         string value
     );
+
+    public record FPuzzlesCell(string cell);
+
+    public record FPuzzlesExtraRegion(string[] cells);
 }
