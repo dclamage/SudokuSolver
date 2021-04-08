@@ -9,7 +9,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Nonconsecutive", ConsoleName = "nc", FPuzzlesName = "nonconsecutive")]
     public class NonconsecutiveConstraint : Constraint
     {
-        public NonconsecutiveConstraint() { }
+        public NonconsecutiveConstraint(string _) { }
 
         public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
         {

@@ -7,7 +7,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Anti-King", ConsoleName = "king", FPuzzlesName = "antiking")]
     public class KingConstraint : Constraint
     {
-        public KingConstraint() { }
+        public KingConstraint(string _) { }
 
         public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => EnforceConstraintBasedOnSeenCells(sudokuSolver, i, j, val);
 

@@ -8,7 +8,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Anti-Knight", ConsoleName = "knight", FPuzzlesName = "antiknight")]
     public class KnightConstraint : Constraint
     {
-        public KnightConstraint() { }
+        public KnightConstraint(string _) { }
 
         public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => EnforceConstraintBasedOnSeenCells(sudokuSolver, i, j, val);
 
