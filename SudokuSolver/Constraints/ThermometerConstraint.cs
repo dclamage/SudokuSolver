@@ -17,7 +17,7 @@ namespace SudokuSolver.Constraints
             var cellGroups = ParseCells(options);
             if (cellGroups.Count != 1)
             {
-                throw new ArgumentException($"Thermometer constraint expects 1 cell groups, got {cellGroups.Count}.");
+                throw new ArgumentException($"Thermometer constraint expects 1 cell group, got {cellGroups.Count}.");
             }
 
             cells = cellGroups[0];

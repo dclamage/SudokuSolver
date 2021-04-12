@@ -16,9 +16,9 @@ namespace SudokuSolverConsole
 
         static void Main(string[] args)
         {
-            //string json = LZString.DecompressFromBase64("N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAe2y54hEAGMYAG0MIQAJQCMAYQsgK+oyfjnrAJjukHx05asBmD1ADb2dfABZArydzADYrGLs1GAA3GAA7fCDHH1cbSODos1z3ewKc/3zs0NyI0qrzAHZ4xKIgA=");
+            //string json = LZString.DecompressFromBase64("N4IgzglgXgpiBcBOANCALhNAbO8QFkAnAOgAIANEVAQwFc0ALAe0IRAAVq1CIBjAayohCtHGBho2AORYBballIBlWgBMm/WqRFjS1AA76sATzJTasgEYxCYUrNpg0pAHZNnhGPphdSEF3qk/BBYOISkvNQA5jBkACoMMK4W1rZ+AYxJkTH2js5gFqRoTEWJpFEQAG4wGe4K6aVJxfqkOABmaGQAmkxaDNTVRSVt/qoUpCO2zsXlEo1DaApgxEJRPKoIANqbwAC+yHsH+4cnx2dHALrIO+enR/d3e1c3D7dvr8+P71+X1z//b0+32BHz+IIBvxeEIBQNecJhVxAwVCNmyuB2IF4MFCYC2IAASgBGADChKEROJACZySSAMzkymkhlU8m0pkXY6Y7FYXHwTYEtnUjkHLk4vH4xn04WgLFivkEkkAFhpxIArCqAGwgaWinnikkAdmZRtQEuJAA5WRarYhtZzZXr5RTLaaSbbTYzbTqHbz+fi2VrTYriYGCcGjd7ub6CYz1aa2erI3K/WzlUHifT08qk46/cG4wTVWryRrizno/jS6HK8SI/ao+KiybC9by43iV768mCaWXT2O+SDdbTUPOyKfeLELXyVO+/ip2OZQ2nUOC/jzWWu7mCVOyaap9T9xm7ePl37S3uCUPL/ih0KtxXS/fT92a5n+9mH+2b0XDy2pbsiJolsS6voK2qoJUCi0LgIDkAA9H+vTYP4MDEmwADEAAMOG4UIbRMC4aDoXg2G4ThIBfk6koQSAUFYDBbCUKgyFYKhJEgGR5H4YRxGYeRFFUX6sZWomkHQbBzEgKx7H8QJPFERxXF4UJArEmmYbHlmtH0YxeBSTJLhoXJ3GoARikmSpL7bhSGkUmuJJaoiumwZSBn0GxRlKQJWEKXxpE+ZR1kViSN4kn+FLvmaN6MhFbJks5ElsIq7koV5lkUWZvHefJqkUs2ZoFYyc5siVA6JQxsEpUIhnGQF8lZRZ9XcXlJJzm6zJeuJlVMTVHmyc1eGNf5nGBXlAbksG1bhjpSV4G5fVpXVo0NSA5kjcpgnBe2BVFpaFV6SAC0sf16WDZla3ZRlvl5UWXV0XNcGIYtnnLZtvnDTlLXbU6vYlgOI7Dle5XdYdx3Sadb2BZ911BaBNlVv9Eag5JL0DStpmXU1GNWfDj5aR+s09fpaNnTjF3rV9uO6vjQoo0xADUl61VTFNXedN0/eeTKAzed5E2D5AM0hkOsx9WMbWNXMtj+LKmkWUr0yTJ1LWLflq3l+bkkWa6lmJD3E0dqWvWrMMc3DNPiqu5IbvrLm9SrJuw2b5Oc3jk48zucte4rBuHcb6PversN5VOBWzjOIN+7BtIB2TQcu0HgG7EAA");
 
-            args[1] = @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zKIAG4BDADYBXOElRoISmADsEAFwxax0rtcWrN2gIy79R0+Zhj6IEwAsYGAFsAewCYE398UDUIQxgwfDwQACUAZgBhAHYQVFS0gA5s5PTEQqSAJjSSnIqC6szSh3raWgoQaNj4+AIitIdS9LL+tJTSgBZhsbTBnPG+5qIWoA";
+            //args[1] = @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT1ADcBDAGwFc54BmVNCImAOwQBcMqBfZYHv3vyGCRfALrJCIUpWoAmeoxbtOMYQI3qtEqTKoIAjIqat4HbqK2XLOzdbsOutq4/tPJrz9o8vfo6eT68ABsxspmqu6Efl68AbIIAKxhpuZqzm6ZGvFBACwpKtxiEiAADuQQzNgYAPYAttRSZJUwYPh4IABKuQDCBiConYk9cgNdwT00Y50A7D250xOJ08PB070z0zQ9ABzTcj2IIMVOXEA===";
 
             string processName = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
 
@@ -260,6 +260,25 @@ namespace SudokuSolverConsole
                                 }
                             }
                             constraintManager.AddConstraintByFPuzzlesName(solver, "thermometer", cells.ToString());
+                        }
+                    }
+                }
+
+                if (fpuzzlesData.palindrome != null)
+                {
+                    foreach (var palindrome in fpuzzlesData.palindrome)
+                    {
+                        foreach (var line in palindrome.lines)
+                        {
+                            StringBuilder cells = new();
+                            foreach (var cell in line)
+                            {
+                                if (!string.IsNullOrWhiteSpace(cell))
+                                {
+                                    cells.Append(cell);
+                                }
+                            }
+                            constraintManager.AddConstraintByFPuzzlesName(solver, "palindrome", cells.ToString());
                         }
                     }
                 }

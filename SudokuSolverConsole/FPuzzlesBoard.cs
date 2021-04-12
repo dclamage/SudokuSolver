@@ -41,7 +41,8 @@ namespace SudokuSolverConsole
         FPuzzlesCell[] odd,
         FPuzzlesCell[] even,
         FPuzzlesExtraRegion[] extraregion,
-        FPuzzlesLines[] thermometer
+        FPuzzlesLines[] thermometer,
+        FPuzzlesLines[] palindrome
     );
 
     public record FPuzzlesGridEntry(int value, bool given);
