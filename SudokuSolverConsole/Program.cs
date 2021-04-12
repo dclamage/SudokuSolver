@@ -18,6 +18,8 @@ namespace SudokuSolverConsole
         {
             //string json = LZString.DecompressFromBase64("N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAe2y54hEAGMYAG0MIQAJQCMAYQsgK+oyfjnrAJjukHx05asBmD1ADb2dfABZArydzADYrGLs1GAA3GAA7fCDHH1cbSODos1z3ewKc/3zs0NyI0qrzAHZ4xKIgA=");
 
+            args[1] = @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zKIAG4BDADYBXOElRoISmADsEAFwxax0rtcWrN2gIy79R0+Zhj6IEwAsYGAFsAewCYE398UDUIQxgwfDwQACUAZgBhAHYQVFS0gA5s5PTEQqSAJjSSnIqC6szSh3raWgoQaNj4+AIitIdS9LL+tJTSgBZhsbTBnPG+5qIWoA";
+
             string processName = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
 
             bool showHelp = false;
@@ -95,11 +97,6 @@ namespace SudokuSolverConsole
                 }
 
                 ApplyConstraints(solver, constraints);
-                if (!solver.FinalizeConstraints())
-                {
-                    Console.WriteLine($"ERROR: The constraints are invalid (no solutions).");
-                    return;
-                }
 
                 for (int i = 0; i < givens.Length; i++)
                 {
@@ -108,6 +105,7 @@ namespace SudokuSolverConsole
                     {
                         if (!solver.SetValue(i / 9, i % 9, c - '1'))
                         {
+                            solver.Print();
                             Console.WriteLine($"ERROR: Givens cause there to be no solutions.");
                             return;
                         }
@@ -247,14 +245,27 @@ namespace SudokuSolverConsole
                     }
                 }
 
+                if (fpuzzlesData.thermometer != null)
+                {
+                    foreach (var thermo in fpuzzlesData.thermometer)
+                    {
+                        foreach (var line in thermo.lines)
+                        {
+                            StringBuilder cells = new();
+                            foreach (var cell in line)
+                            {
+                                if (!string.IsNullOrWhiteSpace(cell))
+                                {
+                                    cells.Append(cell);
+                                }
+                            }
+                            constraintManager.AddConstraintByFPuzzlesName(solver, "thermometer", cells.ToString());
+                        }
+                    }
+                }
+
                 // Apply any command-line constraints
                 ApplyConstraints(solver, constraints);
-
-                if (!solver.FinalizeConstraints())
-                {
-                    Console.WriteLine($"ERROR: The constraints are invalid (no solutions).");
-                    return;
-                }
 
                 int i = 0;
                 foreach (var row in fpuzzlesData.grid)
@@ -272,6 +283,19 @@ namespace SudokuSolverConsole
                 }
             }
 
+            if (!solver.FinalizeConstraints())
+            {
+                solver.Print();
+                Console.WriteLine($"ERROR: The constraints are invalid (no solutions).");
+                return;
+            }
+
+            solver.Print();
+
+            if (!solver.ConsolidateBoard())
+            {
+                Console.WriteLine($"Board is invalid!");
+            }
             solver.Print();
         }
 

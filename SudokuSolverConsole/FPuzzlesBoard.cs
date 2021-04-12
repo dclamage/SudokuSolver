@@ -40,7 +40,8 @@ namespace SudokuSolverConsole
         FPuzzlesLittleKillerSumEntry[] littlekillersum,
         FPuzzlesCell[] odd,
         FPuzzlesCell[] even,
-        FPuzzlesExtraRegion[] extraregion
+        FPuzzlesExtraRegion[] extraregion,
+        FPuzzlesLines[] thermometer
     );
 
     public record FPuzzlesGridEntry(int value, bool given);
@@ -64,4 +65,6 @@ namespace SudokuSolverConsole
     public record FPuzzlesCell(string cell);
 
     public record FPuzzlesExtraRegion(string[] cells);
+
+    public record FPuzzlesLines(string[][] lines);
 }

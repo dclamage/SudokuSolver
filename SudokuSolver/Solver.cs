@@ -396,6 +396,11 @@ namespace SudokuSolver
             uint curMask = board[i, j];
             if ((curMask & mask) == 0)
             {
+                if ((curMask & valueSetMask) == 0 && ValueCount(curMask) == 1)
+                {
+                    return SetMask(i, j, curMask) ? LogicResult.Changed : LogicResult.Invalid;
+                }
+
                 return LogicResult.None;
             }
 
