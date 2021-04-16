@@ -20,7 +20,16 @@ namespace SudokuSolverConsole
         {
             //string json = LZString.DecompressFromBase64("N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAYwA2AewB2ceIQ0xNmsPhAAlACwBhAEwhUlgKwOnVtwGYQarXphbEzMLS3tbFw9LLwiomIA2XwpjU3NDKwAOdz8dfSDU0KzE2mT1YLS8KwB2W0QorLrnRFrfVH888tCARlsuqPC+5xi+kpKgA==");
 
-            //args[1] = @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAOwD26gMbawMHQFcALhABuceCYxGYqbBABmTmBhi6rhEDpgAbPzB8EAAlAFYAYTCQVHCIgBYQNXMAQz87BBAAZhAiNXUYNBSzS2CMYohNJNRysyr4b18AoIbQyIB2GLaIgA5qkFT0q2zc0h9/QOC4xC64vuS0jPgQACZc2iIgA=";
+#if false
+            // Thermo + arrow puzzle
+            args = new string[]
+            {
+                "-f",
+                @"N4IgzglgXgpiBcBOANCALhNAbO8QGEsIAHYmAExFQEMBXNACwHsAnBEABQYiNIAIAQlloBbGH2oBranwDmwkQH1upJlRAtaOMDDTsAyrXJNJtPgFo+MAG4wWATz4smAd2R8AxkwUA7d9R9yPgBmAA9gvgAjJlC+EVowNE8mHzRqCB8JLCw+RnFyCFlMMD4AM2cRPgBGc0QAOj59JjE+AqK0EuoWcWosbupyRyLbHzqAHR8JgEFUiHMAaQzZCysAR1pe1sLiuOpHHyYktCZaDwYt6lkU3qx7ccmfABUGOxFm3TsVtp34xL5ElgQDzYRwZDz9HRlCpRLSRXJMXIke7TFjOFwrPKeCAsDw4ILfJJeHyJTD0GAlTFgUR8JilXIvLbtTpYFLLTFdNH3dSyQGUeAAbX5wAAvsgRWLReKpZKZRKALrIIWy6US1UqkUKpVq5Ugay9Wi4ABsqGGMB8CDQmhgyptmvVNu12rtOr1wlwAFYTRARharS79bgql6ffBLQb/W6EAAWYNm33hp2K+2O5MapMOqW6gMIYKx82hv0pmXOoul6Ul1MZ4sKkABDCSJbxmCoPIsN5iNB2BBCkBEHzk7v8kAAJUN+Hd6mHAHZ8FHJwAOfDBBf4ABMIDlcslvYyA4FQ+H7rXk6jS8nwVnk9Xl83277e8FI9PE9Qw4vhqv+Cnn/nG63Yp3fswEHEcj1/V8x2/V8Zw/V9Fw/W8aw5Vxu1Ae9gP3UDL1fU9l1fC911fa9103VAPBgbIMIPI853/NDdyo6j8FgkdIMnGdwJHRdf1IkByMo7ssIQu8GJA4dFxfEcZznCCz1kkia34rAqK48cNxEoCxOvSS32Yk8v30njFIo5TBOHbT1IA9CxJnPDVJkkdEDU3ilJU6czy3LcgA=",
+                "-pr"
+            };
+#endif
+            //args[1] = @"N4IgzglgXgpiBcBOANCALhNAbO8QGEsIAHYmAExFQEMBXNACwHsAnBEABQYiNIAIAQlloBbGH2oBranwDmwkQH1upJlRAtaOMDDTsAyrXJNJtPgFo+MAG4wWATz4smAd2R8AxkwUA7d9R9yPgBmAA9gvgAjJlC+EVowNE8mHzRqCB8JLCw+RnFyCFlMMD4AM2cRPgBGc0QAOj59JjE+AqK0EuoWcWosbupyRyLbHzqAHR8JgEFUiHMAaQzZCysAR1pe1sLiuOpHHyYktCZaDwYt6lkU3qx7ccmfABUGOxFm3TsVtp34xL5ElgQDzYRwZDz9HRlCpRLSRXJMXIke7TFjOFwrPKeCAsDw4ILfJJeHyJTD0GAlTFgUR8JilXIvLbtTpYFLLTFdNH3dSyQGUeAAbX5wAAvsgRWLReKpZKZRKALrIIWy6US1UqkUKpVq5Ugay9Wi4ABsqGGMB8CDQmhgyptmvVNu12rtOr1wlwAFYTRARharS79bgql6ffBLQb/W6EAAWYNm33hp2K+2O5MapMOqW6gMIYKx82hv0pmXOoul6Ul1MZ4sKkABDCSJbxmCoPIsN5iNB2BBCkBEHzk7v8kAAJUN+Hd6mHAHZ8FHJwAOfDBBf4ABMIDlcslvYyA4FQ+H7rXk6jS8nwVnk9Xl83277e8FI9PE9Qw4vhqv+Cnn/nG63Yp3fswEHEcj1/V8x2/V8Zw/V9Fw/W8aw5Vxu1Ae9gP3UDL1fU9l1fC911fa9103VAPBgbIMIPI853/NDdyo6j8FgkdIMnGdwJHRdf1IkByMo7ssIQu8GJA4dFxfEcZznCCz1kkia34rAqK48cNxEoCxOvSS32Yk8v30njFIo5TBOHbT1IA9CxJnPDVJkkdEDU3ilJU6czy3LcgA=";
 
             Stopwatch watch = Stopwatch.StartNew();
             string processName = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
@@ -30,6 +39,7 @@ namespace SudokuSolverConsole
             string givens = null;
             int maxThreads = 0;
             List<string> constraints = new();
+            bool solveBruteForce = false;
             bool solveLogically = false;
             bool solutionCount = false;
             bool check = false;
@@ -41,6 +51,7 @@ namespace SudokuSolverConsole
                 { "g|givens=", "Provide a digit string to represent the givens for the puzzle.", g => givens = g },
                 { "t|threads=", "The maximum number of threads to use when brute forcing.", (int t) => maxThreads = t },
                 { "c|constraint=", "Provide a constraint to use.", c => constraints.Add(c) },
+                { "s|solve", "Provide a single brute force solution.", s => solveBruteForce = s != null },
                 { "l|logical", "Attempt to solve the puzzle logically.", l => solveLogically = l != null },
                 { "n|solutioncount", "Provide an exact solution count.", n => solutionCount = n != null },
                 { "k|check", "Check if there are 0, 1, or 2+ solutions.", k => check = k != null },
@@ -405,6 +416,26 @@ namespace SudokuSolverConsole
                 {
                     Console.WriteLine($"Board is invalid!");
                 }
+                solver.Print();
+            }
+
+            if (solveBruteForce)
+            {
+                Console.WriteLine("Finding a solution with brute force:");
+                if (!solver.FindSolution())
+                {
+                    Console.WriteLine($"No solutions found!");
+                }
+                else
+                {
+                    solver.Print();
+                }
+            }
+
+            if (trueCandidates)
+            {
+                Console.WriteLine("Finding true candidates:");
+                solver.FillRealCandidates();
                 solver.Print();
             }
 

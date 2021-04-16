@@ -517,7 +517,7 @@ namespace SudokuSolver
         /// </summary>
         /// <param name="cancellationToken">Pass in to support cancelling the solve.</param>
         /// <returns>True if a solution is found, otherwise false.</returns>
-        public async Task<bool> FindSolution(CancellationToken? cancellationToken = null)
+        public bool FindSolution(CancellationToken? cancellationToken = null)
         {
             Stopwatch timeSinceCheck = Stopwatch.StartNew();
 
@@ -529,7 +529,6 @@ namespace SudokuSolver
             {
                 if (timeSinceCheck.ElapsedMilliseconds > 1000)
                 {
-                    await Task.Delay(1);
                     cancellationToken?.ThrowIfCancellationRequested();
                     timeSinceCheck.Restart();
                 }
@@ -793,7 +792,7 @@ namespace SudokuSolver
         /// <param name="progressEvent">Recieve progress notifications. Will send 0 through 80 (assume 81 is 100%, though that will never be sent).</param>
         /// <param name="cancellationToken">Pass in to support cancelling.</param>
         /// <returns>True if there are solutions and candidates are filled. False if there are no solutions.</returns>
-        public async Task FillRealCandidates(EventHandler<(int, uint[])> progressEvent = null, EventHandler<uint[]> completionEvent = null, CancellationToken? cancellationToken = null)
+        public void FillRealCandidates(EventHandler<(int, uint[])> progressEvent = null, EventHandler<uint[]> completionEvent = null, CancellationToken? cancellationToken = null)
         {
             Stopwatch timeSinceCheck = Stopwatch.StartNew();
             bool wasBruteForcing = isBruteForcing;
@@ -838,7 +837,6 @@ namespace SudokuSolver
                         // Check for cancellation and send progress updates once per second
                         if (timeSinceCheck.ElapsedMilliseconds > 1000)
                         {
-                            await Task.Delay(1);
                             cancellationToken?.ThrowIfCancellationRequested();
 
                             progressEvent?.Invoke(null, (cellIndex, fixedBoard));
@@ -873,7 +871,7 @@ namespace SudokuSolver
                         }
 
                         // Set the board to use this candidate's value
-                        if (boardCopy.SetValue(i, j, val) && await boardCopy.FindSolution(cancellationToken))
+                        if (boardCopy.SetValue(i, j, val) && boardCopy.FindSolution(cancellationToken))
                         {
                             for (int si = 0; si < HEIGHT; si++)
                             {
@@ -897,7 +895,20 @@ namespace SudokuSolver
                 }
             }
 
-            completionEvent?.Invoke(null, fixedBoard);
+            if (completionEvent != null)
+            {
+                completionEvent?.Invoke(null, fixedBoard);
+            }
+            else
+            {
+                for (int i = 0; i < HEIGHT; i++)
+                {
+                    for (int j = 0; j < WIDTH; j++)
+                    {
+                        SetMask(i, j, fixedBoard[i * WIDTH + j]);
+                    }
+                }
+            }
             isBruteForcing = wasBruteForcing;
         }
 
