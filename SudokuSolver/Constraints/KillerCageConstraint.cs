@@ -40,7 +40,7 @@ namespace SudokuSolver.Constraints
             InitCombinations();
         }
 
-        public override string SpecificName => $"Killer Cage at {cells[0]}";
+        public override string SpecificName => sum > 0 ? $"Killer Cage {sum} at {CellName(cells[0])}" : $"Killer Cage at {CellName(cells[0])}";
 
         private void InitCombinations()
         {
@@ -202,7 +202,11 @@ namespace SudokuSolver.Constraints
                             logicalStepDescription?.Append($"{CellName(curCell)} has no more remaining values.");
                             return LogicResult.Invalid;
                         }
-                        logicalStepDescription?.Append($"{CellName(curCell)} reduced to possibilities: {MaskToString(newCellMask)}");
+                        if (logicalStepDescription.Length > 0)
+                        {
+                            logicalStepDescription.Append(", ");
+                        }
+                        logicalStepDescription?.Append($"{CellName(curCell)} reduced to: {MaskToString(newCellMask)}");
                     }
                 }
             }

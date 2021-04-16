@@ -129,7 +129,7 @@ namespace SudokuSolver.Constraints
         {
             if (!cells.Contains((i, j)))
             {
-                return false;
+                return true;
             }
 
             if (cells.All(cell => sudokuSolver.IsValueSet(cell.Item1, cell.Item2)))
