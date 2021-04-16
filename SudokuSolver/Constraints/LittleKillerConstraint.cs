@@ -154,7 +154,7 @@ namespace SudokuSolver.Constraints
             int setValueSum = cellMasks.Where(mask => IsValueSet(mask)).Select(mask => GetValue(mask)).Sum();
             if (setValueSum > sum)
             {
-                logicalStepDescription.Append($"Sum of filled values is too large.");
+                logicalStepDescription?.Append($"Sum of filled values is too large.");
                 return LogicResult.Invalid;
             }
 
@@ -164,7 +164,7 @@ namespace SudokuSolver.Constraints
             {
                 if (setValueSum != sum)
                 {
-                    logicalStepDescription.Append($"Sum of values is incorrect.");
+                    logicalStepDescription?.Append($"Sum of values is incorrect.");
                     return LogicResult.Invalid;
                 }
             }
@@ -173,7 +173,7 @@ namespace SudokuSolver.Constraints
                 int exactCellValue = sum - setValueSum;
                 if (exactCellValue <= 0 || exactCellValue > MAX_VALUE || !HasValue(unsetMasks[0], exactCellValue))
                 {
-                    logicalStepDescription.Append($"The final cell cannot fulfill the sum.");
+                    logicalStepDescription?.Append($"The final cell cannot fulfill the sum.");
                     return LogicResult.Invalid;
                 }
             }
@@ -183,7 +183,7 @@ namespace SudokuSolver.Constraints
                 int maxSum = setValueSum + unsetMasks.Select(mask => MaxValue(mask)).Sum();
                 if (minSum > sum || maxSum < sum)
                 {
-                    logicalStepDescription.Append($"The sum is no longer possible.");
+                    logicalStepDescription?.Append($"The sum is no longer possible.");
                     return LogicResult.Invalid;
                 }
             }

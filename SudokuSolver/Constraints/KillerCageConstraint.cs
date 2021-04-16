@@ -142,7 +142,7 @@ namespace SudokuSolver.Constraints
             if (validCombinations.Count == 0)
             {
                 // Sum is no longer possible
-                logicalStepDescription.Append($"No more valid combinations which sum to {sum}.");
+                logicalStepDescription?.Append($"No more valid combinations which sum to {sum}.");
                 return LogicResult.Invalid;
             }
 
@@ -199,10 +199,10 @@ namespace SudokuSolver.Constraints
                         if (!sudokuSolver.SetMask(curCell.Item1, curCell.Item2, newCellMask))
                         {
                             // Cell has no values remaining
-                            logicalStepDescription.Append($"{CellName(curCell)} has no more remaining values.");
+                            logicalStepDescription?.Append($"{CellName(curCell)} has no more remaining values.");
                             return LogicResult.Invalid;
                         }
-                        logicalStepDescription.Append($"{CellName(curCell)} reduced to possibilities: {MaskToString(newCellMask)}");
+                        logicalStepDescription?.Append($"{CellName(curCell)} reduced to possibilities: {MaskToString(newCellMask)}");
                     }
                 }
             }
@@ -211,7 +211,7 @@ namespace SudokuSolver.Constraints
                 // Ensure the sum is correct
                 if (setSum != sum)
                 {
-                    logicalStepDescription.Append($"Sums to {setSum} instead of {sum}.");
+                    logicalStepDescription?.Append($"Sums to {setSum} instead of {sum}.");
                     return LogicResult.Invalid;
                 }
             }

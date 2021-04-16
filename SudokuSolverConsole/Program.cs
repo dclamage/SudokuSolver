@@ -7,6 +7,8 @@ using SudokuSolver;
 using LZStringCSharp;
 using System.IO;
 using System.Text;
+using System.Diagnostics;
+using System.Net.NetworkInformation;
 
 namespace SudokuSolverConsole
 {
@@ -16,10 +18,11 @@ namespace SudokuSolverConsole
 
         static void Main(string[] args)
         {
-            //string json = LZString.DecompressFromBase64("N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAOwD26gMbawMHQFcALhABuceCYxGYqbBABmTmBhi6rhEDpgAbPzB8EAAlAFYAYTCQVHCIgBYQNXMAQz87BBAAZhAiNXUYNBSzS2CMYohNJNRysyr4b18AoIbQyIB2GLaIgA5qkFT0q2zc0h9/QOC4xC64vuS0jPgQACZc2iIgA=");
+            //string json = LZString.DecompressFromBase64("N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAYwA2AewB2ceIQ0xNmsPhAAlACwBhAEwhUlgKwOnVtwGYQarXphbEzMLS3tbFw9LLwiomIA2XwpjU3NDKwAOdz8dfSDU0KzE2mT1YLS8KwB2W0QorLrnRFrfVH888tCARlsuqPC+5xi+kpKgA==");
 
             //args[1] = @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAOwD26gMbawMHQFcALhABuceCYxGYqbBABmTmBhi6rhEDpgAbPzB8EAAlAFYAYTCQVHCIgBYQNXMAQz87BBAAZhAiNXUYNBSzS2CMYohNJNRysyr4b18AoIbQyIB2GLaIgA5qkFT0q2zc0h9/QOC4xC64vuS0jPgQACZc2iIgA=";
 
+            Stopwatch watch = Stopwatch.StartNew();
             string processName = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
 
             bool showHelp = args.Length == 0;
@@ -31,6 +34,7 @@ namespace SudokuSolverConsole
             bool solutionCount = false;
             bool check = false;
             bool trueCandidates = false;
+            bool print = false;
 
             var options = new OptionSet {
                 { "f|fpuzzles=", "Import a full f-puzzles URL (Everything after '?load=').", f => fpuzzlesURL = f },
@@ -41,6 +45,7 @@ namespace SudokuSolverConsole
                 { "n|solutioncount", "Provide an exact solution count.", n => solutionCount = n != null },
                 { "k|check", "Check if there are 0, 1, or 2+ solutions.", k => check = k != null },
                 { "r|truecandidates", "Find the true candidates for the puzzle (union of all solutions).", r => trueCandidates = r != null },
+                { "p|print", "Print the input board.", p => print = p != null },
                 { "h|help", "Show this message and exit", h => showHelp = h != null },
             };
 
@@ -105,7 +110,7 @@ namespace SudokuSolverConsole
                     char c = givens[i];
                     if (c >= '1' && c <= '9')
                     {
-                        if (!solver.SetValue(i / 9, i % 9, c - '1'))
+                        if (!solver.SetValue(i / 9, i % 9, c - '0'))
                         {
                             solver.Print();
                             Console.WriteLine($"ERROR: Givens cause there to be no solutions.");
@@ -384,13 +389,38 @@ namespace SudokuSolverConsole
                 return;
             }
 
-            solver.Print();
-
-            if (!solver.ConsolidateBoard())
+            if (print)
             {
-                Console.WriteLine($"Board is invalid!");
+                Console.WriteLine("Input puzzle:");
+                solver.Print();
             }
-            solver.Print();
+
+            if (solveLogically)
+            {
+                Console.WriteLine("Solving logically:");
+                StringBuilder stepsDescription = new();
+                bool valid = solver.ConsolidateBoard(stepsDescription);
+                Console.WriteLine(stepsDescription);
+                if (!valid)
+                {
+                    Console.WriteLine($"Board is invalid!");
+                }
+                solver.Print();
+            }
+
+            if (solutionCount)
+            {
+                ulong numSolutions = solver.CountSolutions();
+                Console.WriteLine($"Found {numSolutions} solutions.");
+            }
+
+            if (check)
+            {
+                ulong numSolutions = solver.CountSolutions(2);
+                Console.WriteLine($"There are {(numSolutions <= 1 ? numSolutions.ToString() : "multiple")} solutions.");
+            }
+            watch.Stop();
+            Console.WriteLine($"Took {watch.ElapsedMilliseconds}ms");
         }
 
         static void ApplyConstraints(Solver solver, List<string> constraints)

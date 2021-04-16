@@ -70,22 +70,28 @@ namespace SudokuSolver.Constraints
                                 LogicResult findResult = sudokuSolver.ClearMask(cell.Item1, cell.Item2, removeValueMask);
                                 if (findResult == LogicResult.Invalid)
                                 {
-                                    logicalStepDescription.Clear();
-                                    logicalStepDescription.Append($"{CellName((i, j))} having candidates {MaskToString(mask)} removes the only candidate {removeValue} from {CellName(cell)}");
+                                    if (logicalStepDescription != null)
+                                    {
+                                        logicalStepDescription.Clear();
+                                        logicalStepDescription.Append($"{CellName((i, j))} having candidates {MaskToString(mask)} removes the only candidate {removeValue} from {CellName(cell)}");
+                                    }
                                     return LogicResult.Invalid;
                                 }
 
                                 if (findResult == LogicResult.Changed)
                                 {
-                                    if (!haveChanges)
+                                    if (logicalStepDescription != null)
                                     {
-                                        logicalStepDescription.Append($"{CellName((i, j))} having candidates {MaskToString(mask)} remove {removeValue} from {CellName(cell)}");
-                                        haveChanges = true;
+                                        if (!haveChanges)
+                                        {
+                                            logicalStepDescription.Append($"{CellName((i, j))} having candidates {MaskToString(mask)} remove {removeValue} from {CellName(cell)}");
+                                        }
+                                        else
+                                        {
+                                            logicalStepDescription.Append($", {CellName(cell)}");
+                                        }
                                     }
-                                    else
-                                    {
-                                        logicalStepDescription.Append($", {CellName(cell)}");
-                                    }
+                                    haveChanges = true;
                                 }
                             }
                             if (haveChanges)
@@ -103,22 +109,28 @@ namespace SudokuSolver.Constraints
                                 LogicResult findResult = sudokuSolver.ClearMask(cell.Item1, cell.Item2, removeValueMask);
                                 if (findResult == LogicResult.Invalid)
                                 {
-                                    logicalStepDescription.Clear();
-                                    logicalStepDescription.Append($"{CellName(i, j)} removes the only candidates {MaskToString(removeValueMask)} from {CellName(cell)}");
+                                    if (logicalStepDescription != null)
+                                    {
+                                        logicalStepDescription.Clear();
+                                        logicalStepDescription.Append($"{CellName(i, j)} removes the only candidates {MaskToString(removeValueMask)} from {CellName(cell)}");
+                                    }
                                     return LogicResult.Invalid;
                                 }
 
                                 if (findResult == LogicResult.Changed)
                                 {
-                                    if (!haveChanges)
+                                    if (logicalStepDescription != null)
                                     {
-                                        logicalStepDescription.Append($"{CellName((i, j))} having candidates {minValue}{maxValue} remove those values from {CellName(cell)}");
-                                        haveChanges = true;
+                                        if (!haveChanges)
+                                        {
+                                            logicalStepDescription.Append($"{CellName((i, j))} having candidates {minValue}{maxValue} remove those values from {CellName(cell)}");
+                                        }
+                                        else
+                                        {
+                                            logicalStepDescription.Append($", {CellName(cell)}");
+                                        }
                                     }
-                                    else
-                                    {
-                                        logicalStepDescription.Append($", {CellName(cell)}");
-                                    }
+                                    haveChanges = true;
                                 }
                             }
                             if (haveChanges)
@@ -224,21 +236,27 @@ namespace SudokuSolver.Constraints
                                         LogicResult clearResult = sudokuSolver.ClearMask(i, j, consecMask);
                                         if (clearResult == LogicResult.Invalid)
                                         {
-                                            logicalStepDescription.Clear();
-                                            logicalStepDescription.Append($"Value {val} is locked to {numValInstances} cells in {group}, removing all candidates from {CellName(i, j)}");
+                                            if (logicalStepDescription != null)
+                                            {
+                                                logicalStepDescription.Clear();
+                                                logicalStepDescription.Append($"Value {val} is locked to {numValInstances} cells in {group}, removing all candidates from {CellName(i, j)}");
+                                            }
                                             return LogicResult.Invalid;
                                         }
                                         if (clearResult == LogicResult.Changed)
                                         {
-                                            if (!changed)
+                                            if (logicalStepDescription != null)
                                             {
-                                                logicalStepDescription.Append($"Value {val} is locked to {numValInstances} cells in {group}, removing {MaskToString(consecMask)} from {CellName(i, j)}");
-                                                changed = true;
+                                                if (!changed)
+                                                {
+                                                    logicalStepDescription.Append($"Value {val} is locked to {numValInstances} cells in {group}, removing {MaskToString(consecMask)} from {CellName(i, j)}");
+                                                }
+                                                else
+                                                {
+                                                    logicalStepDescription.Append($", {CellName(i, j)}");
+                                                }
                                             }
-                                            else
-                                            {
-                                                logicalStepDescription.Append($", {CellName(i, j)}");
-                                            }
+                                            changed = true;
                                         }
                                     }
                                 }
@@ -323,21 +341,27 @@ namespace SudokuSolver.Constraints
                                 LogicResult findResult = sudokuSolver.ClearMask(otherCell.Item1, otherCell.Item2, mustHaveMask);
                                 if (findResult == LogicResult.Invalid)
                                 {
-                                    logicalStepDescription.Clear();
-                                    logicalStepDescription.Append($"{CellName(i, j)} and {CellName(cellB)} have combined candidates {MaskToString(combinedMask)}, removing all candidates from {CellName(otherCell)}");
+                                    if (logicalStepDescription != null)
+                                    {
+                                        logicalStepDescription.Clear();
+                                        logicalStepDescription.Append($"{CellName(i, j)} and {CellName(cellB)} have combined candidates {MaskToString(combinedMask)}, removing all candidates from {CellName(otherCell)}");
+                                    }
                                     return LogicResult.Invalid;
                                 }
                                 if (findResult == LogicResult.Changed)
                                 {
-                                    if (!haveChanges)
+                                    if (logicalStepDescription != null)
                                     {
-                                        logicalStepDescription.Append($"{CellName(i, j)} and {CellName(cellB)} have combined candidates {MaskToString(combinedMask)}, removing {mustHaveVal} from {CellName(otherCell)}");
-                                        haveChanges = true;
+                                        if (!haveChanges)
+                                        {
+                                            logicalStepDescription.Append($"{CellName(i, j)} and {CellName(cellB)} have combined candidates {MaskToString(combinedMask)}, removing {mustHaveVal} from {CellName(otherCell)}");
+                                        }
+                                        else
+                                        {
+                                            logicalStepDescription.Append($", {CellName(otherCell)}");
+                                        }
                                     }
-                                    else
-                                    {
-                                        logicalStepDescription.Append($", {CellName(otherCell)}");
-                                    }
+                                    haveChanges = true;
                                 }
                             }
                         }

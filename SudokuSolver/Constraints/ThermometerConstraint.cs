@@ -130,7 +130,7 @@ namespace SudokuSolver.Constraints
                 }
                 if (clearResult == LogicResult.Changed)
                 {
-                    logicalStepDescription.AppendLine($"Cleared values {MaskToString(clearMask)} from {CellName(nextCell)}");
+                    logicalStepDescription?.AppendLine($"Cleared values {MaskToString(clearMask)} from {CellName(nextCell)}");
                     changed = true;
                 }
 
@@ -147,7 +147,7 @@ namespace SudokuSolver.Constraints
                 }
                 if (clearResult == LogicResult.Changed)
                 {
-                    logicalStepDescription.AppendLine($"Cleared values {MaskToString(clearMask)} from {CellName(curCell)}");
+                    logicalStepDescription?.AppendLine($"Cleared values {MaskToString(clearMask)} from {CellName(curCell)}");
                     changed = true;
                 }
             }

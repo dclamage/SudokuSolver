@@ -77,7 +77,7 @@ namespace SudokuSolver.Constraints
         /// Do not attempt to do any logic which isn't relevant to this constraint.
         /// </summary>
         /// <param name="sudokuSolver">The Sudoku board.</param>
-        /// <param name="logicalStepDescription">If a logical step is found, store a human-readable description of what was performed here.</param>
+        /// <param name="logicalStepDescription">If not null and a logical step is found, store a human-readable description of what was performed here.</param>
         /// <param name="isBruteForcing">Whether the solver is currently brute forcing a solution.</param>
         /// <returns>
         /// LogicResult.None: No logic found.

@@ -45,7 +45,8 @@ namespace SudokuSolverConsole
         FPuzzlesLines[] thermometer,
         FPuzzlesLines[] palindrome,
         FPuzzlesCells[] difference,
-        FPuzzlesCells[] ratio
+        FPuzzlesCells[] ratio,
+        FPuzzlesClone[] clone
     );
 
     public record FPuzzlesGridEntry(int value, bool given);
@@ -71,4 +72,6 @@ namespace SudokuSolverConsole
     public record FPuzzlesCells(string[] cells, string value = "");
 
     public record FPuzzlesLines(string[][] lines);
+
+    public record FPuzzlesClone(string[] cells, string[] cloneCells);
 }

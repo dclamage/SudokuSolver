@@ -6,7 +6,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Arrow", ConsoleName ="arrow", FPuzzlesName = "arrow")]
+    [Constraint(DisplayName = "Arrow", ConsoleName = "arrow", FPuzzlesName = "arrow")]
     public class ArrowSumConstraint : Constraint
     {
         public readonly List<(int, int)> circleCells;
@@ -149,7 +149,7 @@ namespace SudokuSolver.Constraints
                 int arrowValue = ArrowValue(sudokuSolver);
                 if (sumValue != arrowValue)
                 {
-                    logicalStepDescription.Append($"Sum is incorrect.");
+                    logicalStepDescription?.Append($"Sum is incorrect.");
                     return LogicResult.Invalid;
                 }
             }
@@ -161,7 +161,7 @@ namespace SudokuSolver.Constraints
                 {
                     if (arrowSum <= 0 || arrowSum > 9)
                     {
-                        logicalStepDescription.Append($"Sum of arrow is impossible to fill into circle.");
+                        logicalStepDescription?.Append($"Sum of arrow is impossible to fill into circle.");
                         return LogicResult.Invalid;
                     }
                     uint arrowSumMask = ValueMask(arrowSum);
@@ -169,23 +169,23 @@ namespace SudokuSolver.Constraints
                     uint sumCellMask = board[sumCell.Item1, sumCell.Item2];
                     if ((sumCellMask & arrowSumMask) == 0)
                     {
-                        logicalStepDescription.Append($"Sum of arrow is impossible to fill into circle.");
+                        logicalStepDescription?.Append($"Sum of arrow is impossible to fill into circle.");
                         return LogicResult.Invalid;
                     }
 
                     if (!sudokuSolver.SetValue(sumCell.Item1, sumCell.Item2, arrowSum))
                     {
-                        logicalStepDescription.Append($"Cannot fill {arrowSum} into {CellName(sumCell)}");
+                        logicalStepDescription?.Append($"Cannot fill {arrowSum} into {CellName(sumCell)}");
                         return LogicResult.Invalid;
                     }
-                    logicalStepDescription.Append($"Circle value at {CellName(sumCell)} set to {arrowSum}");
+                    logicalStepDescription?.Append($"Circle value at {CellName(sumCell)} set to {arrowSum}");
                     changed = true;
                 }
                 else if (circleCells.Count == 2)
                 {
                     if (arrowSum <= 9 || arrowSum >= 100)
                     {
-                        logicalStepDescription.Append($"Sum of arrow is impossible to fill into pill.");
+                        logicalStepDescription?.Append($"Sum of arrow is impossible to fill into pill.");
                         return LogicResult.Invalid;
                     }
 
@@ -193,12 +193,12 @@ namespace SudokuSolver.Constraints
                     int arrowSumOnes = arrowSum % 10;
                     if (arrowSumOnes == 0)
                     {
-                        logicalStepDescription.Append($"Sum of arrow requires a 0 in {CellName(circleCells[1])}");
+                        logicalStepDescription?.Append($"Sum of arrow requires a 0 in {CellName(circleCells[1])}");
                         return LogicResult.Invalid;
                     }
                     if (arrowSumTens == arrowSumOnes)
                     {
-                        logicalStepDescription.Append($"Sum of arrow requires a {arrowSumTens} in both {CellName(circleCells[0])} and {CellName(circleCells[1])}");
+                        logicalStepDescription?.Append($"Sum of arrow requires a {arrowSumTens} in both {CellName(circleCells[0])} and {CellName(circleCells[1])}");
                         return LogicResult.Invalid;
                     }
 
@@ -211,12 +211,12 @@ namespace SudokuSolver.Constraints
                     uint sumCellOnesMask = board[sumCellOnes.Item1, sumCellOnes.Item2];
                     if ((sumCellTensMask & arrowSumTensMask) == 0)
                     {
-                        logicalStepDescription.Append($"Cannot fill {arrowSumTens} into {CellName(circleCells[0])}");
+                        logicalStepDescription?.Append($"Cannot fill {arrowSumTens} into {CellName(circleCells[0])}");
                         return LogicResult.Invalid;
                     }
                     if ((sumCellOnesMask & arrowSumOnesMask) == 0)
                     {
-                        logicalStepDescription.Append($"Cannot fill {arrowSumOnes} into {CellName(circleCells[1])}");
+                        logicalStepDescription?.Append($"Cannot fill {arrowSumOnes} into {CellName(circleCells[1])}");
                         return LogicResult.Invalid;
                     }
 
@@ -224,7 +224,7 @@ namespace SudokuSolver.Constraints
                     {
                         if (!sudokuSolver.SetValue(sumCellTens.Item1, sumCellTens.Item2, arrowSumTens))
                         {
-                            logicalStepDescription.Append($"Cannot fill {arrowSumTens} into {CellName(sumCellTens)}");
+                            logicalStepDescription?.Append($"Cannot fill {arrowSumTens} into {CellName(sumCellTens)}");
                             return LogicResult.Invalid;
                         }
                     }
@@ -232,18 +232,18 @@ namespace SudokuSolver.Constraints
                     {
                         if (!sudokuSolver.SetValue(sumCellOnes.Item1, sumCellOnes.Item2, arrowSumOnes))
                         {
-                            logicalStepDescription.Append($"Cannot fill {arrowSumOnes} into {CellName(sumCellOnes)}");
+                            logicalStepDescription?.Append($"Cannot fill {arrowSumOnes} into {CellName(sumCellOnes)}");
                             return LogicResult.Invalid;
                         }
                     }
-                    logicalStepDescription.Append($"Circle value at {CellName(sumCellTens)}{CellName(sumCellOnes)} set to {arrowSum}");
+                    logicalStepDescription?.Append($"Circle value at {CellName(sumCellTens)}{CellName(sumCellOnes)} set to {arrowSum}");
                     changed = true;
                 }
                 else if (circleCells.Count == 3)
                 {
                     if (arrowSum <= 99 || arrowSum >= 1000)
                     {
-                        logicalStepDescription.Append($"Sum of arrow is impossible to fill into pill.");
+                        logicalStepDescription?.Append($"Sum of arrow is impossible to fill into pill.");
                         return LogicResult.Invalid;
                     }
 
@@ -252,22 +252,22 @@ namespace SudokuSolver.Constraints
                     int arrowSumOnes = arrowSum % 10;
                     if (arrowSumTens == 0)
                     {
-                        logicalStepDescription.Append($"Sum of arrow requires a 0 in {CellName(circleCells[1])}");
+                        logicalStepDescription?.Append($"Sum of arrow requires a 0 in {CellName(circleCells[1])}");
                         return LogicResult.Invalid;
                     }
                     if (arrowSumOnes == 0)
                     {
-                        logicalStepDescription.Append($"Sum of arrow requires a 0 in {CellName(circleCells[2])}");
+                        logicalStepDescription?.Append($"Sum of arrow requires a 0 in {CellName(circleCells[2])}");
                         return LogicResult.Invalid;
                     }
                     if (arrowSumHund == arrowSumTens)
                     {
-                        logicalStepDescription.Append($"Sum of arrow requires a {arrowSumTens} in both {CellName(circleCells[0])} and {CellName(circleCells[1])}");
+                        logicalStepDescription?.Append($"Sum of arrow requires a {arrowSumTens} in both {CellName(circleCells[0])} and {CellName(circleCells[1])}");
                         return LogicResult.Invalid;
                     }
                     if (arrowSumTens == arrowSumOnes)
                     {
-                        logicalStepDescription.Append($"Sum of arrow requires a {arrowSumTens} in both {CellName(circleCells[1])} and {CellName(circleCells[2])}");
+                        logicalStepDescription?.Append($"Sum of arrow requires a {arrowSumTens} in both {CellName(circleCells[1])} and {CellName(circleCells[2])}");
                         return LogicResult.Invalid;
                     }
 
@@ -283,17 +283,17 @@ namespace SudokuSolver.Constraints
                     uint sumCellOnesMask = board[sumCellOnes.Item1, sumCellOnes.Item2];
                     if ((sumCellHundMask & arrowSumHundMask) == 0)
                     {
-                        logicalStepDescription.Append($"Cannot fill {arrowSumHund} into {CellName(circleCells[0])}");
+                        logicalStepDescription?.Append($"Cannot fill {arrowSumHund} into {CellName(circleCells[0])}");
                         return LogicResult.Invalid;
                     }
                     if ((sumCellTensMask & arrowSumTensMask) == 0)
                     {
-                        logicalStepDescription.Append($"Cannot fill {arrowSumTens} into {CellName(circleCells[1])}");
+                        logicalStepDescription?.Append($"Cannot fill {arrowSumTens} into {CellName(circleCells[1])}");
                         return LogicResult.Invalid;
                     }
                     if ((sumCellOnesMask & arrowSumOnesMask) == 0)
                     {
-                        logicalStepDescription.Append($"Cannot fill {arrowSumOnes} into {CellName(circleCells[2])}");
+                        logicalStepDescription?.Append($"Cannot fill {arrowSumOnes} into {CellName(circleCells[2])}");
                         return LogicResult.Invalid;
                     }
 
@@ -302,7 +302,7 @@ namespace SudokuSolver.Constraints
                     {
                         if (!sudokuSolver.SetValue(sumCellHund.Item1, sumCellHund.Item2, arrowSumHund))
                         {
-                            logicalStepDescription.Append($"Cannot fill {arrowSumHund} into {CellName(sumCellHund)}");
+                            logicalStepDescription?.Append($"Cannot fill {arrowSumHund} into {CellName(sumCellHund)}");
                             return LogicResult.Invalid;
                         }
                     }
@@ -310,7 +310,7 @@ namespace SudokuSolver.Constraints
                     {
                         if (!sudokuSolver.SetValue(sumCellTens.Item1, sumCellTens.Item2, arrowSumTens))
                         {
-                            logicalStepDescription.Append($"Cannot fill {arrowSumTens} into {CellName(sumCellTens)}");
+                            logicalStepDescription?.Append($"Cannot fill {arrowSumTens} into {CellName(sumCellTens)}");
                             return LogicResult.Invalid;
                         }
                     }
@@ -318,17 +318,17 @@ namespace SudokuSolver.Constraints
                     {
                         if (!sudokuSolver.SetValue(sumCellOnes.Item1, sumCellOnes.Item2, arrowSumOnes))
                         {
-                            logicalStepDescription.Append($"Cannot fill {arrowSumOnes} into {CellName(sumCellOnes)}");
+                            logicalStepDescription?.Append($"Cannot fill {arrowSumOnes} into {CellName(sumCellOnes)}");
                             return LogicResult.Invalid;
                         }
                     }
-                    logicalStepDescription.Append($"Circle value at {CellName(sumCellHund)}{CellName(sumCellTens)}{CellName(sumCellOnes)} set to {arrowSum}");
+                    logicalStepDescription?.Append($"Circle value at {CellName(sumCellHund)}{CellName(sumCellTens)}{CellName(sumCellOnes)} set to {arrowSum}");
                     changed = true;
                 }
             }
             return changed ? LogicResult.Changed : LogicResult.None;
         }
-        
+
         private static bool HasValue(Solver board, IEnumerable<(int, int)> cells)
         {
             foreach (var cell in cells)

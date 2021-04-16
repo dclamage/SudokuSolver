@@ -174,6 +174,8 @@ namespace SudokuSolver.Constraints
 
         public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
         {
+            
+
             var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
 
             var board = sudokuSolver.Board;
@@ -216,22 +218,28 @@ namespace SudokuSolver.Constraints
                                 LogicResult clearResult = sudokuSolver.ClearMask(cell1.Item1, cell1.Item2, clearMask);
                                 if (clearResult == LogicResult.Invalid)
                                 {
-                                    logicalStepDescription.Clear();
-                                    logicalStepDescription.Append($"{CellName(i, j)} with values {MaskToString(mask)} removes the only candidates {MaskToString(clearMask)} from {CellName(cell1)}");
+                                    if (logicalStepDescription != null)
+                                    {
+                                        logicalStepDescription.Clear();
+                                        logicalStepDescription.Append($"{CellName(i, j)} with values {MaskToString(mask)} removes the only candidates {MaskToString(clearMask)} from {CellName(cell1)}");
+                                    }
                                     return LogicResult.Invalid;
                                 }
 
                                 if (clearResult == LogicResult.Changed)
                                 {
-                                    if (!haveChanges)
+                                    if (logicalStepDescription != null)
                                     {
-                                        logicalStepDescription.Append($"{CellName((i, j))} having candidates {MaskToString(mask)} removes {MaskToString(clearMask)} from {CellName(cell1)}");
-                                        haveChanges = true;
+                                        if (!haveChanges)
+                                        {
+                                            logicalStepDescription.Append($"{CellName((i, j))} having candidates {MaskToString(mask)} removes {MaskToString(clearMask)} from {CellName(cell1)}");
+                                        }
+                                        else
+                                        {
+                                            logicalStepDescription.Append($", {MaskToString(clearMask)} from {CellName(cell1)}");
+                                        }
                                     }
-                                    else
-                                    {
-                                        logicalStepDescription.Append($", {MaskToString(clearMask)} from {CellName(cell1)}");
-                                    }
+                                    haveChanges = true;
                                 }
                             }
                         }
@@ -242,8 +250,8 @@ namespace SudokuSolver.Constraints
                     }
                 }
             }
-
-            if (negativeConstraint)
+            
+            if (!isBruteForcing && negativeConstraint)
             {
                 // Look for groups where a particular digit is locked to 2, 3, or 4 places
                 // For the case of 2 places, if they are adjacent then neither can be a banned digit
@@ -304,7 +312,7 @@ namespace SudokuSolver.Constraints
 
                             if (!tooFar)
                             {
-                                uint clearMask = clearValuesNegative[val - 1];
+                                uint clearMask = clearValuesNegative[val - 1] & ~ValueMask(val);
 
                                 bool changed = false;
                                 for (int i = minCoord.Item1; i <= maxCoord.Item1; i++)
@@ -340,21 +348,27 @@ namespace SudokuSolver.Constraints
                                             LogicResult clearResult = sudokuSolver.ClearMask(i, j, clearMask);
                                             if (clearResult == LogicResult.Invalid)
                                             {
-                                                logicalStepDescription.Clear();
-                                                logicalStepDescription.Append($"{group} has {val} always adjacent to {CellName(i, j)}, but cannot clear values {MaskToString(clearMask)} from that cell.");
+                                                if (logicalStepDescription != null)
+                                                {
+                                                    logicalStepDescription.Clear();
+                                                    logicalStepDescription.Append($"{group} has {val} always adjacent to {CellName(i, j)}, but cannot clear values {MaskToString(clearMask)} from that cell.");
+                                                }
                                                 return LogicResult.Invalid;
                                             }
                                             if (clearResult == LogicResult.Changed)
                                             {
-                                                if (!changed)
+                                                if (logicalStepDescription != null)
                                                 {
-                                                    logicalStepDescription.Append($"{group} has {val} always adjacent to one or more cells, removing {MaskToString(clearMask)} from {CellName(i, j)}");
-                                                    changed = true;
+                                                    if (!changed)
+                                                    {
+                                                        logicalStepDescription.Append($"{group} has {val} always adjacent to one or more cells, removing {MaskToString(clearMask)} from {CellName(i, j)}");
+                                                    }
+                                                    else
+                                                    {
+                                                        logicalStepDescription.Append($", {CellName(i, j)}");
+                                                    }
                                                 }
-                                                else
-                                                {
-                                                    logicalStepDescription.Append($", {CellName(i, j)}");
-                                                }
+                                                changed = true;
                                             }
                                         }
                                     }
@@ -466,21 +480,27 @@ namespace SudokuSolver.Constraints
                                 LogicResult findResult = sudokuSolver.ClearMask(otherCell.Item1, otherCell.Item2, mustHaveMask);
                                 if (findResult == LogicResult.Invalid)
                                 {
-                                    logicalStepDescription.Clear();
-                                    logicalStepDescription.Append($"{CellName(i, j)} with candidates {MaskToString(maskA)} and {CellName(cellB)} with candidates {MaskToString(maskB)} are adjacent, meaning they must contain {mustHaveVal}, but cannot clear that value from {CellName(otherCell)}.");
+                                    if (logicalStepDescription != null)
+                                    {
+                                        logicalStepDescription.Clear();
+                                        logicalStepDescription.Append($"{CellName(i, j)} with candidates {MaskToString(maskA)} and {CellName(cellB)} with candidates {MaskToString(maskB)} are adjacent, meaning they must contain {mustHaveVal}, but cannot clear that value from {CellName(otherCell)}.");
+                                    }
                                     return LogicResult.Invalid;
                                 }
                                 if (findResult == LogicResult.Changed)
                                 {
-                                    if (!haveChanges)
+                                    if (logicalStepDescription != null)
                                     {
-                                        logicalStepDescription.Append($"{CellName(i, j)} with candidates {MaskToString(maskA)} and {CellName(cellB)} with candidates {MaskToString(maskB)} are adjacent, meaning they must contain {mustHaveVal}, clearing it from {CellName(otherCell)}");
-                                        haveChanges = true;
+                                        if (!haveChanges)
+                                        {
+                                            logicalStepDescription.Append($"{CellName(i, j)} with candidates {MaskToString(maskA)} and {CellName(cellB)} with candidates {MaskToString(maskB)} are adjacent, meaning they must contain {mustHaveVal}, clearing it from {CellName(otherCell)}");
+                                        }
+                                        else
+                                        {
+                                            logicalStepDescription.Append($", {CellName(otherCell)}");
+                                        }
                                     }
-                                    else
-                                    {
-                                        logicalStepDescription.Append($", {CellName(otherCell)}");
-                                    }
+                                    haveChanges = true;
                                 }
                             }
                         }

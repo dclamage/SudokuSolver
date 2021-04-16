@@ -663,15 +663,15 @@ namespace SudokuSolver
         /// <param name="progressEvent">An event to receive the progress count as solutions are found.</param>
         /// <param name="cancellationToken">Pass in to support cancelling the count.</param>
         /// <returns>The solution count found.</returns>
-        public async Task<ulong> CountSolutions(ulong maxSolutions = 0, EventHandler<ulong> progressEvent = null, CancellationToken? cancellationToken = null)
+        public ulong CountSolutions(ulong maxSolutions = 0, EventHandler<ulong> progressEvent = null, CancellationToken? cancellationToken = null)
         {
             bool wasBruteForcing = isBruteForcing;
             isBruteForcing = true;
 
-            CountSolutionsState state = new CountSolutionsState(maxSolutions, progressEvent, cancellationToken);
+            CountSolutionsState state = new(maxSolutions, progressEvent, cancellationToken);
             try
             {
-                await CountSolutions(0, state);
+                CountSolutions(0, state);
             }
             catch (OperationCanceledException) { }
 
@@ -712,7 +712,7 @@ namespace SudokuSolver
             }
         }
 
-        private async Task CountSolutions(int cell, CountSolutionsState state)
+        private void CountSolutions(int cell, CountSolutionsState state)
         {
             int i = cell / WIDTH;
             int j = cell % WIDTH;
@@ -751,7 +751,6 @@ namespace SudokuSolver
                 // Check for cancel
                 if (state.timeSinceCheck.ElapsedMilliseconds > 1000)
                 {
-                    await Task.Delay(1);
                     state.cancellationToken?.ThrowIfCancellationRequested();
                     state.timeSinceCheck.Restart();
                 }
@@ -764,7 +763,7 @@ namespace SudokuSolver
                 if (boardCopy.SetValue(i, j, val) && boardCopy.ConsolidateBoard())
                 {
                     // Accumulate how many solutions there are with this cell value
-                    await boardCopy.CountSolutions(cell + 1, state);
+                    boardCopy.CountSolutions(cell + 1, state);
                     if (state.maxSolutions > 0 && state.numSolutions >= state.maxSolutions)
                     {
                         return;
@@ -912,7 +911,7 @@ namespace SudokuSolver
             LogicResult result;
             do
             {
-                StringBuilder stepDescription = new StringBuilder();
+                StringBuilder stepDescription = stepsDescription != null ? new() : null;
                 result = StepLogic(stepDescription);
                 stepsDescription?.Append(stepDescription).AppendLine();
             } while (result == LogicResult.Changed);
@@ -940,6 +939,24 @@ namespace SudokuSolver
                 return result;
             }
 
+            foreach (var constraint in constraints)
+            {
+                result = constraint.StepLogic(this, stepDescription, isBruteForcing);
+                if (result != LogicResult.None)
+                {
+                    if (stepDescription != null)
+                    {
+                        stepDescription.Insert(0, $"{constraint.SpecificName}: ");
+                    }
+                    return result;
+                }
+            }
+
+            if (isBruteForcing)
+            {
+                return LogicResult.None;
+            }
+
             result = FindNakedTuples(stepDescription);
             if (result != LogicResult.None)
             {
@@ -950,21 +967,6 @@ namespace SudokuSolver
             if (result != LogicResult.None)
             {
                 return result;
-            }
-
-            foreach (var constraint in constraints)
-            {
-                result = constraint.StepLogic(this, stepDescription, isBruteForcing);
-                if (result != LogicResult.None)
-                {
-                    stepDescription.Insert(0, $"{constraint.SpecificName}: ");
-                    return result;
-                }
-            }
-
-            if (isBruteForcing)
-            {
-                return LogicResult.None;
             }
 
             result = FindFishes(stepDescription);
@@ -998,9 +1000,9 @@ namespace SudokuSolver
             bool haveChange = false;
             while (true)
             {
-                StringBuilder curStepDescription = new StringBuilder();
+                StringBuilder curStepDescription = stepDescription != null ? new() : null;
                 LogicResult findResult = FindNakedSinglesHelper(curStepDescription, humanStepping);
-                if (stepDescription != null)
+                if (curStepDescription != null && curStepDescription.Length > 0)
                 {
                     if (stepDescription.Length > 0)
                     {
@@ -1036,8 +1038,11 @@ namespace SudokuSolver
                     // If there are no possibilies on a square, then bail out
                     if (mask == 0)
                     {
-                        stepDescription.AppendLine();
-                        stepDescription.Append($"{CellName(i, j)} has no possible values.");
+                        if (stepDescription != null)
+                        {
+                            stepDescription.AppendLine();
+                            stepDescription.Append($"{CellName(i, j)} has no possible values.");
+                        }
                         return LogicResult.Invalid;
                     }
 
@@ -1050,7 +1055,7 @@ namespace SudokuSolver
                             int value = GetValue(mask);
                             if (!hadChanges)
                             {
-                                stepDescription.Append($"{stepPrefix} {CellName(i, j)} = {value}");
+                                stepDescription?.Append($"{stepPrefix} {CellName(i, j)} = {value}");
                                 hadChanges = true;
                                 if (humanStepping)
                                 {
@@ -1059,7 +1064,7 @@ namespace SudokuSolver
                             }
                             else
                             {
-                                stepDescription.Append($", {CellName(i, j)} = {value}");
+                                stepDescription?.Append($", {CellName(i, j)} = {value}");
                             }
 
                             if (!SetValue(i, j, value))
@@ -1070,12 +1075,12 @@ namespace SudokuSolver
                                     {
                                         if (board[ci, cj] == 0)
                                         {
-                                            stepDescription.AppendLine().Append($"{CellName(ci, cj)} has no candidates remaining.");
+                                            stepDescription?.AppendLine().Append($"{CellName(ci, cj)} has no candidates remaining.");
                                             return LogicResult.Invalid;
                                         }
                                     }
                                 }
-                                stepDescription.AppendLine().Append($"{CellName(i, j)} cannot be {value}.");
+                                stepDescription?.AppendLine().Append($"{CellName(i, j)} cannot be {value}.");
                                 return LogicResult.Invalid;
                             }
                         }
@@ -1084,11 +1089,14 @@ namespace SudokuSolver
             }
             if (!hasUnsetCells)
             {
-                if (stepDescription.Length > 0)
+                if (stepDescription != null)
                 {
-                    stepDescription.AppendLine();
+                    if (stepDescription.Length > 0)
+                    {
+                        stepDescription.AppendLine();
+                    }
+                    stepDescription.Append("Solution found!");
                 }
-                stepDescription.Append("Solution found!");
                 return LogicResult.PuzzleComplete;
             }
             return hadChanges ? LogicResult.Changed : LogicResult.None;
@@ -1125,17 +1133,23 @@ namespace SudokuSolver
                     {
                         if (!SetValue(vali, valj, val))
                         {
-                            stepDescription.Clear();
-                            stepDescription.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}, but it cannot be set to that value.");
+                            if (stepDescription != null)
+                            {
+                                stepDescription.Clear();
+                                stepDescription.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}, but it cannot be set to that value.");
+                            }
                             return LogicResult.Invalid;
                         }
-                        stepDescription.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}");
+                        stepDescription?.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}");
                         return LogicResult.Changed;
                     }
                     else if (numWithVal == 0)
                     {
-                        stepDescription.Clear();
-                        stepDescription.Append($"{group.Name} has nowhere to place {val}.");
+                        if (stepDescription != null)
+                        {
+                            stepDescription.Clear();
+                            stepDescription.Append($"{group.Name} has nowhere to place {val}.");
+                        }
                         return LogicResult.Invalid;
                     }
                 }
@@ -1197,12 +1211,12 @@ namespace SudokuSolver
                                         board[curCell.Item1, curCell.Item2] = remainingMask;
                                         if (!changed)
                                         {
-                                            stepDescription.Append($"{group} has tuple {MaskToString(combinationMask)}, removing those values from {CellName(curCell)}");
+                                            stepDescription?.Append($"{group} has tuple {MaskToString(combinationMask)}, removing those values from {CellName(curCell)}");
                                             changed = true;
                                         }
                                         else
                                         {
-                                            stepDescription.Append($", {CellName(curCell)}");
+                                            stepDescription?.Append($", {CellName(curCell)}");
                                         }
                                     }
                                 }
@@ -1214,8 +1228,11 @@ namespace SudokuSolver
 
                             if (numMatching > tupleSize)
                             {
-                                stepDescription.Clear();
-                                stepDescription.Append($"{group} has too many cells ({tupleSize}) which can only have {MaskToString(combinationMask)}");
+                                if (stepDescription != null)
+                                {
+                                    stepDescription.Clear();
+                                    stepDescription.Append($"{group} has too many cells ({tupleSize}) which can only have {MaskToString(combinationMask)}");
+                                }
                                 return LogicResult.Invalid;
                             }
                             if (changed)
@@ -1283,19 +1300,25 @@ namespace SudokuSolver
 
                             if (!ClearValue(i, j, v))
                             {
-                                stepDescription.Clear();
-                                stepDescription.Append($"{v} is limited to {cellsWithValueStringBuilder} in {group}, but that value cannot be removed from {CellName(i, j)}");
+                                if (stepDescription != null)
+                                {
+                                    stepDescription.Clear();
+                                    stepDescription.Append($"{v} is limited to {cellsWithValueStringBuilder} in {group}, but that value cannot be removed from {CellName(i, j)}");
+                                }
                                 return LogicResult.Invalid;
                             }
-                            if (!changed)
+                            if (stepDescription != null)
                             {
-                                stepDescription.Append($"{v} is limited to {cellsWithValueStringBuilder} in {group}, which removes that value from {CellName((i, j))}");
-                                changed = true;
+                                if (!changed)
+                                {
+                                    stepDescription.Append($"{v} is limited to {cellsWithValueStringBuilder} in {group}, which removes that value from {CellName((i, j))}");
+                                }
+                                else
+                                {
+                                    stepDescription.Append($", {CellName((i, j))}");
+                                }
                             }
-                            else
-                            {
-                                stepDescription.Append($", {CellName((i, j))}");
-                            }
+                            changed = true;
                         }
                     }
                     if (changed)
@@ -1376,19 +1399,22 @@ namespace SudokuSolver
                             }
                             if (colCount < n)
                             {
-                                string rowName = isCol ? "Cols" : "Rows";
-
-                                string rowList = "";
-                                foreach (int rowIndex in curCombination)
+                                if (stepDescription != null)
                                 {
-                                    if (rowList.Length > 0)
+                                    string rowName = isCol ? "Cols" : "Rows";
+
+                                    string rowList = "";
+                                    foreach (int rowIndex in curCombination)
                                     {
-                                        rowList += ", ";
+                                        if (rowList.Length > 0)
+                                        {
+                                            rowList += ", ";
+                                        }
+                                        rowList += (char)('0' + (rowIndex + 1));
                                     }
-                                    rowList += (char)('0' + (rowIndex + 1));
+                                    stepDescription.Clear();
+                                    stepDescription.Append($"{rowName} {rowList} have too few locations for {v}");
                                 }
-                                stepDescription.Clear();
-                                stepDescription.Append($"{rowName} {rowList} have too few locations for {v}");
                                 return LogicResult.Invalid;
                             }
 
@@ -1417,42 +1443,51 @@ namespace SudokuSolver
                                         continue;
                                     }
 
-                                    if (fishDesc == null)
+                                    bool clearValueSucceeded = ClearValue(i, j, v);
+                                    if (stepDescription != null)
                                     {
-                                        string rowName = isCol ? "c" : "r";
-                                        string desc = "";
-                                        foreach (int fishRow in curCombination)
+                                        if (fishDesc == null)
                                         {
-                                            desc = $"{desc}{rowName}{fishRow + 1}";
+                                            string rowName = isCol ? "c" : "r";
+                                            string desc = "";
+                                            foreach (int fishRow in curCombination)
+                                            {
+                                                desc = $"{desc}{rowName}{fishRow + 1}";
+                                            }
+
+                                            string techniqueName = n switch
+                                            {
+                                                2 => "X-Wing",
+                                                3 => "Swordfish",
+                                                4 => "Jellyfish",
+                                                _ => $"{n}-Fish",
+                                            };
+
+                                            fishDesc = $"{techniqueName} on {desc} for value {v}";
                                         }
 
-                                        string techniqueName = n switch
+                                        if (!clearValueSucceeded)
                                         {
-                                            2 => "X-Wing",
-                                            3 => "Swordfish",
-                                            4 => "Jellyfish",
-                                            _ => $"{n}-Fish",
-                                        };
+                                            stepDescription.Clear();
+                                            stepDescription.Append($"{fishDesc}, but it cannot be removed from {CellName(i, j)}");
+                                            return LogicResult.Invalid;
+                                        }
 
-                                        fishDesc = $"{techniqueName} on {desc} for value {v}";
+                                        if (!changed)
+                                        {
+                                            stepDescription.Append($"{fishDesc}, removing that value from {CellName(i, j)}");
+                                        }
+                                        else
+                                        {
+                                            stepDescription.Append($", {CellName(i, j)}");
+                                        }
                                     }
-
-                                    if (!ClearValue(i, j, v))
+                                    else if (!clearValueSucceeded)
                                     {
-                                        stepDescription.Clear();
-                                        stepDescription.Append($"{fishDesc}, but it cannot be removed from {CellName(i, j)}");
                                         return LogicResult.Invalid;
-}
+                                    }
 
-                                    if (!changed)
-                                    {
-                                        stepDescription.Append($"{fishDesc}, removing that value from {CellName(i, j)}");
-                                        changed = true;
-                                    }
-                                    else
-                                    {
-                                        stepDescription.Append($", {CellName(i, j)}");
-                                    }
+                                    changed = true;
                                 }
                             }
                             if (changed)
@@ -1586,16 +1621,19 @@ namespace SudokuSolver
                                 }
                                 if (removedFrom.Count > 0)
                                 {
-                                    stepDescription.Append($"Y-Wing with pivot at {CellName(pivot)} ({MaskToString(pivotMask)}) and pincers at {CellName(pincer0)} ({MaskToString(pincer0Mask)}), {CellName(pincer1)} ({MaskToString(pincer1Mask)}) clears candidate {GetValue(removeMask)} from cell{(removedFrom.Count == 1 ? "" : "s")}: ");
-                                    bool needComma = false;
-                                    foreach (var cell in removedFrom)
+                                    if (stepDescription != null)
                                     {
-                                        if (needComma)
+                                        stepDescription.Append($"Y-Wing with pivot at {CellName(pivot)} ({MaskToString(pivotMask)}) and pincers at {CellName(pincer0)} ({MaskToString(pincer0Mask)}), {CellName(pincer1)} ({MaskToString(pincer1Mask)}) clears candidate {GetValue(removeMask)} from cell{(removedFrom.Count == 1 ? "" : "s")}: ");
+                                        bool needComma = false;
+                                        foreach (var cell in removedFrom)
                                         {
-                                            stepDescription.Append(", ");
+                                            if (needComma)
+                                            {
+                                                stepDescription.Append(", ");
+                                            }
+                                            stepDescription.Append($"{CellName(cell)}");
+                                            needComma = true;
                                         }
-                                        stepDescription.Append($"{CellName(cell)}");
-                                        needComma = true;
                                     }
                                     return LogicResult.Changed;
                                 }
@@ -1648,16 +1686,19 @@ namespace SudokuSolver
                             }
                             if (removedFrom.Count > 0)
                             {
-                                stepDescription.Append($"XYZ-Wing with pivot at {CellName((pi, pj))} ({MaskToString(combMask)}) and pincers at {CellName((i0, j0))} ({MaskToString(mask0)}), {CellName((i1, j1))} ({MaskToString(mask1)}) clears candidate {GetValue(removeMask)} from cell{(removedFrom.Count == 1 ? "" : "s")}: ");
-                                bool needComma = false;
-                                foreach (var cell in removedFrom)
+                                if (stepDescription != null)
                                 {
-                                    if (needComma)
+                                    stepDescription?.Append($"XYZ-Wing with pivot at {CellName((pi, pj))} ({MaskToString(combMask)}) and pincers at {CellName((i0, j0))} ({MaskToString(mask0)}), {CellName((i1, j1))} ({MaskToString(mask1)}) clears candidate {GetValue(removeMask)} from cell{(removedFrom.Count == 1 ? "" : "s")}: ");
+                                    bool needComma = false;
+                                    foreach (var cell in removedFrom)
                                     {
-                                        stepDescription.Append(", ");
+                                        if (needComma)
+                                        {
+                                            stepDescription?.Append(", ");
+                                        }
+                                        stepDescription?.Append($"{CellName(cell)}");
+                                        needComma = true;
                                     }
-                                    stepDescription.Append($"{CellName(cell)}");
-                                    needComma = true;
                                 }
                                 return LogicResult.Changed;
                             }
@@ -1749,7 +1790,7 @@ namespace SudokuSolver
                                         continue;
                                     }
                                 }
-                                else if(seen02)
+                                else if (seen02)
                                 {
                                     if ((mask0 & mask2) != mask2)
                                     {
@@ -1855,16 +1896,19 @@ namespace SudokuSolver
                             }
                             if (removedFrom.Count > 0)
                             {
-                                stepDescription.Append($"WXYZ-Wing with pivot at {CellName((pi, pj))} ({MaskToString(maskp)}) and pincers at {CellName((i0, j0))} ({MaskToString(mask0)}), {CellName((i1, j1))} ({MaskToString(mask1)}), {CellName((i2, j2))} ({MaskToString(mask2)}) clears candidate {GetValue(removeMask)} from cell{(removedFrom.Count == 1 ? "" : "s")}: ");
-                                bool needComma = false;
-                                foreach (var cell in removedFrom)
+                                if (stepDescription != null)
                                 {
-                                    if (needComma)
+                                    stepDescription.Append($"WXYZ-Wing with pivot at {CellName((pi, pj))} ({MaskToString(maskp)}) and pincers at {CellName((i0, j0))} ({MaskToString(mask0)}), {CellName((i1, j1))} ({MaskToString(mask1)}), {CellName((i2, j2))} ({MaskToString(mask2)}) clears candidate {GetValue(removeMask)} from cell{(removedFrom.Count == 1 ? "" : "s")}: ");
+                                    bool needComma = false;
+                                    foreach (var cell in removedFrom)
                                     {
-                                        stepDescription.Append(", ");
+                                        if (needComma)
+                                        {
+                                            stepDescription.Append(", ");
+                                        }
+                                        stepDescription.Append($"{CellName(cell)}");
+                                        needComma = true;
                                     }
-                                    stepDescription.Append($"{CellName(cell)}");
-                                    needComma = true;
                                 }
                                 return LogicResult.Changed;
                             }
@@ -1895,25 +1939,31 @@ namespace SudokuSolver
                                     Solver boardCopy = Clone();
                                     boardCopy.isBruteForcing = true;
 
-                                    StringBuilder contradictionReason = new();
+                                    StringBuilder contradictionReason = stepDescription != null ? new() : null;
                                     if (!boardCopy.SetValue(i, j, v) || !boardCopy.ConsolidateBoard(contradictionReason))
                                     {
-                                        StringBuilder formattedContraditionReason = new StringBuilder();
-                                        foreach (string line in contradictionReason.ToString().Split('\n'))
+                                        if (stepDescription != null)
                                         {
-                                            if (!string.IsNullOrWhiteSpace(line))
+                                            StringBuilder formattedContraditionReason = new StringBuilder();
+                                            foreach (string line in contradictionReason.ToString().Split('\n'))
                                             {
-                                                formattedContraditionReason.Append("  ").Append(line).AppendLine();
+                                                if (!string.IsNullOrWhiteSpace(line))
+                                                {
+                                                    formattedContraditionReason.Append("  ").Append(line).AppendLine();
+                                                }
                                             }
-                                        }
 
-                                        stepDescription.Append($"Setting {CellName(i, j)} to {v} causes a contradiction:");
-                                        stepDescription.AppendLine();
-                                        stepDescription.Append(formattedContraditionReason);
+                                            stepDescription.Append($"Setting {CellName(i, j)} to {v} causes a contradiction:");
+                                            stepDescription.AppendLine();
+                                            stepDescription.Append(formattedContraditionReason);
+                                        }
                                         if (!ClearValue(i, j, v))
                                         {
-                                            stepDescription.AppendLine();
-                                            stepDescription.Append($"This clears the last candidate from {CellName(i, j)}.");
+                                            if (stepDescription != null)
+                                            {
+                                                stepDescription.AppendLine();
+                                                stepDescription.Append($"This clears the last candidate from {CellName(i, j)}.");
+                                            }
                                             return LogicResult.Invalid;
                                         }
                                         return LogicResult.Changed;
