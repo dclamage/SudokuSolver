@@ -35,14 +35,17 @@ namespace SudokuSolverConsole
         bool antiking,
         bool disjointgroups,
         bool nonconsecutive,
+        string[] negative,
         FPuzzlesArrowEntry[] arrow,
         FPuzzlesKillerCageEntry[] killercage,
         FPuzzlesLittleKillerSumEntry[] littlekillersum,
         FPuzzlesCell[] odd,
         FPuzzlesCell[] even,
-        FPuzzlesExtraRegion[] extraregion,
+        FPuzzlesCells[] extraregion,
         FPuzzlesLines[] thermometer,
-        FPuzzlesLines[] palindrome
+        FPuzzlesLines[] palindrome,
+        FPuzzlesCells[] difference,
+        FPuzzlesCells[] ratio
     );
 
     public record FPuzzlesGridEntry(int value, bool given);
@@ -65,7 +68,7 @@ namespace SudokuSolverConsole
 
     public record FPuzzlesCell(string cell);
 
-    public record FPuzzlesExtraRegion(string[] cells);
+    public record FPuzzlesCells(string[] cells, string value = "");
 
     public record FPuzzlesLines(string[][] lines);
 }

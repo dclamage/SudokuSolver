@@ -79,6 +79,8 @@ namespace SudokuSolver
             }
         }
 
+        public IEnumerable<T> Constraints<T>() where T : Constraint => constraints.Select(c => c as T).Where(c => c != null);
+
         private bool isBruteForcing = false;
 
         public Solver()

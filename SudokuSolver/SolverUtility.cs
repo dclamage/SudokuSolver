@@ -195,8 +195,11 @@ namespace SudokuSolver
         public static string CellName((int, int) cell) => $"r{cell.Item1 + 1}c{cell.Item2 + 1}";
         public static string CellName(int i, int j) => CellName((i, j));
         public static (int, int) CellValue(string cellName) => cellName.Length == 4 ? (cellName[1] - '1', cellName[3] - '1') : (-1, -1);
-        public static int FlatIndex((int, int) cell) => cell.Item1 * 9 + cell.Item2;
-
+        public static int FlatIndex((int, int) cell) => cell.Item1 * WIDTH + cell.Item2;
+        public static (int, int, int, int) CellPair((int, int) cell0, (int, int) cell1)
+        {
+            return FlatIndex(cell0) <= FlatIndex(cell1) ? (cell0.Item1, cell0.Item2, cell1.Item1, cell1.Item2) : (cell1.Item1, cell1.Item2, cell0.Item1, cell0.Item2);
+        }
 
         public static readonly int[][][] combinations = new int[MAX_VALUE][][];
         private static void InitCombinations()

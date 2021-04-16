@@ -16,13 +16,13 @@ namespace SudokuSolverConsole
 
         static void Main(string[] args)
         {
-            //string json = LZString.DecompressFromBase64("N4IgzglgXgpiBcBOANCALhNAbO8QFkAnAOgAIANEVAQwFc0ALAe0IRAAVq1CIBjAayohCtHGBho2AORYBballIBlWgBMm/WqRFjS1AA76sATzJTasgEYxCYUrNpg0pAHZNnhGPphdSEF3qk/BBYOISkvNQA5jBkACoMMK4W1rZ+AYxJkTH2js5gFqRoTEWJpFEQAG4wGe4K6aVJxfqkOABmaGQAmkxaDNTVRSVt/qoUpCO2zsXlEo1DaApgxEJRPKoIANqbwAC+yHsH+4cnx2dHALrIO+enR/d3e1c3D7dvr8+P71+X1z//b0+32BHz+IIBvxeEIBQNecJhVxAwVCNmyuB2IF4MFCYC2IAASgBGADChKEROJACZySSAMzkymkhlU8m0pkXY6Y7FYXHwTYEtnUjkHLk4vH4xn04WgLFivkEkkAFhpxIArCqAGwgaWinnikkAdmZRtQEuJAA5WRarYhtZzZXr5RTLaaSbbTYzbTqHbz+fi2VrTYriYGCcGjd7ub6CYz1aa2erI3K/WzlUHifT08qk46/cG4wTVWryRrizno/jS6HK8SI/ao+KiybC9by43iV768mCaWXT2O+SDdbTUPOyKfeLELXyVO+/ip2OZQ2nUOC/jzWWu7mCVOyaap9T9xm7ePl37S3uCUPL/ih0KtxXS/fT92a5n+9mH+2b0XDy2pbsiJolsS6voK2qoJUCi0LgIDkAA9H+vTYP4MDEmwADEAAMOG4UIbRMC4aDoXg2G4ThIBfk6koQSAUFYDBbCUKgyFYKhJEgGR5H4YRxGYeRFFUX6sZWomkHQbBzEgKx7H8QJPFERxXF4UJArEmmYbHlmtH0YxeBSTJLhoXJ3GoARikmSpL7bhSGkUmuJJaoiumwZSBn0GxRlKQJWEKXxpE+ZR1kViSN4kn+FLvmaN6MhFbJks5ElsIq7koV5lkUWZvHefJqkUs2ZoFYyc5siVA6JQxsEpUIhnGQF8lZRZ9XcXlJJzm6zJeuJlVMTVHmyc1eGNf5nGBXlAbksG1bhjpSV4G5fVpXVo0NSA5kjcpgnBe2BVFpaFV6SAC0sf16WDZla3ZRlvl5UWXV0XNcGIYtnnLZtvnDTlLXbU6vYlgOI7Dle5XdYdx3Sadb2BZ911BaBNlVv9Eag5JL0DStpmXU1GNWfDj5aR+s09fpaNnTjF3rV9uO6vjQoo0xADUl61VTFNXedN0/eeTKAzed5E2D5AM0hkOsx9WMbWNXMtj+LKmkWUr0yTJ1LWLflq3l+bkkWa6lmJD3E0dqWvWrMMc3DNPiqu5IbvrLm9SrJuw2b5Oc3jk48zucte4rBuHcb6PversN5VOBWzjOIN+7BtIB2TQcu0HgG7EAA");
+            //string json = LZString.DecompressFromBase64("N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAOwD26gMbawMHQFcALhABuceCYxGYqbBABmTmBhi6rhEDpgAbPzB8EAAlAFYAYTCQVHCIgBYQNXMAQz87BBAAZhAiNXUYNBSzS2CMYohNJNRysyr4b18AoIbQyIB2GLaIgA5qkFT0q2zc0h9/QOC4xC64vuS0jPgQACZc2iIgA=");
 
-            //args[1] = @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT1ADcBDAGwFc54BmVNCImAOwQBcMqBfZYHv3vyGCRfALrJCIUpWoAmeoxbtOMYQI3qtEqTKoIAjIqat4HbqK2XLOzdbsOutq4/tPJrz9o8vfo6eT68ABsxspmqu6Efl68AbIIAKxhpuZqzm6ZGvFBACwpKtxiEiAADuQQzNgYAPYAttRSZJUwYPh4IABKuQDCBiConYk9cgNdwT00Y50A7D250xOJ08PB070z0zQ9ABzTcj2IIMVOXEA===";
+            //args[1] = @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAOwD26gMbawMHQFcALhABuceCYxGYqbBABmTmBhi6rhEDpgAbPzB8EAAlAFYAYTCQVHCIgBYQNXMAQz87BBAAZhAiNXUYNBSzS2CMYohNJNRysyr4b18AoIbQyIB2GLaIgA5qkFT0q2zc0h9/QOC4xC64vuS0jPgQACZc2iIgA=";
 
             string processName = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
 
-            bool showHelp = false;
+            bool showHelp = args.Length == 0;
             string fpuzzlesURL = null;
             string givens = null;
             int maxThreads = 0;
@@ -76,12 +76,14 @@ namespace SudokuSolverConsole
             if (string.IsNullOrWhiteSpace(fpuzzlesURL) && string.IsNullOrWhiteSpace(givens))
             {
                 Console.WriteLine($"ERROR: Must provide either an f-puzzles URL or a givens string.");
-                return;
+                Console.WriteLine($"Try '{processName} --help' for more information.");
+                showHelp = true;
             }
 
             if (!string.IsNullOrWhiteSpace(fpuzzlesURL) && !string.IsNullOrWhiteSpace(givens))
             {
                 Console.WriteLine($"ERROR: Cannot provide both an f-puzzles URL and a givens string.");
+                Console.WriteLine($"Try '{processName} --help' for more information.");
                 return;
             }
 
@@ -125,6 +127,7 @@ namespace SudokuSolverConsole
 
                 Console.WriteLine($"Imported \"{fpuzzlesData.title}\" by {fpuzzlesData.author}");
 
+                // Extra groups
                 if (fpuzzlesData.diagonalp)
                 {
                     constraintManager.AddConstraintByFPuzzlesName(solver, "diagonal+", string.Empty);
@@ -145,11 +148,8 @@ namespace SudokuSolverConsole
                 {
                     constraintManager.AddConstraintByFPuzzlesName(solver, "disjointgroups", string.Empty);
                 }
-                if (fpuzzlesData.nonconsecutive)
-                {
-                    constraintManager.AddConstraintByFPuzzlesName(solver, "nonconsecutive", string.Empty);
-                }
 
+                // Marked constraints
                 if (fpuzzlesData.arrow != null)
                 {
                     foreach (var arrow in fpuzzlesData.arrow)
@@ -280,6 +280,81 @@ namespace SudokuSolverConsole
                             }
                             constraintManager.AddConstraintByFPuzzlesName(solver, "palindrome", cells.ToString());
                         }
+                    }
+                }
+
+                bool negativeRatio = fpuzzlesData.negative?.Contains("ratio") ?? false;
+                if (fpuzzlesData.ratio != null && fpuzzlesData.ratio.Length > 0 || negativeRatio)
+                {
+                    StringBuilder ratioParams = new();
+                    if (negativeRatio)
+                    {
+                        HashSet<string> ratioValues = fpuzzlesData.ratio != null ? new(fpuzzlesData.ratio.Select(r => r.value)) : new() { "2" };
+                        foreach (string ratioValue in ratioValues)
+                        {
+                            if (ratioParams.Length > 0)
+                            {
+                                ratioParams.Append(';');
+                            }
+                            ratioParams.Append($"neg{ratioValue}");
+                        }
+                    }
+
+                    if (fpuzzlesData.ratio != null)
+                    {
+                        foreach (var ratio in fpuzzlesData.ratio)
+                        {
+                            if (ratioParams.Length > 0)
+                            {
+                                ratioParams.Append(';');
+                            }
+                            ratioParams.Append(ratio.value);
+                            foreach (var cell in ratio.cells)
+                            {
+                                ratioParams.Append($"{cell}");
+                            }
+                        }
+                    }
+
+                    if (ratioParams.Length > 0)
+                    {
+                        constraintManager.AddConstraintByFPuzzlesName(solver, "ratio", ratioParams.ToString());
+                    }
+                }
+
+                if (fpuzzlesData.difference != null && fpuzzlesData.difference.Length > 0 || fpuzzlesData.nonconsecutive)
+                {
+                    StringBuilder differenceParams = new();
+                    if (fpuzzlesData.nonconsecutive)
+                    {
+                        // f-puzzles only supports negative constraint for difference of 1, which
+                        // it calls nonconsecutive.
+                        if (differenceParams.Length > 0)
+                        {
+                            differenceParams.Append(';');
+                        }
+                        differenceParams.Append("neg1");
+                    }
+
+                    if (fpuzzlesData.difference != null)
+                    {
+                        foreach (var difference in fpuzzlesData.difference)
+                        {
+                            if (differenceParams.Length > 0)
+                            {
+                                differenceParams.Append(';');
+                            }
+                            differenceParams.Append(difference.value);
+                            foreach (var cell in difference.cells)
+                            {
+                                differenceParams.Append($"{cell}");
+                            }
+                        }
+                    }
+
+                    if (differenceParams.Length > 0)
+                    {
+                        constraintManager.AddConstraintByFPuzzlesName(solver, "difference", differenceParams.ToString());
                     }
                 }
 
