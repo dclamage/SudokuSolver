@@ -88,7 +88,7 @@ namespace SudokuSolver.Constraints
                     }
                 }
             }
-            else if (circleCells.Count == 2)
+            else if (circleCells.Count == 3)
             {
                 int maxSum = arrowCells.Count * MAX_VALUE;
                 if (maxSum <= 99)
@@ -111,6 +111,10 @@ namespace SudokuSolver.Constraints
                         }
                     }
                 }
+                else
+                {
+                    return LogicResult.Invalid;
+                }
             }
             else
             {
@@ -127,9 +131,9 @@ namespace SudokuSolver.Constraints
                 return true;
             }
 
-            if (HasSumValue(sudokuSolver) &&
+            if (HasCircleValue(sudokuSolver) &&
                 HasArrowValue(sudokuSolver) &&
-                SumValue(sudokuSolver) != ArrowValue(sudokuSolver))
+                CircleValue(sudokuSolver) != ArrowValue(sudokuSolver))
             {
                 return false;
             }
@@ -140,14 +144,14 @@ namespace SudokuSolver.Constraints
         {
             var board = sudokuSolver.Board;
             bool changed = false;
-            bool sumCellsFilled = HasSumValue(sudokuSolver);
+            bool circleCellsFilled = HasCircleValue(sudokuSolver);
             bool arrowCellsFilled = HasArrowValue(sudokuSolver);
-            if (sumCellsFilled && arrowCellsFilled)
+            if (circleCellsFilled && arrowCellsFilled)
             {
                 // Both the sum and arrow cell values are known, so check to ensure the sum in correct
-                int sumValue = SumValue(sudokuSolver);
+                int circleValue = CircleValue(sudokuSolver);
                 int arrowValue = ArrowValue(sudokuSolver);
-                if (sumValue != arrowValue)
+                if (circleValue != arrowValue)
                 {
                     logicalStepDescription?.Append($"Sum is incorrect.");
                     return LogicResult.Invalid;
@@ -341,14 +345,14 @@ namespace SudokuSolver.Constraints
             return true;
         }
 
-        public bool HasSumValue(Solver board) => HasValue(board, circleCells);
+        public bool HasCircleValue(Solver board) => HasValue(board, circleCells);
 
         public bool HasArrowValue(Solver board) => HasValue(board, arrowCells);
 
-        public int SumValue(Solver board)
+        public int CircleValue(Solver board)
         {
             int sum = 0;
-            foreach (int v in arrowCells.Select(cell => board.GetValue(cell)))
+            foreach (int v in circleCells.Select(cell => board.GetValue(cell)))
             {
                 sum *= 10;
                 sum += v;
