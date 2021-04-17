@@ -42,14 +42,13 @@ namespace SudokuSolver.Constraints
 
         public override string SpecificName => sum > 0 ? $"Killer Cage {sum} at {CellName(cells[0])}" : $"Killer Cage at {CellName(cells[0])}";
 
-        private void InitCombinations()
+        public static void InitCombinations(int sum, int numCells, out List<List<int>> sumCombinations, out HashSet<int> possibleValues)
         {
             const int allValueSum = (MAX_VALUE * (MAX_VALUE + 1)) / 2;
             if (sum > 0 && sum < allValueSum)
             {
                 sumCombinations = new();
                 possibleValues = new();
-                int numCells = cells.Count;
                 foreach (var combination in Enumerable.Range(1, MAX_VALUE).Combinations(numCells))
                 {
                     if (combination.Sum() == sum)
@@ -62,9 +61,17 @@ namespace SudokuSolver.Constraints
                     }
                 }
             }
+            else
+            {
+                sumCombinations = null;
+                possibleValues = null;
+            }
         }
 
-        public override LogicResult InitCandidates(Solver sudokuSolver)
+        private void InitCombinations() =>
+            InitCombinations(sum, cells.Count, out sumCombinations, out possibleValues);
+
+        public static LogicResult InitCandidates(Solver sudokuSolver, List<(int, int)> cells, HashSet<int> possibleValues)
         {
             LogicResult result = LogicResult.None;
             if (possibleValues != null && possibleValues.Count < MAX_VALUE)
@@ -90,24 +97,25 @@ namespace SudokuSolver.Constraints
                     }
                 }
             }
-
             return result;
         }
+
+        public override LogicResult InitCandidates(Solver sudokuSolver) => InitCandidates(sudokuSolver, cells, possibleValues);
 
         public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
         {
             // Determine if the sum is now complete
-            if (cells.Contains((i, j)) && cells.All(cell => sudokuSolver.IsValueSet(cell.Item1, cell.Item2)))
+            if (sum != 0 && cells.Contains((i, j)) && cells.All(cell => sudokuSolver.IsValueSet(cell.Item1, cell.Item2)))
             {
                 return cells.Select(cell => sudokuSolver.GetValue(cell)).Sum() == sum;
             }
             return true;
         }
 
-        public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
+        public static LogicResult StepLogic(Solver sudokuSolver, int sum, List<(int, int)> cells, List<List<int>> sumCombinations, StringBuilder logicalStepDescription, bool isBruteForcing)
         {
             bool changed = false;
-            if (sumCombinations == null || sumCombinations.Count == 0 || isBruteForcing)
+            if (sumCombinations == null || sumCombinations.Count == 0)
             {
                 return LogicResult.None;
             }
@@ -202,11 +210,14 @@ namespace SudokuSolver.Constraints
                             logicalStepDescription?.Append($"{CellName(curCell)} has no more remaining values.");
                             return LogicResult.Invalid;
                         }
-                        if (logicalStepDescription.Length > 0)
+                        if (logicalStepDescription != null)
                         {
-                            logicalStepDescription.Append(", ");
+                            if (logicalStepDescription.Length > 0)
+                            {
+                                logicalStepDescription.Append(", ");
+                            }
+                            logicalStepDescription.Append($"{CellName(curCell)} reduced to: {MaskToString(newCellMask)}");
                         }
-                        logicalStepDescription?.Append($"{CellName(curCell)} reduced to: {MaskToString(newCellMask)}");
                     }
                 }
             }
@@ -221,6 +232,9 @@ namespace SudokuSolver.Constraints
             }
             return changed ? LogicResult.Changed : LogicResult.None;
         }
+
+        public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing) =>
+            StepLogic(sudokuSolver, sum, cells, sumCombinations, logicalStepDescription, isBruteForcing);
 
         public override List<(int, int)> Group => cells;
     }

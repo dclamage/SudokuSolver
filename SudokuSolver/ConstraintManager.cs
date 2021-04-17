@@ -3,19 +3,13 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using System.IO;
-using System.Text;
-using System.Threading.Tasks;
-using SudokuSolver;
 using SudokuSolver.Constraints;
-using System.CodeDom.Compiler;
-using System.Diagnostics;
-using Microsoft.CSharp;
 
-namespace SudokuSolverConsole
+namespace SudokuSolver
 {
-    class ConstraintManager
+    public static class ConstraintManager
     {
-        public ConstraintManager()
+        static ConstraintManager()
         {
             foreach (Type type in GetAllConstraints())
             {
@@ -42,22 +36,20 @@ namespace SudokuSolverConsole
             }
         }
 
-        public void AddConstraintByName(Solver solver, string name, string options)
+        public static void AddConstraintByName(Solver solver, string name, string options)
         {
             if (!constraintConsoleNameLookup.TryGetValue(name, out Type type))
             {
-                Console.Error.WriteLine($"**ERROR** Cannot find constraint named {name} so this constraint is ignored.");
-                return;
+                throw new ArgumentException($"**ERROR** Cannot find constraint named {name} so this constraint is ignored.");
             }
             AddConstraint(solver, type, options);
         }
 
-        public void AddConstraintByFPuzzlesName(Solver solver, string name, string options)
+        public static void AddConstraintByFPuzzlesName(Solver solver, string name, string options)
         {
             if (!constraintFPuzzleNameLookup.TryGetValue(name, out Type type))
             {
-                Console.Error.WriteLine($"**ERROR** Cannot find constraint with fpuzzles name {name} so this constraint is ignored.");
-                return;
+                throw new ArgumentException($"**ERROR** Cannot find constraint with fpuzzles name {name} so this constraint is ignored.");
             }
             AddConstraint(solver, type, options);
         }
@@ -78,11 +70,11 @@ namespace SudokuSolverConsole
             }
             catch (Exception e)
             {
-                Console.Error.WriteLine($"**ERROR** Cannot instantiate constraint {type.Name}: {e.Message}");
+                throw new ArgumentException($"**ERROR** Cannot instantiate constraint {type.Name}: {e.Message}");
             }
         }
 
-        public IEnumerable<ConstraintAttribute> ConstraintAttributes => constraintConsoleNameLookup.Values.Select(GetConstraintAttribute);
+        public static IEnumerable<ConstraintAttribute> ConstraintAttributes => constraintConsoleNameLookup.Values.Select(GetConstraintAttribute);
 
         private static IEnumerable<Type> GetAllConstraints()
         {
@@ -102,7 +94,7 @@ namespace SudokuSolverConsole
                         }
                         catch (Exception e)
                         {
-                            Console.Error.WriteLine($"**WARNING** Could not load plugin at {file}: {e.Message}");
+                            throw new ArgumentException($"**WARNING** Could not load plugin at {file}: {e.Message}");
                         }
                     }
                 }
@@ -110,6 +102,7 @@ namespace SudokuSolverConsole
             catch (Exception) { }
 
             return assemblies
+                .Where(assembly => !assembly.IsDynamic)
                 .SelectMany(assembly => assembly.GetExportedTypes())
                 .Where(IsValidConstraint);
         }
@@ -140,7 +133,7 @@ namespace SudokuSolverConsole
             return Attribute.GetCustomAttribute(type, typeof(ConstraintAttribute)) as ConstraintAttribute;
         }
 
-        private Dictionary<string, Type> constraintConsoleNameLookup = new();
-        private Dictionary<string, Type> constraintFPuzzleNameLookup = new();
+        private static readonly Dictionary<string, Type> constraintConsoleNameLookup = new();
+        private static readonly Dictionary<string, Type> constraintFPuzzleNameLookup = new();
     }
 }

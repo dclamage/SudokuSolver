@@ -22,6 +22,12 @@ namespace SudokuSolver.Constraints
         public readonly Direction direction;
         public readonly int sum;
         public readonly HashSet<(int, int)> cells;
+        public readonly List<(int, int)> cellsList;
+        private bool isGroup = false;
+        private List<List<int>> sumCombinations = null;
+        private HashSet<int> possibleValues = null;
+
+        public override List<(int, int)> Group => isGroup ? cellsList : null;
 
         private static readonly Regex optionsRegex = new(@"(\d+);[rR](\d+)[cC](\d+);([UD][LR])");
 
@@ -73,6 +79,7 @@ namespace SudokuSolver.Constraints
                 cells.Add(cell);
                 cell = NextCell(cell);
             }
+            cellsList = new(cells);
         }
 
         private (int, int) NextCell((int, int) cell)
@@ -99,7 +106,38 @@ namespace SudokuSolver.Constraints
 
         public override LogicResult InitCandidates(Solver sudokuSolver)
         {
+            bool definitelyNotGroup = false;
+            for (int i0 = 0; i0 < cellsList.Count - 1; i0++)
+            {
+                if (definitelyNotGroup)
+                {
+                    break;
+                }
+
+                var cell0 = cellsList[i0];
+                var seen = sudokuSolver.SeenCells(cell0);
+                for (int i1 = i0 + 1; i1 < cellsList.Count; i1++)
+                {
+                    var cell1 = cellsList[i1];
+                    if (!seen.Contains(cell1))
+                    {
+                        definitelyNotGroup = true;
+                        break;
+                    }
+                }
+            }
+            if (!definitelyNotGroup)
+            {
+                isGroup = true;
+                KillerCageConstraint.InitCombinations(sum, cellsList.Count, out sumCombinations, out possibleValues);
+            }
+
             var board = sudokuSolver.Board;
+
+            if (isGroup && possibleValues != null && possibleValues.Count < MAX_VALUE)
+            {
+                return KillerCageConstraint.InitCandidates(sudokuSolver, cellsList, possibleValues);
+            }
 
             bool changed = false;
             int maxValue = sum - cells.Count + 1;
@@ -143,9 +181,9 @@ namespace SudokuSolver.Constraints
 
         public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
         {
-            if (isBruteForcing)
+            if (isGroup && sumCombinations != null & sumCombinations.Count > 0)
             {
-                return LogicResult.None;
+                return KillerCageConstraint.StepLogic(sudokuSolver, sum, cellsList, sumCombinations, logicalStepDescription, isBruteForcing);
             }
 
             var board = sudokuSolver.Board;

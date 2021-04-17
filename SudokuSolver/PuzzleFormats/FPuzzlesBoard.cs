@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
-namespace SudokuSolverConsole
+namespace SudokuSolver.PuzzleFormats
 {
     static class FPuzzlesUtility
     {
