@@ -244,7 +244,7 @@ namespace SudokuSolver
                         ratioParams.Append(ratio.value);
                         foreach (var cell in ratio.cells)
                         {
-                            ratioParams.Append($"{cell}");
+                            ratioParams.Append(cell);
                         }
                     }
                 }
@@ -280,7 +280,7 @@ namespace SudokuSolver
                         differenceParams.Append(difference.value);
                         foreach (var cell in difference.cells)
                         {
-                            differenceParams.Append($"{cell}");
+                            differenceParams.Append(cell);
                         }
                     }
                 }
@@ -288,6 +288,53 @@ namespace SudokuSolver
                 if (differenceParams.Length > 0)
                 {
                     ConstraintManager.AddConstraintByFPuzzlesName(solver, "difference", differenceParams.ToString());
+                }
+            }
+
+            bool negativeXV = fpuzzlesData.negative?.Contains("xv") ?? false;
+            if (fpuzzlesData.xv != null && fpuzzlesData.xv.Length > 0 || negativeXV)
+            {
+                StringBuilder sumParams = new();
+                if (negativeXV)
+                {
+                    // f-puzzles always does negative constraint for both X and V when enabled.
+                    if (sumParams.Length > 0)
+                    {
+                        sumParams.Append(';');
+                    }
+                    sumParams.Append("neg5;neg10");
+                }
+
+                if (fpuzzlesData.xv != null)
+                {
+                    foreach (var xv in fpuzzlesData.xv)
+                    {
+                        if (string.IsNullOrWhiteSpace(xv.value))
+                        {
+                            continue;
+                        }
+
+                        var xvValue = xv.value switch
+                        {
+                            "x" or "X" => "10",
+                            "v" or "V" => "5",
+                            _ => throw new ArgumentException($"Unrecognized XV value: {xv.value}"),
+                        };
+                        if (sumParams.Length > 0)
+                        {
+                            sumParams.Append(';');
+                        }
+                        sumParams.Append(xvValue);
+                        foreach (var cell in xv.cells)
+                        {
+                            sumParams.Append(cell);
+                        }
+                    }
+                }
+
+                if (sumParams.Length > 0)
+                {
+                    ConstraintManager.AddConstraintByFPuzzlesName(solver, "xv", sumParams.ToString());
                 }
             }
 

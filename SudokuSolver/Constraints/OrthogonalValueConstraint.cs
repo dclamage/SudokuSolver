@@ -144,6 +144,48 @@ namespace SudokuSolver.Constraints
             }
         }
 
+        public override LogicResult InitCandidates(Solver sudokuSolver)
+        {
+            var board = sudokuSolver.Board;
+            bool changed = false;
+            foreach (var (markerCells, markerVal) in markers)
+            {
+                var (i0, j0, i1, j1) = markerCells;
+                uint cellMask0 = board[i0, j0] & ~valueSetMask;
+                uint cellMask1 = board[i1, j1] & ~valueSetMask;
+
+                // Find which values are compatable between these masks
+                for (int v = 1; v <= MAX_VALUE; v++)
+                {
+                    uint valueMask = ValueMask(v);
+                    uint clearValuesMask = clearValuesPositiveByMarker[markerVal][v - 1];
+
+                    // If cell0 has this value and setting it would clear all values from cell1,
+                    // then remove this value as a candidate from cell0.
+                    if ((cellMask0 & valueMask) != 0 && (cellMask1 & ~clearValuesMask) == 0)
+                    {
+                        if (!sudokuSolver.ClearValue(i0, j0, v))
+                        {
+                            return LogicResult.Invalid;
+                        }
+                        changed = true;
+                    }
+
+                    // If cell1 has this value and setting it would clear all values from cell0,
+                    // then remove this value as a candidate from cell1.
+                    if ((cellMask1 & valueMask) != 0 && (cellMask0 & ~clearValuesMask) == 0)
+                    {
+                        if (!sudokuSolver.ClearValue(i1, j1, v))
+                        {
+                            return LogicResult.Invalid;
+                        }
+                        changed = true;
+                    }
+                }
+            }
+            return changed ? LogicResult.Changed : LogicResult.None;
+        }
+
         public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
         {
             var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
@@ -174,8 +216,6 @@ namespace SudokuSolver.Constraints
 
         public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
         {
-            
-
             var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
 
             var board = sudokuSolver.Board;
