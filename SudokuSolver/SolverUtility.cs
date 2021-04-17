@@ -251,5 +251,17 @@ namespace SudokuSolver
             int[] curCombination = new int[k];
             FillCombinations(combinations, n, k, ref numCombinations, 0, curCombination, 0);
         }
+
+        public static void AddToList<K, V>(this Dictionary<K, List<V>> dictionary, K key, V value)
+        {
+            if (dictionary.TryGetValue(key, out var list))
+            {
+                list.Add(value);
+            }
+            else
+            {
+                dictionary[key] = new() { value };
+            }
+        }
     }
 }

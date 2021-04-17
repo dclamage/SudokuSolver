@@ -291,6 +291,33 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.clone != null && fpuzzlesData.clone.Length > 0)
+            {
+                StringBuilder cloneParams = new();
+                foreach (var clone in fpuzzlesData.clone)
+                {
+                    for (int cloneIndex = 0; cloneIndex < clone.cells.Length; cloneIndex++)
+                    {
+                        string cell0 = clone.cells[cloneIndex];
+                        string cell1 = clone.cloneCells[cloneIndex];
+                        if (cell0 == cell1)
+                        {
+                            continue;
+                        }
+
+                        if (cloneParams.Length > 0)
+                        {
+                            cloneParams.Append(';');
+                        }
+                        cloneParams.Append(cell0).Append(cell1);
+                    }
+                }
+                if (cloneParams.Length > 0)
+                {
+                    ConstraintManager.AddConstraintByFPuzzlesName(solver, "clone", cloneParams.ToString());
+                }
+            }
+
             // Apply any command-line constraints
             if (additionalConstraints != null)
             {
