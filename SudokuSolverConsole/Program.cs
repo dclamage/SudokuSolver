@@ -1,14 +1,10 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.Json;
 using Mono.Options;
 using SudokuSolver;
-using LZStringCSharp;
-using System.IO;
 using System.Text;
 using System.Diagnostics;
-using System.Net.NetworkInformation;
 
 namespace SudokuSolverConsole
 {
@@ -50,7 +46,7 @@ namespace SudokuSolverConsole
             //args[1] = @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAQwwYA9gHd8oADYQAdjDD48IAEoBmAMK2QqawBZHzmwFYPLnwCYQWjUAYxhDQwt4KzsPWgoQYzMoghsHAHZPN3tMvxysnwAOINDwyPw0/PjSRNNzSxsANntXLPTfG0K40oiUppaghKT66Jjmrzb7CZcuieDUMN6K63HBmuGUsftGydzOqp7y6P6d6qM6zZtEewBGLK7Al3a7l2a7+ZBFo5jr96GLhrWa6Ie72YpPewg16QkoLMp9IEws61ZKAm4daz+AYudHTGxY06HBHopzIjZo/IuAmwz7w5bozJkgGjGzuPHWHzs9yEuFLY7ZOb/VEszFgrIOcGVEEfL4IrHFeLxIA==";
 
             Stopwatch watch = Stopwatch.StartNew();
-            string processName = System.Diagnostics.Process.GetCurrentProcess().ProcessName;
+            string processName = Process.GetCurrentProcess().ProcessName;
 
             bool showHelp = args.Length == 0;
             string fpuzzlesURL = null;
