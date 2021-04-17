@@ -47,10 +47,11 @@ namespace SudokuSolver.PuzzleFormats
         FPuzzlesCells[] difference,
         FPuzzlesCells[] xv,
         FPuzzlesCells[] ratio,
-        FPuzzlesClone[] clone
+        FPuzzlesClone[] clone,
+        FPuzzlesQuadruple[] quadruple
     );
 
-    public record FPuzzlesGridEntry(int value, bool given);
+    public record FPuzzlesGridEntry(int value, bool given, int[] centerPencilMarks);
 
     public record FPuzzlesArrowEntry(
         string[][] lines,
@@ -75,4 +76,6 @@ namespace SudokuSolver.PuzzleFormats
     public record FPuzzlesLines(string[][] lines);
 
     public record FPuzzlesClone(string[] cells, string[] cloneCells);
+
+    public record FPuzzlesQuadruple(string[] cells, int[] values);
 }

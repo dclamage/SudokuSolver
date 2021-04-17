@@ -365,6 +365,36 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.quadruple != null && fpuzzlesData.quadruple.Length > 0)
+            {
+                foreach (var quad in fpuzzlesData.quadruple)
+                {
+                    StringBuilder quadParams = new();
+                    foreach (int value in quad.values)
+                    {
+                        if (quadParams.Length > 0)
+                        {
+                            quadParams.Append(';');
+                        }
+                        quadParams.Append(value);
+                    }
+
+                    if (quadParams.Length > 0)
+                    {
+                        quadParams.Append(';');
+                    }
+                    foreach (var cell in quad.cells)
+                    {
+                        quadParams.Append(cell);
+                    }
+
+                    if (quadParams.Length > 0)
+                    {
+                        ConstraintManager.AddConstraintByFPuzzlesName(solver, "quadruple", quadParams.ToString());
+                    }
+                }
+            }
+
             // Apply any command-line constraints
             if (additionalConstraints != null)
             {
@@ -377,7 +407,16 @@ namespace SudokuSolver
                 int j = 0;
                 foreach (var val in row)
                 {
-                    if (val.value > 0)
+                    if (val.centerPencilMarks != null && val.centerPencilMarks.Length > 0)
+                    {
+                        uint marksMask = 0;
+                        foreach (int v in val.centerPencilMarks)
+                        {
+                            marksMask |= SolverUtility.ValueMask(v);
+                        }
+                        solver.ClearMask(i, j, (~marksMask) & SolverUtility.ALL_VALUES_MASK);
+                    }
+                    else if (val.value > 0)
                     {
                         solver.SetValue(i, j, val.value);
                     }

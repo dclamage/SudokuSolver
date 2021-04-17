@@ -118,7 +118,7 @@ namespace SudokuSolver.Constraints
         public static List<List<(int, int)>> ParseCells(string cellString)
         {
             List<List<(int, int)>> cellGroups = new();
-            foreach (string cellGroup in cellString.Split(';'))
+            foreach (string cellGroup in cellString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {
                 if (cellGroup.Length < 4 || (cellGroup[0] != 'r' && cellGroup[0] != 'R'))
                 {
