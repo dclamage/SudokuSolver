@@ -2033,18 +2033,22 @@ namespace SudokuSolver
                                     {
                                         if (stepDescription != null)
                                         {
-                                            StringBuilder formattedContraditionReason = new StringBuilder();
-                                            foreach (string line in contradictionReason.ToString().Split('\n'))
+                                            StringBuilder formattedContraditionReason = new();
+                                            if (contradictionReason.Length > 0)
                                             {
-                                                if (!string.IsNullOrWhiteSpace(line))
+                                                foreach (string line in contradictionReason.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                                                 {
                                                     formattedContraditionReason.Append("  ").Append(line).AppendLine();
                                                 }
                                             }
+                                            else
+                                            {
+                                                formattedContraditionReason.Append("  ").Append("(For trivial reasons).").AppendLine();
+                                            }
 
-                                            stepDescription.Append($"Setting {CellName(i, j)} to {v} causes a contradiction:");
-                                            stepDescription.AppendLine();
-                                            stepDescription.Append(formattedContraditionReason);
+                                            stepDescription.Append($"Setting {CellName(i, j)} to {v} causes a contradiction:")
+                                                .AppendLine()
+                                                .Append(formattedContraditionReason);
                                         }
                                         if (!ClearValue(i, j, v))
                                         {

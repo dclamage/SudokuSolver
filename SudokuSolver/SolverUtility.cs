@@ -108,11 +108,15 @@ namespace SudokuSolver
 
         public static string MaskToString(uint mask)
         {
-            StringBuilder sb = new StringBuilder(MAX_VALUE);
+            StringBuilder sb = new();
             for (int v = 1; v <= MAX_VALUE; v++)
             {
                 if (HasValue(mask, v))
                 {
+                    if (sb.Length > 0)
+                    {
+                        sb.Append(',');
+                    }
                     sb.Append((char)('0' + v));
                 }
             }

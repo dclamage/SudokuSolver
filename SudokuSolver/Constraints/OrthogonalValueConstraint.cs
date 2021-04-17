@@ -219,6 +219,72 @@ namespace SudokuSolver.Constraints
             var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
 
             var board = sudokuSolver.Board;
+
+            // Remove candidates which would remove all values from any orthogonal cells
+            for (int i0 = 0; i0 < HEIGHT; i0++)
+            {
+                for (int j0 = 0; j0 < WIDTH; j0++)
+                {
+                    var cell0 = (i0, j0);
+                    uint mask0 = board[i0, j0];
+                    if (IsValueSet(mask0))
+                    {
+                        continue;
+                    }
+                    foreach (var cell1 in AdjacentCells(i0, j0))
+                    {
+                        var (i1, j1) = cell1;
+                        uint mask1 = board[i1, j1];
+                        if (IsValueSet(mask1))
+                        {
+                            continue;
+                        }
+
+                        var pair = CellPair(cell0, cell1);
+                        uint[] clearValuesArray;
+                        if (markers.TryGetValue(pair, out int markerValue))
+                        {
+                            clearValuesArray = clearValuesPositiveByMarker[markerValue];
+                        }
+                        else
+                        {
+                            clearValuesArray = clearValuesNegative;
+                        }
+
+                        bool haveChanges = false;
+                        uint removedValsMask = 0;
+                        for (int v = 1; v <= MAX_VALUE; v++)
+                        {
+                            uint valueMask = ValueMask(v);
+                            uint clearValuesMask = clearValuesArray[v - 1];
+
+                            // If cell0 has this value and setting it would clear all values from cell1,
+                            // then remove this value as a candidate from cell0.
+                            if ((mask0 & valueMask) != 0 && (mask1 & ~clearValuesMask) == 0)
+                            {
+                                if (!sudokuSolver.ClearValue(i0, j0, v))
+                                {
+                                    if (logicalStepDescription != null)
+                                    {
+                                        logicalStepDescription.Clear();
+                                        logicalStepDescription.Append($"{CellName(i0, j0)} with value {v} removes the only candidates {MaskToString(mask1)} from {CellName(cell1)}");
+                                    }
+                                    return LogicResult.Invalid;
+                                }
+                                removedValsMask |= ValueMask(v);
+                                haveChanges = true;
+                            }
+                        }
+                        if (haveChanges)
+                        {
+                            bool removeMulti = ValueCount(removedValsMask) > 1;
+                            logicalStepDescription?.Append($"{CellName(i0, j0)} cannot have value{(removeMulti ? "s" : "")} {MaskToString(removedValsMask)} as {(removeMulti ? "they" : "it")} would remove all candidates {MaskToString(mask1)} from {CellName(i1, j1)}");
+                            return LogicResult.Changed;
+                        }
+                    }
+                }
+            }
+
             for (int i = 0; i < HEIGHT; i++)
             {
                 for (int j = 0; j < WIDTH; j++)
@@ -290,7 +356,7 @@ namespace SudokuSolver.Constraints
                     }
                 }
             }
-            
+
             if (!isBruteForcing && negativeConstraint)
             {
                 // Look for groups where a particular digit is locked to 2, 3, or 4 places
@@ -460,7 +526,7 @@ namespace SudokuSolver.Constraints
                         }
 
                         var pair = CellPair(cellA, cellB);
-                        uint[] clearValuesArray = markers.TryGetValue(pair, out int markerValue) ? clearValuesPositiveByMarker[markerValue]: negativeConstraint && !overrideMarkers.Contains(pair) ? clearValuesNegative : null;
+                        uint[] clearValuesArray = markers.TryGetValue(pair, out int markerValue) ? clearValuesPositiveByMarker[markerValue] : negativeConstraint && !overrideMarkers.Contains(pair) ? clearValuesNegative : null;
                         if (clearValuesArray == null)
                         {
                             continue;
