@@ -43,6 +43,26 @@ namespace SudokuSolver
                 return flatBoard;
             }
         }
+        public string GivenString
+        {
+            get
+            {
+                var flatBoard = FlatBoard;
+                StringBuilder stringBuilder = new(flatBoard.Length);
+                foreach (uint mask in flatBoard)
+                {
+                    if (IsValueSet(mask))
+                    {
+                        stringBuilder.Append(GetValue(mask));
+                    }
+                    else
+                    {
+                        stringBuilder.Append('0');
+                    }
+                }
+                return stringBuilder.ToString();
+            }
+        }
 
         private readonly List<Constraint> constraints;
 
@@ -185,14 +205,6 @@ namespace SudokuSolver
         public void AddConstraint(Constraint constraint)
         {
             constraints.Add(constraint);
-
-            var cells = constraint.Group;
-            if (cells != null)
-            {
-                SudokuGroup group = new(constraint.SpecificName, cells.ToList());
-                Groups.Add(group);
-                InitMapForGroup(group);
-            }
         }
 
         /// <summary>
@@ -217,6 +229,17 @@ namespace SudokuSolver
                     {
                         haveChange = true;
                     }
+                }
+            }
+
+            foreach (var constraint in constraints)
+            {
+                var cells = constraint.Group;
+                if (cells != null)
+                {
+                    SudokuGroup group = new(constraint.SpecificName, cells.ToList());
+                    Groups.Add(group);
+                    InitMapForGroup(group);
                 }
             }
 
@@ -474,6 +497,65 @@ namespace SudokuSolver
             return (i, j);
         }
 
+        public int MinimumUniqueValues(IEnumerable<(int, int)> cells)
+        {
+            var cellList = cells.ToList();
+            int numCells = cellList.Count;
+            if (numCells == 0)
+            {
+                return 0;
+            }
+            if (numCells == 1)
+            {
+                return 1;
+            }
+
+            int[] connectionCount = new int[numCells];
+            HashSet<(int, int)> connections = new();
+            for (int i0 = 0; i0 < numCells - 1; i0++)
+            {
+                var curCell = cellList[i0];
+                var seen = SeenCells(curCell);
+                for (int i1 = i0 + 1; i1 < numCells; i1++)
+                {
+                    var otherCell = cellList[i1];
+                    if (seen.Contains(otherCell))
+                    {
+                        connections.Add((i0, i1));
+                        connectionCount[i0]++;
+                        connectionCount[i1]++;
+                    }
+                }
+            }
+
+            int maxGroupSize = connectionCount.Max() + 1;
+            for (int groupSize = maxGroupSize; groupSize >= 2; groupSize--)
+            {
+                foreach (var groupCells in Enumerable.Range(0, numCells).Combinations(groupSize))
+                {
+                    bool isFullyConnected = true;
+                    foreach (var pair in groupCells.Combinations(2))
+                    {
+                        int i0 = pair[0];
+                        int i1 = pair[1];
+                        if (i0 > i1)
+                        {
+                            (i0, i1) = (i1, i0);
+                        }
+                        if (!connections.Contains((i0, i1)))
+                        {
+                            isFullyConnected = false;
+                            break;
+                        }
+                    }
+                    if (isFullyConnected)
+                    {
+                        return groupSize;
+                    }
+                }
+            }
+            return 1;
+        }
 
         /// <summary>
         /// Performs a single logical step.

@@ -41,6 +41,8 @@ namespace SudokuSolver.PuzzleFormats
         FPuzzlesLittleKillerSumEntry[] littlekillersum,
         FPuzzlesCell[] odd,
         FPuzzlesCell[] even,
+        FPuzzlesCell[] minimum,
+        FPuzzlesCell[] maximum,
         FPuzzlesCells[] extraregion,
         FPuzzlesLines[] thermometer,
         FPuzzlesLines[] palindrome,

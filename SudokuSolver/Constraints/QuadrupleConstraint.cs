@@ -14,9 +14,11 @@ namespace SudokuSolver.Constraints
         private readonly HashSet<(int, int)> cellsLookup;
         private readonly uint requiredMask = 0;
         private readonly int numRequiredValues;
-        private readonly string specificName;
+        private bool isGroup = false;
 
         public override string SpecificName => $"Quadruple at {CellName(cells[0])}";
+
+        public override List<(int, int)> Group => isGroup ? cells : null;
 
         public QuadrupleConstraint(string options)
         {
@@ -89,6 +91,7 @@ namespace SudokuSolver.Constraints
                     }
                     changed |= clearResult == LogicResult.Changed;
                 }
+                isGroup = true;
             }
             return changed ? LogicResult.Changed : LogicResult.None;
         }

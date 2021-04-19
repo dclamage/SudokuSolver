@@ -14,6 +14,7 @@ namespace SudokuSolverConsole
         public static void Print(this Solver board)
         {
             Print(board, Console.Out);
+            Console.WriteLine(board.GivenString);
         }
 
         public static void PrintBoardSimple(this Solver board)

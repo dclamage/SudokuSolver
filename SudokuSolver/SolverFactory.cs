@@ -136,7 +136,7 @@ namespace SudokuSolver
                 }
             }
 
-            if (fpuzzlesData.odd != null)
+            if (fpuzzlesData.odd != null && fpuzzlesData.odd.Length > 0)
             {
                 StringBuilder cells = new();
                 foreach (var cell in fpuzzlesData.odd)
@@ -149,7 +149,7 @@ namespace SudokuSolver
                 ConstraintManager.AddConstraintByFPuzzlesName(solver, "odd", cells.ToString());
             }
 
-            if (fpuzzlesData.even != null)
+            if (fpuzzlesData.even != null && fpuzzlesData.even.Length > 0)
             {
                 StringBuilder cells = new();
                 foreach (var cell in fpuzzlesData.even)
@@ -160,6 +160,32 @@ namespace SudokuSolver
                     }
                 }
                 ConstraintManager.AddConstraintByFPuzzlesName(solver, "even", cells.ToString());
+            }
+
+            if (fpuzzlesData.minimum != null && fpuzzlesData.minimum.Length > 0)
+            {
+                StringBuilder cells = new();
+                foreach (var cell in fpuzzlesData.minimum)
+                {
+                    if (!string.IsNullOrWhiteSpace(cell.cell))
+                    {
+                        cells.Append(cell.cell);
+                    }
+                }
+                ConstraintManager.AddConstraintByFPuzzlesName(solver, "minimum", cells.ToString());
+            }
+
+            if (fpuzzlesData.maximum != null && fpuzzlesData.maximum.Length > 0)
+            {
+                StringBuilder cells = new();
+                foreach (var cell in fpuzzlesData.maximum)
+                {
+                    if (!string.IsNullOrWhiteSpace(cell.cell))
+                    {
+                        cells.Append(cell.cell);
+                    }
+                }
+                ConstraintManager.AddConstraintByFPuzzlesName(solver, "maximum", cells.ToString());
             }
 
             if (fpuzzlesData.extraregion != null)

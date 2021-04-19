@@ -38,8 +38,8 @@ namespace SudokuSolverConsole
             args = new string[]
             {
                 "-f",
-                @"N4IgzglgXgpiBcBOANCALhNAbO8QCEB7ADxjBFQEMBXNAC0ICcEQBjLQgNxkYEIKQjajjAw0LAMppKAOwAmlRnIAEYanMIBrasqEjllAA6GsATwB0ygDoybAEQgBzTGGUQZB5a0qOYygLaUpsoyhGi6MIYwlOGyKv7UYOFq/spohGl0fpyUWNR+7nIQ3mgwKgAUEABmyoaMXBByZQCUljb2Ti5uHpTKAO50mH6sEIzsfglJBsbRjKqE/jADPAUe9H5VhNRzrDBYWK5qjPXU8u6OmcOj45YCjoyNCADaT8AAvsjvnx9fvz//3wAushXgC/t8IeD3sDQZCwfC4TCoQjkUCQaiMfCkSicYj0bjMWjYYTMdi4eTScCQJoIPseN5fM9QLt9uR4E8QAAlADMAGFuQIebyACyC4X8kBUnJ5XAgACMcpAPzYewOzy5fIAbIK+QB2MW8/VS3L5Fhy0XKllq9lczWGwW63na1Ccx1G1DS014OX6y2qtkczl2gUux0hrmO0XGmUsABMAAYlZ8Vaz1ZyABy8gCsgsQ2clHpNsrlsaTzP9aazvMVLqrpejXvlpb9qZtQvTOt5iANHZd4u7gJb1sDdprtt5pdD1YdE8lQ4D497Ed5S4zTsFmf1LszHYbstjivnadjs5dJ/DnJPopdfMnXPF9cLMbwsebVIAjtRKHIhCZcK8U2HDUJRvEUDQvcUoyffIA25ZBhWQLNB2TK0FyFZ1gK3e91z7e09wDBCs2QTVkPLVsRxw8csNdSiaPdEBPTIZ4iM1ZBdVIwC0ODQU7WvZcL0jAsGKLANWN1ZB0w41C0zlMCXVknMzzkrkTxzfDnjlZBY0Q5BECkis2yrVcq27F07VXO0B2gpj2U07SiL0t5ByAA=",
-                "-pl"
+                @"N4IgzglgXgpiBcBOANCALhNAbO8QGEsB7AOxgHcBDATzAAIBxSgWxjqIDM6AZCDuVJQCuaABZEATghAA1ShIhEhYEKglCcYGGmkA5Sc0pY6AY2Jk66zXUoAHW1mp0AFCcoBzGPU50xbMCxsJkTEEjYSbBAAJjAkGG5YAJQAOiT6EobGzBAkAPSGAB429o6p6Zl0AIISEkTklhpexQ7UZQZGdAAauTIN1nYtLiREdGTulBgAbkGkYGgSlDloKSQAQtTwqZSiwrZoqatEaJQA1kIHsamdpDBRqQAKohBYELZ0uhSGJKkAEpQmJwgEAC3xIAEl8D8AKoAFQAogBlVIARRyWCEBVSDBethgCywqhA7gUUQQAG0yaATNIAMSrAAMADFGQyQABfZBU2kM5msjlcvA05m8+nszkgamC4Us0X8uWc+XANkAXWQlIl3KZMrFApAdK1fPFkr10sNuqFwrNGqlltlCqNmpFOutep52rlqspiv5LotTu9DsFbqtxv1/oVnvNzMq9JjztD0djdqjjJjcYDSvtmaVkYzvtNyfztp1PoTqaT8dpifTgZN5fTuazparxebNvDKY73sb2cVRa7tb97sHBZLPd9wcLocnJabI9b847/fd4+nBqnjuHvbnna3KtVEvMuHVJhgWCwKngZJAACUAIz4ADMhPv+AALC+AExPr/v38AVhfR8/wPMwbnwM8L3JW9/z/VAb1gwD4IANjg29UKQ9D8GQl8AHZ8EA5VS0gy9rwQtDyMwm9UI/FCCJfVCcPg/DCNQMCyAg89SNvfDcLw/AAA4XwE/A+PgkShPE/BEBfRBBJAIijRI6Cb14/jJNvESxM0+SpJk+C5KE0Cj04qCr1vB9n3gh9aNvb8rLsijvyo4CP0UqllPM187xfB9P1/Hz4O/fzjPAzyyO/bSb2/DSb2AqLgKM4iuJUyLf1i+KgPk0KOPCnT/Kkhybzkgrbzk593IlPKbxE0qap/Az8Dq8qFLYkzqofQKLKagLfxC5KzLI2Cotg2LYJknKYFM7ibzffAutmnr4LmiqBpmuaFrmuqVtaw8wpSrzhpfUbjukhSVUEGo6nJUAXjIUiyJ2+DYNs6j6OY7DhNE2TstA6qtpfHbKrurxySGs7nt0mDvuVP6DvBiafRBh6sKY6G0cWjG5r42G2OqxjzvFZGwcc2Lv307qJrhwbSfOg9shICBmCEZgbqq89pHq/yLpAQomZZtnTw5vBor/AbOfwnyeYKSZBeqiSvpx1BJiMIRcBATp43l77GqVkAVfRdWZHZUCPGPDz4e6ha/N6oKeoPJRsByKbaXpN33cJDhSDQfBXfdt2tct18ips38iu/V7nKytzUEdkHfcFf2A9QL24gTvUk6naqXtOqiaIY97Uf41iQDj5305pTPPe9iuq7WlS1I+2KtK+5uIbK7LY5EeO/f96u097j368OnXobGs6He78vB+TkBU59mes6DjbAaW28ga7p2OMX/uF8TpPA5p0WopirKEs70up+3/e+5Tmud+Hsjaq+oqSp+irN57m+Pbvgfv4DlUbIgA==",
+                "-ps"
             };
 #endif
 
@@ -191,6 +191,7 @@ namespace SudokuSolverConsole
                 ulong numSolutions = solver.CountSolutions(2);
                 Console.WriteLine($"There are {(numSolutions <= 1 ? numSolutions.ToString() : "multiple")} solutions.");
             }
+
             watch.Stop();
             Console.WriteLine($"Took {watch.ElapsedMilliseconds}ms");
         }
