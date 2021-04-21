@@ -50,7 +50,8 @@ namespace SudokuSolver.PuzzleFormats
         FPuzzlesCells[] xv,
         FPuzzlesCells[] ratio,
         FPuzzlesClone[] clone,
-        FPuzzlesQuadruple[] quadruple
+        FPuzzlesQuadruple[] quadruple,
+        FPuzzlesLines[] betweenline
     );
 
     public record FPuzzlesGridEntry(int value, bool given, int[] centerPencilMarks);

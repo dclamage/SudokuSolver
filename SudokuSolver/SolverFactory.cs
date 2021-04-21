@@ -242,6 +242,25 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.betweenline != null)
+            {
+                foreach (var betweenline in fpuzzlesData.betweenline)
+                {
+                    foreach (var line in betweenline.lines)
+                    {
+                        StringBuilder cells = new();
+                        foreach (var cell in line)
+                        {
+                            if (!string.IsNullOrWhiteSpace(cell))
+                            {
+                                cells.Append(cell);
+                            }
+                        }
+                        ConstraintManager.AddConstraintByFPuzzlesName(solver, "betweenline", cells.ToString());
+                    }
+                }
+            }
+
             bool negativeRatio = fpuzzlesData.negative?.Contains("ratio") ?? false;
             if (fpuzzlesData.ratio != null && fpuzzlesData.ratio.Length > 0 || negativeRatio)
             {
