@@ -34,7 +34,7 @@ namespace SudokuSolverConsole
             };
 #endif
 
-#if true
+#if false
             args = new string[]
             {
                 "-f",
