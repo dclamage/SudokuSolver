@@ -474,23 +474,5 @@ namespace SudokuSolver.Constraints
             }
             return (min, max);
         }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private uint MaskStrictlyLower(int v) => (1u << (v - 1)) - 1;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private uint MaskValAndLower(int v) => (1u << v) - 1;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private uint MaskStrictlyHigher(int v) => ALL_VALUES_MASK & ~((1u << v) - 1);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private uint MaskValAndHigher(int v) => ALL_VALUES_MASK & ~((1u << (v - 1)) - 1);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private uint MaskBetweenInclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskStrictlyLower(v0) | MaskStrictlyHigher(v1));
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        private uint MaskBetweenExclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskValAndLower(v0) | MaskValAndHigher(v1));
     }
 }

@@ -1,4 +1,6 @@
-﻿using System;
+﻿//#define PROFILING
+
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -26,6 +28,20 @@ namespace SudokuSolver
 
     public class Solver
     {
+#if PROFILING
+        public static readonly Dictionary<string, Stopwatch> timers = new();
+        public static void PrintTimers()
+        {
+            foreach (var timer in Solver.timers.OrderByDescending(timer => timer.Value.Elapsed))
+            {
+                if (timer.Key != "Global")
+                {
+                    Console.WriteLine($"{timer.Key}: {timer.Value.Elapsed.TotalMilliseconds}ms");
+                }
+            }
+        }
+#endif
+
         private uint[,] board;
         public uint[,] Board => board;
         public uint[] FlatBoard
@@ -204,6 +220,12 @@ namespace SudokuSolver
         /// <param name="constraint"></param>
         public void AddConstraint(Constraint constraint)
         {
+#if PROFILING
+            if (!timers.ContainsKey(constraint.GetType().FullName))
+            {
+                timers[constraint.GetType().FullName] = new();
+            }
+#endif
             constraints.Add(constraint);
         }
 
@@ -213,6 +235,17 @@ namespace SudokuSolver
         /// <returns>True if the board is still valid. False if the constraints cause there to be trivially no solutions.</returns>
         public bool FinalizeConstraints()
         {
+#if PROFILING
+            timers["FindNakedSingles"] = new();
+            timers["FindHiddenSingle"] = new();
+            timers["FindNakedTuples"] = new();
+            timers["FindPointingTuples"] = new();
+            timers["FindFishes"] = new();
+            timers["FindYWings"] = new();
+            timers["FindSimpleContradictions"] = new();
+            timers["Global"] = Stopwatch.StartNew();
+#endif
+
             bool haveChange = true;
             while (haveChange)
             {
@@ -320,6 +353,24 @@ namespace SudokuSolver
                 }
             }
             return result ?? new HashSet<(int, int)>();
+        }
+
+        public bool IsGroup(List<(int, int)> cells)
+        {
+            for (int i0 = 0; i0 < cells.Count - 1; i0++)
+            {
+                var cell0 = cells[i0];
+                var seen0 = SeenCells(cell0);
+                for (int i1 = i0 + 1; i1 < cells.Count; i1++)
+                {
+                    var cell1 = cells[i1];
+                    if (cell0 != cell1 && !seen0.Contains(cell1))
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1098,13 +1149,27 @@ namespace SudokuSolver
         /// <returns></returns>
         public LogicResult StepLogic(StringBuilder stepDescription, bool humanStepping = false)
         {
-            LogicResult result = FindNakedSingles(stepDescription, humanStepping);
+            LogicResult result = LogicResult.None;
+
+#if PROFILING
+            timers["FindNakedSingles"].Start();
+#endif
+            result = FindNakedSingles(stepDescription, humanStepping);
+#if PROFILING
+            timers["FindNakedSingles"].Stop();
+#endif
             if (result != LogicResult.None)
             {
                 return result;
             }
 
+#if PROFILING
+            timers["FindHiddenSingle"].Start();
+#endif
             result = FindHiddenSingle(stepDescription);
+#if PROFILING
+            timers["FindHiddenSingle"].Stop();
+#endif
             if (result != LogicResult.None)
             {
                 return result;
@@ -1112,7 +1177,14 @@ namespace SudokuSolver
 
             foreach (var constraint in constraints)
             {
+                string constraintName = constraint.GetType().FullName;
+#if PROFILING
+                timers[constraintName].Start();
+#endif
                 result = constraint.StepLogic(this, stepDescription, isBruteForcing);
+#if PROFILING
+                timers[constraintName].Stop();
+#endif
                 if (result != LogicResult.None)
                 {
                     if (stepDescription != null)
@@ -1128,31 +1200,61 @@ namespace SudokuSolver
                 return LogicResult.None;
             }
 
+#if PROFILING
+            timers["FindNakedTuples"].Start();
+#endif
             result = FindNakedTuples(stepDescription);
+#if PROFILING
+            timers["FindNakedTuples"].Stop();
+#endif
             if (result != LogicResult.None)
             {
                 return result;
             }
 
+#if PROFILING
+            timers["FindPointingTuples"].Start();
+#endif
             result = FindPointingTuples(stepDescription);
+#if PROFILING
+            timers["FindPointingTuples"].Stop();
+#endif
             if (result != LogicResult.None)
             {
                 return result;
             }
 
+#if PROFILING
+            timers["FindFishes"].Start();
+#endif
             result = FindFishes(stepDescription);
+#if PROFILING
+            timers["FindFishes"].Stop();
+#endif
             if (result != LogicResult.None)
             {
                 return result;
             }
 
+#if PROFILING
+            timers["FindYWings"].Start();
+#endif
             result = FindYWings(stepDescription);
+#if PROFILING
+            timers["FindYWings"].Stop();
+#endif
             if (result != LogicResult.None)
             {
                 return result;
             }
 
+#if PROFILING
+            timers["FindSimpleContradictions"].Start();
+#endif
             result = FindSimpleContradictions(stepDescription);
+#if PROFILING
+            timers["FindSimpleContradictions"].Stop();
+#endif
             if (result != LogicResult.None)
             {
                 return result;
@@ -1276,53 +1378,95 @@ namespace SudokuSolver
         private LogicResult FindHiddenSingle(StringBuilder stepDescription)
         {
             LogicResult finalFindResult = LogicResult.None;
+            Span<int> valueCounts = stackalloc int[MAX_VALUE];
             foreach (var group in Groups)
             {
-                if (group.Cells.Count != MAX_VALUE)
+                var groupCells = group.Cells;
+                int numCells = group.Cells.Count;
+                if (numCells != MAX_VALUE)
                 {
                     continue;
                 }
 
-                for (int val = 1; val <= MAX_VALUE; val++)
+                for (int valIndex = 0; valIndex < MAX_VALUE; valIndex++)
                 {
-                    uint valMask = 1u << (val - 1);
-                    int numWithVal = 0;
+                    valueCounts[valIndex] = 0;
+                }
+                for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
+                {
+                    var (i, j) = groupCells[cellIndex];
+                    uint mask = board[i, j];
+                    if (IsValueSet(mask))
+                    {
+                        int valIndex = GetValue(mask) - 1;
+                        valueCounts[valIndex] = -1;
+                    }
+                    else
+                    {
+                        for (int valIndex = 0; valIndex < MAX_VALUE; valIndex++)
+                        {
+                            if ((mask & (1u << valIndex)) != 0)
+                            {
+                                valueCounts[valIndex]++;
+                            }
+                        }
+                    }
+                }
+
+                int singleValIndex = -1;
+                int zeroValIndex = -1;
+                for (int valIndex = 0; valIndex < MAX_VALUE; valIndex++)
+                {
+                    int curValCount = valueCounts[valIndex];
+                    if (curValCount == 1)
+                    {
+                        singleValIndex = valIndex;
+                    }
+                    else if (curValCount == 0)
+                    {
+                        zeroValIndex = valIndex;
+                        break;
+                    }
+                }
+
+                if (zeroValIndex >= 0)
+                {
+                    if (stepDescription != null)
+                    {
+                        stepDescription.Clear();
+                        stepDescription.Append($"{group.Name} has nowhere to place {zeroValIndex + 1}.");
+                    }
+                    return LogicResult.Invalid;
+                }
+
+                if (singleValIndex >= 0)
+                {
+                    int val = singleValIndex + 1;
+                    uint valMask = 1u << singleValIndex;
                     int vali = 0;
                     int valj = 0;
-                    foreach (var pair in group.Cells)
+                    foreach (var (i, j) in group.Cells)
                     {
-                        int i = pair.Item1;
-                        int j = pair.Item2;
+                        uint mask = board[i, j];
                         if ((board[i, j] & valMask) != 0)
                         {
-                            numWithVal++;
                             vali = i;
                             valj = j;
+                            break;
                         }
                     }
-                    if (numWithVal == 1 && !IsValueSet(vali, valj))
-                    {
-                        if (!SetValue(vali, valj, val))
-                        {
-                            if (stepDescription != null)
-                            {
-                                stepDescription.Clear();
-                                stepDescription.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}, but it cannot be set to that value.");
-                            }
-                            return LogicResult.Invalid;
-                        }
-                        stepDescription?.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}");
-                        return LogicResult.Changed;
-                    }
-                    else if (numWithVal == 0)
+
+                    if (!SetValue(vali, valj, val))
                     {
                         if (stepDescription != null)
                         {
                             stepDescription.Clear();
-                            stepDescription.Append($"{group.Name} has nowhere to place {val}.");
+                            stepDescription.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}, but it cannot be set to that value.");
                         }
                         return LogicResult.Invalid;
                     }
+                    stepDescription?.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}");
+                    return LogicResult.Changed;
                 }
             }
             return finalFindResult;

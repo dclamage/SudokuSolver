@@ -205,6 +205,24 @@ namespace SudokuSolver
             return FlatIndex(cell0) <= FlatIndex(cell1) ? (cell0.Item1, cell0.Item2, cell1.Item1, cell1.Item2) : (cell1.Item1, cell1.Item2, cell0.Item1, cell0.Item2);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint MaskStrictlyLower(int v) => (1u << (v - 1)) - 1;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint MaskValAndLower(int v) => (1u << v) - 1;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint MaskStrictlyHigher(int v) => ALL_VALUES_MASK & ~((1u << v) - 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint MaskValAndHigher(int v) => ALL_VALUES_MASK & ~((1u << (v - 1)) - 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint MaskBetweenInclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskStrictlyLower(v0) | MaskStrictlyHigher(v1));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint MaskBetweenExclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskValAndLower(v0) | MaskValAndHigher(v1));
+
         public static readonly int[][][] combinations = new int[MAX_VALUE][][];
         private static void InitCombinations()
         {
