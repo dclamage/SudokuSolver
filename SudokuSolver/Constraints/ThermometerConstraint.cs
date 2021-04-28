@@ -118,11 +118,7 @@ namespace SudokuSolver.Constraints
                 bool nextValueSet = IsValueSet(nextMask);
 
                 int clearNextValStart = curValueSet ? GetValue(curMask) : MinValue(curMask);
-                uint clearMask = 0;
-                for (int clearVal = clearNextValStart; clearVal > 0; clearVal--)
-                {
-                    clearMask |= ValueMask(clearVal);
-                }
+                uint clearMask = board[nextCell.Item1, nextCell.Item2] & MaskValAndLower(clearNextValStart);
                 LogicResult clearResult = sudokuSolver.ClearMask(nextCell.Item1, nextCell.Item2, clearMask);
                 if (clearResult == LogicResult.Invalid)
                 {
@@ -130,16 +126,19 @@ namespace SudokuSolver.Constraints
                 }
                 if (clearResult == LogicResult.Changed)
                 {
-                    logicalStepDescription?.AppendLine($"Cleared values {MaskToString(clearMask)} from {CellName(nextCell)}");
+                    if (!changed)
+                    {
+                        logicalStepDescription?.Append($"Cleared values {MaskToString(clearMask)} from {CellName(nextCell)}");
+                    }
+                    else
+                    {
+                        logicalStepDescription?.Append($"; {MaskToString(clearMask)} from {CellName(nextCell)}");
+                    }
                     changed = true;
                 }
 
                 int clearCurValStart = nextValueSet ? GetValue(nextMask) : MaxValue(nextMask);
-                clearMask = 0;
-                for (int clearVal = clearCurValStart; clearVal <= MAX_VALUE; clearVal++)
-                {
-                    clearMask |= ValueMask(clearVal);
-                }
+                clearMask = board[nextCell.Item1, nextCell.Item2] & MaskValAndHigher(clearCurValStart);
                 clearResult = sudokuSolver.ClearMask(curCell.Item1, curCell.Item2, clearMask);
                 if (clearResult == LogicResult.Invalid)
                 {
@@ -147,7 +146,14 @@ namespace SudokuSolver.Constraints
                 }
                 if (clearResult == LogicResult.Changed)
                 {
-                    logicalStepDescription?.AppendLine($"Cleared values {MaskToString(clearMask)} from {CellName(curCell)}");
+                    if (!changed)
+                    {
+                        logicalStepDescription?.Append($"Cleared values {MaskToString(clearMask)} from {CellName(curCell)}");
+                    }
+                    else
+                    {
+                        logicalStepDescription?.Append($"; {MaskToString(clearMask)} from {CellName(curCell)}");
+                    }
                     changed = true;
                 }
             }
