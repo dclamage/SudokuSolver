@@ -24,7 +24,7 @@ namespace SudokuSolver.Constraints
             cellsSet = new(cells);
         }
 
-        public override string SpecificName => $"Thermometer at {cells[0]}";
+        public override string SpecificName => $"Thermometer at {CellName(cells[0])}";
 
         public override LogicResult InitCandidates(Solver sudokuSolver)
         {
