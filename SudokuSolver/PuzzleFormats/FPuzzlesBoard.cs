@@ -51,7 +51,8 @@ namespace SudokuSolver.PuzzleFormats
         FPuzzlesCells[] ratio,
         FPuzzlesClone[] clone,
         FPuzzlesQuadruple[] quadruple,
-        FPuzzlesLines[] betweenline
+        FPuzzlesLines[] betweenline,
+        FPuzzlesCell[] sandwichsum
     );
 
     public record FPuzzlesGridEntry(int value, bool given, int[] centerPencilMarks);
@@ -72,7 +73,7 @@ namespace SudokuSolver.PuzzleFormats
         string value
     );
 
-    public record FPuzzlesCell(string cell);
+    public record FPuzzlesCell(string cell, string value);
 
     public record FPuzzlesCells(string[] cells, string value = "");
 

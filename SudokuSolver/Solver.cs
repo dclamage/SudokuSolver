@@ -44,6 +44,7 @@ namespace SudokuSolver
 
         private uint[,] board;
         public uint[,] Board => board;
+        private bool[,,,] seenMap;
         public uint[] FlatBoard
         {
             get
@@ -140,6 +141,7 @@ namespace SudokuSolver
         public Solver(Solver other)
         {
             board = (uint[,])other.board.Clone();
+            seenMap = other.seenMap;
             constraints = other.constraints;
             Groups = other.Groups;
             CellToGroupMap = other.CellToGroupMap;
@@ -277,6 +279,19 @@ namespace SudokuSolver
             }
 
             smallGroupsBySize = Groups.Where(g => g.Cells.Count < MAX_VALUE).OrderBy(g => g.Cells.Count).ToList();
+
+            seenMap = new bool[HEIGHT, WIDTH, HEIGHT, WIDTH];
+            for (int i0 = 0; i0 < HEIGHT; i0++)
+            {
+                for (int j0 = 0; j0 < WIDTH; j0++)
+                {
+                    foreach (var (i1, j1) in SeenCells((i0, j0)))
+                    {
+                        seenMap[i0, j0, i1, j1] = true;
+                    }
+                }
+            }
+
             return true;
         }
 
@@ -355,6 +370,12 @@ namespace SudokuSolver
             return result ?? new HashSet<(int, int)>();
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool IsSeen((int, int) cell0, (int, int) cell1)
+        {
+            return seenMap[cell0.Item1, cell0.Item2, cell1.Item1, cell1.Item2];
+        }
+
         public bool IsGroup(List<(int, int)> cells)
         {
             for (int i0 = 0; i0 < cells.Count - 1; i0++)
@@ -367,6 +388,45 @@ namespace SudokuSolver
                     if (cell0 != cell1 && !seen0.Contains(cell1))
                     {
                         return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        public bool CanPlaceDigits(List<(int, int)> cells, List<int> values)
+        {
+            int numCells = cells.Count;
+            if (numCells != values.Count)
+            {
+                throw new ArgumentException($"CanPlaceDigits: Number of cells ({cells.Count}) must match number of values ({values.Count})");
+            }
+
+            Span<uint> cellMasks = stackalloc uint[numCells];
+            for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
+            {
+                var (i, j) = cells[cellIndex];
+                cellMasks[cellIndex] = board[i, j];
+            }
+
+            for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
+            {
+                int v = values[cellIndex];
+                uint valueMask = ValueMask(v);
+                uint mask = cellMasks[cellIndex];
+                if ((mask & valueMask) == 0)
+                {
+                    return false;
+                }
+
+                var cell0 = cells[cellIndex];
+                uint clearMask = ALL_VALUES_MASK & ~valueMask;
+                for (int cellIndex1 = cellIndex + 1; cellIndex1 < numCells; cellIndex1++)
+                {
+                    var cell1 = cells[cellIndex1];
+                    if (IsSeen(cell0, cell1))
+                    {
+                        cellMasks[cellIndex1] &= clearMask;
                     }
                 }
             }
@@ -617,6 +677,11 @@ namespace SudokuSolver
         /// <returns></returns>
         public void LogicalStep(EventHandler<(string, uint[])> completedEvent)
         {
+            if (seenMap == null)
+            {
+                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+            }
+
             StringBuilder logicDescription = new StringBuilder();
             LogicResult result = StepLogic(logicDescription, true);
             switch (result)
@@ -639,6 +704,11 @@ namespace SudokuSolver
         /// <returns></returns>
         public async Task LogicalSolve(EventHandler<(string, uint[])> progressEvent, EventHandler<(string, uint[])> completedEvent, CancellationToken? cancellationToken)
         {
+            if (seenMap == null)
+            {
+                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+            }
+
             Stopwatch timeSinceCheck = Stopwatch.StartNew();
             StringBuilder logicProgress = new();
             while (true)
@@ -690,6 +760,11 @@ namespace SudokuSolver
         /// <returns>True if a solution is found, otherwise false.</returns>
         public bool FindSolution(CancellationToken? cancellationToken = null)
         {
+            if (seenMap == null)
+            {
+                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+            }
+
             Stopwatch timeSinceCheck = Stopwatch.StartNew();
 
             bool wasBruteForcing = isBruteForcing;
@@ -751,6 +826,11 @@ namespace SudokuSolver
         /// <returns>True if a solution is found, otherwise false.</returns>
         public async Task<bool> FindRandomSolution(CancellationToken? cancellationToken = null)
         {
+            if (seenMap == null)
+            {
+                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+            }
+
             Stopwatch timeSinceCheck = Stopwatch.StartNew();
 
             Random rand = new Random();
@@ -835,6 +915,11 @@ namespace SudokuSolver
         /// <returns>The solution count found.</returns>
         public ulong CountSolutions(ulong maxSolutions = 0, EventHandler<ulong> progressEvent = null, CancellationToken? cancellationToken = null)
         {
+            if (seenMap == null)
+            {
+                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+            }
+
             bool wasBruteForcing = isBruteForcing;
             isBruteForcing = true;
 
@@ -972,6 +1057,11 @@ namespace SudokuSolver
         /// <returns>True if there are solutions and candidates are filled. False if there are no solutions.</returns>
         public bool FillRealCandidates(EventHandler<(int, uint[])> progressEvent = null, EventHandler<uint[]> completionEvent = null, CancellationToken? cancellationToken = null)
         {
+            if (seenMap == null)
+            {
+                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+            }
+
             Stopwatch timeSinceCheck = Stopwatch.StartNew();
             bool wasBruteForcing = isBruteForcing;
             isBruteForcing = true;
@@ -1130,6 +1220,11 @@ namespace SudokuSolver
         /// <returns></returns>
         public bool ConsolidateBoard(StringBuilder stepsDescription = null)
         {
+            if (seenMap == null)
+            {
+                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+            }
+
             LogicResult result;
             do
             {
@@ -1149,6 +1244,11 @@ namespace SudokuSolver
         /// <returns></returns>
         public LogicResult StepLogic(StringBuilder stepDescription, bool humanStepping = false)
         {
+            if (seenMap == null)
+            {
+                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+            }
+
             LogicResult result = LogicResult.None;
 
 #if PROFILING

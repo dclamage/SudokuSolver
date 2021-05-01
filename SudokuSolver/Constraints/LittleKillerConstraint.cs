@@ -10,7 +10,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Little Killer", ConsoleName = "lk", FPuzzlesName = "littlekillersum")]
     public class LittleKillerConstraint : Constraint
     {
-        public enum Direction
+        private enum Direction
         {
             UpRight,
             UpLeft,
@@ -18,11 +18,11 @@ namespace SudokuSolver.Constraints
             DownLeft,
         }
 
-        public readonly (int, int) cellStart;
-        public readonly Direction direction;
-        public readonly int sum;
-        public readonly HashSet<(int, int)> cells;
-        public readonly List<(int, int)> cellsList;
+        private readonly (int, int) cellStart;
+        private readonly Direction direction;
+        private readonly int sum;
+        private readonly HashSet<(int, int)> cells;
+        private readonly List<(int, int)> cellsList;
         private bool isGroup = false;
         private List<List<int>> sumCombinations = null;
         private HashSet<int> possibleValues = null;

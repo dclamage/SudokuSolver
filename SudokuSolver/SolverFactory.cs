@@ -440,6 +440,19 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.sandwichsum != null)
+            {
+                foreach (var sandwich in fpuzzlesData.sandwichsum)
+                {
+                    if (string.IsNullOrWhiteSpace(sandwich.value) || string.IsNullOrWhiteSpace(sandwich.cell))
+                    {
+                        continue;
+                    }
+
+                    ConstraintManager.AddConstraintByFPuzzlesName(solver, "sandwichsum", $"{sandwich.value}{sandwich.cell}");
+                }
+            }
+
             // Apply any command-line constraints
             if (additionalConstraints != null)
             {
