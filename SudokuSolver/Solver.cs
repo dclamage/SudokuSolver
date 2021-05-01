@@ -42,8 +42,13 @@ namespace SudokuSolver
         }
 #endif
 
+        public string Title { get; init; }
+        public string Author { get; init; }
+
         private uint[,] board;
+        private int[,] regions = null;
         public uint[,] Board => board;
+        public int[,] Regions => regions;
         private bool[,,,] seenMap;
         public uint[] FlatBoard
         {
@@ -135,12 +140,14 @@ namespace SudokuSolver
             }
             Groups = new();
             CellToGroupMap = new();
-            InitStandardGroups();
         }
 
         public Solver(Solver other)
         {
+            Title = other.Title;
+            Author = other.Author;
             board = (uint[,])other.board.Clone();
+            regions = other.regions;
             seenMap = other.seenMap;
             constraints = other.constraints;
             Groups = other.Groups;
@@ -174,28 +181,23 @@ namespace SudokuSolver
                 InitMapForGroup(group);
             }
 
-            // Add box groups
-            for (int boxi = 0; boxi < NUM_BOXES_HEIGHT; boxi++)
+            // Add regions
+            for (int region = 0; region < WIDTH; region++)
             {
-                int basei = boxi * BOX_HEIGHT;
-                for (int boxj = 0; boxj < NUM_BOXES_WIDTH; boxj++)
+                List<(int, int)> cells = new(WIDTH);
+                for (int i = 0; i < HEIGHT; i++)
                 {
-                    int basej = boxj * BOX_WIDTH;
-
-                    List<(int, int)> cells = new(9);
-                    for (int offi = 0; offi < BOX_HEIGHT; offi++)
+                    for (int j = 0; j < WIDTH; j++)
                     {
-                        int i = basei + offi;
-                        for (int offj = 0; offj < BOX_WIDTH; offj++)
+                        if (regions[i, j] == region)
                         {
-                            int j = basej + offj;
                             cells.Add((i, j));
                         }
                     }
-                    SudokuGroup group = new($"Box {boxi * 3 + boxj + 1}", cells);
-                    Groups.Add(group);
-                    InitMapForGroup(group);
                 }
+                SudokuGroup group = new($"Region {region + 1}", cells);
+                Groups.Add(group);
+                InitMapForGroup(group);
             }
         }
 
@@ -213,6 +215,20 @@ namespace SudokuSolver
                     CellToGroupMap[pair] = new(3) { group };
                 }
             }
+        }
+
+        /// <summary>
+        /// Set custom regions for the board
+        /// Each region is indexed starting with 0
+        /// </summary>
+        /// <param name="regions"></param>
+        public void SetRegions(int[,] regions)
+        {
+            if (Groups.Count != 0)
+            {
+                throw new InvalidOperationException("SetRegions can only be called before FinalizeConstraints");
+            }
+            this.regions = regions;
         }
 
         /// <summary>
@@ -247,6 +263,73 @@ namespace SudokuSolver
             timers["FindSimpleContradictions"] = new();
             timers["Global"] = Stopwatch.StartNew();
 #endif
+            if (regions == null)
+            {
+                regions = new int[HEIGHT, WIDTH];
+
+                int i, j;
+                switch (WIDTH)
+                {
+                    case 3:
+                    case 5:
+                    case 7:
+                    case 11:
+                    case 13:
+                        // Regions match rows
+                        for (i = 0; i < HEIGHT; i++)
+                        {
+                            for (j = 0; j < WIDTH; j++)
+                            {
+                                regions[i, j] = i;
+                            }
+                        }
+                        break;
+                    case 4:
+                    case 9:
+                    case 16:
+                        // Square regions
+                        int regionSize = (int)Math.Sqrt(HEIGHT);
+                        for (i = 0; i < HEIGHT; i++)
+                        {
+                            for (j = 0; j < WIDTH; j++)
+                            {
+                                regions[i, j] = (i / regionSize) * (HEIGHT / regionSize) + (j / regionSize);
+                            }
+                        }
+                        break;
+                    case 6:
+                    case 8:
+                    case 14:
+                        // Regions are two rows tall, half board width wide
+                        {
+                            int regionWidth = WIDTH / 2;
+                            for (i = 0; i < HEIGHT; i++)
+                            {
+                                for (j = 0; j < WIDTH; j++)
+                                {
+                                    regions[i, j] = (i / 2) * 2 + (j / regionWidth);
+                                }
+                            }
+                        }
+                        break;
+                    case 12:
+                    case 15:
+                        // Regions are three rows tall, 1/3rd board width wide
+                        {
+                            int regionWidth = WIDTH / 3;
+                            for (i = 0; i < HEIGHT; i++)
+                            {
+                                for (j = 0; j < WIDTH; j++)
+                                {
+                                    regions[i, j] = (i / 3) * 3 + (j / regionWidth);
+                                }
+                            }
+                        }
+                        break;
+                }
+            }
+
+            InitStandardGroups();
 
             bool haveChange = true;
             while (haveChange)

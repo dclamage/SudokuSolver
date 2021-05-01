@@ -55,7 +55,11 @@ namespace SudokuSolver.PuzzleFormats
         FPuzzlesCell[] sandwichsum
     );
 
-    public record FPuzzlesGridEntry(int value, bool given, int[] centerPencilMarks);
+    public record FPuzzlesGridEntry(
+        int value,
+        bool given,
+        int[] centerPencilMarks,
+        int region = -1);
 
     public record FPuzzlesArrowEntry(
         string[][] lines,

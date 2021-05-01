@@ -26,6 +26,11 @@ namespace SudokuSolver
                 ApplyConstraints(solver, constraints);
             }
 
+            if (!solver.FinalizeConstraints())
+            {
+                throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
+            }
+
             for (int i = 0; i < givens.Length; i++)
             {
                 char c = givens[i];
@@ -37,18 +42,11 @@ namespace SudokuSolver
                     }
                 }
             }
-
-            if (!solver.FinalizeConstraints())
-            {
-                throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
-            }
             return solver;
         }
 
         public static Solver CreateFromFPuzzles(string fpuzzlesURL, IEnumerable<string> additionalConstraints = null)
         {
-            Solver solver = new();
-
             if (fpuzzlesURL.Contains("?load="))
             {
                 int trimStart = fpuzzlesURL.IndexOf("?load=") + "?load=".Length;
@@ -58,7 +56,109 @@ namespace SudokuSolver
             string fpuzzlesJson = LZString.DecompressFromBase64(fpuzzlesURL);
             var fpuzzlesData = JsonSerializer.Deserialize<FPuzzlesBoard>(fpuzzlesJson);
 
-            Console.WriteLine($"Imported \"{fpuzzlesData.title}\" by {fpuzzlesData.author}");
+            // Set the default regions
+            int i, j;
+            int height = fpuzzlesData.grid.Length;
+            int width = fpuzzlesData.grid[0].Length;
+            if (height != width)
+            {
+                throw new ArgumentException($"f-puzzles import is non-square {height}x{width}");
+            }
+            int[,] regions = new int[height, width];
+            switch (height)
+            {
+                case 3:
+                case 5:
+                case 7:
+                case 11:
+                case 13:
+                    // Regions match rows
+                    for (i = 0; i < height; i++)
+                    {
+                        for (j = 0; j < width; j++)
+                        {
+                            regions[i, j] = i;
+                        }
+                    }
+                    break;
+                case 4:
+                case 9:
+                case 16:
+                    // Square regions
+                    int regionSize = (int)Math.Sqrt(height);
+                    for (i = 0; i < height; i++)
+                    {
+                        for (j = 0; j < width; j++)
+                        {
+                            regions[i, j] = (i / regionSize) * (height / regionSize) + (j / regionSize);
+                        }
+                    }
+                    break;
+                case 6:
+                case 8:
+                case 14:
+                    // Regions are two rows tall, half board width wide
+                    {
+                        int regionWidth = width / 2;
+                        for (i = 0; i < height; i++)
+                        {
+                            for (j = 0; j < width; j++)
+                            {
+                                regions[i, j] = (i / 2) * 2 + (j / regionWidth);
+                            }
+                        }
+                    }
+                    break;
+                case 12:
+                case 15:
+                    // Regions are three rows tall, 1/3rd board width wide
+                    {
+                        int regionWidth = width / 3;
+                        for (i = 0; i < height; i++)
+                        {
+                            for (j = 0; j < width; j++)
+                            {
+                                regions[i, j] = (i / 3) * 3 + (j / regionWidth);
+                            }
+                        }
+                    }
+                    break;
+            }
+
+            // Override regions
+            for (i = 0; i < height; i++)
+            {
+                for (j = 0; j < width; j++)
+                {
+                    if (fpuzzlesData.grid[i][j].region != -1)
+                    {
+                        regions[i, j] = fpuzzlesData.grid[i][j].region;
+                    }
+                }
+            }
+
+            int[] regionSanityCheck = new int[width];
+            for (i = 0; i < height; i++)
+            {
+                for (j = 0; j < width; j++)
+                {
+                    regionSanityCheck[regions[i, j]]++;
+                }
+            }
+            for (i = 0; i < width; i++)
+            {
+                if (regionSanityCheck[i] != width)
+                {
+                    throw new ArgumentException($"Region {i + 1} has {regionSanityCheck[i]} cells, expected {width}");
+                }
+            }
+
+            Solver solver = new()
+            {
+                Title = fpuzzlesData.title,
+                Author = fpuzzlesData.author,
+            };
+            solver.SetRegions(regions);
 
             // Extra groups
             if (fpuzzlesData.diagonalp)
@@ -459,10 +559,15 @@ namespace SudokuSolver
                 ApplyConstraints(solver, additionalConstraints);
             }
 
-            int i = 0;
+            if (!solver.FinalizeConstraints())
+            {
+                throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
+            }
+
+            i = 0;
             foreach (var row in fpuzzlesData.grid)
             {
-                int j = 0;
+                j = 0;
                 foreach (var val in row)
                 {
                     if (val.centerPencilMarks != null && val.centerPencilMarks.Length > 0)
@@ -481,11 +586,6 @@ namespace SudokuSolver
                     j++;
                 }
                 i++;
-            }
-
-            if (!solver.FinalizeConstraints())
-            {
-                throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
             }
             return solver;
         }

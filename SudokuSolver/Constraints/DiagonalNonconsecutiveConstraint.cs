@@ -61,12 +61,18 @@ namespace SudokuSolver.Constraints
                         int maxValue = MaxValue(mask);
                         if (maxValue - minValue == 2)
                         {
-                            // Values 2 apart will always remove the center value, but if there are 3 candidates this only applies to the same box
+                            // Values 2 apart will always remove the center value
                             bool haveChanges = false;
                             int removeValue = minValue + 1;
                             uint removeValueMask = ValueMask(removeValue);
-                            foreach (var cell in DiagonalCells(i, j, valueCount != 2))
+                            foreach (var cell in DiagonalCells(i, j))
                             {
+                                // If there are 3 candidates this only applies to cells which see each other
+                                if (valueCount >= 3 && !sudokuSolver.IsSeen(cell, (i, j)))
+                                {
+                                    continue;
+                                }
+
                                 LogicResult findResult = sudokuSolver.ClearMask(cell.Item1, cell.Item2, removeValueMask);
                                 if (findResult == LogicResult.Invalid)
                                 {
@@ -101,11 +107,16 @@ namespace SudokuSolver.Constraints
                         }
                         else if (maxValue - minValue == 1)
                         {
-                            // Values 1 apart will always remove both values, but only for diagonals in the same box
+                            // Values 1 apart will always remove both values, but only for diagonals that "see" each other
                             bool haveChanges = false;
                             uint removeValueMask = ValueMask(minValue) | ValueMask(maxValue);
-                            foreach (var cell in DiagonalCells(i, j, true))
+                            foreach (var cell in DiagonalCells(i, j))
                             {
+                                if (!sudokuSolver.IsSeen(cell, (i, j)))
+                                {
+                                    continue;
+                                }
+
                                 LogicResult findResult = sudokuSolver.ClearMask(cell.Item1, cell.Item2, removeValueMask);
                                 if (findResult == LogicResult.Invalid)
                                 {
@@ -283,8 +294,13 @@ namespace SudokuSolver.Constraints
                     {
                         continue;
                     }
-                    foreach (var cellB in DiagonalCells(i, j, true))
+                    foreach (var cellB in DiagonalCells(i, j))
                     {
+                        if (!sudokuSolver.IsSeen(cellA, cellB))
+                        {
+                            continue;
+                        }
+
                         uint maskB = board[cellB.Item1, cellB.Item2];
                         if (IsValueSet(maskB))
                         {

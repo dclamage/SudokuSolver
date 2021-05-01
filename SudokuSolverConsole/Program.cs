@@ -17,7 +17,10 @@ namespace SudokuSolverConsole
             args = new string[]
             {
                 "-f",
-                @"N4IgzglgXgpiBcBOANCALhNAbO8QFkIA7CfAQwA8ACAZTKIBMB3CAYwAsRUyBXNdgPYAnBCAAyEMFDQwwXEEJ44wMNKIBywgLZkstHgwEBrHlUXKqZAA5WsATwB0VAKJkOZgU2RVWArDy0ib3oGKgBmCjCqACMBal8iNDJiMCoYN3YqIgDomCEqADMhAS0qAEYqNAEqRDSKN2w7KgEiVhgHAB0iLoARSQArAWI0fUMTMyVZSxt7JwBhGCwsVP4yEesrdPziSvYYKjAyLX2rAUgMFrNFtYgAN32q3ZgIfIYYAt4sEaEYAHMIFqpLQ8MAjIgCEYJJI7fj7Q7HLI5PKdbpEOiMFjuGgGYymcxTDazKgAFT2iK0uSEqQEfEgbyeVF+QggoTAgiYDLAAWaBQZDAg/zQqUOGLYe1CuTQTBgMCI5UsjBqVBh7DWHg5wh8fgCRBRXQA4j8mm0lqkWPxLEJikxUh9WMRfs0+EwyEJQsDQVrEsk5dkKXlUkz0jJ8qs5bo9MJ+AJfi0I00yAx+m5ZZDFss9URDTBjemzZhMq7rba3A7lUQXW6qB7IS1ob6kVSqMoVqrw0tmkJo7GiPHLEmU4kfHmUfImSyEABtSfAAC+yDnC/ni5Xy7XS4AusgZ+vV0v93u51udwfd2fT8fD+er5vtzf72fL9fnxe7y+H7eTx+H0/T3+f1uID8mAgzDEyNJWHI8BoIoMCoCKzBilyWhTqAJpYKIABKAAMcwABzyLcug8LgIBlARy4gOhWG4QA7IRxGkQATPRlHUXgmEAKxzNhDH+MxvFsemWFMTxfEkaITEAGwgEJSw0XMnHiaRFGAVoxAQMCKHwDOVHCRxolMbJC56fJBn4cZaH6SAmF4XMRlyRhHF2RRJnsTZ3FKbOamUJpASoaZTkefZlmBVhdleW51lcRZjkiYpoXuTFiCyRus5AA==",
+                //@"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+wkDGNCAewB2CAMxMKXHvyHwADGNITeghAEYxHNoqkIALPNDcl0gKz6ty+ACYiG/XdY2Gbe89sP3zuk5c+3n/9S0tERAA==",
+                //@"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSTQMY0IB7AOwQAYKQqaHnX27H4XSbary6Cenft2ESWAXWSEhHPgEYpyhGrHTVFPeW0b4Wyjs3qRxovMXi+AJgsTHhyy9NH3St04f6yxDYB/t4SAMy+CBGu4ZHw0R6WCaF8EUEpCAAscdkxfLnBBokSBRnwpXZZ1grFfACscQ15CE21LY0dRXpB/nEAbP2DzfADw6NtI9W2ZvAA7HHzw4uFAWXLawtTEwAccbvD+zt7x13ksrJEQA",
+                //@"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssW0iQA=",
+                @"N4IgzglgXgpiBcBOANCALhNAbO8QBUALGAAnwFcA7SmLMEVAQ3LUIHsAnBEAJUcoAmbALYMQHcjjAw03AJIcOMAOaTGHEmHJCA1uRISpJRgAcTWAJ4A6ADqUAcuWEAjGBzAlh5MGhKU2vkomMIy+AO6YhBCUxiQ6EFg4GgDGjMowViRiyhwQAggA2gXAAL7IoErKEGyUCACMZRUq1bXwDeWNjeLNNQgATF2VLQgAzKgAboxY5Lh1qFXjMK1oEjCDPa1jIJPTuH3zEIvLq+tVvfBbOzOjB0cIKzMlALrIxd1nrQCsneXvw20/Uq/IbnAbAjY3bZTa7wAAstyW9xO4I+o1O/0u0NwADYEcdHi83iCvujzt8OhSgU1UfAwdSMRMsQgAOx4pGPFEMqG7BAADjZ8Aea0550xPKQAqFz1e9LJpJJIoVstaAAZ5f11bTNXS/qDtdKiRD4OTlQgTbqlRaENjNWrFRr7XDNbDnQbTfAbY7Pe7vVaPZrfcSEHb3S7HWHQ26/czNTHHXGfZreUnba7w1Gg/AE9HYwGU47k5S/SG/S7Ce7s5nK0bqzTA0bC+7G4Di88XiB4ok3Kl0oVQMlaHRCrw6gBhWFiHhjz6TsfY2ej5kL3kLxCTvrj9ej+eoHgbtdPLoDxL0eAFXgbpe7jcr3cjbeT+9X3j32+8WGLycft88D9r3efKOK6Hr8x5DmeI6jnUW7QXeUFfvBu4fn0k6AbBvCAShu7YohvDMvBIH9oOp7nnuo5YReo4jI+5E0dRcETkhVEIYxGGbthm6ESAYEkWx9G8Dh/E8PhFHCcxu68rhPCSaJklCYgtG7gp1FcTxw48PeM5MVp74PgBo46TwOGGfhhmSax0kGZOknzqpxHqfhO54Z+EkubwCkWQphkKU5PAKc+flAZOCkHke9kQTwgG+YBAWAf+Al6QlAU4T+OHxWJP74aFh5AA",
                 "-pl"
             };
 #endif
@@ -104,6 +107,7 @@ namespace SudokuSolverConsole
                 else
                 {
                     solver = SolverFactory.CreateFromFPuzzles(fpuzzlesURL, constraints);
+                    Console.WriteLine($"Imported \"{solver.Title ?? "Untitled"}\" by {solver.Author ?? "Unknown"}");
                 }
             }
             catch (Exception e)

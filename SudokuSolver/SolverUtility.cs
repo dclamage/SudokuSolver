@@ -21,21 +21,9 @@ namespace SudokuSolver
         public const int MAX_VALUE = 9;
         public const uint ALL_VALUES_MASK = (1u << MAX_VALUE) - 1;
 
-        public const int BOX_WIDTH = 3;
-        public const int BOX_HEIGHT = 3;
-        public const int BOX_CELL_COUNT = BOX_WIDTH * BOX_HEIGHT;
-        public const int NUM_BOXES_WIDTH = WIDTH / BOX_WIDTH;
-        public const int NUM_BOXES_HEIGHT = HEIGHT / BOX_HEIGHT;
-        public const int NUM_BOXES = NUM_BOXES_WIDTH * NUM_BOXES_HEIGHT;
-
         // These are compile-time asserts
         private const byte ASSERT_VALUES_MIN = (MAX_VALUE >= 1) ? 0 : -1;
         private const byte ASSERT_VALUES_MAX = (MAX_VALUE <= 9) ? 0 : -1; // No support for more than 9 values yet
-        private const byte ASSERT_BOX_SIZE = BOX_CELL_COUNT == MAX_VALUE ? 0 : -1;
-        private const byte ASSERT_BOX_WIDTH_MAX = BOX_WIDTH <= WIDTH ? 0 : -1;
-        private const byte ASSERT_BOX_HEIGHT_MAX = BOX_HEIGHT <= HEIGHT ? 0 : -1;
-        private const byte ASSERT_BOX_WIDTH_DIVISIBILITY = (WIDTH % BOX_WIDTH) == 0 ? 0 : -1;
-        private const byte ASSERT_BOX_HEIGHT_DIVISIBILITY = (HEIGHT % BOX_HEIGHT) == 0 ? 0 : -1;
 
         public const uint valueSetMask = 1u << 31;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -85,25 +73,6 @@ namespace SudokuSolver
         public static int MaxValue(uint mask)
         {
             return 32 - BitOperations.LeadingZeroCount(mask);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static (int, int) BoxCoord(int i, int j)
-        {
-            return (i / BOX_HEIGHT, j / BOX_WIDTH);
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static int BoxIndex(int i, int j)
-        {
-            var (bi, bj) = BoxCoord(i, j);
-            return bi * NUM_BOXES_WIDTH + bj;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static bool IsSameBox(int i0, int j0, int i1, int j1)
-        {
-            return BoxCoord(i0, j0) == BoxCoord(i1, j1);
         }
 
         public static string MaskToString(uint mask)
@@ -161,35 +130,23 @@ namespace SudokuSolver
             }
         }
 
-        public static IEnumerable<(int, int)> DiagonalCells(int i, int j, bool sameBox = false)
+        public static IEnumerable<(int, int)> DiagonalCells(int i, int j)
         {
             if (i > 0 && j > 0)
             {
-                if (!sameBox || IsSameBox(i, j, i - 1, j - 1))
-                {
-                    yield return (i - 1, j - 1);
-                }
+                yield return (i - 1, j - 1);
             }
             if (i < HEIGHT - 1 && j > 0)
             {
-                if (!sameBox || IsSameBox(i, j, i + 1, j - 1))
-                {
-                    yield return (i + 1, j - 1);
-                }
+                yield return (i + 1, j - 1);
             }
             if (i > 0 && j < WIDTH - 1)
             {
-                if (!sameBox || IsSameBox(i, j, i - 1, j + 1))
-                {
-                    yield return (i - 1, j + 1);
-                }
+                yield return (i - 1, j + 1);
             }
             if (i < HEIGHT - 1 && j < WIDTH - 1)
             {
-                if (!sameBox || IsSameBox(i, j, i + 1, j + 1))
-                {
-                    yield return (i + 1, j + 1);
-                }
+                yield return (i + 1, j + 1);
             }
         }
 
