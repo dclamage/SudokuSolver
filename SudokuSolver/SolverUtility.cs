@@ -8,23 +8,6 @@ namespace SudokuSolver
 {
     public static class SolverUtility
     {
-        static SolverUtility()
-        {
-            InitCombinations();
-        }
-
-        public const int WIDTH = 9;
-        public const int HEIGHT = 9;
-        public const int MAX_EXTENT = WIDTH > HEIGHT ? WIDTH : HEIGHT;
-        public const int NUM_CELLS = WIDTH * HEIGHT;
-
-        public const int MAX_VALUE = 9;
-        public const uint ALL_VALUES_MASK = (1u << MAX_VALUE) - 1;
-
-        // These are compile-time asserts
-        private const byte ASSERT_VALUES_MIN = (MAX_VALUE >= 1) ? 0 : -1;
-        private const byte ASSERT_VALUES_MAX = (MAX_VALUE <= 9) ? 0 : -1; // No support for more than 9 values yet
-
         public const uint valueSetMask = 1u << 31;
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static int ValueCount(uint mask)
@@ -78,76 +61,25 @@ namespace SudokuSolver
         public static string MaskToString(uint mask)
         {
             StringBuilder sb = new();
-            for (int v = 1; v <= MAX_VALUE; v++)
+            mask &= ~valueSetMask;
+            if (mask != 0)
             {
-                if (HasValue(mask, v))
+                int minValue = MinValue(mask);
+                int maxValue = MaxValue(mask);
+                for (int v = minValue; v <= maxValue; v++)
                 {
-                    if (sb.Length > 0)
+                    if (HasValue(mask, v))
                     {
-                        sb.Append(',');
+                        if (sb.Length > 0)
+                        {
+                            sb.Append(',');
+                        }
+                        sb.Append(v);
                     }
-                    sb.Append((char)('0' + v));
                 }
             }
 
             return sb.ToString();
-        }
-
-        private static int Gcd(int a, int b)
-        {
-            // Everything divides 0 
-            if (a == 0 || b == 0)
-                return 0;
-
-            // base case 
-            if (a == b)
-                return a;
-
-            // a is greater 
-            if (a > b)
-                return Gcd(a - b, b);
-
-            return Gcd(a, b - a);
-        }
-
-        public static IEnumerable<(int, int)> AdjacentCells(int i, int j)
-        {
-            if (i > 0)
-            {
-                yield return (i - 1, j);
-            }
-            if (i < HEIGHT - 1)
-            {
-                yield return (i + 1, j);
-            }
-            if (j > 0)
-            {
-                yield return (i, j - 1);
-            }
-            if (j < WIDTH - 1)
-            {
-                yield return (i, j + 1);
-            }
-        }
-
-        public static IEnumerable<(int, int)> DiagonalCells(int i, int j)
-        {
-            if (i > 0 && j > 0)
-            {
-                yield return (i - 1, j - 1);
-            }
-            if (i < HEIGHT - 1 && j > 0)
-            {
-                yield return (i + 1, j - 1);
-            }
-            if (i > 0 && j < WIDTH - 1)
-            {
-                yield return (i - 1, j + 1);
-            }
-            if (i < HEIGHT - 1 && j < WIDTH - 1)
-            {
-                yield return (i + 1, j + 1);
-            }
         }
 
         public static int TaxicabDistance(int i0, int j0, int i1, int j1) => Math.Abs(i0 - i1) + Math.Abs(j0 - j1);
@@ -156,46 +88,8 @@ namespace SudokuSolver
         public static string CellName((int, int) cell) => $"r{cell.Item1 + 1}c{cell.Item2 + 1}";
         public static string CellName(int i, int j) => CellName((i, j));
         public static (int, int) CellValue(string cellName) => cellName.Length == 4 ? (cellName[1] - '1', cellName[3] - '1') : (-1, -1);
-        public static int FlatIndex((int, int) cell) => cell.Item1 * WIDTH + cell.Item2;
-        public static (int, int, int, int) CellPair((int, int) cell0, (int, int) cell1)
-        {
-            return FlatIndex(cell0) <= FlatIndex(cell1) ? (cell0.Item1, cell0.Item2, cell1.Item1, cell1.Item2) : (cell1.Item1, cell1.Item2, cell0.Item1, cell0.Item2);
-        }
 
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static uint MaskStrictlyLower(int v) => (1u << (v - 1)) - 1;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static uint MaskValAndLower(int v) => (1u << v) - 1;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static uint MaskStrictlyHigher(int v) => ALL_VALUES_MASK & ~((1u << v) - 1);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static uint MaskValAndHigher(int v) => ALL_VALUES_MASK & ~((1u << (v - 1)) - 1);
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static uint MaskBetweenInclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskStrictlyLower(v0) | MaskStrictlyHigher(v1));
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static uint MaskBetweenExclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskValAndLower(v0) | MaskValAndHigher(v1));
-
-        public static readonly int[][][] combinations = new int[MAX_VALUE][][];
-        private static void InitCombinations()
-        {
-            for (int n = 1; n <= combinations.Length; n++)
-            {
-                combinations[n - 1] = new int[n][];
-                for (int k = 1; k <= n; k++)
-                {
-                    int numCombinations = BinomialCoeff(n, k);
-                    combinations[n - 1][k - 1] = new int[numCombinations * k];
-                    FillCombinations(combinations[n - 1][k - 1], n, k);
-                }
-            }
-        }
-
-        private static int BinomialCoeff(int n, int k)
+        public static int BinomialCoeff(int n, int k)
         {
             return
                 (k > n) ? 0 :          // out of range
@@ -206,7 +100,7 @@ namespace SudokuSolver
                 (BinomialCoeff(n - 1, k) * n) / (n - k);      //  path to k=n-1 is faster
         }
 
-        private static void FillCombinations(int[] combinations, int n, int k, ref int numCombinations, int offset, int[] curCombination, int curCombinationSize)
+        public static void FillCombinations(int[] combinations, int n, int k, ref int numCombinations, int offset, int[] curCombination, int curCombinationSize)
         {
             if (k == 0)
             {
@@ -224,7 +118,7 @@ namespace SudokuSolver
             }
         }
 
-        private static void FillCombinations(int[] combinations, int n, int k)
+        public static void FillCombinations(int[] combinations, int n, int k)
         {
             int numCombinations = 0;
             int[] curCombination = new int[k];
@@ -241,6 +135,122 @@ namespace SudokuSolver
             {
                 dictionary[key] = new() { value };
             }
+        }
+
+        public static int[,] DefaultRegions(int size)
+        {
+            if (size <= 0 || size > 31)
+            {
+                throw new ArgumentException($"Error calculating default regions. Size must be between 1 and 31, got: {size}");
+            }
+
+            int[,] regions = new int[size, size];
+            int i, j;
+            switch (size)
+            {
+                case 1:
+                case 2:
+                case 3:
+                case 5:
+                case 7:
+                case 11:
+                case 13:
+                case 17:
+                case 19:
+                case 23:
+                case 29:
+                case 31:
+                    // Cannot have regions for prime number sizes, so make them overlap exactly with rows
+                    for (i = 0; i < size; i++)
+                    {
+                        for (j = 0; j < size; j++)
+                        {
+                            regions[i, j] = i;
+                        }
+                    }
+                    break;
+                case 4:
+                case 9:
+                case 16:
+                case 25:
+                    // Perfect square regions
+                    int regionSize = (int)Math.Sqrt(size);
+                    for (i = 0; i < size; i++)
+                    {
+                        for (j = 0; j < size; j++)
+                        {
+                            regions[i, j] = (i / regionSize) * (size / regionSize) + (j / regionSize);
+                        }
+                    }
+                    break;
+                case 6:
+                case 8:
+                case 10:
+                case 14:
+                case 22:
+                case 26:
+                    // Regions are two rows tall, half board width wide
+                    {
+                        int regionWidth = size / 2;
+                        for (i = 0; i < size; i++)
+                        {
+                            for (j = 0; j < size; j++)
+                            {
+                                regions[i, j] = (i / 2) * 2 + (j / regionWidth);
+                            }
+                        }
+                    }
+                    break;
+                case 12:
+                case 15:
+                case 18:
+                case 21:
+                case 27:
+                    // Regions are three rows tall, 1/3rd board width wide
+                    {
+                        int regionWidth = size / 3;
+                        for (i = 0; i < size; i++)
+                        {
+                            for (j = 0; j < size; j++)
+                            {
+                                regions[i, j] = (i / 3) * 3 + (j / regionWidth);
+                            }
+                        }
+                    }
+                    break;
+                case 20:
+                case 24:
+                case 28:
+                    // Regions are four rows tall, 1/4th board width wide
+                    {
+                        int regionWidth = size / 4;
+                        for (i = 0; i < size; i++)
+                        {
+                            for (j = 0; j < size; j++)
+                            {
+                                regions[i, j] = (i / 4) * 4 + (j / regionWidth);
+                            }
+                        }
+                    }
+                    break;
+                case 30:
+                    // Regions are five rows tall, 1/5th board width wide
+                    {
+                        int regionWidth = size / 5;
+                        for (i = 0; i < size; i++)
+                        {
+                            for (j = 0; j < size; j++)
+                            {
+                                regions[i, j] = (i / 5) * 5 + (j / regionWidth);
+                            }
+                        }
+                    }
+                    break;
+                default:
+                    throw new ArgumentException($"Error calculating default regions. Unsupported size: {size}");
+            }
+
+            return regions;
         }
     }
 }

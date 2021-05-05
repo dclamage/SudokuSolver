@@ -13,14 +13,12 @@ namespace SudokuSolverConsole
     {
         static void Main(string[] args)
         {
+            // Useful for quickly testing a puzzle without changing commandline parameters
 #if false
             args = new string[]
             {
                 "-f",
-                //@"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+wkDGNCAewB2CAMxMKXHvyHwADGNITeghAEYxHNoqkIALPNDcl0gKz6ty+ACYiG/XdY2Gbe89sP3zuk5c+3n/9S0tERAA==",
-                //@"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSTQMY0IB7AOwQAYKQqaHnX27H4XSbary6Cenft2ESWAXWSEhHPgEYpyhGrHTVFPeW0b4Wyjs3qRxovMXi+AJgsTHhyy9NH3St04f6yxDYB/t4SAMy+CBGu4ZHw0R6WCaF8EUEpCAAscdkxfLnBBokSBRnwpXZZ1grFfACscQ15CE21LY0dRXpB/nEAbP2DzfADw6NtI9W2ZvAA7HHzw4uFAWXLawtTEwAccbvD+zt7x13ksrJEQA",
-                //@"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssW0iQA=",
-                @"N4IgzglgXgpiBcBOANCALhNAbO8QBUALGAAnwFcA7SmLMEVAQ3LUIHsAnBEAJUcoAmbALYMQHcjjAw03AJIcOMAOaTGHEmHJCA1uRISpJRgAcTWAJ4A6ADqUAcuWEAjGBzAlh5MGhKU2vkomMIy+AO6YhBCUxiQ6EFg4GgDGjMowViRiyhwQAggA2gXAAL7IoErKEGyUCACMZRUq1bXwDeWNjeLNNQgATF2VLQgAzKgAboxY5Lh1qFXjMK1oEjCDPa1jIJPTuH3zEIvLq+tVvfBbOzOjB0cIKzMlALrIxd1nrQCsneXvw20/Uq/IbnAbAjY3bZTa7wAAstyW9xO4I+o1O/0u0NwADYEcdHi83iCvujzt8OhSgU1UfAwdSMRMsQgAOx4pGPFEMqG7BAADjZ8Aea0550xPKQAqFz1e9LJpJJIoVstaAAZ5f11bTNXS/qDtdKiRD4OTlQgTbqlRaENjNWrFRr7XDNbDnQbTfAbY7Pe7vVaPZrfcSEHb3S7HWHQ26/czNTHHXGfZreUnba7w1Gg/AE9HYwGU47k5S/SG/S7Ce7s5nK0bqzTA0bC+7G4Di88XiB4ok3Kl0oVQMlaHRCrw6gBhWFiHhjz6TsfY2ej5kL3kLxCTvrj9ej+eoHgbtdPLoDxL0eAFXgbpe7jcr3cjbeT+9X3j32+8WGLycft88D9r3efKOK6Hr8x5DmeI6jnUW7QXeUFfvBu4fn0k6AbBvCAShu7YohvDMvBIH9oOp7nnuo5YReo4jI+5E0dRcETkhVEIYxGGbthm6ESAYEkWx9G8Dh/E8PhFHCcxu68rhPCSaJklCYgtG7gp1FcTxw48PeM5MVp74PgBo46TwOGGfhhmSax0kGZOknzqpxHqfhO54Z+EkubwCkWQphkKU5PAKc+flAZOCkHke9kQTwgG+YBAWAf+Al6QlAU4T+OHxWJP74aFh5AA",
+                @"N4IgzglgXgpiBcB2ANCALhNAbO8QEkAnQmAcwFcsBDQgAkQA9FaBpQgewAcBrCEVKuTQALdoQTowAY34hClGGBhoJbLr1rycYWlU6csAT3i0AOgDsAtLQDCMLFh1LONKmhgATWgCNDu2gDuwpgwtB7saLRS7OZoVBDmUTFKUkIQAG6hHhCkmGAAdLTWdg5OMC6Ebp4+flQ+1FLcYRFJsfGJ2bloOgGYwv4AjPAATJpuEOyFFtYA6n3sQrTmZOOZrWBolQloyLRg7EstVA60MAwQGwmkzd26JLS5meb5FhaypIQQHggA2j/AAF9kIDgUCQeCwQCALrIf6Q0EIiGgmFwxHwpGAlEYsFyMgTcwIAAsOJIuRiCAArCS8eT4FTgbiyQS6dDYaBSfiEABmalM7no9GMzkshkc2lUrFC2k80U05kANl5wuJsr58BV7LlRKVtMVyLZUuZMuxaNVwolMJA2QAZtaYCRzFJcP8QE7Sr8QAAlYY2Qmyb02CkgKE4t2OD0B+X+n1BkMMsNgCMDGxR1Ce5OIYOh+zh+A/L0Umxc/3yotZ+M5xN5r1cmwDf2Euvl0AJiOIMtp9vDZuuysRwt+tOlv1xlt96uewtBoeBrOWyoYdi/MfuifJ4tp5Mj7Or/PplP+5Oxne5vc+jden3biu7r3J7tpn3d0e92+e4cl2cv1sTxsXz2Ns+J5VnuhaZmmjaZiGIZAA",
                 "-pl"
             };
 #endif

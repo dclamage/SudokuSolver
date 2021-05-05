@@ -11,7 +11,7 @@ namespace SudokuSolver.Constraints
     {
         private readonly Dictionary<(int, int), List<(int, int)>> cellToClones = new();
 
-        public CloneConstraint(string options)
+        public CloneConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             var cellGroups = ParseCells(options);
             if (cellGroups.Count == 0)

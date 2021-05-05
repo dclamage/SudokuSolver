@@ -7,7 +7,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Diagonal Nonconsecutive", ConsoleName = "dnc")]
     public class DiagonalNonconsecutiveConstraint : Constraint
     {
-        public DiagonalNonconsecutiveConstraint(string _)
+        public DiagonalNonconsecutiveConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
         }
 

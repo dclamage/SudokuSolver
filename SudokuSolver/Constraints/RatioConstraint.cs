@@ -9,7 +9,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Ratio", ConsoleName = "ratio", FPuzzlesName = "ratio")]
     public class RatioConstraint : OrthogonalValueConstraint
     {
-        public RatioConstraint(string options) : base(options)
+        public RatioConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
         {
         }
 

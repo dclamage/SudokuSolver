@@ -26,7 +26,7 @@ namespace SudokuSolver.Constraints
         public override string SpecificName => specificName;
 
         private static readonly Regex optionsRegex = new(@"(\d+)[rR](\d+)[cC](\d+)");
-        public SandwichConstraint(string options)
+        public SandwichConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             var match = optionsRegex.Match(options);
             if (!match.Success)
@@ -78,7 +78,7 @@ namespace SudokuSolver.Constraints
             minFillingLength = 0;
             maxFillingLength = 0;
 
-            const int allValueSum = (MAX_VALUE * (MAX_VALUE + 1)) / 2 - (1 + MAX_VALUE);
+            int allValueSum = (MAX_VALUE * (MAX_VALUE + 1)) / 2 - (1 + MAX_VALUE);
             if (sum < 0 || sum > allValueSum)
             {
                 return LogicResult.Invalid;

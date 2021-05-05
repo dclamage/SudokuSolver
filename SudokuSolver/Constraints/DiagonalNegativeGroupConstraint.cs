@@ -8,7 +8,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Diagonal-", ConsoleName = "dneg", FPuzzlesName = "diagonal-")]
     public class DiagonalNegativeGroupConstraint : Constraint
     {
-        public DiagonalNegativeGroupConstraint(string _)
+        public DiagonalNegativeGroupConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
         }
 

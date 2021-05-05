@@ -12,7 +12,7 @@ namespace SudokuSolver.Constraints
         public readonly List<(int, int)> cells;
         private readonly HashSet<(int, int)> cellsSet;
 
-        public ThermometerConstraint(string options)
+        public ThermometerConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             var cellGroups = ParseCells(options);
             if (cellGroups.Count != 1)

@@ -17,7 +17,7 @@ namespace SudokuSolver.Constraints
         private readonly HashSet<(int, int)> innerCellsLookup;
         private int minUniqueInnerValues;
 
-        public BetweenLineConstraint(string options)
+        public BetweenLineConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             var cellGroups = ParseCells(options);
             if (cellGroups.Count != 1)

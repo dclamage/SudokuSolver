@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Text.RegularExpressions;
 using static SudokuSolver.SolverUtility;
@@ -9,6 +10,21 @@ namespace SudokuSolver.Constraints
 {
     public abstract class Constraint
     {
+        protected readonly int WIDTH;
+        protected readonly int HEIGHT;
+        protected readonly int MAX_VALUE;
+        protected readonly uint ALL_VALUES_MASK;
+        protected readonly int NUM_CELLS;
+
+        public Constraint(Solver sudokuSolver)
+        {
+            WIDTH = sudokuSolver.WIDTH;
+            HEIGHT = sudokuSolver.HEIGHT;
+            MAX_VALUE = sudokuSolver.MAX_VALUE;
+            ALL_VALUES_MASK = sudokuSolver.ALL_VALUES_MASK;
+            NUM_CELLS = sudokuSolver.NUM_CELLS;
+        }
+
         /// <summary>
         /// Gets the name from the Constraint attribute
         /// </summary>
@@ -115,7 +131,7 @@ namespace SudokuSolver.Constraints
             return true;
         }
 
-        public static List<List<(int, int)>> ParseCells(string cellString)
+        public List<List<(int, int)>> ParseCells(string cellString)
         {
             List<List<(int, int)>> cellGroups = new();
             foreach (string cellGroup in cellString.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -214,6 +230,7 @@ namespace SudokuSolver.Constraints
                                     toAdd = (r - 1, c + 1);
                                     break;
                                 case 'r':
+                                case 'R':
                                     complete = true;
                                     break;
                                 default:
@@ -298,7 +315,7 @@ namespace SudokuSolver.Constraints
             return true;
         }
 
-        private static bool AddCells(List<(int, int)> list, List<int> rows, List<int> cols)
+        private bool AddCells(List<(int, int)> list, List<int> rows, List<int> cols)
         {
             foreach (int r in rows)
             {
@@ -313,6 +330,70 @@ namespace SudokuSolver.Constraints
             }
             return true;
         }
+
+        protected IEnumerable<(int, int)> AdjacentCells(int i, int j)
+        {
+            if (i > 0)
+            {
+                yield return (i - 1, j);
+            }
+            if (i < HEIGHT - 1)
+            {
+                yield return (i + 1, j);
+            }
+            if (j > 0)
+            {
+                yield return (i, j - 1);
+            }
+            if (j < WIDTH - 1)
+            {
+                yield return (i, j + 1);
+            }
+        }
+
+        protected IEnumerable<(int, int)> DiagonalCells(int i, int j)
+        {
+            if (i > 0 && j > 0)
+            {
+                yield return (i - 1, j - 1);
+            }
+            if (i < HEIGHT - 1 && j > 0)
+            {
+                yield return (i + 1, j - 1);
+            }
+            if (i > 0 && j < WIDTH - 1)
+            {
+                yield return (i - 1, j + 1);
+            }
+            if (i < HEIGHT - 1 && j < WIDTH - 1)
+            {
+                yield return (i + 1, j + 1);
+            }
+        }
+
+        protected int FlatIndex((int, int) cell) => cell.Item1 * WIDTH + cell.Item2;
+        protected (int, int, int, int) CellPair((int, int) cell0, (int, int) cell1)
+        {
+            return FlatIndex(cell0) <= FlatIndex(cell1) ? (cell0.Item1, cell0.Item2, cell1.Item1, cell1.Item2) : (cell1.Item1, cell1.Item2, cell0.Item1, cell0.Item2);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected uint MaskStrictlyLower(int v) => (1u << (v - 1)) - 1;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected uint MaskValAndLower(int v) => (1u << v) - 1;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected uint MaskStrictlyHigher(int v) => ALL_VALUES_MASK & ~((1u << v) - 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected uint MaskValAndHigher(int v) => ALL_VALUES_MASK & ~((1u << (v - 1)) - 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected uint MaskBetweenInclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskStrictlyLower(v0) | MaskStrictlyHigher(v1));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        protected uint MaskBetweenExclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskValAndLower(v0) | MaskValAndHigher(v1));
     }
 
     /// <summary>

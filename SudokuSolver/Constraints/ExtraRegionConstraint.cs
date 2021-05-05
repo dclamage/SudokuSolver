@@ -12,7 +12,7 @@ namespace SudokuSolver.Constraints
     {
         private readonly List<(int, int)> cells;
 
-        public ExtraRegionConstraint(string options)
+        public ExtraRegionConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             var cellGroups = ParseCells(options);
             if (cellGroups.Count != 1)

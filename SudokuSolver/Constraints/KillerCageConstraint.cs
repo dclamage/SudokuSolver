@@ -17,7 +17,7 @@ namespace SudokuSolver.Constraints
 
         private static readonly Regex optionsRegex = new(@"(\d+);(.*)");
 
-        public KillerCageConstraint(string options)
+        public KillerCageConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             var match = optionsRegex.Match(options);
             if (match.Success)
@@ -42,14 +42,14 @@ namespace SudokuSolver.Constraints
 
         public override string SpecificName => sum > 0 ? $"Killer Cage {sum} at {CellName(cells[0])}" : $"Killer Cage at {CellName(cells[0])}";
 
-        public static void InitCombinations(int sum, int numCells, out List<List<int>> sumCombinations, out HashSet<int> possibleValues)
+        public static void InitCombinations(int maxValue, int sum, int numCells, out List<List<int>> sumCombinations, out HashSet<int> possibleValues)
         {
-            const int allValueSum = (MAX_VALUE * (MAX_VALUE + 1)) / 2;
+            int allValueSum = (maxValue * (maxValue + 1)) / 2;
             if (sum > 0 && sum < allValueSum)
             {
                 sumCombinations = new();
                 possibleValues = new();
-                foreach (var combination in Enumerable.Range(1, MAX_VALUE).Combinations(numCells))
+                foreach (var combination in Enumerable.Range(1, maxValue).Combinations(numCells))
                 {
                     if (combination.Sum() == sum)
                     {
@@ -69,15 +69,15 @@ namespace SudokuSolver.Constraints
         }
 
         private void InitCombinations() =>
-            InitCombinations(sum, cells.Count, out sumCombinations, out possibleValues);
+            InitCombinations(MAX_VALUE, sum, cells.Count, out sumCombinations, out possibleValues);
 
         public static LogicResult InitCandidates(Solver sudokuSolver, List<(int, int)> cells, HashSet<int> possibleValues)
         {
             LogicResult result = LogicResult.None;
-            if (possibleValues != null && possibleValues.Count < MAX_VALUE)
+            if (possibleValues != null && possibleValues.Count < sudokuSolver.MAX_VALUE)
             {
                 var board = sudokuSolver.Board;
-                for (int v = 1; v <= 9; v++)
+                for (int v = 1; v <= sudokuSolver.MAX_VALUE; v++)
                 {
                     if (!possibleValues.Contains(v))
                     {

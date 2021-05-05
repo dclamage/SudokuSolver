@@ -10,7 +10,7 @@ namespace SudokuSolver.Constraints
     {
         private readonly List<(int, int)> cells;
 
-        public EvenConstraint(string options)
+        public EvenConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             var cellGroups = ParseCells(options);
             if (cellGroups.Count != 1)

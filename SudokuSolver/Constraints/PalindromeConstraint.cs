@@ -12,7 +12,7 @@ namespace SudokuSolver.Constraints
         public readonly List<(int, int)> cells;
         private readonly Dictionary<(int, int), (int, int)> cellToClone;
 
-        public PalindromeConstraint(string options)
+        public PalindromeConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             var cellGroups = ParseCells(options);
             if (cellGroups.Count != 1)

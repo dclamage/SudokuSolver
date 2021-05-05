@@ -13,14 +13,27 @@ namespace SudokuSolver
     {
         public static Solver CreateFromGivens(string givens, IEnumerable<string> constraints = null)
         {
-            Solver solver = new();
             givens = givens.Trim();
 
-            if (givens.Length != 81)
+            int size;
+            if (givens.Length <= 81)
             {
-                throw new ArgumentException($"ERROR: A givens string must be exactly 81 characters long (Provided length: {givens.Length}).");
+                size = (int)Math.Sqrt(givens.Length);
+                if (givens.Length != size * size)
+                {
+                    throw new ArgumentException($"ERROR: A givens string must be a perfect square in length (Provided length: {givens.Length}).");
+                }
+            }
+            else
+            {
+                size = (int)Math.Sqrt(givens.Length / 2);
+                if (givens.Length != size * size * 2)
+                {
+                    throw new ArgumentException($"ERROR: A givens string must be a perfect square in length (Provided length: {givens.Length}).");
+                }
             }
 
+            Solver solver = new(size, size, size);
             if (constraints != null)
             {
                 ApplyConstraints(solver, constraints);
@@ -31,14 +44,34 @@ namespace SudokuSolver
                 throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
             }
 
-            for (int i = 0; i < givens.Length; i++)
+            if (size <= 9)
             {
-                char c = givens[i];
-                if (c >= '1' && c <= '9')
+                for (int i = 0; i < givens.Length; i++)
                 {
-                    if (!solver.SetValue(i / 9, i % 9, c - '0'))
+                    char c = givens[i];
+                    if (c >= '1' && c <= '9')
                     {
-                        throw new ArgumentException($"ERROR: Givens cause there to be no solutions.");
+                        if (!solver.SetValue(i / 9, i % 9, c - '0'))
+                        {
+                            throw new ArgumentException($"ERROR: Givens cause there to be no solutions.");
+                        }
+                    }
+                }
+            }
+            else
+            {
+                int numVals = givens.Length / 2;
+                for (int i = 0; i < numVals; i++)
+                {
+                    char c0 = givens[i * 2];
+                    char c1 = givens[i * 2 + 1];
+                    if (c0 >= '1' && c0 <= '9' && c1 >= '0' && c1 <= '9' || c0 == '0' && c1 >= '1' && c1 <= '9')
+                    {
+                        int val = (c0 - '0') * 10 + (c1 - '0');
+                        if (!solver.SetValue(i / size, i % size, val))
+                        {
+                            throw new ArgumentException($"ERROR: Givens cause there to be no solutions.");
+                        }
                     }
                 }
             }
@@ -64,66 +97,9 @@ namespace SudokuSolver
             {
                 throw new ArgumentException($"f-puzzles import is non-square {height}x{width}");
             }
-            int[,] regions = new int[height, width];
-            switch (height)
-            {
-                case 3:
-                case 5:
-                case 7:
-                case 11:
-                case 13:
-                    // Regions match rows
-                    for (i = 0; i < height; i++)
-                    {
-                        for (j = 0; j < width; j++)
-                        {
-                            regions[i, j] = i;
-                        }
-                    }
-                    break;
-                case 4:
-                case 9:
-                case 16:
-                    // Square regions
-                    int regionSize = (int)Math.Sqrt(height);
-                    for (i = 0; i < height; i++)
-                    {
-                        for (j = 0; j < width; j++)
-                        {
-                            regions[i, j] = (i / regionSize) * (height / regionSize) + (j / regionSize);
-                        }
-                    }
-                    break;
-                case 6:
-                case 8:
-                case 14:
-                    // Regions are two rows tall, half board width wide
-                    {
-                        int regionWidth = width / 2;
-                        for (i = 0; i < height; i++)
-                        {
-                            for (j = 0; j < width; j++)
-                            {
-                                regions[i, j] = (i / 2) * 2 + (j / regionWidth);
-                            }
-                        }
-                    }
-                    break;
-                case 12:
-                case 15:
-                    // Regions are three rows tall, 1/3rd board width wide
-                    {
-                        int regionWidth = width / 3;
-                        for (i = 0; i < height; i++)
-                        {
-                            for (j = 0; j < width; j++)
-                            {
-                                regions[i, j] = (i / 3) * 3 + (j / regionWidth);
-                            }
-                        }
-                    }
-                    break;
-            }
+            
+            // Start with default regions
+            int[,] regions = SolverUtility.DefaultRegions(height);
 
             // Override regions
             for (i = 0; i < height; i++)
@@ -153,10 +129,11 @@ namespace SudokuSolver
                 }
             }
 
-            Solver solver = new()
+            Solver solver = new(width, width, width)
             {
                 Title = fpuzzlesData.title,
                 Author = fpuzzlesData.author,
+                Rules = fpuzzlesData.ruleset
             };
             solver.SetRegions(regions);
 
@@ -577,7 +554,7 @@ namespace SudokuSolver
                         {
                             marksMask |= SolverUtility.ValueMask(v);
                         }
-                        solver.ClearMask(i, j, (~marksMask) & SolverUtility.ALL_VALUES_MASK);
+                        solver.ClearMask(i, j, (~marksMask) & solver.ALL_VALUES_MASK);
                     }
                     else if (val.value > 0)
                     {

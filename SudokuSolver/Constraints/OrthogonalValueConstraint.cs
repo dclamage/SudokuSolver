@@ -44,7 +44,7 @@ namespace SudokuSolver.Constraints
         private static readonly Regex sharedRowRegex = new(@"(\d*)r(\d+)[,-](\d+)c(\d+)");
         private static readonly Regex sharedColRegex = new(@"(\d*)r(\d+)c(\d+)[,-](\d+)");
 
-        public OrthogonalValueConstraint(string options)
+        public OrthogonalValueConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             HashSet<int> negativeConstraintValues = new();
             HashSet<int> markerValues = new();
@@ -368,7 +368,7 @@ namespace SudokuSolver.Constraints
                 foreach (var group in sudokuSolver.Groups)
                 {
                     // This logic only works if the value found must be in the group.
-                    // The only way to currently guarantee this is by only applying it to groups of size 9.
+                    // The only way to currently guarantee this is by only applying it to groups of maximum size.
                     // In the future, it might be useful to track stuff like "this killer cage must contain a 1"
                     // and then apply this logic there.
                     if (group.Cells.Count != MAX_VALUE)

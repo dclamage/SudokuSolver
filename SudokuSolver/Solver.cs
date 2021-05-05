@@ -42,8 +42,16 @@ namespace SudokuSolver
         }
 #endif
 
+        public readonly int WIDTH;
+        public readonly int HEIGHT;
+        public readonly int MAX_VALUE;
+        public readonly uint ALL_VALUES_MASK;
+        public readonly int NUM_CELLS;
+        public readonly int[][][] combinations;
+
         public string Title { get; init; }
         public string Author { get; init; }
+        public string Rules { get; init; }
 
         private uint[,] board;
         private int[,] regions = null;
@@ -70,16 +78,23 @@ namespace SudokuSolver
             get
             {
                 var flatBoard = FlatBoard;
+                int digitWidth = MAX_VALUE >= 10 ? 2 : 1;
+                string nonGiven = new('0', digitWidth);
                 StringBuilder stringBuilder = new(flatBoard.Length);
                 foreach (uint mask in flatBoard)
                 {
                     if (IsValueSet(mask))
                     {
-                        stringBuilder.Append(GetValue(mask));
+                        int v = GetValue(mask);
+                        if (digitWidth == 2 && v <= 9)
+                        {
+                            stringBuilder.Append('0');
+                        }
+                        stringBuilder.Append(v);
                     }
                     else
                     {
-                        stringBuilder.Append('0');
+                        stringBuilder.Append(nonGiven);
                     }
                 }
                 return stringBuilder.ToString();
@@ -126,8 +141,21 @@ namespace SudokuSolver
 
         private bool isBruteForcing = false;
 
-        public Solver()
+        public Solver(int width, int height, int maxValue)
         {
+            if (maxValue <= 0 || maxValue > 31)
+            {
+                throw new ArgumentException($"Unsupported max value of: {maxValue}");
+            }
+
+            WIDTH = width;
+            HEIGHT = height;
+            MAX_VALUE = maxValue;
+            ALL_VALUES_MASK = (1u << MAX_VALUE) - 1;
+            NUM_CELLS = width * height;
+            combinations = new int[MAX_VALUE][][];
+            InitCombinations();
+
             board = new uint[HEIGHT, WIDTH];
             constraints = new();
 
@@ -144,8 +172,15 @@ namespace SudokuSolver
 
         public Solver(Solver other)
         {
+            WIDTH = other.WIDTH;
+            HEIGHT = other.HEIGHT;
+            MAX_VALUE = other.MAX_VALUE;
+            ALL_VALUES_MASK = other.ALL_VALUES_MASK;
+            NUM_CELLS = other.NUM_CELLS;
+            combinations = other.combinations;
             Title = other.Title;
             Author = other.Author;
+            Rules = other.Rules;
             board = (uint[,])other.board.Clone();
             regions = other.regions;
             seenMap = other.seenMap;
@@ -154,11 +189,25 @@ namespace SudokuSolver
             CellToGroupMap = other.CellToGroupMap;
         }
 
+        private void InitCombinations()
+        {
+            for (int n = 1; n <= combinations.Length; n++)
+            {
+                combinations[n - 1] = new int[n][];
+                for (int k = 1; k <= n; k++)
+                {
+                    int numCombinations = BinomialCoeff(n, k);
+                    combinations[n - 1][k - 1] = new int[numCombinations * k];
+                    FillCombinations(combinations[n - 1][k - 1], n, k);
+                }
+            }
+        }
+
         private void InitStandardGroups()
         {
             for (int i = 0; i < HEIGHT; i++)
             {
-                List<(int, int)> cells = new(9);
+                List<(int, int)> cells = new(WIDTH);
                 for (int j = 0; j < WIDTH; j++)
                 {
                     cells.Add((i, j));
@@ -171,7 +220,7 @@ namespace SudokuSolver
             // Add col groups
             for (int j = 0; j < WIDTH; j++)
             {
-                List<(int, int)> cells = new(9);
+                List<(int, int)> cells = new(HEIGHT);
                 for (int i = 0; i < HEIGHT; i++)
                 {
                     cells.Add((i, j));
@@ -265,68 +314,7 @@ namespace SudokuSolver
 #endif
             if (regions == null)
             {
-                regions = new int[HEIGHT, WIDTH];
-
-                int i, j;
-                switch (WIDTH)
-                {
-                    case 3:
-                    case 5:
-                    case 7:
-                    case 11:
-                    case 13:
-                        // Regions match rows
-                        for (i = 0; i < HEIGHT; i++)
-                        {
-                            for (j = 0; j < WIDTH; j++)
-                            {
-                                regions[i, j] = i;
-                            }
-                        }
-                        break;
-                    case 4:
-                    case 9:
-                    case 16:
-                        // Square regions
-                        int regionSize = (int)Math.Sqrt(HEIGHT);
-                        for (i = 0; i < HEIGHT; i++)
-                        {
-                            for (j = 0; j < WIDTH; j++)
-                            {
-                                regions[i, j] = (i / regionSize) * (HEIGHT / regionSize) + (j / regionSize);
-                            }
-                        }
-                        break;
-                    case 6:
-                    case 8:
-                    case 14:
-                        // Regions are two rows tall, half board width wide
-                        {
-                            int regionWidth = WIDTH / 2;
-                            for (i = 0; i < HEIGHT; i++)
-                            {
-                                for (j = 0; j < WIDTH; j++)
-                                {
-                                    regions[i, j] = (i / 2) * 2 + (j / regionWidth);
-                                }
-                            }
-                        }
-                        break;
-                    case 12:
-                    case 15:
-                        // Regions are three rows tall, 1/3rd board width wide
-                        {
-                            int regionWidth = WIDTH / 3;
-                            for (i = 0; i < HEIGHT; i++)
-                            {
-                                for (j = 0; j < WIDTH; j++)
-                                {
-                                    regions[i, j] = (i / 3) * 3 + (j / regionWidth);
-                                }
-                            }
-                        }
-                        break;
-                }
+                regions = DefaultRegions(WIDTH);
             }
 
             InitStandardGroups();
@@ -604,6 +592,30 @@ namespace SudokuSolver
                 mask |= ValueMask(v);
             }
             return SetMask(i, j, mask);
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public LogicResult KeepMask(int i, int j, uint mask)
+        {
+            mask &= ALL_VALUES_MASK;
+            if (mask == ALL_VALUES_MASK)
+            {
+                return LogicResult.None;
+            }
+
+            uint curMask = board[i, j];
+            uint newMask = curMask & mask;
+            if (newMask == curMask)
+            {
+                if ((curMask & valueSetMask) == 0 && ValueCount(curMask) == 1)
+                {
+                    return SetMask(i, j, curMask) ? LogicResult.Changed : LogicResult.Invalid;
+                }
+
+                return LogicResult.None;
+            }
+
+            return SetMask(i, j, newMask) ? LogicResult.Changed : LogicResult.Invalid;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -1525,9 +1537,9 @@ namespace SudokuSolver
 
                             if (!SetValue(i, j, value))
                             {
-                                for (int ci = 0; ci < 9; ci++)
+                                for (int ci = 0; ci < HEIGHT; ci++)
                                 {
-                                    for (int cj = 0; cj < 9; cj++)
+                                    for (int cj = 0; cj < WIDTH; cj++)
                                     {
                                         if (board[ci, cj] == 0)
                                         {

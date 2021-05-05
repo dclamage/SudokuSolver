@@ -8,7 +8,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Diagonal+", ConsoleName = "dpos", FPuzzlesName = "diagonal+")]
     public class DiagonalPositiveGroupConstraint : Constraint
     {
-        public DiagonalPositiveGroupConstraint(string _)
+        public DiagonalPositiveGroupConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
         }
 

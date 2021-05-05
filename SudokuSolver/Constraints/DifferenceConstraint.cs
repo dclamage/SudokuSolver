@@ -9,7 +9,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Difference", ConsoleName = "difference", FPuzzlesName = "difference")]
     public class DifferenceConstraint : OrthogonalValueConstraint
     {
-        public DifferenceConstraint(string options) : base(options)
+        public DifferenceConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
         {
         }
 

@@ -15,9 +15,23 @@ namespace SudokuTests
         {
             var flatBoard = solver.FlatBoard;
             StringBuilder stringBuilder = new(flatBoard.Length);
-            foreach (uint val in flatBoard)
+            if (solver.MAX_VALUE <= 9)
             {
-                stringBuilder.Append(GetValue(val));
+                foreach (uint val in flatBoard)
+                {
+                    stringBuilder.Append(GetValue(val));
+                }
+            }
+            else
+            {
+                foreach (uint val in flatBoard)
+                {
+                    if (val <= 9)
+                    {
+                        stringBuilder.Append(0);
+                    }
+                    stringBuilder.Append(GetValue(val));
+                }
             }
             return stringBuilder.ToString();
         }

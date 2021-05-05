@@ -31,7 +31,7 @@ namespace SudokuSolver.Constraints
 
         private static readonly Regex optionsRegex = new(@"(\d+);[rR](\d+)[cC](\d+);([UD][LR])");
 
-        public LittleKillerConstraint(string options)
+        public LittleKillerConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             var match = optionsRegex.Match(options);
             if (!match.Success)
@@ -129,7 +129,7 @@ namespace SudokuSolver.Constraints
             if (!definitelyNotGroup)
             {
                 isGroup = true;
-                KillerCageConstraint.InitCombinations(sum, cellsList.Count, out sumCombinations, out possibleValues);
+                KillerCageConstraint.InitCombinations(MAX_VALUE, sum, cellsList.Count, out sumCombinations, out possibleValues);
             }
 
             var board = sudokuSolver.Board;

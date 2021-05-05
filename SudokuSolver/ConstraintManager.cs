@@ -36,7 +36,7 @@ namespace SudokuSolver
             }
         }
 
-        public static void AddConstraintByName(Solver solver, string name, string options)
+        public static void AddConstraintByName(this Solver solver, string name, string options)
         {
             if (!constraintConsoleNameLookup.TryGetValue(name, out Type type))
             {
@@ -45,7 +45,7 @@ namespace SudokuSolver
             AddConstraint(solver, type, options);
         }
 
-        public static void AddConstraintByFPuzzlesName(Solver solver, string name, string options)
+        public static void AddConstraintByFPuzzlesName(this Solver solver, string name, string options)
         {
             if (!constraintFPuzzleNameLookup.TryGetValue(name, out Type type))
             {
@@ -54,11 +54,11 @@ namespace SudokuSolver
             AddConstraint(solver, type, options);
         }
 
-        private static void AddConstraint(Solver solver, Type type, string options)
+        private static void AddConstraint(this Solver solver, Type type, string options)
         {
             try
             {
-                switch (Activator.CreateInstance(type, options))
+                switch (Activator.CreateInstance(type, solver, options))
                 {
                     case Constraint constraint:
                         solver.AddConstraint(constraint);

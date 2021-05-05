@@ -20,7 +20,7 @@ namespace SudokuSolver.Constraints
 
         public override List<(int, int)> Group => isGroup ? cells : null;
 
-        public QuadrupleConstraint(string options)
+        public QuadrupleConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             foreach (var group in options.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
             {

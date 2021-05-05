@@ -18,7 +18,7 @@ namespace SudokuSolver.Constraints
         private bool isCircleGroup = false;
         private bool isAllGrouped = false;
 
-        public ArrowSumConstraint(string options)
+        public ArrowSumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             var cellGroups = ParseCells(options);
             if (cellGroups.Count != 2)
@@ -571,7 +571,7 @@ namespace SudokuSolver.Constraints
             var board = sudokuSolver.Board;
             if (circleCells.Count == 1)
             {
-                if (arrowSum <= 0 || arrowSum > 9)
+                if (arrowSum <= 0 || arrowSum > MAX_VALUE)
                 {
                     logicalStepDescription?.Append($"Sum of arrow is impossible to fill into circle.");
                     return LogicResult.Invalid;

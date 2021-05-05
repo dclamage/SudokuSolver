@@ -9,7 +9,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Sum", ConsoleName = "sum", FPuzzlesName = "xv")]
     public class SumConstraint : OrthogonalValueConstraint
     {
-        public SumConstraint(string options) : base(options)
+        public SumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
         {
         }
 

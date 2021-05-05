@@ -8,7 +8,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Disjoint Groups", ConsoleName = "djg", FPuzzlesName = "disjointgroups")]
     public class DisjointConstraintGroup : IConstraintGroup
     {
-        public DisjointConstraintGroup(string _)
+        public DisjointConstraintGroup(Solver sudokuSolver, string _)
         {
         }
 
@@ -16,7 +16,7 @@ namespace SudokuSolver.Constraints
         {
             for (int i = 0; i < solver.Regions.Length; i++)
             {
-                solver.AddConstraint(new DisjointGroupConstraint(i));
+                solver.AddConstraint(new DisjointGroupConstraint(solver, i));
             }
         }
     }
@@ -27,12 +27,12 @@ namespace SudokuSolver.Constraints
         private readonly int groupIndex = 0;
         private List<(int, int)> group = null;
 
-        public DisjointGroupConstraint(string options)
+        public DisjointGroupConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             groupIndex = int.Parse(options) - 1;
         }
 
-        public DisjointGroupConstraint(int groupIndex)
+        public DisjointGroupConstraint(Solver sudokuSolver, int groupIndex) : base(sudokuSolver)
         {
             this.groupIndex = groupIndex;
         }
