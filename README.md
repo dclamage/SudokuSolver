@@ -1,7 +1,7 @@
 # C# Sudoku and Sudoku Variant Solver
 *Created and maintained by David Clamage (Rangsk)*
 
-## Goal
+## Features
  - A fast Sudoku solver which supports all common variants.
  - Logical solve path feature with human-like techniques.
  - Fast multi-threaded brute force solution count.
@@ -11,11 +11,14 @@
 
 ## Pull Requests
 I am accepting pull requests for:
+ - Any unassigned issues, but please contact me first for details!
  - Additional constraints.
  - Additional human-style solving logic.
+ - Additional tests.
  - Bug fixes.
  - Optimizations.
 
 ## Contact Information
 Check out my [YouTube](https://www.youtube.com/channel/UC1RUqXOT_iaH4b7iXKRWhLw)  
+Join the [Cracking the Cryptic Discord](https://discord.gg/BbN89j5) and find me in #theory-and-programming  
 Add me on Discord: rangsk#1098
