@@ -426,20 +426,21 @@ namespace SudokuSolver.Constraints
                 }
                 if (remainingArrowCells.Count >= 1)
                 {
-                    List<int> possibleValues = new(ValueCount(allArrowMask));
-                    int minValue = MinValue(allArrowMask);
-                    int maxValue = MaxValue(allArrowMask);
-                    for (int val = minValue; val <= maxValue; val++)
-                    {
-                        if ((allArrowMask & ValueMask(val)) != 0)
-                        {
-                            possibleValues.Add(val);
-                        }
-                    }
-
                     int numRemainingArrowCells = remainingArrowCells.Count;
-                    if (possibleValues.Count >= numRemainingArrowCells)
+                    int numPossibleValues = ValueCount(allArrowMask);
+                    if (numPossibleValues >= numRemainingArrowCells)
                     {
+                        List<int> possibleValues = new(ValueCount(allArrowMask));
+                        int minValue = MinValue(allArrowMask);
+                        int maxValue = MaxValue(allArrowMask);
+                        for (int val = minValue; val <= maxValue; val++)
+                        {
+                            if ((allArrowMask & ValueMask(val)) != 0)
+                            {
+                                possibleValues.Add(val);
+                            }
+                        }
+
                         HashSet<int> visitedSums = new();
                         foreach (var valueCombination in possibleValues.Combinations(numRemainingArrowCells))
                         {
@@ -799,49 +800,53 @@ namespace SudokuSolver.Constraints
                     return;
                 }
 
-                List<int> possibleValues = new(ValueCount(allArrowMask));
-                int minValue = MinValue(allArrowMask);
-                int maxValue = MaxValue(allArrowMask);
-                for (int curVal = minValue; curVal <= maxValue; curVal++)
-                {
-                    if ((allArrowMask & ValueMask(curVal)) != 0)
-                    {
-                        possibleValues.Add(curVal);
-                    }
-                }
-
                 int remainingArrowCellsCount = remainingArrowCells.Count;
-                foreach (var valueCombination in possibleValues.Combinations(remainingArrowCellsCount))
+                int numPossibleValues = ValueCount(allArrowMask);
+                if (numPossibleValues >= remainingArrowCellsCount)
                 {
-                    int valueComboSum = valueCombination.Sum();
-                    if (valueComboSum != sumRemaining)
+                    List<int> possibleValues = new(numPossibleValues);
+                    int minValue = MinValue(allArrowMask);
+                    int maxValue = MaxValue(allArrowMask);
+                    for (int curVal = minValue; curVal <= maxValue; curVal++)
                     {
-                        continue;
+                        if ((allArrowMask & ValueMask(curVal)) != 0)
+                        {
+                            possibleValues.Add(curVal);
+                        }
                     }
 
-                    foreach (var cellPermutation in remainingArrowCells.Permuatations())
+                    foreach (var valueCombination in possibleValues.Combinations(remainingArrowCellsCount))
                     {
-                        bool permutationPossible = true;
-                        for (int remainingCellIndex = 0; remainingCellIndex < remainingArrowCellsCount; remainingCellIndex++)
+                        int valueComboSum = valueCombination.Sum();
+                        if (valueComboSum != sumRemaining)
                         {
-                            var (i, j, _) = cellPermutation[remainingCellIndex];
-                            int val = valueCombination[remainingCellIndex];
-                            uint cellMask = board[i, j];
-                            uint valMask = ValueMask(val);
-                            if ((cellMask & valMask) == 0)
-                            {
-                                permutationPossible = false;
-                                break;
-                            }
+                            continue;
                         }
-                        if (permutationPossible)
+
+                        foreach (var cellPermutation in remainingArrowCells.Permuatations())
                         {
+                            bool permutationPossible = true;
                             for (int remainingCellIndex = 0; remainingCellIndex < remainingArrowCellsCount; remainingCellIndex++)
                             {
+                                var (i, j, _) = cellPermutation[remainingCellIndex];
                                 int val = valueCombination[remainingCellIndex];
+                                uint cellMask = board[i, j];
                                 uint valMask = ValueMask(val);
-                                int cellIndex = cellPermutation[remainingCellIndex].Item3;
-                                arrowCandidates[cellIndex] |= valMask;
+                                if ((cellMask & valMask) == 0)
+                                {
+                                    permutationPossible = false;
+                                    break;
+                                }
+                            }
+                            if (permutationPossible)
+                            {
+                                for (int remainingCellIndex = 0; remainingCellIndex < remainingArrowCellsCount; remainingCellIndex++)
+                                {
+                                    int val = valueCombination[remainingCellIndex];
+                                    uint valMask = ValueMask(val);
+                                    int cellIndex = cellPermutation[remainingCellIndex].Item3;
+                                    arrowCandidates[cellIndex] |= valMask;
+                                }
                             }
                         }
                     }

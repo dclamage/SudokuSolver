@@ -29,21 +29,23 @@ namespace SudokuSolver
 
         public static IEnumerable<List<T>> Combinations<T>(this IEnumerable<T> c, int count)
         {
-            var collection = c.ToList();
+            if (c is not List<T> collection)
+            {
+                collection = c.ToList();
+            }
             int listCount = collection.Count;
 
-            if (count > listCount)
-                throw new InvalidOperationException($"{nameof(count)} is greater than the collection elements.");
-
-            int[] indexes = Enumerable.Range(0, count).ToArray();
-
-            do
+            if (count <= listCount)
             {
-                yield return indexes.Select(i => collection[i]).ToList();
+                int[] indexes = Enumerable.Range(0, count).ToArray();
+                do
+                {
+                    yield return indexes.Select(i => collection[i]).ToList();
 
-                SetIndexes(indexes, indexes.Length - 1, listCount);
+                    SetIndexes(indexes, indexes.Length - 1, listCount);
+                }
+                while (!AllPlacesChecked(indexes, listCount));
             }
-            while (!AllPlacesChecked(indexes, listCount));
         }
 
         public static IEnumerable<List<T>> Permuatations<T>(this IEnumerable<T> c)
