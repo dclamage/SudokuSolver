@@ -28,7 +28,7 @@ namespace SudokuSolver.Constraints
                 }
                 for (int j1 = j0 - distance; j1 <= j0 + distance; j1++)
                 {
-                    if (j1 < 0 || j1 >= HEIGHT)
+                    if (j1 < 0 || j1 >= WIDTH)
                     {
                         continue;
                     }
