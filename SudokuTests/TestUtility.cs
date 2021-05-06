@@ -39,14 +39,14 @@ namespace SudokuTests
         public static void TestUniqueSolution(this Solver solver, string expectedSolution)
         {
             Solver solver1 = solver.Clone();
-            Assert.AreEqual(1u, solver1.CountSolutions());
+            Assert.AreEqual(1u, solver1.CountSolutions(multiThread: true));
 
             Solver solver2 = solver.Clone();
             Assert.IsTrue(solver2.FindSolution());
             Assert.AreEqual(expectedSolution, solver2.ToGivenString());
 
             Solver solver3 = solver.Clone();
-            Assert.IsTrue(solver3.FillRealCandidates());
+            Assert.IsTrue(solver3.FillRealCandidates(multiThread: true));
             Assert.IsTrue(solver3.IsComplete);
             Assert.AreEqual(expectedSolution, solver3.ToGivenString());
         }
@@ -54,25 +54,25 @@ namespace SudokuTests
         public static void TestInvalidSolution(this Solver solver)
         {
             Solver solver1 = solver.Clone();
-            Assert.AreEqual(0ul, solver1.CountSolutions());
+            Assert.AreEqual(0ul, solver1.CountSolutions(multiThread: true));
 
             Solver solver2 = solver.Clone();
             Assert.IsFalse(solver2.FindSolution());
 
             Solver solver3 = solver.Clone();
-            Assert.IsFalse(solver3.FillRealCandidates());
+            Assert.IsFalse(solver3.FillRealCandidates(multiThread: true));
         }
 
         public static void TestMultipleSolution(this Solver solver)
         {
             Solver solver1 = solver.Clone();
-            Assert.IsTrue(solver1.CountSolutions() > 1ul);
+            Assert.IsTrue(solver1.CountSolutions(multiThread: true) > 1ul);
 
             Solver solver2 = solver.Clone();
             Assert.IsTrue(solver2.FindSolution());
 
             Solver solver3 = solver.Clone();
-            Assert.IsTrue(solver3.FillRealCandidates());
+            Assert.IsTrue(solver3.FillRealCandidates(multiThread: true));
             Assert.IsFalse(solver3.IsComplete);
         }
     }

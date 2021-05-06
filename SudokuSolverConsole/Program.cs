@@ -5,8 +5,6 @@ using Mono.Options;
 using SudokuSolver;
 using System.Text;
 using System.Diagnostics;
-using LZStringCSharp;
-using System.Threading;
 
 namespace SudokuSolverConsole
 {
@@ -18,15 +16,13 @@ namespace SudokuSolverConsole
 #if false
             args = new string[]
             {
-                //"-f",
-                //@"N4IgzglgXgpiBcB2ANCALhNAbO8QEkAnQmAcwFcsBDQgAkQA9FaBpQgewAcBrCEVKuTQALdoQTowAY34hClGGBhoJbLr1rycYWlU6csAT3i0AOgDsAtLQDCMLFh1LONKmhgATWgCNDu2gDuwpgwtB7saLRS7OZoVBDmUTFKUkIQAG6hHhCkmGAAdLTWdg5OMC6Ebp4+flQ+1FLcYRFJsfGJ2bloOgGYwv4AjPAATJpuEOyFFtYA6n3sQrTmZOOZrWBolQloyLRg7EstVA60MAwQGwmkzd26JLS5meb5FhaypIQQHggA2j/AAF9kIDgUCQeCwQCALrIf6Q0EIiGgmFwxHwpGAlEYsFyMgTcwIAAsOJIuRiCAArCS8eT4FTgbiyQS6dDYaBSfiEABmalM7no9GMzkshkc2lUrFC2k80U05kANl5wuJsr58BV7LlRKVtMVyLZUuZMuxaNVwolMJA2QAZtaYCRzFJcP8QE7Sr8QAAlYY2Qmyb02CkgKE4t2OD0B+X+n1BkMMsNgCMDGxR1Ce5OIYOh+zh+A/L0Umxc/3yotZ+M5xN5r1cmwDf2Euvl0AJiOIMtp9vDZuuysRwt+tOlv1xlt96uewtBoeBrOWyoYdi/MfuifJ4tp5Mj7Or/PplP+5Oxne5vc+jden3biu7r3J7tpn3d0e92+e4cl2cv1sTxsXz2Ns+J5VnuhaZmmjaZiGIZAA",
-                "-b=9",
+                @"-f=N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9lQA3AQwBsBXOeAFlTQjJgDsEAXDOk40vyGCRxALrJCwgTOlyJU0fxCVa9AOzNWHbrxjSV1OggDMWtp3g8+SwQtm2HTovbmO34yc/fvXP77J+AR5CQSH+LhIg7AD27ADGcWAw8TRc2rp8QA",
+                //"-b=9",
                 //"-c=ratio:neg2",
                 //"-c=difference:neg1",
-                "-c=taxi:4",
-                "-c=difference:neg1",
-                "-t=0",
-                "-pn"
+                //"-c=taxi:4",
+                "-t",
+                "-n"
             };
 #endif
 
@@ -37,8 +33,8 @@ namespace SudokuSolverConsole
             string fpuzzlesURL = null;
             string givens = null;
             string blankGridSizeString = null;
-            int maxThreads = 1;
             List<string> constraints = new();
+            bool multiThread = false;
             bool solveBruteForce = false;
             bool solveRandomBruteForce = false;
             bool solveLogically = false;
@@ -51,8 +47,8 @@ namespace SudokuSolverConsole
                 { "f|fpuzzles=", "Import a full f-puzzles URL (Everything after '?load=').", f => fpuzzlesURL = f },
                 { "g|givens=", "Provide a digit string to represent the givens for the puzzle.", g => givens = g },
                 { "b|blank=", "Use a blank grid of a square size.", b => blankGridSizeString = b },
-                { "t|threads=", "The maximum number of threads to use when brute forcing. Use 0 or fewer for maximum threads.", (int t) => maxThreads = t <= 0 ? t = -1 : t },
                 { "c|constraint=", "Provide a constraint to use.", c => constraints.Add(c) },
+                { "t|multithread", "Use multithreading.", t => multiThread = t != null },
                 { "s|solve", "Provide a single brute force solution.", s => solveBruteForce = s != null },
                 { "d|random", "Provide a single random brute force solution.", d => solveRandomBruteForce = d != null },
                 { "l|logical", "Attempt to solve the puzzle logically.", l => solveLogically = l != null },
@@ -202,7 +198,25 @@ namespace SudokuSolverConsole
             if (trueCandidates)
             {
                 Console.WriteLine("Finding true candidates:");
-                if (!solver.FillRealCandidates(maxThreads))
+                int currentLineCursor = Console.CursorTop;
+                object consoleLock = new();
+                if (!solver.FillRealCandidates(multiThread: multiThread, progressEvent: (uint[] board) =>
+                {
+                    uint[,] board2d = new uint[solver.HEIGHT, solver.WIDTH];
+                    for (int i = 0; i < solver.HEIGHT; i++)
+                    {
+                        for (int j = 0; j < solver.WIDTH; j++)
+                        {
+                            int cellIndex = i * solver.WIDTH + j;
+                            board2d[i, j] = board[cellIndex];
+                        }
+                    }
+                    lock (consoleLock)
+                    {
+                        ConsoleUtility.PrintBoard(board2d, solver.Regions, Console.Out);
+                        Console.SetCursorPosition(0, currentLineCursor);
+                    }
+                }))
                 {
                     Console.WriteLine($"No solutions found!");
                 }
@@ -214,18 +228,28 @@ namespace SudokuSolverConsole
 
             if (solutionCount)
             {
-                ulong numSolutions = solver.CountSolutions(0, maxThreads);
-                Console.WriteLine($"Found {numSolutions} solutions.");
+                object consoleLock = new();
+                Console.WriteLine("Finding solution count...");
+                ulong numSolutions = solver.CountSolutions(maxSolutions: 0, multiThread: multiThread, progressEvent: (ulong count) =>
+                {
+                    ReplaceLine($"(In progress) Found {count} solutions in {watch.Elapsed}.");
+                });
+                ReplaceLine($"\rFound {numSolutions} solutions.");
+                Console.WriteLine();
             }
 
             if (check)
             {
-                ulong numSolutions = solver.CountSolutions(2, maxThreads);
+                Console.WriteLine("Checking...");
+                ulong numSolutions = solver.CountSolutions(2, multiThread);
                 Console.WriteLine($"There are {(numSolutions <= 1 ? numSolutions.ToString() : "multiple")} solutions.");
             }
 
             watch.Stop();
-            Console.WriteLine($"Took {watch.ElapsedMilliseconds}ms");
+            Console.WriteLine($"Took {watch.Elapsed}");
         }
+
+        private static void ReplaceLine(string text) =>
+            Console.Write("\r" + text + new string(' ', Console.WindowWidth - text.Length) + "\r");
     }
 }

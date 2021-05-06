@@ -96,7 +96,7 @@ namespace SudokuTests
                 "knight",
                 "difference:neg1",
             });
-            Assert.AreEqual(72ul, solver.CountSolutions());
+            Assert.AreEqual(72ul, solver.CountSolutions(multiThread: true));
         }
 
         [TestMethod]
