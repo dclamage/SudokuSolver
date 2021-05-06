@@ -11,6 +11,21 @@ namespace SudokuSolver
 {
     public static class SolverFactory
     {
+        public static Solver CreateBlank(int size, IEnumerable<string> constraints = null)
+        {
+            Solver solver = new(size, size, size);
+            if (constraints != null)
+            {
+                ApplyConstraints(solver, constraints);
+            }
+
+            if (!solver.FinalizeConstraints())
+            {
+                throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
+            }
+            return solver;
+        }
+
         public static Solver CreateFromGivens(string givens, IEnumerable<string> constraints = null)
         {
             givens = givens.Trim();

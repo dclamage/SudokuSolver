@@ -703,6 +703,96 @@ namespace SudokuSolver
             return (i, j);
         }
 
+        private (int, int) GetMostCandidateCell(bool[] ignoreCell = null)
+        {
+            int i = -1, j = -1;
+            int numCandidates = 0;
+            if (smallGroupsBySize != null)
+            {
+                int lastValidGroupSize = MAX_VALUE + 1;
+                foreach (var group in smallGroupsBySize)
+                {
+                    int groupSize = group.Cells.Count;
+                    if (lastValidGroupSize < groupSize)
+                    {
+                        break;
+                    }
+
+                    foreach ((int x, int y) in group.Cells)
+                    {
+                        if (!IsValueSet(x, y) && (ignoreCell == null || !ignoreCell[x * WIDTH + y]))
+                        {
+                            int curNumCandidates = ValueCount(board[x, y]);
+                            if (curNumCandidates == MAX_VALUE)
+                            {
+                                return (x, y);
+                            }
+                            if (curNumCandidates > numCandidates)
+                            {
+                                lastValidGroupSize = groupSize;
+                                numCandidates = curNumCandidates;
+                                i = x;
+                                j = y;
+                            }
+                        }
+                    }
+                }
+                if (i != -1)
+                {
+                    return (i, j);
+                }
+            }
+
+            for (int x = 0; x < HEIGHT; x++)
+            {
+                for (int y = 0; y < WIDTH; y++)
+                {
+                    if (!IsValueSet(x, y) && (ignoreCell == null || !ignoreCell[x * WIDTH + y]))
+                    {
+                        int curNumCandidates = ValueCount(board[x, y]);
+                        if (curNumCandidates == MAX_VALUE)
+                        {
+                            return (x, y);
+                        }
+                        if (curNumCandidates > numCandidates)
+                        {
+                            numCandidates = curNumCandidates;
+                            i = x;
+                            j = y;
+                        }
+                    }
+                }
+            }
+            return (i, j);
+        }
+
+        private int CellPriority(int i, int j)
+        {
+            if (IsValueSet(i, j))
+            {
+                return 0;
+            }
+
+            int numCandidates = ValueCount(board[i, j]);
+            int invNumCandidates = MAX_VALUE - numCandidates + 1;
+            int priority = invNumCandidates;
+            if (CellToGroupMap.TryGetValue((i, j), out var groups))
+            {
+                try
+                {
+                    int smallestGroupSize = groups.Select(g => g.Cells.Count).Where(c => c > 1).Min();
+                    int groupPriority = MAX_VALUE - smallestGroupSize + 1;
+                    priority += MAX_VALUE * groupPriority;
+                }
+                catch (Exception) { }
+            }
+
+            // Within the same priority level, sort by cell order
+            int cellIndex = i * WIDTH + j;
+            priority = priority * NUM_CELLS + cellIndex;
+            return priority;
+        }
+
         public int MinimumUniqueValues(IEnumerable<(int, int)> cells)
         {
             var cellList = cells.ToList();
@@ -860,21 +950,21 @@ namespace SudokuSolver
                 throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
             }
 
-            Stopwatch timeSinceCheck = Stopwatch.StartNew();
-
             bool wasBruteForcing = isBruteForcing;
             isBruteForcing = true;
 
             var boardStack = new Stack<Solver>();
             while (true)
             {
-                if (timeSinceCheck.ElapsedMilliseconds > 1000)
+                cancellationToken?.ThrowIfCancellationRequested();
+
+                var logicResult = ConsolidateBoard();
+                if (logicResult == LogicResult.PuzzleComplete)
                 {
-                    cancellationToken?.ThrowIfCancellationRequested();
-                    timeSinceCheck.Restart();
+                    return true;
                 }
 
-                if (ConsolidateBoard())
+                if (logicResult != LogicResult.Invalid)
                 {
                     (int i, int j) = GetLeastCandidateCell();
                     if (i < 0)
@@ -919,14 +1009,12 @@ namespace SudokuSolver
         /// </summary>
         /// <param name="cancellationToken">Pass in to support cancelling the solve.</param>
         /// <returns>True if a solution is found, otherwise false.</returns>
-        public async Task<bool> FindRandomSolution(CancellationToken? cancellationToken = null)
+        public bool FindRandomSolution(CancellationToken? cancellationToken = null)
         {
             if (seenMap == null)
             {
                 throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
             }
-
-            Stopwatch timeSinceCheck = Stopwatch.StartNew();
 
             Random rand = new Random();
 
@@ -936,14 +1024,15 @@ namespace SudokuSolver
             var boardStack = new Stack<Solver>();
             while (true)
             {
-                if (timeSinceCheck.ElapsedMilliseconds > 1000)
+                cancellationToken?.ThrowIfCancellationRequested();
+
+                var logicResult = ConsolidateBoard();
+                if (logicResult == LogicResult.PuzzleComplete)
                 {
-                    await Task.Delay(1);
-                    cancellationToken?.ThrowIfCancellationRequested();
-                    timeSinceCheck.Restart();
+                    return true;
                 }
 
-                if (ConsolidateBoard())
+                if (logicResult != LogicResult.Invalid)
                 {
                     (int i, int j) = GetLeastCandidateCell();
                     if (i < 0)
@@ -1008,41 +1097,42 @@ namespace SudokuSolver
         /// <param name="progressEvent">An event to receive the progress count as solutions are found.</param>
         /// <param name="cancellationToken">Pass in to support cancelling the count.</param>
         /// <returns>The solution count found.</returns>
-        public ulong CountSolutions(ulong maxSolutions = 0, EventHandler<ulong> progressEvent = null, CancellationToken? cancellationToken = null)
+        public ulong CountSolutions(ulong maxSolutions = 0, int maxThreads = 1, EventHandler<ulong> progressEvent = null, CancellationToken? cancellationToken = null)
         {
             if (seenMap == null)
             {
                 throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
             }
 
-            bool wasBruteForcing = isBruteForcing;
-            isBruteForcing = true;
-
-            CountSolutionsState state = new(maxSolutions, progressEvent, cancellationToken);
+            CountSolutionsState state = new(maxSolutions, maxThreads, progressEvent, cancellationToken);
             try
             {
-                Clone().CountSolutions(0, state);
+                // Start by filling just the real candidates
+                // This avoids trying and re-trying candidates that are guaranteed to fail.
+                Solver boardCopy = Clone();
+                boardCopy.isBruteForcing = true;
+                boardCopy.CountSolutions(state);
             }
             catch (OperationCanceledException) { }
 
-            isBruteForcing = wasBruteForcing;
             return state.numSolutions;
         }
 
         private class CountSolutionsState
         {
             public ulong numSolutions = 0;
+            public readonly int maxThreads = 1;
             public ulong nextNumSolutionsEvent = 1;
             public ulong numSolutionsEventIncrement = 1;
-            public readonly Stopwatch timeSinceCheck = Stopwatch.StartNew();
 
             public readonly ulong maxSolutions;
             public readonly EventHandler<ulong> progressEvent;
             public readonly CancellationToken? cancellationToken;
 
-            public CountSolutionsState(ulong maxSolutions, EventHandler<ulong> progressEvent, CancellationToken? cancellationToken)
+            public CountSolutionsState(ulong maxSolutions, int maxThreads, EventHandler<ulong> progressEvent, CancellationToken? cancellationToken)
             {
                 this.maxSolutions = maxSolutions;
+                this.maxThreads = maxThreads;
                 this.progressEvent = progressEvent;
                 this.cancellationToken = cancellationToken;
             }
@@ -1062,40 +1152,33 @@ namespace SudokuSolver
             }
         }
 
-        private void CountSolutions(int cell, CountSolutionsState state)
+        private void CountSolutions(CountSolutionsState state, int depth = 0)
         {
-            // Start by filling just the real candidates
-            // This avoids trying and re-trying candidates that are guaranteed to fail.
-            if (!FillRealCandidates())
+            var logicResult = ConsolidateBoard();
+            if (logicResult == LogicResult.PuzzleComplete)
             {
+                state.IncrementSolutions();
                 return;
             }
 
-            int i = cell / WIDTH;
-            int j = cell % WIDTH;
-
-            // Skip cells until one that is not already filled
-            while (cell < NUM_CELLS && IsValueSet(i, j))
+            if (depth <= WIDTH)
             {
-                cell++;
-                i = cell / WIDTH;
-                j = cell % WIDTH;
+                if (!FillRealCandidates(state.maxThreads, skipConsolidate: true, cancellationToken: state.cancellationToken))
+                {
+                    return;
+                }
             }
-            if (cell >= NUM_CELLS)
+
+            (int i, int j) = GetMostCandidateCell();
+            if (i == -1)
             {
                 // Found a solution
                 state.IncrementSolutions();
                 return;
             }
 
-            // If there are no possible values then a contradiction was reached
-            if (board[i, j] == 0)
-            {
-                return;
-            }
-
             // Try all possible values for this cell, recording how many solutions exist for that value
-            for (int val = 1; val <= MAX_VALUE; val++)
+            for (int val = 1; val <= MAX_VALUE && board[i, j] != 0; val++)
             {
                 uint valMask = ValueMask(val);
 
@@ -1105,22 +1188,15 @@ namespace SudokuSolver
                     continue;
                 }
 
-                // Check for cancel
-                if (state.timeSinceCheck.ElapsedMilliseconds > 1000)
-                {
-                    state.cancellationToken?.ThrowIfCancellationRequested();
-                    state.timeSinceCheck.Restart();
-                }
-
                 // Create a duplicate board with one guess and count the solutions for that one
                 Solver boardCopy = Clone();
                 boardCopy.isBruteForcing = true;
 
                 // Change the board to only allow this value in the slot
-                if (boardCopy.SetValue(i, j, val) && boardCopy.ConsolidateBoard())
+                if (boardCopy.SetValue(i, j, val))
                 {
                     // Accumulate how many solutions there are with this cell value
-                    boardCopy.CountSolutions(cell + 1, state);
+                    boardCopy.CountSolutions(state, depth + 1);
                     if (state.maxSolutions > 0 && state.numSolutions >= state.maxSolutions)
                     {
                         return;
@@ -1129,18 +1205,6 @@ namespace SudokuSolver
 
                 // Mark the value as not possible since all solutions with that value are already recorded
                 board[i, j] &= ~valMask;
-
-                // If that was the last possible change, then this board has no more solutions
-                if (board[i, j] == 0)
-                {
-                    return;
-                }
-
-                // If consolodating this board reaches a contradiction, then none of the remaining values have solutions.
-                if (!ConsolidateBoard())
-                {
-                    return;
-                }
             }
         }
 
@@ -1150,7 +1214,7 @@ namespace SudokuSolver
         /// <param name="progressEvent">Recieve progress notifications. Will send 0 through 80 (assume 81 is 100%, though that will never be sent).</param>
         /// <param name="cancellationToken">Pass in to support cancelling.</param>
         /// <returns>True if there are solutions and candidates are filled. False if there are no solutions.</returns>
-        public bool FillRealCandidates(EventHandler<(int, uint[])> progressEvent = null, EventHandler<uint[]> completionEvent = null, CancellationToken? cancellationToken = null)
+        public bool FillRealCandidates(int numThreads = 1, bool skipConsolidate = false, EventHandler<(int, uint[])> progressEvent = null, EventHandler<uint[]> completionEvent = null, CancellationToken? cancellationToken = null)
         {
             if (seenMap == null)
             {
@@ -1158,13 +1222,10 @@ namespace SudokuSolver
             }
 
             Stopwatch timeSinceCheck = Stopwatch.StartNew();
-            bool wasBruteForcing = isBruteForcing;
-            isBruteForcing = true;
 
-            if (!ConsolidateBoard())
+            if (!skipConsolidate && ConsolidateBoard() == LogicResult.Invalid)
             {
                 completionEvent?.Invoke(null, null);
-                isBruteForcing = wasBruteForcing;
                 return false;
             }
 
@@ -1186,95 +1247,53 @@ namespace SudokuSolver
                 }
             }
 
-            while (true)
+            List<(int, Action)> actions = new();
+            int[] tasksRemainingPerCell = new int[HEIGHT * WIDTH];
+            bool boardInvalid = false;
+            for (int i = 0; i < HEIGHT; i++)
             {
-                (int i, int j) = GetLeastCandidateCell(candidatesFixed);
-                if (i == -1)
+                for (int j = 0; j < WIDTH; j++)
                 {
-                    break;
-                }
-                int cellIndex = i * WIDTH + j;
-
-                for (int val = 1; val <= MAX_VALUE; val++)
-                {
-                    uint valMask = ValueMask(val);
-
-                    // Don't bother trying the value if it's not a possibility
-                    if ((board[i, j] & valMask) == 0)
+                    int cellPriority = CellPriority(i, j);
+                    for (int v = 1; v <= MAX_VALUE; v++)
                     {
-                        continue;
-                    }
-
-                    // Don't bother trying this value if it's already confirmed in the fixed board
-                    if ((fixedBoard[cellIndex] & valMask) != 0)
-                    {
-                        continue;
-                    }
-
-                    // Check for cancellation and send progress updates once per second
-                    if (timeSinceCheck.ElapsedMilliseconds > 1000)
-                    {
-                        cancellationToken?.ThrowIfCancellationRequested();
-
-                        progressEvent?.Invoke(null, (cellIndex, fixedBoard));
-                        timeSinceCheck.Restart();
-                    }
-
-                    // Do the solve on a copy of the board
-                    Solver boardCopy = Clone();
-                    boardCopy.isBruteForcing = true;
-
-                    // Go through all previous cells and set only their real candidates as possibilities
-                    for (int fi = 0; fi < HEIGHT; fi++)
-                    {
-                        for (int fj = 0; fj < WIDTH; fj++)
+                        // Don't bother trying the value if it's not a possibility
+                        uint valMask = ValueMask(v);
+                        if ((board[i, j] & valMask) == 0)
                         {
-                            int fixedCellIndex = fi * WIDTH + fj;
-                            if (candidatesFixed[fixedCellIndex])
-                            {
-                                boardCopy.board[fi, fj] = fixedBoard[fixedCellIndex];
-                            }
+                            continue;
                         }
-                    }
-                    for (int fi = 0; fi < HEIGHT; fi++)
-                    {
-                        for (int fj = 0; fj < WIDTH; fj++)
-                        {
-                            int fixedCellIndex = fi * WIDTH + fj;
-                            if (candidatesFixed[fixedCellIndex])
-                            {
-                                uint fixedMask = fixedBoard[fixedCellIndex];
-                                if (ValueCount(fixedMask) == 1 && !boardCopy.IsValueSet(fi, fj))
-                                {
-                                    boardCopy.SetValue(fi, fj, GetValue(fixedMask));
-                                }
-                            }
-                        }
-                    }
 
-                    // Set the board to use this candidate's value
-                    if (boardCopy.SetValue(i, j, val) && boardCopy.FindSolution(cancellationToken))
-                    {
-                        for (int si = 0; si < HEIGHT; si++)
-                        {
-                            for (int sj = 0; sj < WIDTH; sj++)
-                            {
-                                uint solutionValMask = boardCopy.board[si, sj] & ~valueSetMask;
-                                fixedBoard[si * WIDTH + sj] |= solutionValMask;
-                            }
-                        }
+                        int locali = i;
+                        int localj = j;
+                        int localv = v;
+                        int cellIndex = i * WIDTH + j;
+                        tasksRemainingPerCell[cellIndex]++;
+                        actions.Add((cellPriority, () => FillRealCandidateAction(locali, localj, localv, fixedBoard, candidatesFixed, tasksRemainingPerCell, ref boardInvalid)));
                     }
                 }
+            }
 
-                // If a cell has no possible candidates then there are no solutions and thus all candidates are empty.
-                // This will really only happen on the first cell attempted.
-                if (fixedBoard[cellIndex] == 0)
-                {
-                    completionEvent?.Invoke(null, null);
-                    isBruteForcing = wasBruteForcing;
-                    return false;
-                }
-                candidatesFixed[cellIndex] = true;
+            ParallelOptions parallelOptions = new()
+            {
+                MaxDegreeOfParallelism = numThreads
+            };
+            if (cancellationToken.HasValue)
+            {
+                parallelOptions.CancellationToken = cancellationToken.Value;
+            }
+            try
+            {
+                Parallel.Invoke(parallelOptions, actions.OrderByDescending(t => t.Item1).Select(t => t.Item2).ToArray());
+            }
+            catch (OperationCanceledException)
+            {
+                return false;
+            }
+
+            if (boardInvalid)
+            {
+                return false;
             }
 
             for (int i = 0; i < HEIGHT; i++)
@@ -1292,7 +1311,7 @@ namespace SudokuSolver
 
             if (completionEvent != null)
             {
-                completionEvent?.Invoke(null, fixedBoard);
+                completionEvent.Invoke(null, fixedBoard);
             }
             else
             {
@@ -1304,8 +1323,61 @@ namespace SudokuSolver
                     }
                 }
             }
-            isBruteForcing = wasBruteForcing;
             return true;
+        }
+
+        private void FillRealCandidateAction(int i, int j, int v, uint[] fixedBoard, bool[] candidatesFixed, int[] tasksRemainingPerCell, ref bool boardInvalid)
+        {
+            int cellIndex = i * WIDTH + j;
+            uint valMask = ValueMask(v);
+
+            // Don't bother trying this value if it's already confirmed in the fixed board
+            if (!boardInvalid && (fixedBoard[cellIndex] & valMask) == 0)
+            {
+                // Do the solve on a copy of the board
+                Solver boardCopy = Clone();
+                boardCopy.isBruteForcing = true;
+
+                // Go through all previous cells and set only their real candidates as possibilities
+                for (int fi = 0; fi < HEIGHT; fi++)
+                {
+                    for (int fj = 0; fj < WIDTH; fj++)
+                    {
+                        int fixedCellIndex = fi * WIDTH + fj;
+                        if (candidatesFixed[fixedCellIndex])
+                        {
+                            boardCopy.board[fi, fj] = fixedBoard[fixedCellIndex];
+                        }
+                    }
+                }
+
+                // Set the board to use this candidate's value
+                if (boardCopy.SetValue(i, j, v) && boardCopy.FindSolution())
+                {
+                    for (int si = 0; si < HEIGHT; si++)
+                    {
+                        for (int sj = 0; sj < WIDTH; sj++)
+                        {
+                            uint solutionValMask = boardCopy.board[si, sj] & ~valueSetMask;
+                            Interlocked.Or(ref fixedBoard[si * WIDTH + sj], solutionValMask);
+                        }
+                    }
+                }
+            }
+
+            if (Interlocked.Decrement(ref tasksRemainingPerCell[cellIndex]) == 0)
+            {
+                // Mostly paranoia that the CPU will reorder the candidatesFixed being set to true to be before all the candidates
+                // have been set above.
+                Thread.MemoryBarrier();
+
+                // If a cell has no possible candidates then there are no solutions and thus all candidates are empty.
+                if (fixedBoard[cellIndex] == 0)
+                {
+                    boardInvalid = true;
+                }
+                candidatesFixed[cellIndex] = true;
+            }
         }
 
         /// <summary>
@@ -1313,7 +1385,7 @@ namespace SudokuSolver
         /// </summary>
         /// <param name="stepsDescription">Get a full description of all logical steps taken.</param>
         /// <returns></returns>
-        public bool ConsolidateBoard(StringBuilder stepsDescription = null)
+        public LogicResult ConsolidateBoard(StringBuilder stepsDescription = null)
         {
             if (seenMap == null)
             {
@@ -1328,7 +1400,7 @@ namespace SudokuSolver
                 stepsDescription?.Append(stepDescription).AppendLine();
             } while (result == LogicResult.Changed);
 
-            return result != LogicResult.Invalid;
+            return result;
         }
 
         /// <summary>
@@ -2450,7 +2522,7 @@ namespace SudokuSolver
                                     boardCopy.isBruteForcing = true;
 
                                     StringBuilder contradictionReason = stepDescription != null ? new() : null;
-                                    if (!boardCopy.SetValue(i, j, v) || !boardCopy.ConsolidateBoard(contradictionReason))
+                                    if (!boardCopy.SetValue(i, j, v) || boardCopy.ConsolidateBoard(contradictionReason) == LogicResult.Invalid)
                                     {
                                         if (stepDescription != null)
                                         {

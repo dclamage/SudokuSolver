@@ -112,8 +112,7 @@ namespace SudokuTests
             });
             Assert.IsTrue(solver.SetValue(4, 2, 1));
             Assert.IsTrue(solver.SetValue(5, 6, 2));
-            Assert.IsTrue(solver.ConsolidateBoard());
-            Assert.IsTrue(solver.IsComplete);
+            Assert.AreEqual(LogicResult.PuzzleComplete, solver.ConsolidateBoard());
             Assert.AreEqual(solution, solver.ToGivenString());
         }
 
@@ -135,8 +134,7 @@ namespace SudokuTests
             {
                 "dnc",
             });
-            Assert.IsTrue(solver.ConsolidateBoard());
-            Assert.IsTrue(solver.IsComplete);
+            Assert.AreEqual(LogicResult.PuzzleComplete, solver.ConsolidateBoard());
             Assert.AreEqual(solution, solver.ToGivenString());
         }
     }
