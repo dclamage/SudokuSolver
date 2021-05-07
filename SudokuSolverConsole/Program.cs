@@ -16,13 +16,12 @@ namespace SudokuSolverConsole
 #if false
             args = new string[]
             {
-                @"-f=N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9lQA3AQwBsBXOeAFlTQjJgDsEAXDOk40vyGCRxALrJCwgTOlyJU0fxCVa9AOzNWHbrxjSV1OggDMWtp3g8+SwQtm2HTovbmO34yc/fvXP77J+AR5CQSH+LhIg7AD27ADGcWAw8TRc2rp8QA",
+                @"-f=N4IgzglgXgpiBcBOANCALhNAbO8QHkAnAI0xFQEMBXNACwHtCEQBFegExgGNyRCqcYGGmYARCAHNMYAAQUs9AHYS5iuYUL0A7jIhq6MGRMIR2MgLZUwaGWCrmZaeo9qH2kzLrXSZXCIS4cADoZcSk0WXMKAE8ZQhgABxgKG3klFQo1Cg1tIIAdRQKwnzTlGXcKCSV5WT13LhSYM2JY7M0tWXoaSE4XQ2NTCysbOwcnPqMIADcYNUV7YhhCORs6FPV2kOKIixi4xOTUhTKKcohK6qx8wsUAYRgsLFktTFo5I3jYvwCcIesZRYyDjsEL3R7PV7vYwwWJgACOVGyhks/0BMBmiiCvAG7AQAG08aAEtlMNFmABRDEgAC+yGAtPpdIZzKZrKJJLQZLw+HYuOpAF1kISWYzRSLxYLhWzxdLpZKxbKFUqBULlYqZfT5RrtXLVTq1WKterjYbVSBiSZOcweXyTfrzRyuSBKbMafzBSAsJhsDAANYQR5LUb40BcB5YZgAJQAjAAGW4Adl4YfB+JAkcQtwAHLxI1nbogQB73PEuBglMwAKqR3hTeRUXAgHMMkApiN4SMAZluceT4bAacjACYC7no9mi6gS9xy4oqwAZWv1xtJlttqPxzt91PwPHp8dD3Mj6OTkDTssQCt4USL1B1rAN5gANhpdNb4ajCduse3T0H+ZPVAM1uQ9i38GdLzna8azvZdmELNcPw7eMk1QNsB13fdbhfICRwAVlzbsABZcyI24tyAvCQNzJ8e1Pc9ZzEW8QHvR88E7Zs33XDsv17ND+0HWjC0oicgLI1D027HD03wsdbhIsDS0YvBK2Y1jGyI1cuKQ/dN1/DC92AkigPzAigK/aTI1oiTIyonMxNHRSIKvEBqyXB8NMPRDHijbsf34ndDLIwD0yow8gNoij0y/Yz01M3NMxfJyLxc0QYJYuC8CIrcVRANptBDT09BgAzDO7GyR0s8czJk+Siw9dDB3KosWy9RQSvxMryNI6iRJCqzqPdAK/0wrtuv5VritK6LupMuqgMzGq82w+rhoMmatwmt82o63dDK/GzaPs0LRwcnMhvfQKZqTLbQB26bbMTHqkoagTRqom7Jvah7uyWsiFNeq6xoI26iu+zqTqigaAbWwcqM2r7doJGaltol7YdGr8QYFakgA",
                 //"-b=9",
                 //"-c=ratio:neg2",
                 //"-c=difference:neg1",
                 //"-c=taxi:4",
-                "-t",
-                "-n"
+                "-st"
             };
 #endif
 
@@ -172,7 +171,7 @@ namespace SudokuSolverConsole
             if (solveBruteForce)
             {
                 Console.WriteLine("Finding a solution with brute force:");
-                if (!solver.FindSolution())
+                if (!solver.FindSolution(multiThread: multiThread))
                 {
                     Console.WriteLine($"No solutions found!");
                 }
@@ -185,7 +184,7 @@ namespace SudokuSolverConsole
             if (solveRandomBruteForce)
             {
                 Console.WriteLine("Finding a random solution with brute force:");
-                if (!solver.FindRandomSolution())
+                if (!solver.FindSolution(multiThread: multiThread, isRandom: true))
                 {
                     Console.WriteLine($"No solutions found!");
                 }
@@ -228,7 +227,6 @@ namespace SudokuSolverConsole
 
             if (solutionCount)
             {
-                object consoleLock = new();
                 Console.WriteLine("Finding solution count...");
                 ulong numSolutions = solver.CountSolutions(maxSolutions: 0, multiThread: multiThread, progressEvent: (ulong count) =>
                 {

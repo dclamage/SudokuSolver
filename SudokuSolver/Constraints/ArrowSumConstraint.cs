@@ -12,7 +12,6 @@ namespace SudokuSolver.Constraints
         public readonly List<(int, int)> circleCells;
         public readonly List<(int, int)> arrowCells;
         private readonly HashSet<(int, int)> allCells;
-        private HashSet<(int, int)> arrowGroupCells;
         private List<(int, int)> groupCells;
         private bool isArrowGroup = false;
         private bool isCircleGroup = false;
@@ -59,27 +58,28 @@ namespace SudokuSolver.Constraints
             bool changed = false;
             var board = sudokuSolver.Board;
 
-            isAllGrouped = sudokuSolver.IsGroup(allCells.ToList());
-            if (isAllGrouped)
+            if (arrowCells.Count > 1)
             {
-                isArrowGroup = true;
-                isCircleGroup = true;
-                groupCells = allCells.ToList();
-                arrowGroupCells = new(groupCells);
-            }
-            else
-            {
-                isArrowGroup = sudokuSolver.IsGroup(arrowCells);
-                if (isArrowGroup)
+                isAllGrouped = sudokuSolver.IsGroup(allCells.ToList());
+                if (isAllGrouped)
                 {
-                    groupCells = arrowCells.ToList();
-                    if (circleCells.Count == 1)
-                    {
-                        groupCells.Add(circleCells[0]);
-                    }
-                    arrowGroupCells = new(groupCells);
+                    isArrowGroup = true;
+                    isCircleGroup = true;
+                    groupCells = allCells.ToList();
                 }
-                isCircleGroup = sudokuSolver.IsGroup(circleCells);
+                else
+                {
+                    isArrowGroup = sudokuSolver.IsGroup(arrowCells);
+                    if (isArrowGroup)
+                    {
+                        groupCells = arrowCells.ToList();
+                        if (circleCells.Count == 1)
+                        {
+                            groupCells.Add(circleCells[0]);
+                        }
+                    }
+                    isCircleGroup = sudokuSolver.IsGroup(circleCells);
+                }
             }
 
             if (circleCells.Count == 1)
@@ -441,31 +441,33 @@ namespace SudokuSolver.Constraints
                             }
                         }
 
-                        HashSet<int> visitedSums = new();
                         foreach (var valueCombination in possibleValues.Combinations(numRemainingArrowCells))
                         {
                             int valueComboSum = baseSum + valueCombination.Sum();
-
-                            bool canUseCombination = true;
-                            int remainingComboSum = valueComboSum;
-                            int digitIndex = circleCells.Count - 1;
-                            while (remainingComboSum > 0)
-                            {
-                                int curDigit = remainingComboSum % 10;
-                                remainingComboSum /= 10;
-
-                                if (isAllGrouped && valueCombination.Contains(curDigit))
-                                {
-                                    canUseCombination = false;
-                                    break;
-                                }
-                                digitIndex--;
-                            }
-                            if (!canUseCombination)
+                            if (possibleArrowSums.Contains(valueComboSum))
                             {
                                 continue;
                             }
-                            if (!visitedSums.Add(valueComboSum))
+
+                            bool canUseCombination = true;
+                            if (isAllGrouped)
+                            {
+                                int remainingComboSum = valueComboSum;
+                                int digitIndex = circleCells.Count - 1;
+                                while (remainingComboSum > 0)
+                                {
+                                    int curDigit = remainingComboSum % 10;
+                                    remainingComboSum /= 10;
+
+                                    if (valueCombination.Contains(curDigit))
+                                    {
+                                        canUseCombination = false;
+                                        break;
+                                    }
+                                    digitIndex--;
+                                }
+                            }
+                            if (!canUseCombination)
                             {
                                 continue;
                             }

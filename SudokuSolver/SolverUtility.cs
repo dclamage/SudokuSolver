@@ -252,5 +252,52 @@ namespace SudokuSolver
 
             return regions;
         }
+
+        // Thread safe random
+        private static readonly Random _global = new();
+        [ThreadStatic] private static Random _local;
+        public static int RandomNext(int minValue, int maxValue)
+        {
+            if (_local == null)
+            {
+                lock (_global)
+                {
+                    if (_local == null)
+                    {
+                        int seed = _global.Next();
+                        _local = new Random(seed);
+                    }
+                }
+            }
+
+            return _local.Next(minValue, maxValue);
+        }
+
+        public static int GetRandomValue(uint mask)
+        {
+            int numCellVals = ValueCount(mask);
+            int minVal = MinValue(mask);
+            int maxVal = MaxValue(mask);
+            int targetValIndex = RandomNext(0, numCellVals);
+
+            int valIndex = 0;
+            int val = 0;
+            for (int curVal = minVal; curVal <= maxVal; curVal++)
+            {
+                val = curVal;
+                uint valMask = ValueMask(curVal);
+
+                // Don't bother trying the value if it's not a possibility
+                if ((mask & valMask) != 0)
+                {
+                    if (valIndex == targetValIndex)
+                    {
+                        break;
+                    }
+                    valIndex++;
+                }
+            }
+            return val;
+        }
     }
 }

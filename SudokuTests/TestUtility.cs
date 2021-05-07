@@ -42,7 +42,7 @@ namespace SudokuTests
             Assert.AreEqual(1u, solver1.CountSolutions(multiThread: true));
 
             Solver solver2 = solver.Clone();
-            Assert.IsTrue(solver2.FindSolution());
+            Assert.IsTrue(solver2.FindSolution(multiThread: true));
             Assert.AreEqual(expectedSolution, solver2.ToGivenString());
 
             Solver solver3 = solver.Clone();
@@ -57,7 +57,7 @@ namespace SudokuTests
             Assert.AreEqual(0ul, solver1.CountSolutions(multiThread: true));
 
             Solver solver2 = solver.Clone();
-            Assert.IsFalse(solver2.FindSolution());
+            Assert.IsFalse(solver2.FindSolution(multiThread: true));
 
             Solver solver3 = solver.Clone();
             Assert.IsFalse(solver3.FillRealCandidates(multiThread: true));
@@ -69,7 +69,7 @@ namespace SudokuTests
             Assert.IsTrue(solver1.CountSolutions(multiThread: true) > 1ul);
 
             Solver solver2 = solver.Clone();
-            Assert.IsTrue(solver2.FindSolution());
+            Assert.IsTrue(solver2.FindSolution(multiThread: true));
 
             Solver solver3 = solver.Clone();
             Assert.IsTrue(solver3.FillRealCandidates(multiThread: true));
