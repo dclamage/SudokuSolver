@@ -73,6 +73,7 @@ namespace SudokuSolver
                 return flatBoard;
             }
         }
+
         public string GivenString
         {
             get
@@ -100,6 +101,37 @@ namespace SudokuSolver
                 return stringBuilder.ToString();
             }
         }
+
+        public string CandidateString
+        {
+            get
+            {
+                var flatBoard = FlatBoard;
+                int digitWidth = MAX_VALUE >= 10 ? 2 : 1;
+                StringBuilder stringBuilder = new(flatBoard.Length);
+                foreach (uint mask in flatBoard)
+                {
+                    for (int v = 1; v <= MAX_VALUE; v++)
+                    {
+                        if ((mask & ValueMask(v)) != 0)
+                        {
+                            if (digitWidth == 2 && v <= 9)
+                            {
+                                stringBuilder.Append('0');
+                            }
+                            stringBuilder.Append(v);
+                        }
+                        else
+                        {
+                            stringBuilder.Append('.', digitWidth);
+                        }
+                    }
+                }
+                return stringBuilder.ToString();
+            }
+        }
+
+        public string OutputString => IsComplete ? GivenString : CandidateString;
 
         private readonly List<Constraint> constraints;
 
@@ -1136,14 +1168,14 @@ namespace SudokuSolver
         /// <param name="progressEvent">An event to receive the progress count as solutions are found.</param>
         /// <param name="cancellationToken">Pass in to support cancelling the count.</param>
         /// <returns>The solution count found.</returns>
-        public ulong CountSolutions(ulong maxSolutions = 0, bool multiThread = false, Action<ulong> progressEvent = null, CancellationToken? cancellationToken = null)
+        public ulong CountSolutions(ulong maxSolutions = 0, bool multiThread = false, Action<ulong> progressEvent = null, Action<Solver> solutionEvent = null, CancellationToken? cancellationToken = null)
         {
             if (seenMap == null)
             {
                 throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
             }
 
-            using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, cancellationToken);
+            using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken);
             try
             {
                 if (state.multiThread)
@@ -1169,27 +1201,31 @@ namespace SudokuSolver
             public readonly bool multiThread;
             public readonly ulong maxSolutions;
             public readonly Action<ulong> progressEvent;
+            public readonly Action<Solver> solutionEvent;
             public readonly CancellationToken? cancellationToken;
             public readonly CountdownEvent countdownEvent;
 
             private readonly object solutionLock = new();
             private readonly Stopwatch eventTimer;
 
-            public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, CancellationToken? cancellationToken)
+            public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, Action<Solver> solutionEvent, CancellationToken? cancellationToken)
             {
                 this.maxSolutions = maxSolutions;
                 this.multiThread = multiThread;
                 this.progressEvent = progressEvent;
+                this.solutionEvent = solutionEvent;
                 this.cancellationToken = cancellationToken;
                 eventTimer = Stopwatch.StartNew();
                 countdownEvent = multiThread ? new CountdownEvent(1) : null;
             }
 
-            public void IncrementSolutions()
+            public void IncrementSolutions(Solver solver)
             {
                 bool invokeProgress = false;
                 lock (solutionLock)
                 {
+                    solutionEvent?.Invoke(solver);
+
                     numSolutions++;
                     if (eventTimer.ElapsedMilliseconds > 500)
                     {
@@ -1234,7 +1270,7 @@ namespace SudokuSolver
                 var logicResult = solver.ConsolidateBoard();
                 if (logicResult == LogicResult.PuzzleComplete)
                 {
-                    state.IncrementSolutions();
+                    state.IncrementSolutions(solver);
                     if (state.maxSolutions > 0 && state.numSolutions >= state.maxSolutions)
                     {
                         return;
@@ -1245,7 +1281,7 @@ namespace SudokuSolver
                     (int i, int j) = solver.GetLeastCandidateCell();
                     if (i < 0)
                     {
-                        state.IncrementSolutions();
+                        state.IncrementSolutions(solver);
                         if (state.maxSolutions > 0 && state.numSolutions >= state.maxSolutions)
                         {
                             return;
@@ -1297,7 +1333,7 @@ namespace SudokuSolver
                 var logicResult = ConsolidateBoard();
                 if (logicResult == LogicResult.PuzzleComplete)
                 {
-                    state.IncrementSolutions();
+                    state.IncrementSolutions(this);
                     break;
                 }
 
@@ -1310,7 +1346,7 @@ namespace SudokuSolver
                 (int i, int j) = GetLeastCandidateCell();
                 if (i < 0)
                 {
-                    state.IncrementSolutions();
+                    state.IncrementSolutions(this);
                     break;
                 }
 

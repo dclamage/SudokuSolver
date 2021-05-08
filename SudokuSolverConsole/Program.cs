@@ -1,27 +1,31 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.Linq;
+using System.Text;
+using System.Threading.Tasks;
 using Mono.Options;
 using SudokuSolver;
-using System.Text;
-using System.Diagnostics;
 
 namespace SudokuSolverConsole
 {
     class Program
     {
-        static void Main(string[] args)
+        static async Task Main(string[] args)
         {
             // Useful for quickly testing a puzzle without changing commandline parameters
 #if false
             args = new string[]
             {
-                @"-f=N4IgzglgXgpiBcBOANCALhNAbO8QHkAnAI0xFQEMBXNACwHtCEQBFegExgGNyRCqcYGGmYARCAHNMYAAQUs9AHYS5iuYUL0A7jIhq6MGRMIR2MgLZUwaGWCrmZaeo9qH2kzLrXSZXCIS4cADoZcSk0WXMKAE8ZQhgABxgKG3klFQo1Cg1tIIAdRQKwnzTlGXcKCSV5WT13LhSYM2JY7M0tWXoaSE4XQ2NTCysbOwcnPqMIADcYNUV7YhhCORs6FPV2kOKIixi4xOTUhTKKcohK6qx8wsUAYRgsLFktTFo5I3jYvwCcIesZRYyDjsEL3R7PV7vYwwWJgACOVGyhks/0BMBmiiCvAG7AQAG08aAEtlMNFmABRDEgAC+yGAtPpdIZzKZrKJJLQZLw+HYuOpAF1kISWYzRSLxYLhWzxdLpZKxbKFUqBULlYqZfT5RrtXLVTq1WKterjYbVSBiSZOcweXyTfrzRyuSBKbMafzBSAsJhsDAANYQR5LUb40BcB5YZgAJQAjAAGW4Adl4YfB+JAkcQtwAHLxI1nbogQB73PEuBglMwAKqR3hTeRUXAgHMMkApiN4SMAZluceT4bAacjACYC7no9mi6gS9xy4oqwAZWv1xtJlttqPxzt91PwPHp8dD3Mj6OTkDTssQCt4USL1B1rAN5gANhpdNb4ajCduse3T0H+ZPVAM1uQ9i38GdLzna8azvZdmELNcPw7eMk1QNsB13fdbhfICRwAVlzbsABZcyI24tyAvCQNzJ8e1Pc9ZzEW8QHvR88E7Zs33XDsv17ND+0HWjC0oicgLI1D027HD03wsdbhIsDS0YvBK2Y1jGyI1cuKQ/dN1/DC92AkigPzAigK/aTI1oiTIyonMxNHRSIKvEBqyXB8NMPRDHijbsf34ndDLIwD0yow8gNoij0y/Yz01M3NMxfJyLxc0QYJYuC8CIrcVRANptBDT09BgAzDO7GyR0s8czJk+Siw9dDB3KosWy9RQSvxMryNI6iRJCqzqPdAK/0wrtuv5VritK6LupMuqgMzGq82w+rhoMmatwmt82o63dDK/GzaPs0LRwcnMhvfQKZqTLbQB26bbMTHqkoagTRqom7Jvah7uyWsiFNeq6xoI26iu+zqTqigaAbWwcqM2r7doJGaltol7YdGr8QYFakgA",
+                @"-f=N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PkxAA3AIYAbAK5x4ARlRoIkmADsEAFwyKBR8V1OiTos9QtGrdeiGlbdEANZaIaABa69BmKhOLq4QWmh+iqhaAPZaAMaxYDBx8i6aETBEQA=",
                 //"-b=9",
                 //"-c=ratio:neg2",
                 //"-c=difference:neg1",
                 //"-c=taxi:4",
-                "-st"
+                "-o=candidates.txt",
+                "-rt",
+                "--help",
             };
 #endif
 
@@ -32,12 +36,14 @@ namespace SudokuSolverConsole
             string fpuzzlesURL = null;
             string givens = null;
             string blankGridSizeString = null;
+            string outputPath = null;
             List<string> constraints = new();
             bool multiThread = false;
             bool solveBruteForce = false;
             bool solveRandomBruteForce = false;
             bool solveLogically = false;
             bool solutionCount = false;
+            bool sortSolutionCount = false;
             bool check = false;
             bool trueCandidates = false;
             bool print = false;
@@ -47,6 +53,7 @@ namespace SudokuSolverConsole
                 { "g|givens=", "Provide a digit string to represent the givens for the puzzle.", g => givens = g },
                 { "b|blank=", "Use a blank grid of a square size.", b => blankGridSizeString = b },
                 { "c|constraint=", "Provide a constraint to use.", c => constraints.Add(c) },
+                { "o|out=", "Output solution(s) to file.", o => outputPath = o },
                 { "t|multithread", "Use multithreading.", t => multiThread = t != null },
                 { "s|solve", "Provide a single brute force solution.", s => solveBruteForce = s != null },
                 { "d|random", "Provide a single random brute force solution.", d => solveRandomBruteForce = d != null },
@@ -54,6 +61,7 @@ namespace SudokuSolverConsole
                 { "n|solutioncount", "Provide an exact solution count.", n => solutionCount = n != null },
                 { "k|check", "Check if there are 0, 1, or 2+ solutions.", k => check = k != null },
                 { "r|truecandidates", "Find the true candidates for the puzzle (union of all solutions).", r => trueCandidates = r != null },
+                { "z|sort", "Sort the solution count (requires reading all solutions into memory).", sort => sortSolutionCount = sort != null },
                 { "p|print", "Print the input board.", p => print = p != null },
                 { "h|help", "Show this message and exit", h => showHelp = h != null },
             };
@@ -166,6 +174,19 @@ namespace SudokuSolverConsole
                     Console.WriteLine($"Board is invalid!");
                 }
                 solver.Print();
+
+                if (outputPath != null)
+                {
+                    try
+                    {
+                        using StreamWriter file = new(outputPath);
+                        await file.WriteLineAsync(solver.OutputString);
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine($"Failed to write to file: {e.Message}");
+                    }
+                }
             }
 
             if (solveBruteForce)
@@ -178,6 +199,19 @@ namespace SudokuSolverConsole
                 else
                 {
                     solver.Print();
+
+                    if (outputPath != null)
+                    {
+                        try
+                        {
+                            using StreamWriter file = new(outputPath);
+                            await file.WriteLineAsync(solver.OutputString);
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine($"Failed to write to file: {e.Message}");
+                        }
+                    }
                 }
             }
 
@@ -191,6 +225,19 @@ namespace SudokuSolverConsole
                 else
                 {
                     solver.Print();
+
+                    if (outputPath != null)
+                    {
+                        try
+                        {
+                            using StreamWriter file = new(outputPath);
+                            await file.WriteLineAsync(solver.OutputString);
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine($"Failed to write to file: {e.Message}");
+                        }
+                    }
                 }
             }
 
@@ -222,18 +269,69 @@ namespace SudokuSolverConsole
                 else
                 {
                     solver.Print();
+
+                    if (outputPath != null)
+                    {
+                        try
+                        {
+                            using StreamWriter file = new(outputPath);
+                            await file.WriteLineAsync(solver.OutputString);
+                        }
+                        catch (Exception e)
+                        {
+                            Console.WriteLine($"Failed to write to file: {e.Message}");
+                        }
+                    }
                 }
             }
 
             if (solutionCount)
             {
                 Console.WriteLine("Finding solution count...");
-                ulong numSolutions = solver.CountSolutions(maxSolutions: 0, multiThread: multiThread, progressEvent: (ulong count) =>
+
+                try
                 {
-                    ReplaceLine($"(In progress) Found {count} solutions in {watch.Elapsed}.");
-                });
-                ReplaceLine($"\rFound {numSolutions} solutions.");
-                Console.WriteLine();
+                    Action<Solver> solutionEvent = null;
+                    using StreamWriter file = (outputPath != null) ? new(outputPath) : null;
+                    if (file != null)
+                    {
+                        solutionEvent = (Solver solver) =>
+                        {
+                            try
+                            {
+                                file.WriteLine(solver.GivenString);
+                            }
+                            catch (Exception e)
+                            {
+                                Console.WriteLine($"Failed to write to file: {e.Message}");
+                            }
+                        };
+                    }
+
+                    ulong numSolutions = solver.CountSolutions(maxSolutions: 0, multiThread: multiThread, progressEvent: (ulong count) =>
+                    {
+                        ReplaceLine($"(In progress) Found {count} solutions in {watch.Elapsed}.");
+                    },
+                    solutionEvent: solutionEvent);
+
+                    ReplaceLine($"\rFound {numSolutions} solutions.");
+                    Console.WriteLine();
+
+                    if (file != null && sortSolutionCount)
+                    {
+                        Console.WriteLine("Sorting...");
+                        file.Close();
+
+                        string[] lines = await File.ReadAllLinesAsync(outputPath);
+                        Array.Sort(lines);
+                        await File.WriteAllLinesAsync(outputPath, lines);
+                        Console.WriteLine("Done.");
+                    }
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"ERROR: {e.Message}");
+                }
             }
 
             if (check)
