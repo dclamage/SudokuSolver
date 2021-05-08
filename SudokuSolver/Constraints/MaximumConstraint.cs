@@ -10,7 +10,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Maximum", ConsoleName = "max")]
     public class MaximumConstraint : Constraint
     {
-        private readonly List<(int, int)> cells;
+        public readonly List<(int, int)> cells;
         private readonly HashSet<(int, int)> cellsLookup;
         private readonly Dictionary<(int, int), List<(int, int)>> adjCellLookup = new();
         private readonly Dictionary<(int, int), int> minUniqueValuesLookup = new();

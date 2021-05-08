@@ -9,10 +9,11 @@ namespace SudokuSolver.Constraints
 {
     public abstract class OrthogonalValueConstraint : Constraint
     {
-        protected readonly Dictionary<(int, int, int, int), int> markers = new();
-        protected readonly bool negativeConstraint = false;
-        protected readonly Dictionary<int, uint[]> clearValuesPositiveByMarker = new();
-        protected readonly uint[] clearValuesNegative;
+        public readonly Dictionary<(int, int, int, int), int> markers = new();
+        public readonly bool negativeConstraint = false;
+        public readonly Dictionary<int, uint[]> clearValuesPositiveByMarker = new();
+        public readonly uint[] clearValuesNegative;
+        public readonly HashSet<int> negativeConstraintValues = new();
 
         /// <summary>
         /// Determine if the pair of values are allowed to be across the constraint "marker" for a pair of cells.
@@ -46,7 +47,6 @@ namespace SudokuSolver.Constraints
 
         public OrthogonalValueConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
-            HashSet<int> negativeConstraintValues = new();
             HashSet<int> markerValues = new();
             options = options.ToLowerInvariant();
             foreach (string optionGroup in options.Split(separator: ';', options: StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries))

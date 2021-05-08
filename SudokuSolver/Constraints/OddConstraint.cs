@@ -8,7 +8,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Odd", ConsoleName = "odd")]
     public class OddConstraint : Constraint
     {
-        private readonly List<(int, int)> cells;
+        public readonly List<(int, int)> cells;
 
         public OddConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {

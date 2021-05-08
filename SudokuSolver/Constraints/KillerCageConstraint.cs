@@ -10,8 +10,8 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Killer Cage", ConsoleName = "killer")]
     public class KillerCageConstraint : Constraint
     {
-        private readonly List<(int, int)> cells;
-        private readonly int sum;
+        public readonly List<(int, int)> cells;
+        public readonly int sum;
         private List<List<int>> sumCombinations = null;
         private HashSet<int> possibleValues = null;
 

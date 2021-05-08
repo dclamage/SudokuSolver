@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading.Tasks;
 using Mono.Options;
@@ -18,14 +19,14 @@ namespace SudokuSolverConsole
 #if false
             args = new string[]
             {
-                @"-f=N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PkxAA3AIYAbAK5x4ARlRoIkmADsEAFwyKBR8V1OiTos9QtGrdeiGlbdEANZaIaABa69BmKhOLq4QWmh+iqhaAPZaAMaxYDBx8i6aETBEQA=",
+                @"-f=N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAIwBhYyFSGATOctGAzHasAWZ0YCs7w4jvVqFCCaOnrwBEa+iPaGXlGupnGOCdG2iSbJ/jREQA===",
                 //"-b=9",
                 //"-c=ratio:neg2",
                 //"-c=difference:neg1",
                 //"-c=taxi:4",
-                "-o=candidates.txt",
-                "-rt",
-                "--help",
+                //"-o=candidates.txt",
+                "-uv",
+                "-prt",
             };
 #endif
 
@@ -46,6 +47,8 @@ namespace SudokuSolverConsole
             bool sortSolutionCount = false;
             bool check = false;
             bool trueCandidates = false;
+            bool fpuzzlesOut = false;
+            bool visitURL = false;
             bool print = false;
 
             var options = new OptionSet {
@@ -62,6 +65,8 @@ namespace SudokuSolverConsole
                 { "k|check", "Check if there are 0, 1, or 2+ solutions.", k => check = k != null },
                 { "r|truecandidates", "Find the true candidates for the puzzle (union of all solutions).", r => trueCandidates = r != null },
                 { "z|sort", "Sort the solution count (requires reading all solutions into memory).", sort => sortSolutionCount = sort != null },
+                { "u|url", "Write solution as f-puzzles URL.", u => fpuzzlesOut = u != null },
+                { "v|visit", "Automatically visit the output URL with default browser (combine with -u).", v => visitURL = v != null },
                 { "p|print", "Print the input board.", p => print = p != null },
                 { "h|help", "Show this message and exit", h => showHelp = h != null },
             };
@@ -156,6 +161,7 @@ namespace SudokuSolverConsole
                 Console.WriteLine(e.Message);
                 return;
             }
+            Solver originalSolver = solver.Clone();
 
             if (print)
             {
@@ -187,6 +193,11 @@ namespace SudokuSolverConsole
                         Console.WriteLine($"Failed to write to file: {e.Message}");
                     }
                 }
+
+                if (fpuzzlesOut)
+                {
+                    OpenFPuzzles(originalSolver, solver, visitURL);
+                }
             }
 
             if (solveBruteForce)
@@ -211,6 +222,11 @@ namespace SudokuSolverConsole
                         {
                             Console.WriteLine($"Failed to write to file: {e.Message}");
                         }
+                    }
+
+                    if (fpuzzlesOut)
+                    {
+                        OpenFPuzzles(originalSolver, solver, visitURL);
                     }
                 }
             }
@@ -237,6 +253,11 @@ namespace SudokuSolverConsole
                         {
                             Console.WriteLine($"Failed to write to file: {e.Message}");
                         }
+                    }
+
+                    if (fpuzzlesOut)
+                    {
+                        OpenFPuzzles(originalSolver, solver, visitURL);
                     }
                 }
             }
@@ -281,6 +302,11 @@ namespace SudokuSolverConsole
                         {
                             Console.WriteLine($"Failed to write to file: {e.Message}");
                         }
+                    }
+
+                    if (fpuzzlesOut)
+                    {
+                        OpenFPuzzles(originalSolver, solver, visitURL);
                     }
                 }
             }
@@ -347,5 +373,51 @@ namespace SudokuSolverConsole
 
         private static void ReplaceLine(string text) =>
             Console.Write("\r" + text + new string(' ', Console.WindowWidth - text.Length) + "\r");
+
+        private static void OpenFPuzzles(Solver originalSolver, Solver solver, bool visit)
+        {
+            string url = SolverFactory.ToFPuzzlesURL(originalSolver, solver);
+            Console.WriteLine(url);
+            if (visit)
+            {
+                try
+                {
+                    OpenUrl(url);
+                }
+                catch (Exception e)
+                {
+                    Console.WriteLine($"Cannot open URL: {e}");
+                }
+            }
+        }
+
+        private static void OpenUrl(string url)
+        {
+            try
+            {
+                Process.Start(url);
+            }
+            catch
+            {
+                // hack because of this: https://github.com/dotnet/corefx/issues/10361
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    url = url.Replace("&", "^&");
+                    Process.Start(new ProcessStartInfo("cmd", $"/c start {url}") { CreateNoWindow = true });
+                }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                {
+                    Process.Start("xdg-open", url);
+                }
+                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                {
+                    Process.Start("open", url);
+                }
+                else
+                {
+                    throw;
+                }
+            }
+        }
     }
 }

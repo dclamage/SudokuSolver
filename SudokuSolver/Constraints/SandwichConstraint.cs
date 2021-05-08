@@ -12,8 +12,8 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Sandwich", ConsoleName = "sandwich")]
     public class SandwichConstraint : Constraint
     {
-        private readonly int sum;
-        private readonly (int, int) cellStart;
+        public readonly int sum;
+        public readonly (int, int) cellStart;
         private readonly List<(int, int)> cells;
         private readonly HashSet<(int, int)> cellsLookup;
         private int minFillingLength = 0;
@@ -85,7 +85,7 @@ namespace SudokuSolver.Constraints
             }
 
             fillingMask = 0;
-            for (int curFillingLength = 1; curFillingLength < numCells - 2; curFillingLength++)
+            for (int curFillingLength = 1; curFillingLength <= numCells - 2; curFillingLength++)
             {
                 try
                 {

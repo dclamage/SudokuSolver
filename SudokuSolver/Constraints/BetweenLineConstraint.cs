@@ -11,9 +11,9 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Between Line", ConsoleName = "betweenline")]
     public class BetweenLineConstraint : Constraint
     {
-        private readonly (int, int) outerCell0;
-        private readonly (int, int) outerCell1;
-        private readonly List<(int, int)> innerCells;
+        public readonly (int, int) outerCell0;
+        public readonly (int, int) outerCell1;
+        public readonly List<(int, int)> innerCells;
         private readonly HashSet<(int, int)> innerCellsLookup;
         private int minUniqueInnerValues;
 

@@ -8,7 +8,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Even", ConsoleName = "even")]
     public class EvenConstraint : Constraint
     {
-        private readonly List<(int, int)> cells;
+        public readonly List<(int, int)> cells;
 
         public EvenConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {

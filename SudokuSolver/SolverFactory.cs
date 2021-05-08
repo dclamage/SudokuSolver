@@ -5,8 +5,9 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using LZStringCSharp;
-using SudokuSolver.PuzzleFormats;
 using SudokuSolver.Constraints;
+using SudokuSolver.PuzzleFormats;
+using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver
 {
@@ -113,9 +114,9 @@ namespace SudokuSolver
             {
                 throw new ArgumentException($"f-puzzles import is non-square {height}x{width}");
             }
-            
+
             // Start with default regions
-            int[,] regions = SolverUtility.DefaultRegions(height);
+            int[,] regions = DefaultRegions(height);
 
             // Override regions
             for (i = 0; i < height; i++)
@@ -478,9 +479,9 @@ namespace SudokuSolver
 
             if (fpuzzlesData.clone != null && fpuzzlesData.clone.Length > 0)
             {
-                StringBuilder cloneParams = new();
                 foreach (var clone in fpuzzlesData.clone)
                 {
+                    StringBuilder cloneParams = new();
                     for (int cloneIndex = 0; cloneIndex < clone.cells.Length; cloneIndex++)
                     {
                         string cell0 = clone.cells[cloneIndex];
@@ -496,10 +497,11 @@ namespace SudokuSolver
                         }
                         cloneParams.Append(cell0).Append(cell1);
                     }
-                }
-                if (cloneParams.Length > 0)
-                {
-                    ConstraintManager.AddConstraint(solver, typeof(CloneConstraint), cloneParams.ToString());
+
+                    if (cloneParams.Length > 0)
+                    {
+                        ConstraintManager.AddConstraint(solver, typeof(CloneConstraint), cloneParams.ToString());
+                    }
                 }
             }
 
@@ -597,6 +599,269 @@ namespace SudokuSolver
                 }
                 ConstraintManager.AddConstraintByName(solver, name, options);
             }
+        }
+
+        public static string ToFPuzzlesURL(Solver originalSolver, Solver solver)
+        {
+            FPuzzlesGridEntry[][] grid = new FPuzzlesGridEntry[solver.HEIGHT][];
+            for (int i = 0; i < solver.HEIGHT; i++)
+            {
+                grid[i] = new FPuzzlesGridEntry[solver.WIDTH];
+                for (int j = 0; j < solver.WIDTH; j++)
+                {
+                    uint origMask = originalSolver.Board[i, j];
+                    uint mask = solver.Board[i, j];
+                    bool given = IsValueSet(origMask);
+                    int value = IsValueSet(mask) ? GetValue(mask) : 0;
+                    int[] centerPencilMarks = null;
+                    if (value == 0)
+                    {
+                        centerPencilMarks = new int[ValueCount(mask)];
+                        int markIndex = 0;
+                        for (int v = 1; v <= solver.MAX_VALUE; v++)
+                        {
+                            if ((mask & ValueMask(v)) != 0)
+                            {
+                                centerPencilMarks[markIndex++] = v;
+                            }
+                        }
+                    }
+                    int region = solver.Regions[i, j];
+                    grid[i][j] = new FPuzzlesGridEntry(
+                        value: value,
+                        given: given,
+                        centerPencilMarks: centerPencilMarks,
+                        region: region
+                    );
+                }
+            }
+
+            List<string> negative = new();
+            if (solver.Constraints<RatioConstraint>().Any(c => c.negativeConstraint && c.negativeConstraintValues.Contains(2)))
+            {
+                negative.Add("ratio");
+            }
+            if (solver.Constraints<SumConstraint>().Any(c => c.negativeConstraint && c.negativeConstraintValues.Contains(5) && c.negativeConstraintValues.Contains(10)))
+            {
+                negative.Add("xv");
+            }
+
+            static string CN((int, int) cell) => CellName(cell).ToUpperInvariant();
+
+            List<FPuzzlesArrowEntry> arrow = new();
+            foreach (var c in solver.Constraints<ArrowSumConstraint>())
+            {
+                string startCell = null;
+                int startCellDist = 0;
+                var firstArrowCell = c.arrowCells.FirstOrDefault();
+                foreach (var circleCell in c.circleCells)
+                {
+                    int curCellDist = TaxicabDistance(circleCell.Item1, circleCell.Item2, firstArrowCell.Item1, firstArrowCell.Item2);
+                    if (startCell == null || curCellDist < startCellDist)
+                    {
+                        startCell = CN(circleCell);
+                        startCellDist = curCellDist;
+                    }
+                }
+
+                string[][] lines = new string[1][];
+                lines[0] = new string[] { startCell }.Concat(c.arrowCells.Select(CN)).ToArray();
+                string[] cells = c.circleCells.Select(CN).ToArray();
+                arrow.Add(new(lines, cells));
+            }
+
+            List<FPuzzlesKillerCageEntry> killercage = new();
+            foreach (var c in solver.Constraints<KillerCageConstraint>())
+            {
+                string value = c.sum != 0 ? c.sum.ToString() : null;
+                string[] cells = c.cells.Select(CN).ToArray();
+                killercage.Add(new(cells, value));
+            }
+
+            List<FPuzzlesLittleKillerSumEntry> littlekillersum = new();
+            foreach (var c in solver.Constraints<LittleKillerConstraint>())
+            {
+                string cell = CN(c.outerCell);
+                string value = c.sum != 0 ? c.sum.ToString() : null;
+                string direction = null;
+                switch (c.direction)
+                {
+                    case LittleKillerConstraint.Direction.UpRight:
+                        direction = "UR";
+                        break;
+                    case LittleKillerConstraint.Direction.UpLeft:
+                        direction = "UL";
+                        break;
+                    case LittleKillerConstraint.Direction.DownRight:
+                        direction = "DR";
+                        break;
+                    case LittleKillerConstraint.Direction.DownLeft:
+                        direction = "DL";
+                        break;
+                }
+                littlekillersum.Add(new(cell, direction, value));
+            }
+
+            List<FPuzzlesCell> odd = new();
+            foreach (var cell in solver.Constraints<OddConstraint>().SelectMany(c => c.cells))
+            {
+                odd.Add(new(CN(cell), null));
+            }
+
+            List<FPuzzlesCell> even = new();
+            foreach (var cell in solver.Constraints<EvenConstraint>().SelectMany(c => c.cells))
+            {
+                even.Add(new(CN(cell), null));
+            }
+
+            List<FPuzzlesCell> minimum = new();
+            foreach (var cell in solver.Constraints<MinimumConstraint>().SelectMany(c => c.cells))
+            {
+                minimum.Add(new(CN(cell), null));
+            }
+
+            List<FPuzzlesCell> maximum = new();
+            foreach (var cell in solver.Constraints<MaximumConstraint>().SelectMany(c => c.cells))
+            {
+                maximum.Add(new(CN(cell), null));
+            }
+
+            List<FPuzzlesCells> extraregion = new();
+            foreach (var c in solver.Constraints<ExtraRegionConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                extraregion.Add(new(cells, null));
+            }
+
+            List<FPuzzlesLines> thermometer = new();
+            foreach (var c in solver.Constraints<ThermometerConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                thermometer.Add(new(new string[][] { cells }));
+            }
+
+            List<FPuzzlesLines> palindrome = new();
+            foreach (var c in solver.Constraints<PalindromeConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                palindrome.Add(new(new string[][] { cells }));
+            }
+
+            List<FPuzzlesCells> difference = new();
+            foreach (var marker in solver.Constraints<DifferenceConstraint>().SelectMany(c => c.markers))
+            {
+                var cell1 = (marker.Key.Item1, marker.Key.Item2);
+                var cell2 = (marker.Key.Item3, marker.Key.Item4);
+                string value = marker.Value != 1 ? marker.Value.ToString() : null;
+                difference.Add(new(new string[] { CN(cell1), CN(cell2) }, value));
+            }
+
+            List<FPuzzlesCells> xv = new();
+            foreach (var marker in solver.Constraints<SumConstraint>().SelectMany(c => c.markers))
+            {
+                var cell1 = (marker.Key.Item1, marker.Key.Item2);
+                var cell2 = (marker.Key.Item3, marker.Key.Item4);
+                string value = marker.Value.ToString();
+                if (marker.Value == 10)
+                {
+                    value = "X";
+                }
+                else if (marker.Value == 5)
+                {
+                    value = "V";
+                }
+                xv.Add(new(new string[] { CN(cell1), CN(cell2) }, value));
+            }
+
+            List<FPuzzlesCells> ratio = new();
+            foreach (var marker in solver.Constraints<RatioConstraint>().SelectMany(c => c.markers))
+            {
+                var cell1 = (marker.Key.Item1, marker.Key.Item2);
+                var cell2 = (marker.Key.Item3, marker.Key.Item4);
+                string value = marker.Value != 2 ? marker.Value.ToString() : null;
+                ratio.Add(new(new string[] { CN(cell1), CN(cell2) }, value));
+            }
+
+            List<FPuzzlesClone> clone = new();
+            foreach (var c in solver.Constraints<CloneConstraint>())
+            {
+                string[] cells = c.cellPairs.Select(pair => CN(pair.Item1)).ToArray();
+                string[] cloneCells = c.cellPairs.Select(pair => CN(pair.Item2)).ToArray();
+                clone.Add(new(cells, cloneCells));
+            }
+
+            List<FPuzzlesQuadruple> quadruple = new();
+            foreach (var c in solver.Constraints<QuadrupleConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                int[] values = new int[ValueCount(c.requiredMask)];
+                int valueIndex = 0;
+                for (int v = 1; v <= solver.MAX_VALUE; v++)
+                {
+                    if ((c.requiredMask & ValueMask(v)) != 0)
+                    {
+                        values[valueIndex++] = v;
+                    }
+                }
+                quadruple.Add(new(cells, values));
+            }
+
+            List<FPuzzlesLines> betweenline = new();
+            foreach (var c in solver.Constraints<BetweenLineConstraint>())
+            {
+                string[][] lines = new string[1][];
+                lines[0] = new string[c.innerCells.Count + 2];
+                int cellIndex = 0;
+                lines[0][cellIndex++] = CN(c.outerCell0);
+                foreach (var cell in c.innerCells.Select(CN))
+                {
+                    lines[0][cellIndex++] = cell;
+                }
+                lines[0][cellIndex++] = CN(c.outerCell1);
+                betweenline.Add(new(lines));
+            }
+
+            List<FPuzzlesCell> sandwichsum = new();
+            foreach (var c in solver.Constraints<SandwichConstraint>())
+            {
+                sandwichsum.Add(new(CN(c.cellStart), c.sum.ToString()));
+            }
+
+            FPuzzlesBoard fp = new(
+                size: solver.WIDTH,
+                title: solver.Title,
+                author: solver.Author,
+                ruleset: solver.Rules,
+                grid: grid,
+                diagonalp: solver.Constraints<DiagonalPositiveGroupConstraint>().Any(),
+                diagonaln: solver.Constraints<DiagonalNegativeGroupConstraint>().Any(),
+                antiknight: solver.Constraints<KnightConstraint>().Any(),
+                antiking: solver.Constraints<KingConstraint>().Any(),
+                disjointgroups: solver.Constraints<DisjointGroupConstraint>().Count() == solver.WIDTH,
+                nonconsecutive: solver.Constraints<DifferenceConstraint>().Any(c => c.negativeConstraint && c.negativeConstraintValues.Contains(1)),
+                negative: negative.ToArray(),
+                arrow: arrow.ToArray(),
+                killercage: killercage.ToArray(),
+                littlekillersum: littlekillersum.ToArray(),
+                odd: odd.ToArray(),
+                even: even.ToArray(),
+                minimum: minimum.ToArray(),
+                maximum: maximum.ToArray(),
+                extraregion: extraregion.ToArray(),
+                thermometer: thermometer.ToArray(),
+                palindrome: palindrome.ToArray(),
+                difference: difference.ToArray(),
+                xv: xv.ToArray(),
+                ratio: ratio.ToArray(),
+                clone: clone.ToArray(),
+                quadruple: quadruple.ToArray(),
+                betweenline: betweenline.ToArray(),
+                sandwichsum: sandwichsum.ToArray()
+            );
+
+            string fpuzzlesJson = JsonSerializer.Serialize(fp);
+            string fpuzzlesBase64 = LZString.CompressToBase64(fpuzzlesJson);
+            return $"https://www.f-puzzles.com/?load={fpuzzlesBase64}";
         }
     }
 }

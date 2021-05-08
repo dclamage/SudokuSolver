@@ -10,9 +10,9 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Quadruple", ConsoleName = "quad")]
     public class QuadrupleConstraint : Constraint
     {
-        private readonly List<(int, int)> cells = null;
+        public readonly List<(int, int)> cells = null;
         private readonly HashSet<(int, int)> cellsLookup;
-        private readonly uint requiredMask = 0;
+        public readonly uint requiredMask = 0;
         private readonly int numRequiredValues;
         private bool isGroup = false;
 

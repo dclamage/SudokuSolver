@@ -10,7 +10,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Extra Region", ConsoleName = "extraregion")]
     public class ExtraRegionConstraint : Constraint
     {
-        private readonly List<(int, int)> cells;
+        public readonly List<(int, int)> cells;
 
         public ExtraRegionConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {

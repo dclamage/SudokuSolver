@@ -9,6 +9,7 @@ namespace SudokuSolver.Constraints
     [Constraint(DisplayName = "Clone", ConsoleName = "clone")]
     public class CloneConstraint : Constraint
     {
+        public readonly List<((int, int), (int, int))> cellPairs = new();
         private readonly Dictionary<(int, int), List<(int, int)>> cellToClones = new();
 
         public CloneConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
@@ -32,6 +33,7 @@ namespace SudokuSolver.Constraints
                     throw new ArgumentException($"Clone cells need to be distinct ({CellName(cell0)}).");
                 }
 
+                cellPairs.Add((cell0, cell1));
                 cellToClones.AddToList(cell0, cell1);
                 cellToClones.AddToList(cell1, cell0);
             }
