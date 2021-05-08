@@ -5,7 +5,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Even", ConsoleName = "even", FPuzzlesName = "even")]
+    [Constraint(DisplayName = "Even", ConsoleName = "even")]
     public class EvenConstraint : Constraint
     {
         private readonly List<(int, int)> cells;

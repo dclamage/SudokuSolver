@@ -7,7 +7,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Maximum", ConsoleName = "max", FPuzzlesName = "maximum")]
+    [Constraint(DisplayName = "Maximum", ConsoleName = "max")]
     public class MaximumConstraint : Constraint
     {
         private readonly List<(int, int)> cells;

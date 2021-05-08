@@ -6,7 +6,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Sum", ConsoleName = "sum", FPuzzlesName = "xv")]
+    [Constraint(DisplayName = "Sum", ConsoleName = "sum")]
     public class SumConstraint : OrthogonalValueConstraint
     {
         public SumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)

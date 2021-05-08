@@ -6,7 +6,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Arrow", ConsoleName = "arrow", FPuzzlesName = "arrow")]
+    [Constraint(DisplayName = "Arrow", ConsoleName = "arrow")]
     public class ArrowSumConstraint : Constraint
     {
         public readonly List<(int, int)> circleCells;

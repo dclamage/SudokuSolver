@@ -5,7 +5,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Odd", ConsoleName = "odd", FPuzzlesName = "odd")]
+    [Constraint(DisplayName = "Odd", ConsoleName = "odd")]
     public class OddConstraint : Constraint
     {
         private readonly List<(int, int)> cells;

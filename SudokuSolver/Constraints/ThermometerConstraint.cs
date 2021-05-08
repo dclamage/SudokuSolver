@@ -6,7 +6,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Thermometer", ConsoleName ="thermo", FPuzzlesName = "thermometer")]
+    [Constraint(DisplayName = "Thermometer", ConsoleName ="thermo")]
     public class ThermometerConstraint : Constraint
     {
         public readonly List<(int, int)> cells;

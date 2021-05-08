@@ -416,6 +416,5 @@ namespace SudokuSolver.Constraints
     {
         public string DisplayName { get; set; }
         public string ConsoleName { get; set; }
-        public string FPuzzlesName { get; set; }
     }
 }

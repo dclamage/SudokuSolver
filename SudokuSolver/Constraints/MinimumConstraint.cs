@@ -7,7 +7,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Minimum", ConsoleName = "min", FPuzzlesName = "minimum")]
+    [Constraint(DisplayName = "Minimum", ConsoleName = "min")]
     public class MinimumConstraint : Constraint
     {
         private readonly List<(int, int)> cells;

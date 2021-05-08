@@ -5,7 +5,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Disjoint Groups", ConsoleName = "djg", FPuzzlesName = "disjointgroups")]
+    [Constraint(DisplayName = "Disjoint Groups", ConsoleName = "djg")]
     public class DisjointConstraintGroup : IConstraintGroup
     {
         public DisjointConstraintGroup(Solver sudokuSolver, string _)

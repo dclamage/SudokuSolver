@@ -7,7 +7,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Killer Cage", ConsoleName = "killer", FPuzzlesName = "killercage")]
+    [Constraint(DisplayName = "Killer Cage", ConsoleName = "killer")]
     public class KillerCageConstraint : Constraint
     {
         private readonly List<(int, int)> cells;

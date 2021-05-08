@@ -18,19 +18,11 @@ namespace SudokuSolver
                 {
                     Console.Error.WriteLine($"**WARNING** Duplicate constraint name of {constraintAttribute.ConsoleName} used by {existingNameType.FullName} and {type.FullName}.");
                 }
-                else if (constraintAttribute.FPuzzlesName != null && constraintFPuzzleNameLookup.TryGetValue(constraintAttribute.FPuzzlesName, out Type existingFPuzzlesNameType))
-                {
-                    Console.Error.WriteLine($"**WARNING** Duplicate constraint fpuzzles name of {constraintAttribute.FPuzzlesName} used by {existingFPuzzlesNameType.FullName} and {type.FullName}.");
-                }
                 else
                 {
                     if (constraintAttribute.ConsoleName != null)
                     {
                         constraintConsoleNameLookup[constraintAttribute.ConsoleName] = type;
-                    }
-                    if (constraintAttribute.FPuzzlesName != null)
-                    {
-                        constraintFPuzzleNameLookup[constraintAttribute.FPuzzlesName] = type;
                     }
                 }
             }
@@ -45,16 +37,7 @@ namespace SudokuSolver
             AddConstraint(solver, type, options);
         }
 
-        public static void AddConstraintByFPuzzlesName(this Solver solver, string name, string options)
-        {
-            if (!constraintFPuzzleNameLookup.TryGetValue(name, out Type type))
-            {
-                throw new ArgumentException($"**ERROR** Cannot find constraint with fpuzzles name {name} so this constraint is ignored.");
-            }
-            AddConstraint(solver, type, options);
-        }
-
-        private static void AddConstraint(this Solver solver, Type type, string options)
+        public static void AddConstraint(this Solver solver, Type type, string options)
         {
             try
             {
@@ -134,6 +117,5 @@ namespace SudokuSolver
         }
 
         private static readonly Dictionary<string, Type> constraintConsoleNameLookup = new();
-        private static readonly Dictionary<string, Type> constraintFPuzzleNameLookup = new();
     }
 }

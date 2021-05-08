@@ -8,7 +8,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Between Line", ConsoleName = "betweenline", FPuzzlesName = "betweenline")]
+    [Constraint(DisplayName = "Between Line", ConsoleName = "betweenline")]
     public class BetweenLineConstraint : Constraint
     {
         private readonly (int, int) outerCell0;
@@ -28,7 +28,6 @@ namespace SudokuSolver.Constraints
             var cells = cellGroups[0];
             if (cells.Count > 2)
             {
-
                 outerCell0 = cells[0];
                 outerCell1 = cells[^1];
                 innerCells = new(cells.Count - 2);

@@ -5,7 +5,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Diagonal+", ConsoleName = "dpos", FPuzzlesName = "diagonal+")]
+    [Constraint(DisplayName = "Diagonal+", ConsoleName = "dpos")]
     public class DiagonalPositiveGroupConstraint : Constraint
     {
         public DiagonalPositiveGroupConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)

@@ -6,7 +6,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Palindrome", ConsoleName = "palindrome", FPuzzlesName = "palindrome")]
+    [Constraint(DisplayName = "Palindrome", ConsoleName = "palindrome")]
     public class PalindromeConstraint : Constraint
     {
         public readonly List<(int, int)> cells;

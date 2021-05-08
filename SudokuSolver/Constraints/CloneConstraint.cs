@@ -6,7 +6,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Clone", ConsoleName = "clone", FPuzzlesName = "clone")]
+    [Constraint(DisplayName = "Clone", ConsoleName = "clone")]
     public class CloneConstraint : Constraint
     {
         private readonly Dictionary<(int, int), List<(int, int)>> cellToClones = new();

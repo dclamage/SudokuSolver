@@ -9,7 +9,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Sandwich", ConsoleName = "sandwich", FPuzzlesName = "sandwichsum")]
+    [Constraint(DisplayName = "Sandwich", ConsoleName = "sandwich")]
     public class SandwichConstraint : Constraint
     {
         private readonly int sum;

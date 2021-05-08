@@ -7,7 +7,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Extra Region", ConsoleName = "extraregion", FPuzzlesName = "extraregion")]
+    [Constraint(DisplayName = "Extra Region", ConsoleName = "extraregion")]
     public class ExtraRegionConstraint : Constraint
     {
         private readonly List<(int, int)> cells;

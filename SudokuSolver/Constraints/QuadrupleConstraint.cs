@@ -7,7 +7,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Quadruple", ConsoleName = "quad", FPuzzlesName = "quadruple")]
+    [Constraint(DisplayName = "Quadruple", ConsoleName = "quad")]
     public class QuadrupleConstraint : Constraint
     {
         private readonly List<(int, int)> cells = null;

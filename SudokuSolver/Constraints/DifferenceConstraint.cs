@@ -6,7 +6,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Difference", ConsoleName = "difference", FPuzzlesName = "difference")]
+    [Constraint(DisplayName = "Difference", ConsoleName = "difference")]
     public class DifferenceConstraint : OrthogonalValueConstraint
     {
         public DifferenceConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)

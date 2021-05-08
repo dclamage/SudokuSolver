@@ -7,7 +7,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Little Killer", ConsoleName = "lk", FPuzzlesName = "littlekillersum")]
+    [Constraint(DisplayName = "Little Killer", ConsoleName = "lk")]
     public class LittleKillerConstraint : Constraint
     {
         private enum Direction

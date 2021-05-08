@@ -5,7 +5,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Anti-Knight", ConsoleName = "knight", FPuzzlesName = "antiknight")]
+    [Constraint(DisplayName = "Anti-Knight", ConsoleName = "knight")]
     public class KnightConstraint : Constraint
     {
         public KnightConstraint(Solver sudokuSolver, string options) : base(sudokuSolver) { }

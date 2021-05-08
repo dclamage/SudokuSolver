@@ -6,7 +6,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
-    [Constraint(DisplayName = "Ratio", ConsoleName = "ratio", FPuzzlesName = "ratio")]
+    [Constraint(DisplayName = "Ratio", ConsoleName = "ratio")]
     public class RatioConstraint : OrthogonalValueConstraint
     {
         public RatioConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
