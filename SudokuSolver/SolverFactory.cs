@@ -68,7 +68,7 @@ namespace SudokuSolver
                     char c = givens[i];
                     if (c >= '1' && c <= '9')
                     {
-                        if (!solver.SetValue(i / 9, i % 9, c - '0'))
+                        if (!solver.SetValue(i / size, i % size, c - '0'))
                         {
                             throw new ArgumentException($"ERROR: Givens cause there to be no solutions.");
                         }
