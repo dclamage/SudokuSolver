@@ -19,14 +19,15 @@ namespace SudokuSolverConsole
 #if false
             args = new string[]
             {
-                @"-f=N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAIwBhYyFSGATOctGAzHasAWZ0YCs7w4jvVqFCCaOnrwBEa+iPaGXlGupnGOCdG2iSbJ/jREQA===",
-                //"-b=9",
+                //@"-f=N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAIwBhYyFSGATOctGAzHasAWZ0YCs7w4jvVqFCCaOnrwBEa+iPaGXlGupnGOCdG2iSbJ/jREQA===",
+                "-b=9",
+                "-c=chess:v1,2,3,4,5,6,7;1,1;2,2;3,3;4,4;5,5;6,6;7,7;8,8",
                 //"-c=ratio:neg2",
                 //"-c=difference:neg1",
                 //"-c=taxi:4",
                 //"-o=candidates.txt",
-                "-uv",
-                "-prt",
+                //"-uv",
+                "-st",
             };
 #endif
 

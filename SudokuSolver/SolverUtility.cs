@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
+using System.Linq;
 
 namespace SudokuSolver
 {
@@ -87,6 +88,7 @@ namespace SudokuSolver
         public static bool IsDiagonal(int i0, int j0, int i1, int j1) => (i0 == i1 - 1 || i0 == i1 + 1) && (j0 == j1 - 1 || j0 == j1 + 1);
         public static string CellName((int, int) cell) => $"r{cell.Item1 + 1}c{cell.Item2 + 1}";
         public static string CellName(int i, int j) => CellName((i, j));
+        public static string CellNames(this IEnumerable<(int, int)> cells) => string.Join(", ", cells.Select(CellName));
         public static (int, int) CellValue(string cellName) => cellName.Length == 4 ? (cellName[1] - '1', cellName[3] - '1') : (-1, -1);
 
         public static int BinomialCoeff(int n, int k)

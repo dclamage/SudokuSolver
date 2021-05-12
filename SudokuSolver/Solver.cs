@@ -57,7 +57,10 @@ namespace SudokuSolver
         private int[,] regions = null;
         public uint[,] Board => board;
         public int[,] Regions => regions;
-        private bool[,,,] seenMap;
+        // Returns whether two cells cannot be the same value for a specific value
+        // i0, j0, i1, j0, value or 0 for any value
+        private bool[,,,,] seenMap;
+        private bool canHaveUnorthodoxTuples = false;
         public uint[] FlatBoard
         {
             get
@@ -216,6 +219,7 @@ namespace SudokuSolver
             board = (uint[,])other.board.Clone();
             regions = other.regions;
             seenMap = other.seenMap;
+            canHaveUnorthodoxTuples = other.canHaveUnorthodoxTuples;
             constraints = other.constraints;
             Groups = other.Groups;
             smallGroupsBySize = other.smallGroupsBySize;
@@ -384,19 +388,49 @@ namespace SudokuSolver
 
             smallGroupsBySize = Groups.Where(g => g.Cells.Count < MAX_VALUE).OrderBy(g => g.Cells.Count).ToList();
 
-            seenMap = new bool[HEIGHT, WIDTH, HEIGHT, WIDTH];
+            seenMap = new bool[HEIGHT, WIDTH, HEIGHT, WIDTH, MAX_VALUE + 1];
             for (int i0 = 0; i0 < HEIGHT; i0++)
             {
                 for (int j0 = 0; j0 < WIDTH; j0++)
                 {
                     foreach (var (i1, j1) in SeenCells((i0, j0)))
                     {
-                        seenMap[i0, j0, i1, j1] = true;
+                        seenMap[i0, j0, i1, j1, 0] = true;
+                    }
+                    for (int v = 1; v <= MAX_VALUE; v++)
+                    {
+                        uint mask = ValueMask(v);
+                        foreach (var (i1, j1) in SeenCellsByValueMask(mask, (i0, j0)))
+                        {
+                            seenMap[i0, j0, i1, j1, v] = true;
+                        }
                     }
                 }
             }
 
+            SetCanHaveUnorthodoxTuples();
             return true;
+        }
+
+        private void SetCanHaveUnorthodoxTuples()
+        {
+            foreach (var constraint in constraints)
+            {
+                for (int i = 0; i < HEIGHT; i++)
+                {
+                    for (int j = 0; j < WIDTH; j++)
+                    {
+                        for (int v = 1; v <= MAX_VALUE; v++)
+                        {
+                            if (constraint.SeenCellsByValueMask((i, j), ValueMask(v)).Any())
+                            {
+                                canHaveUnorthodoxTuples = true;
+                                return;
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         /// <summary>
@@ -474,10 +508,62 @@ namespace SudokuSolver
             return result ?? new HashSet<(int, int)>();
         }
 
+        /// <summary>
+        /// Returns which cells must be distinct from the all the inputted cells for a specific set of values.
+        /// </summary>
+        /// <param name="value"></param>
+        /// <param name="cells"></param>
+        /// <returns></returns>
+        public HashSet<(int, int)> SeenCellsByValueMask(uint mask, params (int, int)[] cells)
+        {
+            HashSet<(int, int)> result = null;
+            foreach (var cell in cells)
+            {
+                if (!CellToGroupMap.TryGetValue(cell, out var groupList) || groupList.Count == 0)
+                {
+                    return new HashSet<(int, int)>();
+                }
+
+                HashSet<(int, int)> curSeen = new(groupList.First().Cells);
+                foreach (var group in groupList.Skip(1))
+                {
+                    curSeen.UnionWith(group.Cells);
+                }
+
+                foreach (var constraint in constraints)
+                {
+                    curSeen.UnionWith(constraint.SeenCellsByValueMask(cell, mask));
+                }
+
+                if (result == null)
+                {
+                    result = curSeen;
+                }
+                else
+                {
+                    result.IntersectWith(curSeen);
+                }
+            }
+            if (result != null)
+            {
+                foreach (var cell in cells)
+                {
+                    result.Remove(cell);
+                }
+            }
+            return result ?? new HashSet<(int, int)>();
+        }
+
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool IsSeen((int, int) cell0, (int, int) cell1)
         {
-            return seenMap[cell0.Item1, cell0.Item2, cell1.Item1, cell1.Item2];
+            return seenMap[cell0.Item1, cell0.Item2, cell1.Item1, cell1.Item2, 0];
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool IsSeenByValue((int, int) cell0, (int, int) cell1, int value)
+        {
+            return seenMap[cell0.Item1, cell0.Item2, cell1.Item1, cell1.Item2, value];
         }
 
         public bool IsGroup(List<(int, int)> cells)
@@ -486,6 +572,24 @@ namespace SudokuSolver
             {
                 var cell0 = cells[i0];
                 var seen0 = SeenCells(cell0);
+                for (int i1 = i0 + 1; i1 < cells.Count; i1++)
+                {
+                    var cell1 = cells[i1];
+                    if (cell0 != cell1 && !seen0.Contains(cell1))
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        public bool IsGroupByValueMask(List<(int, int)> cells, uint valueMask)
+        {
+            for (int i0 = 0; i0 < cells.Count - 1; i0++)
+            {
+                var cell0 = cells[i0];
+                var seen0 = SeenCellsByValueMask(valueMask, cell0);
                 for (int i1 = i0 + 1; i1 < cells.Count; i1++)
                 {
                     var cell1 = cells[i1];
@@ -528,7 +632,7 @@ namespace SudokuSolver
                 for (int cellIndex1 = cellIndex + 1; cellIndex1 < numCells; cellIndex1++)
                 {
                     var cell1 = cells[cellIndex1];
-                    if (IsSeen(cell0, cell1))
+                    if (IsSeenByValue(cell0, cell1, v))
                     {
                         cellMasks[cellIndex1] &= clearMask;
                     }
@@ -1688,6 +1792,18 @@ namespace SudokuSolver
             }
 
 #if PROFILING
+            timers["FindUnorthodoxTuples"].Start();
+#endif
+            result = FindUnorthodoxTuples(stepDescription);
+#if PROFILING
+            timers["FindUnorthodoxTuples"].Stop();
+#endif
+            if (result != LogicResult.None)
+            {
+                return result;
+            }
+
+#if PROFILING
             timers["FindFishes"].Start();
 #endif
             result = FindFishes(stepDescription);
@@ -1937,19 +2053,19 @@ namespace SudokuSolver
 
         private LogicResult FindNakedTuples(StringBuilder stepDescription)
         {
-            List<(int, int)> unsetCells = new List<(int, int)>(MAX_VALUE);
-            for (int tupleSize = 2; tupleSize < 8; tupleSize++)
+            List<(int, int)> unsetCells = new(MAX_VALUE);
+            for (int tupleSize = 2; tupleSize < MAX_VALUE; tupleSize++)
             {
                 foreach (var group in Groups)
                 {
                     // Make a list of pairs for the group which aren't already filled
                     unsetCells.Clear();
-                    foreach (var pair in group.Cells)
+                    foreach (var cell in group.Cells)
                     {
-                        uint cellMask = board[pair.Item1, pair.Item2];
+                        uint cellMask = board[cell.Item1, cell.Item2];
                         if (!IsValueSet(cellMask) && ValueCount(cellMask) <= tupleSize)
                         {
-                            unsetCells.Add(pair);
+                            unsetCells.Add(cell);
                         }
                     }
                     if (unsetCells.Count < tupleSize)
@@ -1972,46 +2088,40 @@ namespace SudokuSolver
 
                         if (ValueCount(combinationMask) == tupleSize)
                         {
-                            uint[,] oldBoard = (uint[,])board.Clone();
-
                             uint invCombinationMask = ~combinationMask;
 
                             bool changed = false;
-                            int numMatching = 0;
-                            foreach (var curCell in group.Cells)
+                            (int, int)[] tupleCells = new (int, int)[tupleSize];
+                            int tupleCellIndex = 0;
+                            foreach (int cellIndex in curCombination)
                             {
-                                uint curMask = board[curCell.Item1, curCell.Item2];
-                                uint remainingMask = curMask & invCombinationMask;
-                                if (remainingMask != 0)
-                                {
-                                    if (remainingMask != curMask)
-                                    {
-                                        board[curCell.Item1, curCell.Item2] = remainingMask;
-                                        if (!changed)
-                                        {
-                                            stepDescription?.Append($"{group} has tuple {MaskToString(combinationMask)}, removing those values from {CellName(curCell)}");
-                                            changed = true;
-                                        }
-                                        else
-                                        {
-                                            stepDescription?.Append($", {CellName(curCell)}");
-                                        }
-                                    }
-                                }
-                                else
-                                {
-                                    numMatching++;
-                                }
+                                tupleCells[tupleCellIndex++] = unsetCells[cellIndex];
                             }
 
-                            if (numMatching > tupleSize)
+                            foreach (var curCell in SeenCellsByValueMask(combinationMask, tupleCells))
                             {
-                                if (stepDescription != null)
+                                var clearResult = ClearMask(curCell.Item1, curCell.Item2, combinationMask);
+                                if (clearResult == LogicResult.Invalid)
                                 {
-                                    stepDescription.Clear();
-                                    stepDescription.Append($"{group} has too many cells ({tupleSize}) which can only have {MaskToString(combinationMask)}");
+                                    if (stepDescription != null)
+                                    {
+                                        stepDescription.Clear();
+                                        stepDescription.Append($"{group} has too many cells which can only have {MaskToString(combinationMask)}");
+                                    }
+                                    return LogicResult.Invalid;
                                 }
-                                return LogicResult.Invalid;
+                                if (clearResult == LogicResult.Changed)
+                                {
+                                    if (!changed)
+                                    {
+                                        stepDescription?.Append($"{group} has tuple {MaskToString(combinationMask)}, removing those values from {CellName(curCell)}");
+                                        changed = true;
+                                    }
+                                    else
+                                    {
+                                        stepDescription?.Append($", {CellName(curCell)}");
+                                    }
+                                }
                             }
                             if (changed)
                             {
@@ -2046,14 +2156,14 @@ namespace SudokuSolver
                         continue;
                     }
 
-                    var seenCells = SeenCells(cellsWithValue);
+                    uint valueMask = ValueMask(v);
+                    var seenCells = SeenCellsByValueMask(valueMask, cellsWithValue);
                     if (seenCells.Count == 0)
                     {
                         continue;
                     }
 
                     StringBuilder cellsWithValueStringBuilder = null;
-                    uint valueMask = ValueMask(v);
                     bool changed = false;
                     foreach ((int i, int j) in seenCells)
                     {
@@ -2102,6 +2212,77 @@ namespace SudokuSolver
                     if (changed)
                     {
                         return LogicResult.Changed;
+                    }
+                }
+            }
+            return LogicResult.None;
+        }
+
+        private LogicResult FindUnorthodoxTuples(StringBuilder stepDescription)
+        {
+            for (int tupleSize = 2; tupleSize < MAX_VALUE / 2; tupleSize++)
+            {
+                // Go through every value combination for this tuple size
+                foreach (var tupleValues in Enumerable.Range(1, MAX_VALUE).Combinations(tupleSize))
+                {
+                    uint tupleValuesMask = 0;
+                    foreach (int v in tupleValues)
+                    {
+                        tupleValuesMask |= ValueMask(v);
+                    }
+                    uint invTupleValuesMask = ~tupleValuesMask;
+
+                    List<(int, int)> possibleTupleCells = new();
+                    for (int i = 0; i < HEIGHT; i++)
+                    {
+                        for (int j = 0; j < WIDTH; j++)
+                        {
+                            uint mask = board[i, j];
+                            if ((mask & invTupleValuesMask) == 0)
+                            {
+                                possibleTupleCells.Add((i, j));
+                            }
+                        }
+                    }
+
+                    // Look for sets of cells which form a tuple of this size
+                    foreach (var possibleCells in possibleTupleCells.Combinations(tupleSize))
+                    {
+                        if (!IsGroupByValueMask(possibleCells, tupleValuesMask))
+                        {
+                            continue;
+                        }
+
+                        bool changed = false;
+                        foreach (var curCell in SeenCellsByValueMask(tupleValuesMask, possibleCells.ToArray()))
+                        {
+                            var clearResult = ClearMask(curCell.Item1, curCell.Item2, tupleValuesMask);
+                            if (clearResult == LogicResult.Invalid)
+                            {
+                                if (stepDescription != null)
+                                {
+                                    stepDescription.Clear();
+                                    stepDescription.Append($"Cells {possibleCells.CellNames()} form an unorthodox tuple {MaskToString(tupleValuesMask)} and all see {CellName(curCell)}, clearing all candidates from it.");
+                                }
+                                return LogicResult.Invalid;
+                            }
+                            if (clearResult == LogicResult.Changed)
+                            {
+                                if (!changed)
+                                {
+                                    stepDescription?.Append($"Cells {possibleCells.CellNames()} form an unorthodox tuple {MaskToString(tupleValuesMask)} clearing those candidates from: {CellName(curCell)}");
+                                    changed = true;
+                                }
+                                else
+                                {
+                                    stepDescription?.Append($", {CellName(curCell)}");
+                                }
+                            }
+                        }
+                        if (changed)
+                        {
+                            return LogicResult.Changed;
+                        }
                     }
                 }
             }
@@ -2334,9 +2515,9 @@ namespace SudokuSolver
                         uint combinedMask = mask0 | mask1 | mask2;
                         if (ValueCount(combinedMask) == 3)
                         {
-                            var seen0 = SeenCells((i0, j0));
-                            var seen1 = SeenCells((i1, j1));
-                            var seen2 = SeenCells((i2, j2));
+                            var seen0 = SeenCellsByValueMask(mask0, (i0, j0));
+                            var seen1 = SeenCellsByValueMask(mask1, (i1, j1));
+                            var seen2 = SeenCellsByValueMask(mask2, (i2, j2));
                             (int, int) pivot = (0, 0);
                             (int, int) pincer0 = (0, 0);
                             (int, int) pincer1 = (0, 0);
@@ -2349,7 +2530,7 @@ namespace SudokuSolver
                             {
                                 // Hinge is 0, the shared value is the value not in cell 0
                                 removeMask = combinedMask & ~mask0;
-                                removeFrom = SeenCells((i1, j1), (i2, j2));
+                                removeFrom = SeenCellsByValueMask(removeMask, (i1, j1), (i2, j2));
                                 pivot = (i0, j0);
                                 pincer0 = (i1, j1);
                                 pincer1 = (i2, j2);
@@ -2361,7 +2542,7 @@ namespace SudokuSolver
                             {
                                 // Hinge is 1, the shared value is the value not in cell 1
                                 removeMask = combinedMask & ~mask1;
-                                removeFrom = SeenCells((i0, j0), (i2, j2));
+                                removeFrom = SeenCellsByValueMask(removeMask, (i0, j0), (i2, j2));
                                 pivot = (i1, j1);
                                 pincer0 = (i0, j0);
                                 pincer1 = (i2, j2);
@@ -2373,7 +2554,7 @@ namespace SudokuSolver
                             {
                                 // Hinge is 2, the shared value is the value not in cell 2
                                 removeMask = combinedMask & ~mask2;
-                                removeFrom = SeenCells((i0, j0), (i1, j1));
+                                removeFrom = SeenCellsByValueMask(removeMask, (i0, j0), (i1, j1));
                                 pivot = (i2, j2);
                                 pincer0 = (i0, j0);
                                 pincer1 = (i1, j1);
@@ -2444,13 +2625,13 @@ namespace SudokuSolver
                     uint removeMask = mask0 & mask1;
 
                     // Look for a cells seen by both of these pincers that contains these exact 3 candidates:
-                    foreach (var (pi, pj) in SeenCells((i0, j0), (i1, j1)))
+                    foreach (var (pi, pj) in SeenCellsByValueMask(combMask, (i0, j0), (i1, j1)))
                     {
                         if (board[pi, pj] == combMask)
                         {
                             // Check for cells seen by all three
                             List<(int, int)> removedFrom = new();
-                            foreach (var (ri, rj) in SeenCells((i0, j0), (i1, j1), (pi, pj)))
+                            foreach (var (ri, rj) in SeenCellsByValueMask(combMask, (i0, j0), (i1, j1), (pi, pj)))
                             {
                                 LogicResult removeResult = ClearMask(ri, rj, removeMask);
                                 if (removeResult == LogicResult.Invalid)
@@ -2540,9 +2721,9 @@ namespace SudokuSolver
                         // If all three pincers have two candidates it's always valid
                         if (count0 != 2 || count1 != 2 || count2 != 2)
                         {
-                            bool seen01 = SeenCells((i0, j0)).Contains((i1, j1));
-                            bool seen02 = SeenCells((i0, j0)).Contains((i2, j2));
-                            bool seen12 = SeenCells((i1, j1)).Contains((i2, j2));
+                            bool seen01 = SeenCellsByValueMask(combMask, (i0, j0)).Contains((i1, j1));
+                            bool seen02 = SeenCellsByValueMask(combMask, (i0, j0)).Contains((i2, j2));
+                            bool seen12 = SeenCellsByValueMask(combMask, (i1, j1)).Contains((i2, j2));
 
                             // If two pincers have three candidates, then they must have equal candidates and see each other
                             if (count0 == 3 && count1 == 3 && (mask0 != mask1 || !seen01) ||
@@ -2630,7 +2811,7 @@ namespace SudokuSolver
                         }
 
                         // Look for a pivot that sees all three of these pincers and has all only the candidates present in the pincers
-                        foreach (var (pi, pj) in SeenCells((i0, j0), (i1, j1), (i2, j2)))
+                        foreach (var (pi, pj) in SeenCellsByValueMask(combMask, (i0, j0), (i1, j1), (i2, j2)))
                         {
                             uint maskp = board[pi, pj];
                             if (IsValueSet(maskp) || (maskp & combMask) != maskp)
@@ -2643,7 +2824,7 @@ namespace SudokuSolver
                             {
                                 // The pivot does not contain the shared digit among the pincers.
                                 // This means any cells that just the pincers see can have that shared digit removed
-                                foreach (var (ri, rj) in SeenCells((i0, j0), (i1, j1), (i2, j2)))
+                                foreach (var (ri, rj) in SeenCellsByValueMask(combMask, (i0, j0), (i1, j1), (i2, j2)))
                                 {
                                     LogicResult removeResult = ClearMask(ri, rj, removeMask);
                                     if (removeResult == LogicResult.Invalid)
@@ -2659,7 +2840,7 @@ namespace SudokuSolver
                             else
                             {
                                 // The pivot does contain the shared digit among the pincers.
-                                foreach (var (ri, rj) in SeenCells((i0, j0), (i1, j1), (i2, j2), (pi, pj)))
+                                foreach (var (ri, rj) in SeenCellsByValueMask(combMask, (i0, j0), (i1, j1), (i2, j2), (pi, pj)))
                                 {
                                     LogicResult removeResult = ClearMask(ri, rj, removeMask);
                                     if (removeResult == LogicResult.Invalid)

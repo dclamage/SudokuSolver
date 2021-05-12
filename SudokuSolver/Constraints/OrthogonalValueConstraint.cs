@@ -576,15 +576,15 @@ namespace SudokuSolver.Constraints
                         if (mustHaveVal != 0)
                         {
                             uint mustHaveMask = ValueMask(mustHaveVal);
-                            foreach (var otherCell in sudokuSolver.SeenCells(cellA, cellB))
+                            foreach (var otherCell in sudokuSolver.SeenCellsByValueMask(mustHaveMask, cellA, cellB))
                             {
                                 uint otherMask = board[otherCell.Item1, otherCell.Item2];
                                 if (IsValueSet(otherMask))
                                 {
                                     continue;
                                 }
-                                LogicResult findResult = sudokuSolver.ClearMask(otherCell.Item1, otherCell.Item2, mustHaveMask);
-                                if (findResult == LogicResult.Invalid)
+                                LogicResult clearResult = sudokuSolver.ClearMask(otherCell.Item1, otherCell.Item2, mustHaveMask);
+                                if (clearResult == LogicResult.Invalid)
                                 {
                                     if (logicalStepDescription != null)
                                     {
@@ -593,7 +593,7 @@ namespace SudokuSolver.Constraints
                                     }
                                     return LogicResult.Invalid;
                                 }
-                                if (findResult == LogicResult.Changed)
+                                if (clearResult == LogicResult.Changed)
                                 {
                                     if (logicalStepDescription != null)
                                     {
