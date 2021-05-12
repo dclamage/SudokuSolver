@@ -739,6 +739,12 @@ namespace SudokuSolver
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public bool SetMask(int i, int j,  IEnumerable<int> values)
+        {
+            return SetMask(i, j, values.ToArray());
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LogicResult KeepMask(int i, int j, uint mask)
         {
             mask &= ALL_VALUES_MASK;
