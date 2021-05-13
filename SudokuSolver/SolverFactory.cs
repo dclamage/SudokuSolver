@@ -61,6 +61,9 @@ namespace SudokuSolver
                 throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
             }
 
+            bool[,] isOriginalGiven = new bool[size, size];
+            solver.customInfo["Givens"] = isOriginalGiven;
+
             if (size <= 9)
             {
                 for (int i = 0; i < givens.Length; i++)
@@ -72,6 +75,7 @@ namespace SudokuSolver
                         {
                             throw new ArgumentException($"ERROR: Givens cause there to be no solutions.");
                         }
+                        isOriginalGiven[i / size, i % size] = true;
                     }
                 }
             }
@@ -89,13 +93,14 @@ namespace SudokuSolver
                         {
                             throw new ArgumentException($"ERROR: Givens cause there to be no solutions.");
                         }
+                        isOriginalGiven[i / size, i % size] = true;
                     }
                 }
             }
             return solver;
         }
 
-        public static Solver CreateFromFPuzzles(string fpuzzlesURL, IEnumerable<string> additionalConstraints = null)
+        public static Solver CreateFromFPuzzles(string fpuzzlesURL, IEnumerable<string> additionalConstraints = null, bool onlyGivens = false)
         {
             if (fpuzzlesURL.Contains("?load="))
             {
@@ -559,25 +564,32 @@ namespace SudokuSolver
                 throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
             }
 
+            bool[,] isOriginalGiven = new bool[height, width];
+            solver.customInfo["Givens"] = isOriginalGiven;
+
             i = 0;
             foreach (var row in fpuzzlesData.grid)
             {
                 j = 0;
                 foreach (var val in row)
                 {
-                    if (val.centerPencilMarks != null && val.centerPencilMarks.Length > 0)
+                    if (val.given || !onlyGivens)
                     {
-                        uint marksMask = 0;
-                        foreach (int v in val.centerPencilMarks)
+                        if (val.centerPencilMarks != null && val.centerPencilMarks.Length > 0)
                         {
-                            marksMask |= SolverUtility.ValueMask(v);
+                            uint marksMask = 0;
+                            foreach (int v in val.centerPencilMarks)
+                            {
+                                marksMask |= SolverUtility.ValueMask(v);
+                            }
+                            solver.ClearMask(i, j, (~marksMask) & solver.ALL_VALUES_MASK);
                         }
-                        solver.ClearMask(i, j, (~marksMask) & solver.ALL_VALUES_MASK);
+                        else if (val.value > 0)
+                        {
+                            solver.SetValue(i, j, val.value);
+                        }
                     }
-                    else if (val.value > 0)
-                    {
-                        solver.SetValue(i, j, val.value);
-                    }
+                    isOriginalGiven[i, j] = val.given;
                     j++;
                 }
                 i++;
@@ -601,17 +613,26 @@ namespace SudokuSolver
             }
         }
 
-        public static string ToFPuzzlesURL(Solver originalSolver, Solver solver)
+        public static string ToFPuzzlesURL(Solver solver, bool justBase64 = false)
         {
+            bool[,] isGiven;
+            if (solver.customInfo.TryGetValue("Givens", out object isGivenObj))
+            {
+                isGiven = (bool[,])isGivenObj;
+            }
+            else
+            {
+                isGiven = new bool[solver.HEIGHT, solver.WIDTH];
+            }
+
             FPuzzlesGridEntry[][] grid = new FPuzzlesGridEntry[solver.HEIGHT][];
             for (int i = 0; i < solver.HEIGHT; i++)
             {
                 grid[i] = new FPuzzlesGridEntry[solver.WIDTH];
                 for (int j = 0; j < solver.WIDTH; j++)
                 {
-                    uint origMask = originalSolver.Board[i, j];
                     uint mask = solver.Board[i, j];
-                    bool given = IsValueSet(origMask);
+                    bool given = isGiven[i, j];
                     int value = IsValueSet(mask) ? GetValue(mask) : 0;
                     int[] centerPencilMarks = null;
                     if (value == 0)
@@ -861,7 +882,7 @@ namespace SudokuSolver
 
             string fpuzzlesJson = JsonSerializer.Serialize(fp);
             string fpuzzlesBase64 = LZString.CompressToBase64(fpuzzlesJson);
-            return $"https://www.f-puzzles.com/?load={fpuzzlesBase64}";
+            return justBase64 ? fpuzzlesBase64 : $"https://www.f-puzzles.com/?load={fpuzzlesBase64}";
         }
     }
 }

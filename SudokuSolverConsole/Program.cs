@@ -51,6 +51,8 @@ namespace SudokuSolverConsole
             bool fpuzzlesOut = false;
             bool visitURL = false;
             bool print = false;
+            bool listen = false;
+            string portStr = null;
 
             var options = new OptionSet {
                 { "f|fpuzzles=", "Import a full f-puzzles URL (Everything after '?load=').", f => fpuzzlesURL = f },
@@ -70,6 +72,8 @@ namespace SudokuSolverConsole
                 { "v|visit", "Automatically visit the output URL with default browser (combine with -u).", v => visitURL = v != null },
                 { "p|print", "Print the input board.", p => print = p != null },
                 { "h|help", "Show this message and exit", h => showHelp = h != null },
+                { "listen", "Listen for websocket connections", l => listen = l != null },
+                { "port=", "Change the listen port for websocket connections (default 4545)", p => portStr = p },
             };
 
             List<string> extra;
@@ -99,6 +103,28 @@ namespace SudokuSolverConsole
                     Console.WriteLine($"\t{constraintName}");
                 }
                 return;
+            }
+
+            if (listen)
+            {
+                int port = 4545;
+                if (!string.IsNullOrWhiteSpace(portStr))
+                {
+                    port = int.Parse(portStr);
+                }
+                using WebsocketListener websocketListener = new();
+                await websocketListener.Listen("localhost", port);
+
+                Console.WriteLine("Press CTRL + Q to quit.");
+
+                while (true)
+                {
+                    ConsoleKeyInfo key = Console.ReadKey(true);
+                    if (key.Modifiers == ConsoleModifiers.Control && key.Key == ConsoleKey.Q)
+                    {
+                        return;
+                    }
+                }
             }
 
             bool haveFPuzzlesURL = !string.IsNullOrWhiteSpace(fpuzzlesURL);
@@ -162,7 +188,6 @@ namespace SudokuSolverConsole
                 Console.WriteLine(e.Message);
                 return;
             }
-            Solver originalSolver = solver.Clone();
 
             if (print)
             {
@@ -197,7 +222,7 @@ namespace SudokuSolverConsole
 
                 if (fpuzzlesOut)
                 {
-                    OpenFPuzzles(originalSolver, solver, visitURL);
+                    OpenFPuzzles(solver, visitURL);
                 }
             }
 
@@ -227,7 +252,7 @@ namespace SudokuSolverConsole
 
                     if (fpuzzlesOut)
                     {
-                        OpenFPuzzles(originalSolver, solver, visitURL);
+                        OpenFPuzzles(solver, visitURL);
                     }
                 }
             }
@@ -258,7 +283,7 @@ namespace SudokuSolverConsole
 
                     if (fpuzzlesOut)
                     {
-                        OpenFPuzzles(originalSolver, solver, visitURL);
+                        OpenFPuzzles(solver, visitURL);
                     }
                 }
             }
@@ -307,7 +332,7 @@ namespace SudokuSolverConsole
 
                     if (fpuzzlesOut)
                     {
-                        OpenFPuzzles(originalSolver, solver, visitURL);
+                        OpenFPuzzles(solver, visitURL);
                     }
                 }
             }
@@ -375,9 +400,9 @@ namespace SudokuSolverConsole
         private static void ReplaceLine(string text) =>
             Console.Write("\r" + text + new string(' ', Console.WindowWidth - text.Length) + "\r");
 
-        private static void OpenFPuzzles(Solver originalSolver, Solver solver, bool visit)
+        private static void OpenFPuzzles(Solver solver, bool visit)
         {
-            string url = SolverFactory.ToFPuzzlesURL(originalSolver, solver);
+            string url = SolverFactory.ToFPuzzlesURL(solver);
             Console.WriteLine(url);
             if (visit)
             {

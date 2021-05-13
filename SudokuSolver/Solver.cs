@@ -57,6 +57,7 @@ namespace SudokuSolver
         private int[,] regions = null;
         public uint[,] Board => board;
         public int[,] Regions => regions;
+        public Dictionary<string, object> customInfo = new();
         // Returns whether two cells cannot be the same value for a specific value
         // i0, j0, i1, j0, value or 0 for any value
         private bool[,,,,] seenMap;
@@ -224,6 +225,7 @@ namespace SudokuSolver
             Groups = other.Groups;
             smallGroupsBySize = other.smallGroupsBySize;
             CellToGroupMap = other.CellToGroupMap;
+            customInfo = other.customInfo;
         }
 
         private void InitCombinations()
