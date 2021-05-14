@@ -49,7 +49,9 @@ jobs:
       uses: master-atul/tar-action@v1.0.2
       with:
         command: c
-        files: publish-linux-x64/ UserScripts/
+        files: |
+          publish-linux-x64/
+          UserScripts/
         outPath: SudokuSolver-${{ env.VERSION }}-linux-x64.tar.gz
     - name: Publish osx-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-x64
