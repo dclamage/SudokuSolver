@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -51,6 +51,7 @@ namespace SudokuSolverConsole
             bool fpuzzlesOut = false;
             bool visitURL = false;
             bool print = false;
+            string candidates = null;
             bool listen = false;
             string portStr = null;
 
@@ -71,9 +72,11 @@ namespace SudokuSolverConsole
                 { "u|url", "Write solution as f-puzzles URL.", u => fpuzzlesOut = u != null },
                 { "v|visit", "Automatically visit the output URL with default browser (combine with -u).", v => visitURL = v != null },
                 { "p|print", "Print the input board.", p => print = p != null },
-                { "h|help", "Show this message and exit", h => showHelp = h != null },
+                { "h|help", "Show this message and exit.", h => showHelp = h != null },
+                { "a|candidates", "Provide a candidate string of height^3 numbers.", a => candidates = a },
                 { "listen", "Listen for websocket connections", l => listen = l != null },
                 { "port=", "Change the listen port for websocket connections (default 4545)", p => portStr = p },
+
             };
 
             List<string> extra;
@@ -133,9 +136,10 @@ namespace SudokuSolverConsole
             bool haveFPuzzlesURL = !string.IsNullOrWhiteSpace(fpuzzlesURL);
             bool haveGivens = !string.IsNullOrWhiteSpace(givens);
             bool haveBlankGridSize = !string.IsNullOrWhiteSpace(blankGridSizeString);
-            if (!haveFPuzzlesURL && !haveGivens && !haveBlankGridSize)
+            bool haveCandidates = !string.IsNullOrWhiteSpace(candidates);
+            if (!haveFPuzzlesURL && !haveGivens && !haveBlankGridSize && !haveCandidates)
             {
-                Console.WriteLine($"ERROR: Must provide either an f-puzzles URL or a givens string or a blank grid.");
+                Console.WriteLine($"ERROR: Must provide either an f-puzzles URL or a givens string or a blank grid or a candidates string.");
                 Console.WriteLine($"Try '{processName} --help' for more information.");
                 showHelp = true;
             }
@@ -153,9 +157,14 @@ namespace SudokuSolverConsole
             {
                 numBoardsSpecified++;
             }
+            if (haveCandidates)
+            {
+                numBoardsSpecified++;
+            }
+
             if (numBoardsSpecified != 1)
             {
-                Console.WriteLine($"ERROR: Cannot provide more than one set of givens (f-puzzles URL, given string, blank grid).");
+                Console.WriteLine($"ERROR: Cannot provide more than one set of givens (f-puzzles URL, given string, blank grid, candidates).");
                 Console.WriteLine($"Try '{processName} --help' for more information.");
                 return;
             }
@@ -180,10 +189,14 @@ namespace SudokuSolverConsole
                 {
                     solver = SolverFactory.CreateFromGivens(givens, constraints);
                 }
-                else
+                else if (haveFPuzzlesURL)
                 {
                     solver = SolverFactory.CreateFromFPuzzles(fpuzzlesURL, constraints);
                     Console.WriteLine($"Imported \"{solver.Title ?? "Untitled"}\" by {solver.Author ?? "Unknown"}");
+                }
+                else // if (haveCandidates)
+                {
+                    solver = SolverFactory.CreateFromCandidates(candidates, constraints);
                 }
             }
             catch (Exception e)

@@ -137,5 +137,44 @@ namespace SudokuTests
             Assert.AreEqual(LogicResult.PuzzleComplete, solver.ConsolidateBoard());
             Assert.AreEqual(solution, solver.ToGivenString());
         }
+
+
+        [TestMethod]
+        public void CandidatesStringGenerateAndParse()
+        {
+            // When a board created from the CandidateString of another board is the same as that board we know the parser and generator for the CandidateString is symmetric.
+            // Note that that means we're not testing correctness, just that we can read what we output.
+
+            foreach (var board in Puzzles.uniqueClassics) // list of 9*9 puzzles
+            {
+                Solver solver = SolverFactory.CreateFromGivens(board.Item1);
+
+                string candidatesBase = solver.CandidateString;
+
+                // Since the solver disregards trivial masks we have to create the solver twice to weed out any "missing" candidates.
+                Solver newSolver = SolverFactory.CreateFromCandidates(candidatesBase);
+                Solver newSolver2 = SolverFactory.CreateFromCandidates(newSolver.CandidateString);
+
+                Assert.AreEqual(solver.HEIGHT, newSolver.HEIGHT);
+                Assert.AreEqual(solver.HEIGHT, newSolver2.HEIGHT);
+                Assert.AreEqual(newSolver.CandidateString, newSolver2.CandidateString);
+            }
+        
+            foreach (var board in Puzzles.uniqueVariantFPuzzles) // Some of these aren't 9*9, atm this covers both <9*9 and >9*9
+            {
+                Solver solver = SolverFactory.CreateFromFPuzzles(board.Item1);
+
+                string candidatesBase = solver.CandidateString;
+
+                // Since the solver disregards trivial masks we have to create the solver twice to weed out any "missing" candidates.
+                Solver newSolver = SolverFactory.CreateFromCandidates(candidatesBase);
+                Solver newSolver2 = SolverFactory.CreateFromCandidates(newSolver.CandidateString);
+
+                Assert.AreEqual(solver.HEIGHT, newSolver.HEIGHT);
+                Assert.AreEqual(solver.HEIGHT, newSolver2.HEIGHT);
+                Assert.AreEqual(newSolver.CandidateString, newSolver2.CandidateString);
+            }
+        
+        }
     }
 }

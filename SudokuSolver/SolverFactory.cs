@@ -28,6 +28,93 @@ namespace SudokuSolver
             return solver;
         }
 
+        public static Solver CreateFromCandidates(string candidates, IEnumerable<string> constraints = null)
+        {
+            candidates = candidates.Trim();
+
+            int size;
+            if (candidates.Length <= 729) // all cases where the digits can be of length 1
+            {
+                size = (int)Math.Cbrt(candidates.Length);
+                if (candidates.Length != size * size * size)
+                {
+                    throw new ArgumentException($"ERROR: A candidates string must be a perfect cube in length (Provided length: {candidates.Length}).");
+                }
+            }
+            else
+            {
+                size = (int)Math.Cbrt(candidates.Length / 2); // digits are of length 2 here.
+                if (candidates.Length != size * size * size * 2)
+                {
+                    throw new ArgumentException($"ERROR: A candidates string must be a perfect cube in length (Provided length: {candidates.Length}).");
+                }
+            }
+
+            Solver solver = new(size, size, size);
+            if (constraints != null)
+            {
+                ApplyConstraints(solver, constraints);
+            }
+
+            if (!solver.FinalizeConstraints())
+            {
+                throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
+            }
+
+            // I would personally extract this to a method (str -> FlatMap), but your style appears to be more based around big functions, what do you think?
+            int digitLength = size <= 9 ? 1 : 2;
+            int sectionLength = size * digitLength;
+
+            List<List<int>> candidatesFlatMap = new();
+            int sectionStartIndex = 0;
+            do
+            {
+                string currentCellCandidates = candidates.Substring(sectionStartIndex, sectionLength);
+                candidatesFlatMap.Add(new List<int>());
+                for (int currentNumIndex = 0; currentNumIndex < sectionLength; currentNumIndex += digitLength)
+                {
+                    string maybeNumber = currentCellCandidates.Substring(currentNumIndex, digitLength);
+                    if (maybeNumber == (digitLength == 1 ? "." : "..")) // No number is parsed as a dot
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        candidatesFlatMap.Last().Add(Int32.Parse(maybeNumber));
+                    }
+                    catch (FormatException)
+                    {
+                        throw new ArgumentException($"ERROR: Could not parse a number in a candidates string: {maybeNumber}");
+                    }
+                    
+                }
+
+                sectionStartIndex += sectionLength;
+            }
+            while (sectionStartIndex < candidates.Length);
+
+            bool[,] isOriginalGiven = new bool[size, size];
+            solver.customInfo["Givens"] = isOriginalGiven;
+
+            int flatMapIndex = 0;
+            for (int row_i = 0; row_i < size; row_i++)
+            {
+                for (int col_i = 0; col_i < size; col_i++)
+                {
+                    if (!solver.SetMask(row_i, col_i, candidatesFlatMap.ElementAt(flatMapIndex)))
+                    {
+                        throw new ArgumentException($"ERROR: Candidates string is of invalid board (no solutions).");
+                    }
+                    isOriginalGiven[row_i, col_i] = candidatesFlatMap.ElementAt(flatMapIndex).Count == 1;
+
+                    flatMapIndex++;
+                }
+            }
+
+            return solver;
+        }
+
         public static Solver CreateFromGivens(string givens, IEnumerable<string> constraints = null)
         {
             givens = givens.Trim();
