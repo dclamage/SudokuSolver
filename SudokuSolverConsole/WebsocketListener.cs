@@ -67,7 +67,7 @@ namespace SudokuSolverConsole
                             Solver solver = SolverFactory.CreateFromFPuzzles(message, onlyGivens: true);
                             SendTrueCandidates(ipPort, nonce, solver);
                         }
-                        catch (Exception e)
+                        catch (Exception)
                         {
                             server.SendAsync(ipPort, nonce + ":Invalid");
                         }

@@ -92,6 +92,9 @@ namespace SudokuSolverConsole
 
             if (showHelp)
             {
+                Console.WriteLine($"SudokuSolver version {SudokuSolverVersion.version} created by David Clamage (\"Rangsk\").");
+                Console.WriteLine("https://github.com/dclamage/SudokuSolver");
+                Console.WriteLine();
                 Console.WriteLine("Options:");
                 options.WriteOptionDescriptions(Console.Out);
                 Console.WriteLine();

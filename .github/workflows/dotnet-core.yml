@@ -1,4 +1,4 @@
-name: Build & Test
+name: Build, Test, and Publish
 
 on:
   push:
@@ -17,9 +17,50 @@ jobs:
       uses: actions/setup-dotnet@v1
       with:
         dotnet-version: 5.0.x
+    - name: Set variables
+      run: |
+        VER=$(cat VERSION)
+        echo "VERSION=$VER" >> $GITHUB_ENV
+    - name: Update version
+      run: sed -i 's/version = .*;/version = \"${{ env.VERSION }}\";/' ./SudokuSolver/Version.cs
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
-      run: dotnet build --configuration Release --no-restore
+      run: dotnet build --nologo --configuration Release --no-restore
     - name: Test
-      run: dotnet test --configuration Release --no-build --verbosity normal
+      run: dotnet test --nologo --configuration Release --no-build --verbosity normal
+    - name: Publish win-x64
+      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r win-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-win-x64
+    - name: Zip win-x64
+      uses: papeloto/action-zip@v1
+      with:
+        files: publish-win-x64/ UserScripts/
+        dest: SudokuSolver-${{ env.VERSION }}-win-x64.zip
+    - name: Publish win10-arm64
+      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r win10-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-win10-arm64
+    - name: Zip win10-arm64
+      uses: papeloto/action-zip@v1
+      with:
+        files: publish-win10-arm64/ UserScripts/
+        dest: SudokuSolver-${{ env.VERSION }}-win10-arm64.zip
+    - name: Publish linux-x64
+      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r linux-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-linux-x64
+    - name: tar.gz linux-x64
+      uses: master-atul/tar-action@v1.0.2
+      with:
+        command: c
+        files: publish-linux-x64/ UserScripts/
+        outPath: SudokuSolver-${{ env.VERSION }}-linux-x64.tar.gz
+    - name: Publish osx-x64
+      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-x64
+    - name: Zip osx-x64
+      uses: papeloto/action-zip@v1
+      with:
+        files: publish-osx-x64/ UserScripts/
+        dest: SudokuSolver-${{ env.VERSION }}-osx-x64.zip
+    - uses: actions/upload-artifact@v2
+      with:
+        name: SudokuSolver-${{ env.VERSION }}
+        path: |
+          SudokuSolver-${{ env.VERSION }}*.zip
+          SudokuSolver-${{ env.VERSION }}*.tar.gz
