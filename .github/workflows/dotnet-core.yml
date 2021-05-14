@@ -45,14 +45,8 @@ jobs:
         dest: SudokuSolver-${{ env.VERSION }}-win10-arm64.zip
     - name: Publish linux-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r linux-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-linux-x64
-    - name: tar.gz linux-x64
-      uses: master-atul/tar-action@v1.0.2
-      with:
-        command: c
-        files: |
-          publish-linux-x64/
-          UserScripts/
-        outPath: SudokuSolver-${{ env.VERSION }}-linux-x64.tar.gz
+    - name: tar linux-x64
+      run: tar --transform 's/.*\///g' -zcvf SudokuSolver-${{ env.VERSION }}-linux-x64.tar.gz ./publish-linux-x64/* ./UserScripts/*
     - name: Publish osx-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-x64
     - name: Zip osx-x64
