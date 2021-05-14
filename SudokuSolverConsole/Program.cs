@@ -161,7 +161,7 @@ namespace SudokuSolverConsole
 
             if (numBoardsSpecified != 1)
             {
-                Console.WriteLine($"ERROR: Cannot provide more than one set of givens (f-puzzles URL, given string, blank grid).");
+                Console.WriteLine($"ERROR: Cannot provide more than one set of givens (f-puzzles URL, given string, blank grid, candidates).");
                 Console.WriteLine($"Try '{processName} --help' for more information.");
                 return;
             }
@@ -190,7 +190,8 @@ namespace SudokuSolverConsole
                 {
                     solver = SolverFactory.CreateFromFPuzzles(fpuzzlesURL, constraints);
                     Console.WriteLine($"Imported \"{solver.Title ?? "Untitled"}\" by {solver.Author ?? "Unknown"}");
-                } else // if (haveCandidates)
+                }
+                else // if (haveCandidates)
                 {
                     solver = SolverFactory.CreateFromCandidates(candidates, constraints);
                 }

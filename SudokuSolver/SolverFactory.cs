@@ -65,22 +65,25 @@ namespace SudokuSolver
             int digitLength = size <= 9 ? 1 : 2;
             int sectionLength = size * digitLength;
 
-            List<List<int>> CandidatesFlatMap = new();
+            List<List<int>> candidatesFlatMap = new();
             int sectionStartIndex = 0;
             do
             {
                 string currentCellCandidates = candidates.Substring(sectionStartIndex, sectionLength);
-                CandidatesFlatMap.Add(new List<int>());
+                candidatesFlatMap.Add(new List<int>());
                 for (int currentNumIndex = 0; currentNumIndex < sectionLength; currentNumIndex += digitLength)
                 {
                     string maybeNumber = currentCellCandidates.Substring(currentNumIndex, digitLength);
                     if (maybeNumber == (digitLength == 1 ? "." : "..")) // No number is parsed as a dot
+                    {
                         continue;
+                    }
 
                     try
                     {
-                        CandidatesFlatMap.Last().Add(Int32.Parse(maybeNumber));
-                    } catch (FormatException)
+                        candidatesFlatMap.Last().Add(Int32.Parse(maybeNumber));
+                    }
+                    catch (FormatException)
                     {
                         throw new ArgumentException($"ERROR: Could not parse a number in a candidates string: {maybeNumber}");
                     }
@@ -91,16 +94,21 @@ namespace SudokuSolver
             }
             while (sectionStartIndex < candidates.Length);
 
-            int FlatMapIndex = 0;
+            bool[,] isOriginalGiven = new bool[size, size];
+            solver.customInfo["Givens"] = isOriginalGiven;
+
+            int flatMapIndex = 0;
             for (int row_i = 0; row_i < size; row_i++)
             {
                 for (int col_i = 0; col_i < size; col_i++)
                 {
-                    if (!solver.SetMask(row_i, col_i, CandidatesFlatMap.ElementAt(FlatMapIndex)))
+                    if (!solver.SetMask(row_i, col_i, candidatesFlatMap.ElementAt(flatMapIndex)))
                     {
                         throw new ArgumentException($"ERROR: Candidates string is of invalid board (no solutions).");
                     }
-                    FlatMapIndex++;
+                    isOriginalGiven[row_i, col_i] = candidatesFlatMap.ElementAt(flatMapIndex).Count == 1;
+
+                    flatMapIndex++;
                 }
             }
 
