@@ -945,7 +945,7 @@ namespace SudokuSolver
                 diagonaln: solver.Constraints<DiagonalNegativeGroupConstraint>().Any(),
                 antiknight: solver.Constraints<KnightConstraint>().Any(),
                 antiking: solver.Constraints<KingConstraint>().Any(),
-                disjointgroups: solver.Constraints<DisjointGroupConstraint>().Count() == solver.WIDTH,
+                disjointgroups: solver.Constraints<DisjointGroupConstraint>().Count() == solver.MAX_VALUE,
                 nonconsecutive: solver.Constraints<DifferenceConstraint>().Any(c => c.negativeConstraint && c.negativeConstraintValues.Contains(1)),
                 negative: negative.ToArray(),
                 arrow: arrow.ToArray(),

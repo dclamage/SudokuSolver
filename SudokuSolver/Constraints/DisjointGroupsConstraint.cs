@@ -14,7 +14,7 @@ namespace SudokuSolver.Constraints
 
         public void AddConstraints(Solver solver)
         {
-            for (int i = 0; i < solver.Regions.Length; i++)
+            for (int i = 0; i < solver.MAX_VALUE; i++)
             {
                 solver.AddConstraint(new DisjointGroupConstraint(solver, i));
             }
