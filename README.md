@@ -19,6 +19,5 @@ I am accepting pull requests for:
  - Optimizations.
 
 ## Contact Information
+Join the [Sudoku Solver Discord](https://discord.gg/AEhpTG4z45)
 Check out my [YouTube](https://www.youtube.com/channel/UC1RUqXOT_iaH4b7iXKRWhLw)  
-Join the [Cracking the Cryptic Discord](https://discord.gg/BbN89j5) and find me in #theory-and-programming  
-Add me on Discord: rangsk#1098
