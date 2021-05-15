@@ -8,6 +8,7 @@
  - "Real candidates" feature to assist with setting.
  - Support for solving all [f-puzzles](https://www.f-puzzles.com) constraints.
  - Import from f-puzzles URLs and other common Sudoku formats, as well as direct construction via command-line.
+ - Integration with the f-puzzles website through a websocket connection.
 
 ## Pull Requests
 I am accepting pull requests for:
@@ -19,5 +20,5 @@ I am accepting pull requests for:
  - Optimizations.
 
 ## Contact Information
-Join the [Sudoku Solver Discord](https://discord.gg/AEhpTG4z45)
+Join the [Sudoku Solver Discord](https://discord.gg/AEhpTG4z45)  
 Check out my [YouTube](https://www.youtube.com/channel/UC1RUqXOT_iaH4b7iXKRWhLw)  
