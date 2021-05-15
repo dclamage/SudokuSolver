@@ -15,7 +15,7 @@ namespace SudokuSolverConsole
     {
         private WatsonWsServer server;
         private readonly object serverLock = new();
-        private CancellationTokenSource cancellationToken;
+        private Dictionary<string, CancellationTokenSource> cancellationTokenMap = new();
 
         public async Task Listen(string host, int port)
         {
@@ -40,6 +40,11 @@ namespace SudokuSolverConsole
         void ClientDisconnected(ClientDisconnectedEventArgs args)
         {
             Console.WriteLine("Client disconnected: " + args.IpPort);
+            if (cancellationTokenMap.TryGetValue(args.IpPort, out var cancellationToken))
+            {
+                cancellationToken.Cancel();
+                cancellationTokenMap.Remove(args.IpPort);
+            }
         }
 
         void MessageReceived(MessageReceivedEventArgs args)
@@ -56,8 +61,11 @@ namespace SudokuSolverConsole
                     nonce = message.Substring(0, nonceColon);
                     message = message.Substring(nonceColon + 1);
 
-                    cancellationToken?.Cancel();
-                    cancellationToken = new();
+                    if (cancellationTokenMap.TryGetValue(args.IpPort, out var cancellationToken))
+                    {
+                        cancellationToken.Cancel();
+                    }
+                    cancellationToken = cancellationTokenMap[args.IpPort] = new();
 
                     string ipPort = args.IpPort;
                     Task.Run(() =>
@@ -87,7 +95,7 @@ namespace SudokuSolverConsole
             {
                 lock (serverLock)
                 {
-                    string fpuzzles = $"{nonce}:{SolverFactory.ToFPuzzlesURL(solver, justBase64: true)}";
+                    string fpuzzles = $"{nonce}:{solver.CandidateString}";
                     server.SendAsync(ipPort, fpuzzles);
                 }
             }

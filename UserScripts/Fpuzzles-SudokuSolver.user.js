@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-SudokuSolver
 // @namespace    http://tampermonkey.net/
-// @version      0.1
+// @version      0.1.1-alpha
 // @description  Connect f-puzzles to SudokuSolver
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -13,7 +13,7 @@
 (function() {
     'use strict';
 
-    let connectButton = new button(canvas.width - 200, 40, 200, 40, ['Setting','Solving'], 'Connect', 'Connect');
+    let connectButton = new button(canvas.width - 200, 40, 200, 40, ['Setting', 'Solving'], 'Connect', 'Connect');
 
     let nonce = 0;
     window.sendPuzzle = function() {
@@ -28,19 +28,78 @@
         }
     }
 
+    window.importCandidates = function(str) {
+        if (changeIndex < changes.length - 1) {
+            // Undo has been pressed
+            return;
+        }
+
+        const numCells = str.length / size;
+        if (size <= 9) {
+            for (let i = 0; i < numCells; i++) {
+                const cell = grid[Math.floor(i / size)][i % size];
+                if (cell.given) {
+                    continue;
+                }
+                const candidates = [];
+                for (let candidateIndex = 0; candidateIndex < size; candidateIndex++) {
+                    const candidate = parseInt(str[i * size + candidateIndex]);
+                    if (!isNaN(candidate) && candidate != 0) {
+                        candidates.push(candidate);
+                    }
+                }
+
+                cell.value = 0;
+                cell.centerPencilMarks = [];
+                cell.candidates = candidates;
+                if (candidates.length == 1) {
+                    cell.value = candidates[0];
+                } else {
+                    cell.centerPencilMarks = candidates;
+                }
+            }
+        } else {
+            for (let i = 0; i < numCells; i++) {
+                const cell = grid[Math.floor(i / size)][i % size];
+                if (cell.given) {
+                    continue;
+                }
+                const candidates = [];
+                for (let candidateIndex = 0; candidateIndex < size * 2; candidateIndex += 2) {
+                    const startIndex = i * size * 2 + candidateIndex;
+                    const digit0 = parseInt(str[startIndex]);
+                    const digit1 = parseInt(str[startIndex + 1]);
+                    if (!isNaN(digit0) && !isNaN(digit1) && (digit0 == 1 || digit1 != 0)) {
+                        const candidate = parseInt(digit0) * 10 + parseInt(digit1);
+                        candidates.push(candidate);
+                    }
+                }
+
+                cell.value = 0;
+                cell.centerPencilMarks = [];
+                if (candidates.length == 1) {
+                    cell.value = candidates[0];
+                } else {
+                    cell.centerPencilMarks = candidates;
+                }
+            }
+        }
+        onInputEnd();
+    }
+
     connectButton.click = function() {
         if (!this.hovering()) return;
 
-        if(!window.solverSocket) {
+        if (!window.solverSocket) {
             connectButton.title = 'Connecting...';
 
             let socket = new WebSocket("ws://localhost:4545");
-            socket.onopen = function () {
+            socket.onopen = function() {
                 console.log("Connection succeeded");
                 window.sendPuzzle();
             };
 
-            socket.onmessage = function (msg) {
+            socket.onmessage = function(msg) {
                 let expectedNonce = nonce + ':';
                 if (msg.data.startsWith(expectedNonce)) {
                     let puzzle = msg.data.substring(expectedNonce.length);
@@ -49,12 +108,12 @@
                         connectButton.title = 'INVALID';
                     } else {
                         connectButton.title = 'Disconnect';
-                        importPuzzle(puzzle, false);
+                        window.importCandidates(puzzle);
                     }
                 }
             };
 
-            socket.onclose = function () {
+            socket.onclose = function() {
                 connectButton.title = 'Connect';
                 console.log("Connection closed");
                 window.solverSocket = null;
@@ -87,15 +146,16 @@
         changes = changesProxy;
     }
 
-    clearChangeHistory = function(){
+    // These are f-puzzles functions which need to be hooked to restore the changes proxy
+    clearChangeHistory = function() {
         changes = [];
         changeIndex = 0;
         installChangeProxy();
 
-        changes.push({state: exportPuzzle(true), solving: mode === 'Solving'});
+        changes.push({ state: exportPuzzle(true), solving: mode === 'Solving' });
     }
 
-    forgetFutureChanges = function(){
+    forgetFutureChanges = function() {
         changes = changes.slice(0, changeIndex + 1);
         installChangeProxy();
     }
