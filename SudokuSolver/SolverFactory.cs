@@ -282,12 +282,11 @@ namespace SudokuSolver
                             cells.Append(cell);
                         }
                         cells.Append(';');
-                        foreach (string cell in lines)
+
+                        // The first cell specified is the one the line origintates from
+                        foreach (string cell in lines.Skip(1))
                         {
-                            if (!arrow.cells.Contains(cell))
-                            {
-                                cells.Append(cell);
-                            }
+                            cells.Append(cell);
                         }
                         ConstraintManager.AddConstraint(solver, typeof(ArrowSumConstraint), cells.ToString());
                     }

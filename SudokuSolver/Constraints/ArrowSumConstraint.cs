@@ -90,9 +90,14 @@ namespace SudokuSolver.Constraints
                     uint maxValueMask = (1u << maxValue) - 1;
                     foreach (var cell in arrowCells)
                     {
-                        if (!IsValueSet(board[cell.Item1, cell.Item2]))
+                        uint cellMask = board[cell.Item1, cell.Item2];
+                        if (!IsValueSet(cellMask))
                         {
-                            board[cell.Item1, cell.Item2] &= maxValueMask;
+                            if ((cellMask & maxValueMask) != cellMask)
+                            {
+                                board[cell.Item1, cell.Item2] &= maxValueMask;
+                                changed = true;
+                            }
                         }
                     }
                 }
@@ -123,16 +128,18 @@ namespace SudokuSolver.Constraints
                 if (maxSum <= 99)
                 {
                     int maxSumPrefix = maxSum / 10;
-
-                    var sumCell = circleCells[0];
-                    uint maxValueMask = (1u << maxSumPrefix) - 1;
-                    uint cellMask = board[sumCell.Item1, sumCell.Item2];
-                    if (!IsValueSet(cellMask))
+                    if (maxSumPrefix < MAX_VALUE)
                     {
-                        if ((cellMask & maxValueMask) != cellMask)
+                        var sumCell = circleCells[0];
+                        uint maxValueMask = (1u << maxSumPrefix) - 1;
+                        uint cellMask = board[sumCell.Item1, sumCell.Item2];
+                        if (!IsValueSet(cellMask))
                         {
-                            board[sumCell.Item1, sumCell.Item2] &= maxValueMask;
-                            changed = true;
+                            if ((cellMask & maxValueMask) != cellMask)
+                            {
+                                board[sumCell.Item1, sumCell.Item2] &= maxValueMask;
+                                changed = true;
+                            }
                         }
                     }
                 }
@@ -147,16 +154,18 @@ namespace SudokuSolver.Constraints
                 if (maxSum <= 999)
                 {
                     int maxSumPrefix = maxSum / 100;
-
-                    var sumCell = circleCells[0];
-                    uint maxValueMask = (1u << maxSumPrefix) - 1;
-                    uint cellMask = board[sumCell.Item1, sumCell.Item2];
-                    if (!IsValueSet(cellMask))
+                    if (maxSumPrefix < MAX_VALUE)
                     {
-                        if ((cellMask & maxValueMask) != cellMask)
+                        var sumCell = circleCells[0];
+                        uint maxValueMask = (1u << maxSumPrefix) - 1;
+                        uint cellMask = board[sumCell.Item1, sumCell.Item2];
+                        if (!IsValueSet(cellMask))
                         {
-                            board[sumCell.Item1, sumCell.Item2] &= maxValueMask;
-                            changed = true;
+                            if ((cellMask & maxValueMask) != cellMask)
+                            {
+                                board[sumCell.Item1, sumCell.Item2] &= maxValueMask;
+                                changed = true;
+                            }
                         }
                     }
                 }
@@ -764,7 +773,7 @@ namespace SudokuSolver.Constraints
                     }
                 }
 
-                int maxValue = sumRemaining - numRemainingCells + 1;
+                int maxValue = Math.Min(MAX_VALUE, sumRemaining - numRemainingCells + 1);
                 uint keepMask = MaskValAndLower(maxValue);
                 for (int cellIndex = 0; cellIndex < arrowCells.Count; cellIndex++)
                 {

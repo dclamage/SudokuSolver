@@ -19,15 +19,16 @@ namespace SudokuSolverConsole
 #if false
             args = new string[]
             {
-                //@"-f=N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAIwBhYyFSGATOctGAzHasAWZ0YCs7w4jvVqFCCaOnrwBEa+iPaGXlGupnGOCdG2iSbJ/jREQA===",
-                "-b=9",
-                "-c=chess:v1,2,3,4,5,6,7;1,1;2,2;3,3;4,4;5,5;6,6;7,7;8,8",
+                @"-f=N4IgzglgXgpiBcBOANCALhNAbO8QBUAnCABxwAJ8ALQmAQzRFToFc0qB7QhEADw4B2MACbk6A0QEUIArC15MQhFjjAxGeAHJcAtnSzkAgoUIcA7uWWqxJMgE8AOgIDaAEQgBzTGDFZBH8nYYMRNzcjAWHUCOQKpggUiAIxhCchlY4IBjCEJMnAA6cgBJADMxcmzciggfNDMYzJgsLB8/AQ9kNLQ0n1o6UTofOkD68mFPTHIEnWTUktMonBLutBjiDyo0AF0nJ0UPYmEEZ2dgAF9kc8uLq9uQADd9FlwARlQve5gBBDRlGBuAdctshToDbmCIUCQeDrrCYfCzsDQXDIQioci0ZiAUisSi8eccaiiSjCfjieCcQ8nrgAEzvCCfb7wX7PclsrbAkB0UJmY6gLAyGBgY7OEAAJReAGEAByKMU0yUAdjlAGZJQA2OUAFklAFY5brJVq5erJSqQBzUI1msL4KKJTK5VLEBabiABUJbSdxQrZagxWrlf6dZr/Yb9f7Tcb/YqzRbOdaWscfY7/QqXVs3R6hSLxWq/eKdUHxYbQ+LTRHxbHo+LpXHLSBE1686mWxms4Kvfa65WxXWy32lXLEK3BxmE00k3ba3rXZd3Z3cw6aXKFeb/WqV8HJS8DZKt+Wd3LY7v/XWVw2m8mHafxVKLx3PUvYwPTcWxYaC2KdeOrZPm2KL5zvyi52vaaq9gqNYBnGG5GvGf42teEGupmQA",
+                //"-b=9",
+                //"-c=chess:v1,2,3,4,5,6,7;1,1;2,2;3,3;4,4;5,5;6,6;7,7;8,8",
                 //"-c=ratio:neg2",
                 //"-c=difference:neg1",
                 //"-c=taxi:4",
                 //"-o=candidates.txt",
                 //"-uv",
-                "-st",
+                //"-st",
+                "-pts",
             };
 #endif
 
@@ -56,27 +57,37 @@ namespace SudokuSolverConsole
             string portStr = null;
 
             var options = new OptionSet {
-                { "f|fpuzzles=", "Import a full f-puzzles URL (Everything after '?load=').", f => fpuzzlesURL = f },
-                { "g|givens=", "Provide a digit string to represent the givens for the puzzle.", g => givens = g },
+                // Non-solve options
+                { "h|help", "Show this message and exit.", h => showHelp = h != null },
+
+                // Input board options
                 { "b|blank=", "Use a blank grid of a square size.", b => blankGridSizeString = b },
+                { "g|givens=", "Provide a digit string to represent the givens for the puzzle.", g => givens = g },
+                { "a|candidates=", "Provide a candidate string of height^3 numbers.", a => candidates = a },
+                { "f|fpuzzles=", "Import a full f-puzzles URL (Everything after '?load=').", f => fpuzzlesURL = f },
                 { "c|constraint=", "Provide a constraint to use.", c => constraints.Add(c) },
-                { "o|out=", "Output solution(s) to file.", o => outputPath = o },
-                { "t|multithread", "Use multithreading.", t => multiThread = t != null },
+
+                // Pre-solve options
+                { "p|print", "Print the input board.", p => print = p != null },
+
+                // Solve options
                 { "s|solve", "Provide a single brute force solution.", s => solveBruteForce = s != null },
                 { "d|random", "Provide a single random brute force solution.", d => solveRandomBruteForce = d != null },
                 { "l|logical", "Attempt to solve the puzzle logically.", l => solveLogically = l != null },
-                { "n|solutioncount", "Provide an exact solution count.", n => solutionCount = n != null },
-                { "k|check", "Check if there are 0, 1, or 2+ solutions.", k => check = k != null },
                 { "r|truecandidates", "Find the true candidates for the puzzle (union of all solutions).", r => trueCandidates = r != null },
+                { "k|check", "Check if there are 0, 1, or 2+ solutions.", k => check = k != null },
+                { "n|solutioncount", "Provide an exact solution count.", n => solutionCount = n != null },
+                { "t|multithread", "Use multithreading.", t => multiThread = t != null },
+
+                // Post-solve options
+                { "o|out=", "Output solution(s) to file.", o => outputPath = o },
                 { "z|sort", "Sort the solution count (requires reading all solutions into memory).", sort => sortSolutionCount = sort != null },
                 { "u|url", "Write solution as f-puzzles URL.", u => fpuzzlesOut = u != null },
                 { "v|visit", "Automatically visit the output URL with default browser (combine with -u).", v => visitURL = v != null },
-                { "p|print", "Print the input board.", p => print = p != null },
-                { "h|help", "Show this message and exit.", h => showHelp = h != null },
-                { "a|candidates", "Provide a candidate string of height^3 numbers.", a => candidates = a },
+
+                // Websocket options
                 { "listen", "Listen for websocket connections", l => listen = l != null },
                 { "port=", "Change the listen port for websocket connections (default 4545)", p => portStr = p },
-
             };
 
             List<string> extra;
