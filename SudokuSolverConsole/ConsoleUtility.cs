@@ -174,15 +174,17 @@ namespace SudokuSolverConsole
 
         public static void Write(string s, TextWriter writer, ConsoleColor color)
         {
+            ConsoleColor prevColor = ConsoleColor.White;
             bool isConsole = writer == Console.Out;
             if (isConsole)
             {
+                prevColor = Console.ForegroundColor;
                 Console.ForegroundColor = color;
             }
             writer.Write(s);
             if (isConsole)
             {
-                Console.ForegroundColor = ConsoleColor.White;
+                Console.ForegroundColor = prevColor;
             }
         }
 
