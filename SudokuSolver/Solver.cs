@@ -1589,7 +1589,15 @@ namespace SudokuSolver
             {
                 for (int j = 0; j < WIDTH; j++)
                 {
-                    SetMask(i, j, state.fixedBoard[i * WIDTH + j]);
+                    uint mask = state.fixedBoard[i * WIDTH + j];
+                    if (!IsValueSet(mask) && ValueCount(mask) == 1)
+                    {
+                        SetValue(i, j, GetValue(mask));
+                    }
+                    else
+                    {
+                        SetMask(i, j, state.fixedBoard[i * WIDTH + j]);
+                    }
                 }
             }
             return true;
