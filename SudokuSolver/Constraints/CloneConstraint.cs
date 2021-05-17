@@ -47,7 +47,6 @@ namespace SudokuSolver.Constraints
             }
 
             var board = sudokuSolver.Board;
-            bool changed = false;
             foreach (var (cell0, cellList) in cellToClones)
             {
                 var (i0, j0) = cell0;
@@ -99,12 +98,10 @@ namespace SudokuSolver.Constraints
                                 return LogicResult.Invalid;
                             }
                         }
-
-                        changed = true;
                     }
                 }
             }
-            return changed ? LogicResult.Changed : LogicResult.None;
+            return LogicResult.None;
         }
 
         public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
@@ -164,6 +161,8 @@ namespace SudokuSolver.Constraints
                         {
                             return LogicResult.Invalid;
                         }
+                        logicalStepDescription?.Append($"{CellName(i0, j0)} with value {GetValue(cellMask0)} is cloned into {CellName(i1, j1)}");
+                        return LogicResult.Changed;
                     }
                     else if (cellSet1)
                     {
@@ -171,6 +170,8 @@ namespace SudokuSolver.Constraints
                         {
                             return LogicResult.Invalid;
                         }
+                        logicalStepDescription?.Append($"{CellName(i1, j1)} with value {GetValue(cellMask1)} is cloned into {CellName(i0, j0)}");
+                        return LogicResult.Changed;
                     }
                     else
                     {
@@ -179,17 +180,41 @@ namespace SudokuSolver.Constraints
                         {
                             return LogicResult.Invalid;
                         }
-                        if (!sudokuSolver.SetMask(i0, j0, combinedMask))
+
+                        uint removed0 = (cellMask0 & ~combinedMask);
+                        uint removed1 = (cellMask1 & ~combinedMask);
+                        if (removed0 != 0 || removed1 != 0)
                         {
-                            return LogicResult.Invalid;
-                        }
-                        if (!sudokuSolver.SetMask(i1, j1, combinedMask))
-                        {
-                            return LogicResult.Invalid;
+                            if (logicalStepDescription != null)
+                            {
+                                if (removed0 != 0)
+                                {
+                                    logicalStepDescription.Append($"Candidate {MaskToString(removed0)} removed from {CellName(i0, j0)} (not in {CellName(i1, j1)})");
+                                }
+                                if (removed1 != 0)
+                                {
+                                    if (removed0 == 0)
+                                    {
+                                        logicalStepDescription.Append($"Candidate ");
+                                    }
+                                    else
+                                    {
+                                        logicalStepDescription.Append($"; ");
+                                    }
+                                    logicalStepDescription.Append($"{MaskToString(removed1)} removed from {CellName(i1, j1)} (not in {CellName(i0, j0)})");
+                                }
+                            }
+                            if (!sudokuSolver.SetMask(i0, j0, combinedMask))
+                            {
+                                return LogicResult.Invalid;
+                            }
+                            if (!sudokuSolver.SetMask(i1, j1, combinedMask))
+                            {
+                                return LogicResult.Invalid;
+                            }
+                            return LogicResult.Changed;
                         }
                     }
-
-                    changed = true;
                 }
             }
             return changed ? LogicResult.Changed : LogicResult.None;
