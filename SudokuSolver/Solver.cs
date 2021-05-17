@@ -52,6 +52,7 @@ namespace SudokuSolver
         public string Title { get; init; }
         public string Author { get; init; }
         public string Rules { get; init; }
+        public bool DisableContradictions { get; set; } = false;
 
         private uint[,] board;
         private int[,] regions = null;
@@ -62,6 +63,7 @@ namespace SudokuSolver
         // i0, j0, i1, j0, value or 0 for any value
         private bool[,,,,] seenMap;
         private bool canHaveUnorthodoxTuples = false;
+        private bool isInSetValue = false;
         public uint[] FlatBoard
         {
             get
@@ -112,7 +114,7 @@ namespace SudokuSolver
             {
                 var flatBoard = FlatBoard;
                 int digitWidth = MAX_VALUE >= 10 ? 2 : 1;
-                StringBuilder stringBuilder = new(flatBoard.Length);
+                StringBuilder stringBuilder = new(flatBoard.Length * digitWidth);
                 foreach (uint mask in flatBoard)
                 {
                     for (int v = 1; v <= MAX_VALUE; v++)
@@ -128,6 +130,50 @@ namespace SudokuSolver
                         else
                         {
                             stringBuilder.Append('.', digitWidth);
+                        }
+                    }
+                }
+                return stringBuilder.ToString();
+            }
+        }
+
+        public string DistinguishedCandidateString
+        {
+            get
+            {
+                var flatBoard = FlatBoard;
+                int digitWidth = MAX_VALUE >= 10 ? 2 : 1;
+                StringBuilder stringBuilder = new(flatBoard.Length * digitWidth);
+                foreach (uint mask in flatBoard)
+                {
+                    if (IsValueSet(mask))
+                    {
+                        int setValue = GetValue(mask);
+                        for (int v = 1; v <= MAX_VALUE; v++)
+                        {
+                            if (digitWidth == 2 && setValue <= 9)
+                            {
+                                stringBuilder.Append('0');
+                            }
+                            stringBuilder.Append(setValue);
+                        }
+                    }
+                    else
+                    {
+                        for (int v = 1; v <= MAX_VALUE; v++)
+                        {
+                            if ((mask & ValueMask(v)) != 0)
+                            {
+                                if (digitWidth == 2 && v <= 9)
+                                {
+                                    stringBuilder.Append('0');
+                                }
+                                stringBuilder.Append(v);
+                            }
+                            else
+                            {
+                                stringBuilder.Append('.', digitWidth);
+                            }
                         }
                     }
                 }
@@ -217,6 +263,7 @@ namespace SudokuSolver
             Title = other.Title;
             Author = other.Author;
             Rules = other.Rules;
+            DisableContradictions = other.DisableContradictions;
             board = (uint[,])other.board.Clone();
             regions = other.regions;
             seenMap = other.seenMap;
@@ -685,6 +732,14 @@ namespace SudokuSolver
                 return true;
             }
 
+            if (isInSetValue)
+            {
+                board[i, j] = valMask;
+                return true;
+            }
+
+            isInSetValue = true;
+
             board[i, j] = valueSetMask | valMask;
 
             // Enforce distinctness in groups
@@ -708,6 +763,7 @@ namespace SudokuSolver
                     return false;
                 }
             }
+            isInSetValue = false;
 
             return true;
         }
@@ -718,11 +774,6 @@ namespace SudokuSolver
             if ((mask & ~valueSetMask) == 0)
             {
                 return false;
-            }
-
-            if (ValueCount(mask) == 1)
-            {
-                return SetValue(i, j, GetValue(mask));
             }
 
             board[i, j] = mask;
@@ -755,19 +806,18 @@ namespace SudokuSolver
                 return LogicResult.None;
             }
 
+            isInSetValue = true;
+
+            LogicResult result = LogicResult.None;
             uint curMask = board[i, j];
             uint newMask = curMask & mask;
-            if (newMask == curMask)
+            if (newMask != curMask)
             {
-                if ((curMask & valueSetMask) == 0 && ValueCount(curMask) == 1)
-                {
-                    return SetMask(i, j, curMask) ? LogicResult.Changed : LogicResult.Invalid;
-                }
-
-                return LogicResult.None;
+                result = SetMask(i, j, newMask) ? LogicResult.Changed : LogicResult.Invalid;
             }
 
-            return SetMask(i, j, newMask) ? LogicResult.Changed : LogicResult.Invalid;
+            isInSetValue = false;
+            return result;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -777,19 +827,24 @@ namespace SudokuSolver
             {
                 return LogicResult.None;
             }
+            isInSetValue = true;
 
+            LogicResult result = LogicResult.None;
             uint curMask = board[i, j];
             if ((curMask & mask) == 0)
             {
                 if ((curMask & valueSetMask) == 0 && ValueCount(curMask) == 1)
                 {
-                    return SetMask(i, j, curMask) ? LogicResult.Changed : LogicResult.Invalid;
+                    result = SetMask(i, j, curMask) ? LogicResult.Changed : LogicResult.Invalid;
                 }
-
-                return LogicResult.None;
+            }
+            else
+            {
+                result = SetMask(i, j, curMask & ~mask) ? LogicResult.Changed : LogicResult.Invalid;
             }
 
-            return SetMask(i, j, curMask & ~mask) ? LogicResult.Changed : LogicResult.Invalid;
+            isInSetValue = false;
+            return result;
         }
 
         private (int, int) GetLeastCandidateCell(bool[] ignoreCell = null)
@@ -1006,88 +1061,6 @@ namespace SudokuSolver
         }
 
         /// <summary>
-        /// Performs a single logical step.
-        /// </summary>
-        /// <param name="progressEvent">An event to report progress whenever a new step is found.</param>
-        /// <param name="completedEvent">An event to report the final status of the puzzle (solved, no more logical steps, invalid)</param>
-        /// <param name="cancellationToken">Pass in to support cancelling the solve.</param>
-        /// <returns></returns>
-        public void LogicalStep(EventHandler<(string, uint[])> completedEvent)
-        {
-            if (seenMap == null)
-            {
-                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
-            }
-
-            StringBuilder logicDescription = new StringBuilder();
-            LogicResult result = StepLogic(logicDescription, true);
-            switch (result)
-            {
-                case LogicResult.None:
-                    completedEvent?.Invoke(null, ("No more logical steps found.", FlatBoard));
-                    return;
-                default:
-                    completedEvent?.Invoke(null, (logicDescription.ToString(), FlatBoard));
-                    break;
-            }
-        }
-
-        /// <summary>
-        /// Performs logical solve steps until no more logic is found.
-        /// </summary>
-        /// <param name="progressEvent">An event to report progress whenever a new step is found.</param>
-        /// <param name="completedEvent">An event to report the final status of the puzzle (solved, no more logical steps, invalid)</param>
-        /// <param name="cancellationToken">Pass in to support cancelling the solve.</param>
-        /// <returns></returns>
-        public async Task LogicalSolve(EventHandler<(string, uint[])> progressEvent, EventHandler<(string, uint[])> completedEvent, CancellationToken? cancellationToken)
-        {
-            if (seenMap == null)
-            {
-                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
-            }
-
-            Stopwatch timeSinceCheck = Stopwatch.StartNew();
-            StringBuilder logicProgress = new();
-            while (true)
-            {
-                if (timeSinceCheck.ElapsedMilliseconds > 1000)
-                {
-                    progressEvent?.Invoke(null, (logicProgress.ToString(), FlatBoard));
-                    logicProgress.Clear();
-
-                    await Task.Delay(1);
-                    cancellationToken?.ThrowIfCancellationRequested();
-                    timeSinceCheck.Restart();
-                }
-
-                StringBuilder logicDescription = new StringBuilder();
-                LogicResult result = StepLogic(logicDescription);
-                logicProgress.Append(logicDescription).AppendLine();
-
-                switch (result)
-                {
-                    case LogicResult.None:
-                        {
-                            logicProgress.Append("No more logical steps found.");
-                            completedEvent?.Invoke(null, (logicProgress.ToString(), FlatBoard));
-                        }
-                        return;
-                    case LogicResult.Invalid:
-                        {
-                            logicProgress.Append("Puzzle has no solutions.");
-                            completedEvent?.Invoke(null, (logicProgress.ToString(), FlatBoard));
-                        }
-                        return;
-                    case LogicResult.PuzzleComplete:
-                        {
-                            completedEvent?.Invoke(null, (logicProgress.ToString(), FlatBoard));
-                        }
-                        return;
-                }
-            }
-        }
-
-        /// <summary>
         /// Finds a single solution to the board. This may not be the only solution.
         /// For the exact same board inputs, the solution will always be the same.
         /// The board itself is modified to have the solution as its board values.
@@ -1095,7 +1068,7 @@ namespace SudokuSolver
         /// </summary>
         /// <param name="cancellationToken">Pass in to support cancelling the solve.</param>
         /// <returns>True if a solution is found, otherwise false.</returns>
-        public bool FindSolution(bool multiThread = false, CancellationToken? cancellationToken = null, bool isRandom = false)
+        public bool FindSolution(bool multiThread = false, CancellationToken cancellationToken = default, bool isRandom = false)
         {
             if (seenMap == null)
             {
@@ -1124,14 +1097,14 @@ namespace SudokuSolver
             return state.result != null;
         }
 
-        private static bool FindSolutionSingleThreaded(Solver solver, CancellationToken? cancellationToken, bool isRandom)
+        private static bool FindSolutionSingleThreaded(Solver solver, CancellationToken cancellationToken, bool isRandom)
         {
             Solver initialSolver = solver;
 
             var boardStack = new Stack<Solver>();
             while (true)
             {
-                cancellationToken?.ThrowIfCancellationRequested();
+                cancellationToken.ThrowIfCancellationRequested();
 
                 var logicResult = solver.ConsolidateBoard();
                 if (logicResult == LogicResult.PuzzleComplete)
@@ -1181,11 +1154,11 @@ namespace SudokuSolver
         {
             public CountdownEvent countdownEvent = new(1);
             public uint[,] result = null;
-            public CancellationToken? cancellationToken;
+            public CancellationToken cancellationToken;
             public object locker = new();
             public bool isRandom = false;
 
-            public FindSolutionState(CancellationToken? cancellationToken, bool isRandom)
+            public FindSolutionState(CancellationToken cancellationToken, bool isRandom)
             {
                 this.cancellationToken = cancellationToken;
                 this.isRandom = isRandom;
@@ -1209,14 +1182,7 @@ namespace SudokuSolver
 
             public void Wait()
             {
-                if (cancellationToken.HasValue)
-                {
-                    countdownEvent.Wait(cancellationToken.Value);
-                }
-                else
-                {
-                    countdownEvent.Wait();
-                }
+                countdownEvent.Wait(cancellationToken);
             }
         }
 
@@ -1224,7 +1190,7 @@ namespace SudokuSolver
         {
             while (true)
             {
-                state.cancellationToken?.ThrowIfCancellationRequested();
+                state.cancellationToken.ThrowIfCancellationRequested();
                 if (state.result != null)
                 {
                     break;
@@ -1280,7 +1246,7 @@ namespace SudokuSolver
         /// <param name="progressEvent">An event to receive the progress count as solutions are found.</param>
         /// <param name="cancellationToken">Pass in to support cancelling the count.</param>
         /// <returns>The solution count found.</returns>
-        public ulong CountSolutions(ulong maxSolutions = 0, bool multiThread = false, Action<ulong> progressEvent = null, Action<Solver> solutionEvent = null, CancellationToken? cancellationToken = null)
+        public ulong CountSolutions(ulong maxSolutions = 0, bool multiThread = false, Action<ulong> progressEvent = null, Action<Solver> solutionEvent = null, CancellationToken cancellationToken = default)
         {
             if (seenMap == null)
             {
@@ -1314,13 +1280,13 @@ namespace SudokuSolver
             public readonly ulong maxSolutions;
             public readonly Action<ulong> progressEvent;
             public readonly Action<Solver> solutionEvent;
-            public readonly CancellationToken? cancellationToken;
+            public readonly CancellationToken cancellationToken;
             public readonly CountdownEvent countdownEvent;
 
             private readonly object solutionLock = new();
             private readonly Stopwatch eventTimer;
 
-            public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, Action<Solver> solutionEvent, CancellationToken? cancellationToken)
+            public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken)
             {
                 this.maxSolutions = maxSolutions;
                 this.multiThread = multiThread;
@@ -1353,14 +1319,7 @@ namespace SudokuSolver
 
             public void Wait()
             {
-                if (cancellationToken.HasValue)
-                {
-                    countdownEvent.Wait(cancellationToken.Value);
-                }
-                else
-                {
-                    countdownEvent.Wait();
-                }
+                countdownEvent.Wait(cancellationToken);
             }
 
             public void Dispose()
@@ -1377,7 +1336,7 @@ namespace SudokuSolver
             var boardStack = new Stack<Solver>();
             while (true)
             {
-                state.cancellationToken?.ThrowIfCancellationRequested();
+                state.cancellationToken.ThrowIfCancellationRequested();
 
                 var logicResult = solver.ConsolidateBoard();
                 if (logicResult == LogicResult.PuzzleComplete)
@@ -1440,7 +1399,7 @@ namespace SudokuSolver
                     break;
                 }
 
-                state.cancellationToken?.ThrowIfCancellationRequested();
+                state.cancellationToken.ThrowIfCancellationRequested();
 
                 var logicResult = ConsolidateBoard();
                 if (logicResult == LogicResult.PuzzleComplete)
@@ -1493,11 +1452,11 @@ namespace SudokuSolver
             public readonly Action<uint[]> progressEvent;
             public readonly Stopwatch eventTimer = Stopwatch.StartNew();
 
-            public readonly CancellationToken? cancellationToken;
+            public readonly CancellationToken cancellationToken;
             public readonly bool multiThread;
             public bool boardInvalid = false;
 
-            public FillRealCandidatesState(int numCells, Action<uint[]> progressEvent, CancellationToken? cancellationToken, bool multiThread)
+            public FillRealCandidatesState(int numCells, Action<uint[]> progressEvent, CancellationToken cancellationToken, bool multiThread)
             {
                 fixedBoard = new uint[numCells];
                 candidatesFixed = new bool[numCells];
@@ -1533,7 +1492,7 @@ namespace SudokuSolver
         /// <param name="progressEvent">Recieve progress notifications. Will send 0 through 80 (assume 81 is 100%, though that will never be sent).</param>
         /// <param name="cancellationToken">Pass in to support cancelling.</param>
         /// <returns>True if there are solutions and candidates are filled. False if there are no solutions.</returns>
-        public bool FillRealCandidates(bool multiThread = false, bool skipConsolidate = false, Action<uint[]> progressEvent = null, CancellationToken? cancellationToken = null)
+        public bool FillRealCandidates(bool multiThread = false, bool skipConsolidate = false, Action<uint[]> progressEvent = null, CancellationToken cancellationToken = default)
         {
             if (seenMap == null)
             {
@@ -1594,7 +1553,7 @@ namespace SudokuSolver
             {
                 foreach (var (p, i, j, v) in cellValuesByPriority)
                 {
-                    cancellationToken?.ThrowIfCancellationRequested();
+                    cancellationToken.ThrowIfCancellationRequested();
 
                     FillRealCandidateAction(i, j, v, state);
                     if (state.boardInvalid)
@@ -1917,10 +1876,6 @@ namespace SudokuSolver
                             {
                                 stepDescription?.Append($"{stepPrefix} {CellName(i, j)} = {value}");
                                 hadChanges = true;
-                                if (humanStepping)
-                                {
-                                    return LogicResult.Changed;
-                                }
                             }
                             else
                             {
@@ -1942,6 +1897,11 @@ namespace SudokuSolver
                                 }
                                 stepDescription?.AppendLine().Append($"{CellName(i, j)} cannot be {value}.");
                                 return LogicResult.Invalid;
+                            }
+
+                            if (humanStepping)
+                            {
+                                return LogicResult.Changed;
                             }
                         }
                     }
@@ -2909,9 +2869,10 @@ namespace SudokuSolver
                                     StringBuilder contradictionReason = stepDescription != null ? new() : null;
                                     if (!boardCopy.SetValue(i, j, v) || boardCopy.ConsolidateBoard(contradictionReason) == LogicResult.Invalid)
                                     {
+                                        bool isTrivial = false;
+                                        StringBuilder formattedContraditionReason = (stepDescription != null) ? new() : null;
                                         if (stepDescription != null)
                                         {
-                                            StringBuilder formattedContraditionReason = new();
                                             if (contradictionReason.Length > 0)
                                             {
                                                 foreach (string line in contradictionReason.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
@@ -2922,22 +2883,26 @@ namespace SudokuSolver
                                             else
                                             {
                                                 formattedContraditionReason.Append("  ").Append("(For trivial reasons).").AppendLine();
+                                                isTrivial = true;
                                             }
-
-                                            stepDescription.Append($"Setting {CellName(i, j)} to {v} causes a contradiction:")
+                                        }
+                                        if (!DisableContradictions || isTrivial)
+                                        {
+                                            stepDescription?.Append($"Setting {CellName(i, j)} to {v} causes a contradiction:")
                                                 .AppendLine()
                                                 .Append(formattedContraditionReason);
-                                        }
-                                        if (!ClearValue(i, j, v))
-                                        {
-                                            if (stepDescription != null)
+
+                                            if (!ClearValue(i, j, v))
                                             {
-                                                stepDescription.AppendLine();
-                                                stepDescription.Append($"This clears the last candidate from {CellName(i, j)}.");
+                                                if (stepDescription != null)
+                                                {
+                                                    stepDescription.AppendLine();
+                                                    stepDescription.Append($"This clears the last candidate from {CellName(i, j)}.");
+                                                }
+                                                return LogicResult.Invalid;
                                             }
-                                            return LogicResult.Invalid;
+                                            return LogicResult.Changed;
                                         }
-                                        return LogicResult.Changed;
                                     }
                                 }
                             }

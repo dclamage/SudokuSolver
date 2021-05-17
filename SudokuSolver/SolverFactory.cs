@@ -666,9 +666,9 @@ namespace SudokuSolver
                             uint marksMask = 0;
                             foreach (int v in val.centerPencilMarks)
                             {
-                                marksMask |= SolverUtility.ValueMask(v);
+                                marksMask |= ValueMask(v);
                             }
-                            solver.ClearMask(i, j, (~marksMask) & solver.ALL_VALUES_MASK);
+                            solver.KeepMask(i, j, marksMask);
                         }
                         else if (val.value > 0)
                         {

@@ -15,7 +15,8 @@ namespace SudokuSolverConsole
     {
         private WatsonWsServer server;
         private readonly object serverLock = new();
-        private Dictionary<string, CancellationTokenSource> cancellationTokenMap = new();
+        private readonly Dictionary<string, CancellationTokenSource> cancellationTokenMap = new();
+        private readonly Dictionary<string, string> trueCandidatesResponseCache = new();
 
         public async Task Listen(string host, int port)
         {
@@ -50,54 +51,190 @@ namespace SudokuSolverConsole
         void MessageReceived(MessageReceivedEventArgs args)
         {
             string message = Encoding.UTF8.GetString(args.Data);
-            if (message.StartsWith("fpuzzles:"))
+            string[] split = message.Split(':');
+            if (split.Length != 4)
             {
-                message = message.Substring("fpuzzles:".Length);
+                return;
+            }
 
-                string nonce = "";
-                int nonceColon = message.IndexOf(':');
-                if (nonceColon != -1)
+            string platform = split[0];
+            string nonce = split[1];
+            string command = split[2];
+            string data = split[3];
+            if (platform == "fpuzzles")
+            {
+                if (cancellationTokenMap.TryGetValue(args.IpPort, out var cancellationTokenSource))
                 {
-                    nonce = message.Substring(0, nonceColon);
-                    message = message.Substring(nonceColon + 1);
-
-                    if (cancellationTokenMap.TryGetValue(args.IpPort, out var cancellationToken))
+                    cancellationTokenSource.Cancel();
+                }
+                lock (serverLock)
+                {
+                    if (command == "truecandidates" && trueCandidatesResponseCache.TryGetValue(data, out string response))
                     {
-                        cancellationToken.Cancel();
+                        server.SendAsync(args.IpPort, $"{nonce}:{response}");
+                        return;
                     }
-                    cancellationToken = cancellationTokenMap[args.IpPort] = new();
+                }
 
-                    string ipPort = args.IpPort;
-                    Task.Run(() =>
+                cancellationTokenSource = cancellationTokenMap[args.IpPort] = new();
+                var cancellationToken = cancellationTokenSource.Token;
+
+                string ipPort = args.IpPort;
+                Task.Run(() =>
+                {
+                    try
                     {
-                        try
+                        bool onlyGivens = false;
+                        switch (command)
                         {
-                            Solver solver = SolverFactory.CreateFromFPuzzles(message, onlyGivens: true);
-                            SendTrueCandidates(ipPort, nonce, solver);
+                            case "truecandidates":
+                            case "solve":
+                            case "check":
+                            case "count":
+                                onlyGivens = true;
+                                break;
                         }
-                        catch (Exception)
+
+                        Solver solver = SolverFactory.CreateFromFPuzzles(data, onlyGivens: onlyGivens);
+                        solver.customInfo["fpuzzlesdata"] = data;
+                        switch (command)
+                        {
+                            case "truecandidates":
+                                SendTrueCandidates(ipPort, nonce, solver, cancellationToken);
+                                break;
+                            case "solve":
+                                SendSolve(ipPort, nonce, solver, cancellationToken);
+                                break;
+                            case "check":
+                                SendCount(ipPort, nonce, solver, 2, cancellationToken);
+                                break;
+                            case "count":
+                                SendCount(ipPort, nonce, solver, 0, cancellationToken);
+                                break;
+                            case "solvepath":
+                                SendSolvePath(ipPort, nonce, solver);
+                                break;
+                            case "simplepath":
+                                solver.DisableContradictions = true;
+                                SendSolvePath(ipPort, nonce, solver);
+                                break;
+                            case "step":
+                                SendStep(ipPort, nonce, solver);
+                                break;
+                            case "simplestep":
+                                solver.DisableContradictions = true;
+                                SendStep(ipPort, nonce, solver);
+                                break;
+                        }
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        // Do nothing, no response expected
+                    }
+                    catch (Exception)
+                    {
+                        lock (serverLock)
                         {
                             server.SendAsync(ipPort, nonce + ":Invalid");
                         }
-                    }, cancellationToken.Token);
+                    }
+                }, cancellationToken);
+            }
+        }
+
+        void SendTrueCandidates(string ipPort, string nonce, Solver solver, CancellationToken cancellationToken)
+        {
+            if (!solver.FillRealCandidates(multiThread: true, cancellationToken: cancellationToken))
+            {
+                lock (serverLock)
+                {
+                    server.SendAsync(ipPort, nonce + ":Invalid", CancellationToken.None);
+                }
+            }
+            else
+            {
+                string candidateString = solver.CandidateString;
+                string fpuzzles = $"{nonce}:{candidateString}";
+                lock (serverLock)
+                {
+                    if (solver.customInfo.TryGetValue("fpuzzlesdata", out object inputObj) && inputObj is string input)
+                    {
+                        trueCandidatesResponseCache[input] = candidateString;
+                    }
+
+                    server.SendAsync(ipPort, fpuzzles, CancellationToken.None);
                 }
             }
         }
 
-        void SendTrueCandidates(string ipPort, string nonce, Solver solver)
+        void SendSolve(string ipPort, string nonce, Solver solver, CancellationToken cancellationToken)
         {
-            Solver solverClone = solver.Clone();
-            if (!solver.FillRealCandidates(multiThread: true))
-            {
-                server.SendAsync(ipPort, nonce + ":Invalid");
-            }
-            else
+            if (!solver.FindSolution(multiThread: true, isRandom: true, cancellationToken: cancellationToken))
             {
                 lock (serverLock)
                 {
-                    string fpuzzles = $"{nonce}:{solver.CandidateString}";
-                    server.SendAsync(ipPort, fpuzzles);
+                    server.SendAsync(ipPort, nonce + ":Invalid", CancellationToken.None);
                 }
+            }
+            else
+            {
+                string givenString = solver.GivenString;
+                string fpuzzles = $"{nonce}:{givenString}";
+                lock (serverLock)
+                {
+                    server.SendAsync(ipPort, fpuzzles, CancellationToken.None);
+                }
+            }
+        }
+
+        void SendCount(string ipPort, string nonce, Solver solver, ulong maxSolutions, CancellationToken cancellationToken)
+        {
+            ulong numSolutions = solver.CountSolutions(maxSolutions, true, cancellationToken: cancellationToken, progressEvent: (count) =>
+            {
+                server.SendAsync(ipPort, $"{nonce}:progress:{count}", CancellationToken.None);
+            });
+            server.SendAsync(ipPort, $"{nonce}:final:{numSolutions}", CancellationToken.None);
+        }
+
+        void SendSolvePath(string ipPort, string nonce, Solver solver)
+        {
+            StringBuilder stepsDescription = new();
+            var logicResult = solver.ConsolidateBoard(stepsDescription);
+            SendLogicResponse(ipPort, nonce, solver, logicResult, stepsDescription);
+        }
+
+        void SendStep(string ipPort, string nonce, Solver solver)
+        {
+            StringBuilder stepDescription = new();
+            var logicResult = solver.StepLogic(stepDescription, true);
+            if (stepDescription.Length == 0)
+            {
+                stepDescription.Append("No logical steps found.");
+            }
+            SendLogicResponse(ipPort, nonce, solver, logicResult, stepDescription);
+        }
+
+        void SendLogicResponse(string ipPort, string nonce, Solver solver, LogicResult logicResult, StringBuilder description)
+        {
+            description.AppendLine();
+
+            StringBuilder finalMessage = new();
+            finalMessage.Append(nonce).Append(':');
+
+            if (logicResult == LogicResult.Invalid)
+            {
+                finalMessage.Append("Invalid:");
+                description.AppendLine("Board is invalid!");
+            }
+            else
+            {
+                finalMessage.Append(solver.DistinguishedCandidateString).Append(':');
+            }
+            finalMessage.Append(description);
+
+            lock (serverLock)
+            {
+                server.SendAsync(ipPort, finalMessage.ToString(), CancellationToken.None);
             }
         }
 
