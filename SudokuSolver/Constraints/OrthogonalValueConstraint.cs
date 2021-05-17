@@ -241,14 +241,10 @@ namespace SudokuSolver.Constraints
                         }
 
                         var pair = CellPair(cell0, cell1);
-                        uint[] clearValuesArray;
-                        if (markers.TryGetValue(pair, out int markerValue))
+                        uint[] clearValuesArray = markers.TryGetValue(pair, out int markerValue) ? clearValuesPositiveByMarker[markerValue] : negativeConstraint && !overrideMarkers.Contains(pair) ? clearValuesNegative : null;
+                        if (clearValuesArray == null)
                         {
-                            clearValuesArray = clearValuesPositiveByMarker[markerValue];
-                        }
-                        else
-                        {
-                            clearValuesArray = clearValuesNegative;
+                            continue;
                         }
 
                         bool haveChanges = false;
