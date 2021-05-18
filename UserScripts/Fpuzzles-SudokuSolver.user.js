@@ -164,6 +164,7 @@
                     }
                     boolSettings['TrueCandidates'] = false;
 
+                    forgetFutureChanges();
                     sendPuzzle('solve');
                 }
             }
