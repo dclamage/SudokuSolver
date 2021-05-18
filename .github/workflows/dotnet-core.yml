@@ -22,7 +22,9 @@ jobs:
         VER=$(cat VERSION)
         echo "VERSION=$VER" >> $GITHUB_ENV
     - name: Update version
-      run: sed -i 's/version = .*;/version = \"${{ env.VERSION }}\";/' ./SudokuSolver/Version.cs
+      run: |
+        sed -i 's/version = .*;/version = \"${{ env.VERSION }}\";/' ./SudokuSolver/Version.cs
+        find . -type f -name '*.user.js' | xargs sed -i -E 's/(@version[ \t]*).*/\1${{ env.VERSION }}/'
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
@@ -34,26 +36,27 @@ jobs:
     - name: Zip win-x64
       uses: papeloto/action-zip@v1
       with:
-        files: publish-win-x64/ UserScripts/
+        files: publish-win-x64/ UserScripts/ Windows/
         dest: SudokuSolver-${{ env.VERSION }}-win-x64.zip
     - name: Publish win10-arm64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r win10-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-win10-arm64
     - name: Zip win10-arm64
       uses: papeloto/action-zip@v1
       with:
-        files: publish-win10-arm64/ UserScripts/
+        files: publish-win10-arm64/ UserScripts/ Windows/
         dest: SudokuSolver-${{ env.VERSION }}-win10-arm64.zip
     - name: Publish linux-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r linux-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-linux-x64
     - name: tar linux-x64
-      run: tar --transform 's/.*\///g' -zcvf SudokuSolver-${{ env.VERSION }}-linux-x64.tar.gz ./publish-linux-x64/* ./UserScripts/*
+      run: tar --transform 's/.*\///g' -zcvf SudokuSolver-${{ env.VERSION }}-linux-x64.tar.gz ./publish-linux-x64/* ./UserScripts/* ./Linux/*
     - name: Publish osx-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-x64
-    - name: Zip osx-x64
-      uses: papeloto/action-zip@v1
-      with:
-        files: publish-osx-x64/ UserScripts/
-        dest: SudokuSolver-${{ env.VERSION }}-osx-x64.zip
+    - name: Extract OSX tgz
+      run: |
+        mkdir ./OSX/Extracted
+        tar -xf ./OSX/*.tgz -C ./OSX/Extracted
+    - name: tar osx-x64
+      run: tar --transform 's/.*\///g' -zcvf SudokuSolver-${{ env.VERSION }}-osx-x64.tar.gz ./publish-osx-x64/* ./UserScripts/*.user.js ./OSX/Extracted/.
     - uses: actions/upload-artifact@v2
       with:
         name: SudokuSolver-${{ env.VERSION }}
