@@ -216,20 +216,23 @@ namespace SudokuSolverConsole
 
         void SendLogicResponse(string ipPort, string nonce, Solver solver, LogicResult logicResult, StringBuilder description)
         {
-            description.AppendLine();
+            if (!description.ToString().EndsWith(Environment.NewLine))
+            {
+                description.AppendLine();
+            }
 
             StringBuilder finalMessage = new();
             finalMessage.Append(nonce).Append(':');
 
             if (logicResult == LogicResult.Invalid)
             {
-                finalMessage.Append("Invalid:");
                 description.AppendLine("Board is invalid!");
             }
-            else
+            else if (logicResult == LogicResult.None)
             {
-                finalMessage.Append(solver.DistinguishedCandidateString).Append(':');
+                description.AppendLine("No logical steps found.");
             }
+            finalMessage.Append(solver.DistinguishedCandidateString).Append(':');
             finalMessage.Append(description);
 
             lock (serverLock)
