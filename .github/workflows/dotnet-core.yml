@@ -48,7 +48,15 @@ jobs:
     - name: Publish linux-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r linux-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-linux-x64
     - name: tar linux-x64
-      run: tar --transform 's/.*\///g' -zcvf SudokuSolver-${{ env.VERSION }}-linux-x64.tar.gz ./publish-linux-x64/* ./UserScripts/* ./Linux/*
+      run: |
+        shopt -s dotglob
+        mkdir package-linux-x64
+        cp -r ./publish-linux-x64/* ./package-linux-x64
+        cp -r ./UserScripts/* ./package-linux-x64
+        cp -r ./Linux/* ./package-linux-x64
+        cd package-linux-x64
+        tar -cpzf ../SudokuSolver-${{ env.VERSION }}-linux-x64.tar.gz *
+        cd ..
     - name: Publish osx-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-x64
     - name: Extract OSX tgz
@@ -56,7 +64,15 @@ jobs:
         mkdir ./OSX/Extracted
         tar -xf ./OSX/*.tgz -C ./OSX/Extracted
     - name: tar osx-x64
-      run: tar --transform 's/.*\///g' -zcvf SudokuSolver-${{ env.VERSION }}-osx-x64.tar.gz ./publish-osx-x64/* ./UserScripts/*.user.js ./OSX/Extracted/.
+      run: |
+        shopt -s dotglob
+        mkdir package-osx-x64
+        cp -r ./publish-osx-x64/* ./package-osx-x64
+        cp -r ./UserScripts/* ./package-osx-x64
+        cp -r ./OSX/Extracted/* ./package-osx-x64
+        cd package-osx-x64
+        tar -cpzf ../SudokuSolver-${{ env.VERSION }}-osx-x64.tar.gz *
+        cd ..
     - uses: actions/upload-artifact@v2
       with:
         name: SudokuSolver-${{ env.VERSION }}
