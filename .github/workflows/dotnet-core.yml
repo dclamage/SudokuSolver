@@ -59,17 +59,13 @@ jobs:
         cd ..
     - name: Publish osx-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-x64
-    - name: Extract OSX tgz
-      run: |
-        mkdir ./OSX/Extracted
-        tar -xf ./OSX/*.tgz -C ./OSX/Extracted
     - name: tar osx-x64
       run: |
         shopt -s dotglob
         mkdir package-osx-x64
         cp -r ./publish-osx-x64/* ./package-osx-x64
         cp -r ./UserScripts/* ./package-osx-x64
-        cp -r ./OSX/Extracted/* ./package-osx-x64
+        cp -r ./OSX/* ./package-osx-x64
         cd package-osx-x64
         tar -cpzf ../SudokuSolver-${{ env.VERSION }}-osx-x64.tar.gz *
         cd ..

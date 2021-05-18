@@ -207,10 +207,6 @@ namespace SudokuSolverConsole
         {
             StringBuilder stepDescription = new();
             var logicResult = solver.StepLogic(stepDescription, true);
-            if (stepDescription.Length == 0)
-            {
-                stepDescription.Append("No logical steps found.");
-            }
             SendLogicResponse(ipPort, nonce, solver, logicResult, stepDescription);
         }
 

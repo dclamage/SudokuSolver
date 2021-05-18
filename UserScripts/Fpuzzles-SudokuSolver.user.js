@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-SudokuSolver
 // @namespace    http://tampermonkey.net/
-// @version      0.2.1-alpha
+// @version      0.2.2-alpha
 // @description  Connect f-puzzles to SudokuSolver
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -25,60 +25,43 @@
     allowCommandWhenUndo['check'] = true;
     allowCommandWhenUndo['count'] = true;
 
-    window.sendPuzzle = function(command) {
-        if (!window.solverSocket) {
+    let solverSocket = null;
+    let lastSentPuzzle = {};
+    let sendPuzzle = function(command) {
+        if (!solverSocket) {
             return;
         }
 
-        if (!window.lastSentPuzzle) {
-            window.lastSentPuzzle = [];
-        }
-
         var puzzle = exportPuzzle();
-        if (!preventResentCommands[command] || window.lastSentPuzzle[command] !== puzzle) {
+        if (!preventResentCommands[command] || lastSentPuzzle[command] !== puzzle) {
             nonce = nonce + 1;
             lastCommand = command;
-            window.solverSocket.send('fpuzzles:' + nonce + ':' + command + ':' + puzzle);
-            window.lastSentPuzzle[command] = puzzle;
+            solverSocket.send('fpuzzles:' + nonce + ':' + command + ':' + puzzle);
+            lastSentPuzzle[command] = puzzle;
             connectButton.title = "Calculating...";
         }
     }
 
-    let buttonsMap = null;
-    let populateButtonsMapFromArray = function(buttonArray) {
-        buttonArray.forEach(function(button, _index) {
-            buttonsMap[button.title] = button;
-        });
-    }
-    let populateButtonsMap = function() {
-        if (buttonsMap !== null) {
-            return;
-        }
-        buttonsMap = {};
-        populateButtonsMapFromArray(buttons);
-        sidebars.forEach(function(sidebar, _index) {
-            populateButtonsMapFromArray(sidebar.buttons);
-        });
-    }
-
     let prevConsoleOutputTop = 0;
     let prevConsoleOutputHeight = 0;
+    let trueCandidatesButton = null;
+    let simpleStepsButton = null;
     let hookSolverButtons = function() {
         const consoleSidebar = sidebars.filter(sb => sb.title === 'Console')[0];
+        const mainSidebar = sidebars.filter(sb => sb.title === 'Main')[0];
         if (consoleSidebar) {
-            consoleSidebar.sections[0].y += (buttonLH + buttonGap) * 2;
-
             const solutionPathButton = consoleSidebar.buttons.filter(b => b.title === 'Solution Path')[0];
-            const stepButton = buttonsMap['Step'];
-            const checkButton = buttonsMap['Check'];
-            const countButton = buttonsMap['Solution Count'];
-            const solveButton = buttonsMap["Solve"];
-            if (!window.trueCandidatesButton) {
+            const stepButton = consoleSidebar.buttons.filter(b => b.title === 'Step')[0];
+            const checkButton = consoleSidebar.buttons.filter(b => b.title === 'Check')[0];
+            const countButton = consoleSidebar.buttons.filter(b => b.title === 'Solution Count')[0];
+            const solveButton = mainSidebar.buttons.filter(b => b.title === 'Solve')[0];
+
+            if (!trueCandidatesButton) {
                 boolSettings.push('TrueCandidates');
                 boolSettings['TrueCandidates'] = false;
-                window.trueCandidatesButton = new button(solutionPathButton.x - buttonLH / 2 - buttonGap / 2, solutionPathButton.y + (buttonLH + buttonGap) * consoleSidebar.buttons.length, buttonW - buttonLH - buttonGap, buttonLH, ['Solving', 'Setting'], 'TrueCandidates', 'True Candid.')
-                window.trueCandidatesButton.origClick = window.trueCandidatesButton.click;
-                window.trueCandidatesButton.click = function() {
+                trueCandidatesButton = new button(solutionPathButton.x - buttonLH / 2 - buttonGap / 2, solutionPathButton.y + (buttonLH + buttonGap) * 4, buttonW - buttonLH - buttonGap, buttonLH, ['Solving', 'Setting'], 'TrueCandidates', 'True Candid.')
+                trueCandidatesButton.origClick = trueCandidatesButton.click;
+                trueCandidatesButton.click = function() {
                     if (!this.hovering()) {
                         return;
                     }
@@ -86,74 +69,116 @@
                     this.origClick();
 
                     if (boolSettings['TrueCandidates']) {
-                        window.sendPuzzle('truecandidates');
+                        sendPuzzle('truecandidates');
                     } else {
-                        window.lastSentPuzzle['truecandidates'] = null;
+                        lastSentPuzzle['truecandidates'] = null;
                     }
                 }
             }
-            consoleSidebar.buttons.push(window.trueCandidatesButton);
-            if (!window.simpleStepsButton) {
+            if (!simpleStepsButton) {
                 boolSettings.push('SimpleStep');
                 boolSettings['SimpleStep'] = false;
-                window.simpleStepsButton = new button(solutionPathButton.x - buttonLH / 2 - buttonGap / 2, solutionPathButton.y + (buttonLH + buttonGap) * consoleSidebar.buttons.length, buttonW - buttonLH - buttonGap, buttonLH, ['Solving', 'Setting'], 'SimpleStep', 'Simple Logic')
-                window.simpleStepsButton.origClick = window.simpleStepsButton.click;
+                simpleStepsButton = new button(solutionPathButton.x - buttonLH / 2 - buttonGap / 2, solutionPathButton.y + (buttonLH + buttonGap) * 5, buttonW - buttonLH - buttonGap, buttonLH, ['Solving', 'Setting'], 'SimpleStep', 'Simple Logic')
             }
-            consoleSidebar.buttons.push(window.simpleStepsButton);
 
-            solutionPathButton.click = function() {
-                if (!this.hovering()) {
-                    return;
-                }
-                boolSettings['TrueCandidates'] = false;
+            if (!solutionPathButton.origClick) {
+                solutionPathButton.origClick = solutionPathButton.click;
+                solutionPathButton.click = function() {
+                    if (!this.hovering()) {
+                        return;
+                    }
+                    if (!solverSocket) {
+                        this.origClick();
+                        return;
+                    }
 
-                forgetFutureChanges();
-                if (boolSettings['SimpleStep']) {
-                    sendPuzzle('simplepath');
-                } else {
-                    sendPuzzle('solvepath');
-                }
-            }
-            stepButton.click = function() {
-                if (!this.hovering()) {
-                    return;
-                }
-                boolSettings['TrueCandidates'] = false;
+                    boolSettings['TrueCandidates'] = false;
 
-                forgetFutureChanges();
-                if (boolSettings['SimpleStep']) {
-                    sendPuzzle('simplestep');
-                } else {
-                    sendPuzzle('step');
+                    forgetFutureChanges();
+                    if (boolSettings['SimpleStep']) {
+                        sendPuzzle('simplepath');
+                    } else {
+                        sendPuzzle('solvepath');
+                    }
                 }
             }
-            checkButton.click = function() {
-                if (!this.hovering()) {
-                    return;
-                }
-                boolSettings['TrueCandidates'] = false;
+            if (!stepButton.origClick) {
+                stepButton.origClick = stepButton.click;
+                stepButton.click = function() {
+                    if (!this.hovering()) {
+                        return;
+                    }
+                    if (!solverSocket) {
+                        this.origClick();
+                        return;
+                    }
+                    boolSettings['TrueCandidates'] = false;
 
-                sendPuzzle('check');
+                    forgetFutureChanges();
+                    if (boolSettings['SimpleStep']) {
+                        sendPuzzle('simplestep');
+                    } else {
+                        sendPuzzle('step');
+                    }
+                }
             }
-            countButton.click = function() {
-                if (!this.hovering()) {
-                    return;
-                }
-                boolSettings['TrueCandidates'] = false;
+            if (!checkButton.origClick) {
+                checkButton.origClick = checkButton.click;
+                checkButton.click = function() {
+                    if (!this.hovering()) {
+                        return;
+                    }
+                    if (!solverSocket) {
+                        this.origClick();
+                        return;
+                    }
+                    boolSettings['TrueCandidates'] = false;
 
-                sendPuzzle('count');
+                    sendPuzzle('check');
+                }
             }
-            solveButton.click = function() {
-                if (!this.hovering()) {
-                    return;
-                }
-                boolSettings['TrueCandidates'] = false;
+            if (!countButton.origClick) {
+                countButton.origClick = countButton.click;
+                countButton.click = function() {
+                    if (!this.hovering()) {
+                        return;
+                    }
+                    if (!solverSocket) {
+                        this.origClick();
+                        return;
+                    }
+                    boolSettings['TrueCandidates'] = false;
 
-                sendPuzzle('solve');
+                    sendPuzzle('count');
+                }
+            }
+            if (!solveButton.origClick) {
+                solveButton.origClick = solveButton.click;
+                solveButton.click = function() {
+                    if (!this.hovering()) {
+                        return;
+                    }
+                    if (!solverSocket) {
+                        this.origClick();
+                        return;
+                    }
+                    boolSettings['TrueCandidates'] = false;
+
+                    sendPuzzle('solve');
+                }
             }
         }
+    }
 
-        if (prevConsoleOutputTop == 0) {
+    let showSolverButtons = function() {
+        const consoleSidebar = sidebars.filter(sb => sb.title === 'Console')[0];
+        if (consoleSidebar) {
+            consoleSidebar.sections[0].y += (buttonLH + buttonGap) * 2;
+            consoleSidebar.buttons.push(trueCandidatesButton);
+            consoleSidebar.buttons.push(simpleStepsButton);
+        }
+
+        if (prevConsoleOutputTop === 0) {
             prevConsoleOutputTop = consoleOutput.style.top;
             prevConsoleOutputHeight = consoleOutput.style.height;
         }
@@ -161,70 +186,44 @@
         consoleOutput.style.height = "42%";
     }
 
-    let unhookSolverButtons = function() {
+    let hideSolverButtons = function() {
         const consoleSidebar = sidebars.filter(sb => sb.title === 'Console')[0];
         if (consoleSidebar) {
             consoleSidebar.sections[0].y -= (buttonLH + buttonGap) * 2;
 
-            let index = consoleSidebar.buttons.indexOf(window.trueCandidatesButton);
+            let index = consoleSidebar.buttons.indexOf(trueCandidatesButton);
             if (index > -1) {
                 consoleSidebar.buttons.splice(index, 1);
             }
-            index = consoleSidebar.buttons.indexOf(window.simpleStepsButton);
+            index = consoleSidebar.buttons.indexOf(simpleStepsButton);
             if (index > -1) {
                 consoleSidebar.buttons.splice(index, 1);
             }
         }
 
         boolSettings['TrueCandidates'] = false;
-        consoleOutput.style.top = prevConsoleOutputTop;
-        consoleOutput.style.height = prevConsoleOutputHeight;
-    }
-
-    let solverHooked = false;
-    window.hookSolver = function() {
-        if (solverHooked) {
-            return;
+        if (prevConsoleOutputTop !== 0) {
+            consoleOutput.style.top = prevConsoleOutputTop;
+            consoleOutput.style.height = prevConsoleOutputHeight;
         }
-        populateButtonsMap();
-
-        window.prevButtonActions = {};
-        for (let name in buttonsMap) {
-            let button = buttonsMap[name];
-            if (button !== connectButton && button !== window.trueCandidatesButton && button !== window.simpleStepsButton) {
-                window.prevButtonActions[name] = button.click;
-            }
-        }
-
-        hookSolverButtons();
-        solverHooked = true;
-    }
-
-    window.unhookSolver = function() {
-        if (!window.prevButtonActions || !solverHooked) {
-            return;
-        }
-
-        for (let name in buttonsMap) {
-            let button = buttonsMap[name];
-            if (button !== connectButton && button !== window.trueCandidatesButton && button !== window.simpleStepsButton) {
-                button.click = window.prevButtonActions[name];
-            }
-        }
-
-        unhookSolverButtons();
-        solverHooked = false;
     }
 
     let origCreateSidebarConsole = createSidebarConsole;
     createSidebarConsole = function() {
         origCreateSidebarConsole();
-        if (solverHooked) {
-            hookSolverButtons();
+        hookSolverButtons();
+        if (solverSocket) {
+            showSolverButtons();
         }
     }
 
-    window.importCandidates = function(str, distinguished) {
+    let origCreateSidebarMain = createSidebarMain;
+    createSidebarMain = function() {
+        origCreateSidebarMain();
+        hookSolverButtons();
+    }
+
+    let importCandidates = function(str, distinguished) {
         if (size <= 9) {
             const numCells = str.length / size;
             for (let i = 0; i < numCells; i++) {
@@ -292,7 +291,7 @@
         onInputEnd();
     }
 
-    window.importGivens = function(str) {
+    let importGivens = function(str) {
         if (size <= 9) {
             const numCells = str.length;
             for (let i = 0; i < numCells; i++) {
@@ -326,14 +325,14 @@
             clearGrid(false, true);
             connectButton.title = 'INVALID';
         } else {
-            window.importCandidates(puzzle);
+            importCandidates(puzzle);
         }
     }
     let handleSolve = function(puzzle) {
         if (puzzle === 'Invalid') {
             clearGrid(false, true);
         } else {
-            window.importGivens(puzzle);
+            importGivens(puzzle);
         }
     }
     let handleCheck = function(puzzle) {
@@ -371,7 +370,7 @@
         if (colonIndex >= 0) {
             let candidateString = puzzle.substring(0, colonIndex);
             let description = puzzle.substring(colonIndex + 1);
-            window.importCandidates(candidateString);
+            importCandidates(candidateString);
             clearConsole();
             log(description, { newLine: false });
         }
@@ -381,7 +380,7 @@
         if (colonIndex >= 0) {
             let candidateString = puzzle.substring(0, colonIndex);
             let description = puzzle.substring(colonIndex + 1);
-            window.importCandidates(candidateString, true);
+            importCandidates(candidateString, true);
             if (!lastMessageWasStep) {
                 clearConsole();
             }
@@ -395,13 +394,14 @@
             return;
         }
 
-        if (!window.solverSocket) {
+        if (!solverSocket) {
             connectButton.title = 'Connecting...';
 
             let socket = new WebSocket("ws://localhost:4545");
             socket.onopen = function() {
                 console.log("Connection succeeded");
-                window.hookSolver();
+                hookSolverButtons();
+                showSolverButtons();
                 connectButton.title = 'Disconnect';
             };
 
@@ -436,14 +436,14 @@
             socket.onclose = function() {
                 connectButton.title = 'Connect';
                 console.log("Connection closed");
-                window.solverSocket = null;
-                window.lastSentPuzzle = null;
-                window.unhookSolver();
+                solverSocket = null;
+                lastSentPuzzle = {};
+                hideSolverButtons();
             };
-            window.solverSocket = socket;
+            solverSocket = socket;
         } else {
-            window.solverSocket.close();
-            window.solverSocket = null;
+            solverSocket.close();
+            solverSocket = null;
         }
     }
     buttons.push(connectButton);
@@ -456,14 +456,14 @@
             },
             deleteProperty: function(target, property) {
                 if (boolSettings['TrueCandidates']) {
-                    window.sendPuzzle('truecandidates');
+                    sendPuzzle('truecandidates');
                 }
                 return true;
             },
             set: function(target, property, value, receiver) {
                 target[property] = value;
                 if (boolSettings['TrueCandidates']) {
-                    window.sendPuzzle('truecandidates');
+                    sendPuzzle('truecandidates');
                 }
                 return true;
             }
