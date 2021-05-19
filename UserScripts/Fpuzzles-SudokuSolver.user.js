@@ -544,6 +544,9 @@
 
     installChangeProxy();
 
+    const openCTCButton = new button(canvas.width / 2 - 175, canvas.height / 2 + 6 + (buttonLH + buttonGap) * 4, 400, buttonLH, ['Export'], 'OpenCTC', 'Open in CTC');
+    const openSudokuLabButton = new button(canvas.width / 2 - 175, canvas.height / 2 + 6 + (buttonLH + buttonGap) * 5, 400, buttonLH, ['Export'], 'SudokuLab', 'Open in Sudoku Lab');
+
     let origCreateOtherButtons = createOtherButtons;
     createOtherButtons = function() {
         let index = boolSettings.indexOf('TrueCandidates');
@@ -557,5 +560,29 @@
         origCreateOtherButtons();
         boolSettings.push('TrueCandidates');
         boolSettings.push('SimpleStep');
+
+        buttons.filter(b => b.modes.includes('Export') && b !== openCTCButton && b !== openSudokuLabButton && b.x < canvas.width / 2).forEach(b => b.y -= 90);
     }
+
+    // Export buttons
+    popups.export.h += 200;
+    buttons.push(openCTCButton);
+    buttons.push(openSudokuLabButton);
+
+    openCTCButton.click = function() {
+        if (!this.hovering()) {
+            return;
+        }
+        window.open('https://app.crackingthecryptic.com/sudoku/?puzzleid=fpuzzles' + encodeURIComponent(exportPuzzle()));
+    }
+
+    openSudokuLabButton.click = function() {
+        if (!this.hovering()) {
+            return;
+        }
+        window.open('https://www.sudokulab.net/?fpuzzle=' + exportPuzzle());
+    }
+
+    buttons.filter(b => b.modes.includes('Export')).forEach(b => b.y -= 90);
+    document.getElementById('previewTypeBox').style.top = '29%';
 })();
