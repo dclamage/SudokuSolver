@@ -823,6 +823,7 @@ namespace SudokuSolver
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public LogicResult ClearMask(int i, int j, uint mask)
         {
+            mask &= ALL_VALUES_MASK;
             if (mask == 0)
             {
                 return LogicResult.None;
@@ -831,16 +832,10 @@ namespace SudokuSolver
 
             LogicResult result = LogicResult.None;
             uint curMask = board[i, j];
-            if ((curMask & mask) == 0)
+            uint newMask = curMask & ~mask;
+            if (newMask != curMask)
             {
-                if ((curMask & valueSetMask) == 0 && ValueCount(curMask) == 1)
-                {
-                    result = SetMask(i, j, curMask) ? LogicResult.Changed : LogicResult.Invalid;
-                }
-            }
-            else
-            {
-                result = SetMask(i, j, curMask & ~mask) ? LogicResult.Changed : LogicResult.Invalid;
+                result = SetMask(i, j, newMask) ? LogicResult.Changed : LogicResult.Invalid;
             }
 
             isInSetValue = false;
