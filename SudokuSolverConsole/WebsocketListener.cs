@@ -67,13 +67,21 @@ namespace SudokuSolverConsole
                 {
                     cancellationTokenSource.Cancel();
                 }
-                lock (serverLock)
+                if (command == "truecandidates")
                 {
-                    if (command == "truecandidates" && trueCandidatesResponseCache.TryGetValue(data, out string response))
+                    lock (serverLock)
                     {
-                        server.SendAsync(args.IpPort, $"{nonce}:{response}");
-                        return;
+                        if (trueCandidatesResponseCache.TryGetValue(data, out string response))
+                        {
+                            server.SendAsync(args.IpPort, $"{nonce}:{response}");
+                            return;
+                        }
                     }
+                }
+                if (command == "cancel")
+                {
+                    server.SendAsync(args.IpPort, $"{nonce}:canceled");
+                    return;
                 }
 
                 cancellationTokenSource = cancellationTokenMap[args.IpPort] = new();
@@ -171,12 +179,15 @@ namespace SudokuSolverConsole
         {
             if (!solver.FindSolution(multiThread: true, isRandom: true, cancellationToken: cancellationToken))
             {
-                lock (serverLock)
+                if (!cancellationToken.IsCancellationRequested)
                 {
-                    server.SendAsync(ipPort, nonce + ":Invalid", CancellationToken.None);
+                    lock (serverLock)
+                    {
+                        server.SendAsync(ipPort, nonce + ":Invalid", CancellationToken.None);
+                    }
                 }
             }
-            else
+            else if (!cancellationToken.IsCancellationRequested)
             {
                 string givenString = solver.GivenString;
                 string fpuzzles = $"{nonce}:{givenString}";
@@ -193,7 +204,10 @@ namespace SudokuSolverConsole
             {
                 server.SendAsync(ipPort, $"{nonce}:progress:{count}", CancellationToken.None);
             });
-            server.SendAsync(ipPort, $"{nonce}:final:{numSolutions}", CancellationToken.None);
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                server.SendAsync(ipPort, $"{nonce}:final:{numSolutions}", CancellationToken.None);
+            }
         }
 
         void SendSolvePath(string ipPort, string nonce, Solver solver)

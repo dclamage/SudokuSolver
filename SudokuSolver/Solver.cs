@@ -1082,9 +1082,13 @@ namespace SudokuSolver
                 return solutionFound;
             }
 
-            using FindSolutionState state = new(cancellationToken, isRandom);
+            using FindSolutionState state = new(isRandom, cancellationToken);
             FindSolutionMultiThreaded(solver, state);
             state.Wait();
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return false;
+            }
             if (state.result != null)
             {
                 board = state.result;
@@ -1153,10 +1157,48 @@ namespace SudokuSolver
             public object locker = new();
             public bool isRandom = false;
 
-            public FindSolutionState(CancellationToken cancellationToken, bool isRandom)
+            private int numRunningTasks = 0;
+            private readonly Queue<Solver> pendingSolvers = new Queue<Solver>();
+            private readonly int maxRunningTasks;
+
+            public FindSolutionState(bool isRandom, CancellationToken cancellationToken)
             {
                 this.cancellationToken = cancellationToken;
                 this.isRandom = isRandom;
+
+                maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
+            }
+
+            public void QueueSolver(Solver solver)
+            {
+                lock (locker)
+                {
+                    if (numRunningTasks < maxRunningTasks)
+                    {
+                        numRunningTasks++;
+                        Task.Run(() => FindSolutionMultiThreaded(solver, this), cancellationToken);
+                        countdownEvent.AddCount();
+                        return;
+                    }
+
+                    pendingSolvers.Enqueue(solver);
+                }
+            }
+
+            public void TaskComplete()
+            {
+                lock (locker)
+                {
+                    if (pendingSolvers.TryDequeue(out Solver solver))
+                    {
+                        Task.Run(() => FindSolutionMultiThreaded(solver, this), cancellationToken);
+                    }
+                    else
+                    {
+                        numRunningTasks--;
+                        countdownEvent.Signal();
+                    }
+                }
             }
 
             public void Dispose()
@@ -1220,8 +1262,7 @@ namespace SudokuSolver
                 newSolver.board[i, j] &= ~valMask;
                 if (newSolver.board[i, j] != 0)
                 {
-                    state.countdownEvent.AddCount();
-                    Task.Run(() => FindSolutionMultiThreaded(newSolver, state));
+                    state.QueueSolver(newSolver);
                 }
 
                 // Change the board to only allow this value in the slot
@@ -1230,7 +1271,7 @@ namespace SudokuSolver
                     break;
                 }
             }
-            state.countdownEvent.Signal();
+            state.TaskComplete();
         }
 
         /// <summary>
@@ -1281,6 +1322,10 @@ namespace SudokuSolver
             private readonly object solutionLock = new();
             private readonly Stopwatch eventTimer;
 
+            private int numRunningTasks = 0;
+            private readonly Queue<Solver> pendingSolvers;
+            private readonly int maxRunningTasks;
+
             public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken)
             {
                 this.maxSolutions = maxSolutions;
@@ -1290,6 +1335,8 @@ namespace SudokuSolver
                 this.cancellationToken = cancellationToken;
                 eventTimer = Stopwatch.StartNew();
                 countdownEvent = multiThread ? new CountdownEvent(1) : null;
+                pendingSolvers = multiThread ? new Queue<Solver>() : null;
+                maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
             }
 
             public void IncrementSolutions(Solver solver)
@@ -1309,6 +1356,38 @@ namespace SudokuSolver
                 if (invokeProgress)
                 {
                     progressEvent?.Invoke(numSolutions);
+                }
+            }
+
+            public void QueueSolver(Solver solver)
+            {
+                lock (solutionLock)
+                {
+                    if (numRunningTasks < maxRunningTasks)
+                    {
+                        numRunningTasks++;
+                        Task.Run(() => solver.CountSolutionsMultiThreaded(this));
+                        countdownEvent.AddCount();
+                        return;
+                    }
+
+                    pendingSolvers.Enqueue(solver);
+                }
+            }
+
+            public void TaskComplete()
+            {
+                lock (solutionLock)
+                {
+                    if (pendingSolvers.TryDequeue(out Solver solver))
+                    {
+                        Task.Run(() => solver.CountSolutionsMultiThreaded(this), cancellationToken);
+                    }
+                    else
+                    {
+                        numRunningTasks--;
+                        countdownEvent.Signal();
+                    }
                 }
             }
 
@@ -1426,8 +1505,7 @@ namespace SudokuSolver
                 newSolver.board[i, j] &= ~valMask;
                 if (newSolver.board[i, j] != 0)
                 {
-                    state.countdownEvent.AddCount();
-                    Task.Run(() => newSolver.CountSolutionsMultiThreaded(state));
+                    state.QueueSolver(newSolver);
                 }
 
                 if (!SetValue(i, j, val))
@@ -1435,7 +1513,8 @@ namespace SudokuSolver
                     break;
                 }
             }
-            state.countdownEvent.Signal();
+
+            state.TaskComplete();
         }
 
         private class FillRealCandidatesState

@@ -27,8 +27,14 @@
 
     let solverSocket = null;
     let lastSentPuzzle = {};
+    let commandIsComplete = false;
     let sendPuzzle = function(command) {
         if (!solverSocket) {
+            return;
+        }
+
+        if (command === "cancel") {
+            solverSocket.send('fpuzzles:' + nonce + ':cancel:cancel');
             return;
         }
 
@@ -46,6 +52,46 @@
     let prevConsoleOutputHeight = 0;
     let trueCandidatesButton = null;
     let simpleStepsButton = null;
+    let cancelButton = null;
+    let doCancelableCommand = function(force) {
+        if (!force && !this.hovering()) {
+            return;
+        }
+        if (!solverSocket) {
+            this.origClick();
+            return;
+        }
+        boolSettings['TrueCandidates'] = false;
+
+        if (cancelButton === this) {
+            if (this.title !== 'Cancelling...') {
+                sendPuzzle('cancel');
+                this.title = 'Cancelling...';
+            }
+        } else if (this.title === this.origTitle) {
+            sendPuzzle(this.solverCommand);
+            this.title = "Cancel";
+            cancelButton = this;
+        }
+    }
+
+    let initCancelableButton = function(button, command) {
+        if (!button.origClick) {
+            button.origClick = button.click;
+            button.click = doCancelableCommand;
+        }
+        if (!button.origTitle) {
+            button.origTitle = button.title;
+        }
+        if (!button.solverCommand) {
+            button.solverCommand = command;
+        }
+        if (cancelButton && cancelButton !== button && cancelButton.solverCommand === command) {
+            button.title = cancelButton.title;
+            cancelButton = button;
+        }
+    }
+
     let hookSolverButtons = function() {
         const consoleSidebar = sidebars.filter(sb => sb.title === 'Console')[0];
         const mainSidebar = sidebars.filter(sb => sb.title === 'Main')[0];
@@ -122,56 +168,19 @@
                     }
                 }
             }
-            if (!checkButton.origClick) {
-                checkButton.origClick = checkButton.click;
-                checkButton.click = function() {
-                    if (!this.hovering()) {
-                        return;
-                    }
-                    if (!solverSocket) {
-                        this.origClick();
-                        return;
-                    }
-                    boolSettings['TrueCandidates'] = false;
-
-                    sendPuzzle('check');
-                }
-            }
-            if (!countButton.origClick) {
-                countButton.origClick = countButton.click;
-                countButton.click = function() {
-                    if (!this.hovering()) {
-                        return;
-                    }
-                    if (!solverSocket) {
-                        this.origClick();
-                        return;
-                    }
-                    boolSettings['TrueCandidates'] = false;
-
-                    sendPuzzle('count');
-                }
-            }
-            if (!solveButton.origClick) {
-                solveButton.origClick = solveButton.click;
-                solveButton.click = function() {
-                    if (!this.hovering()) {
-                        return;
-                    }
-                    if (!solverSocket) {
-                        this.origClick();
-                        return;
-                    }
-                    boolSettings['TrueCandidates'] = false;
-
-                    forgetFutureChanges();
-                    sendPuzzle('solve');
-                }
-            }
+            initCancelableButton(checkButton, 'check');
+            initCancelableButton(countButton, 'count');
+            initCancelableButton(solveButton, 'solve');
         }
     }
 
+    let buttonsShown = false;
     let showSolverButtons = function() {
+        if (buttonsShown) {
+            return;
+        }
+        buttonsShown = true;
+
         const consoleSidebar = sidebars.filter(sb => sb.title === 'Console')[0];
         if (consoleSidebar) {
             consoleSidebar.sections[0].y += (buttonLH + buttonGap) * 2;
@@ -188,6 +197,11 @@
     }
 
     let hideSolverButtons = function() {
+        if (!buttonsShown) {
+            return;
+        }
+        buttonsShown = false;
+
         const consoleSidebar = sidebars.filter(sb => sb.title === 'Console')[0];
         if (consoleSidebar) {
             consoleSidebar.sections[0].y -= (buttonLH + buttonGap) * 2;
@@ -212,6 +226,7 @@
     let origCreateSidebarConsole = createSidebarConsole;
     createSidebarConsole = function() {
         origCreateSidebarConsole();
+        buttonsShown = false;
         hookSolverButtons();
         if (solverSocket) {
             showSolverButtons();
@@ -335,6 +350,10 @@
         } else {
             importGivens(puzzle);
         }
+        if (cancelButton) {
+            cancelButton.title = cancelButton.origTitle;
+            cancelButton = null;
+        }
     }
     let handleCheck = function(puzzle) {
         if (puzzle.startsWith('final:')) {
@@ -347,6 +366,10 @@
             } else {
                 log('There are multiple solutions.');
             }
+            if (cancelButton) {
+                cancelButton.title = cancelButton.origTitle;
+                cancelButton = null;
+            }
         }
     }
     let handleCount = function(puzzle) {
@@ -354,6 +377,7 @@
             let count = puzzle.substring('progress:'.length);
             clearConsole();
             log('Found ' + count + ' solutions so far...');
+            commandIsComplete = false;
         } else if (puzzle.startsWith('final:')) {
             let count = puzzle.substring('final:'.length);
             clearConsole();
@@ -363,6 +387,10 @@
                 log('There is a unique solution.');
             } else {
                 log('There are exactly ' + count + ' solutions.');
+            }
+            if (cancelButton) {
+                cancelButton.title = cancelButton.origTitle;
+                cancelButton = null;
             }
         }
     }
@@ -390,6 +418,7 @@
         }
     }
 
+    let processingMessage = false;
     connectButton.click = function() {
         if (!this.hovering()) {
             return;
@@ -409,28 +438,46 @@
             socket.onmessage = function(msg) {
                 let expectedNonce = nonce + ':';
                 if (msg.data.startsWith(expectedNonce)) {
-                    connectButton.title = 'Disconnect';
                     if (!allowCommandWhenUndo[lastCommand] && changeIndex < changes.length - 1) {
                         // Undo has been pressed
                         return;
                     }
 
-                    let puzzle = msg.data.substring(expectedNonce.length);
+                    let payload = msg.data.substring(expectedNonce.length);
+                    if (payload === 'canceled') {
+                        log('Operation canceled.');
+                        if (cancelButton) {
+                            cancelButton.title = cancelButton.origTitle;
+                            cancelButton = null;
+                        }
+                        connectButton.title = 'Disconnect';
+                        commandIsComplete = true;
+                        return;
+                    }
+
+                    processingMessage = true;
                     thisMessageWasStep = false;
+                    commandIsComplete = true;
                     if (lastCommand === 'truecandidates') {
-                        handleTrueCandidates(puzzle);
+                        handleTrueCandidates(payload);
                     } else if (lastCommand === 'solve') {
-                        handleSolve(puzzle);
+                        handleSolve(payload);
                     } else if (lastCommand === 'check') {
-                        handleCheck(puzzle);
+                        handleCheck(payload);
                     } else if (lastCommand === 'count') {
-                        handleCount(puzzle);
+                        handleCount(payload);
                     } else if (lastCommand === 'solvepath' || lastCommand === 'simplepath') {
-                        handlePath(puzzle);
+                        handlePath(payload);
                     } else if (lastCommand === 'step' || lastCommand === 'simplestep') {
-                        handleStep(puzzle);
+                        handleStep(payload);
                     }
                     lastMessageWasStep = thisMessageWasStep;
+
+                    if (commandIsComplete) {
+                        connectButton.title = 'Disconnect';
+                        commandIsComplete = false;
+                    }
+                    processingMessage = false;
                 }
             };
 
@@ -456,15 +503,24 @@
                 return thisArg[target].apply(this, argumentList);
             },
             deleteProperty: function(target, property) {
-                if (boolSettings['TrueCandidates']) {
-                    sendPuzzle('truecandidates');
+                if (!processingMessage) {
+                    if (boolSettings['TrueCandidates']) {
+                        sendPuzzle('truecandidates');
+                    } else if (cancelButton) {
+                        cancelButton.click(true);
+                    }
                 }
                 return true;
             },
             set: function(target, property, value, receiver) {
                 target[property] = value;
-                if (boolSettings['TrueCandidates']) {
-                    sendPuzzle('truecandidates');
+
+                if (!processingMessage) {
+                    if (boolSettings['TrueCandidates']) {
+                        sendPuzzle('truecandidates');
+                    } else if (cancelButton) {
+                        cancelButton.click(true);
+                    }
                 }
                 return true;
             }
@@ -487,4 +543,19 @@
     }
 
     installChangeProxy();
+
+    let origCreateOtherButtons = createOtherButtons;
+    createOtherButtons = function() {
+        let index = boolSettings.indexOf('TrueCandidates');
+        if (index > -1) {
+            boolSettings.splice(index, 1);
+        }
+        index = boolSettings.indexOf('SimpleStep');
+        if (index > -1) {
+            boolSettings.splice(index, 1);
+        }
+        origCreateOtherButtons();
+        boolSettings.push('TrueCandidates');
+        boolSettings.push('SimpleStep');
+    }
 })();
