@@ -2,6 +2,6 @@
 {
     public static class SudokuSolverVersion
     {
-        public const string version = "0.2.2-alpha";
+        public const string version = "0.2.3-alpha";
     }
 }
