@@ -152,6 +152,7 @@ namespace SudokuSolver.Constraints
                     bool cellSet1 = IsValueSet(cellMask1);
                     if (cellSet0 && cellSet1)
                     {
+                        logicalStepDescription?.Append($"{CellName(i0, j0)} has value {GetValue(cellMask0)} but its clone at {CellName(i1, j1)} has value {GetValue(cellMask1)}");
                         return LogicResult.Invalid;
                     }
 
@@ -159,6 +160,7 @@ namespace SudokuSolver.Constraints
                     {
                         if (!sudokuSolver.SetValue(i1, j1, GetValue(cellMask0)))
                         {
+                            logicalStepDescription?.Append($"{CellName(i0, j0)} has value {GetValue(cellMask0)} but its clone at {CellName(i1, j1)} cannot have this value.");
                             return LogicResult.Invalid;
                         }
                         logicalStepDescription?.Append($"{CellName(i0, j0)} with value {GetValue(cellMask0)} is cloned into {CellName(i1, j1)}");
@@ -168,6 +170,7 @@ namespace SudokuSolver.Constraints
                     {
                         if (!sudokuSolver.SetValue(i0, j0, GetValue(cellMask1)))
                         {
+                            logicalStepDescription?.Append($"{CellName(i1, j1)} has value {GetValue(cellMask1)} but its clone at {CellName(i0, j0)} cannot have this value.");
                             return LogicResult.Invalid;
                         }
                         logicalStepDescription?.Append($"{CellName(i1, j1)} with value {GetValue(cellMask1)} is cloned into {CellName(i0, j0)}");
@@ -178,6 +181,7 @@ namespace SudokuSolver.Constraints
                         uint combinedMask = cellMask0 & cellMask1;
                         if (combinedMask == 0)
                         {
+                            logicalStepDescription?.Append($"No value can go into both {CellName(i0, j0)} with candidates {MaskToString(cellMask0)} and its clone at {CellName(i1, j1)} with candidates {MaskToString(cellMask1)}.");
                             return LogicResult.Invalid;
                         }
 
