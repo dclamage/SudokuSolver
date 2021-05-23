@@ -1158,7 +1158,7 @@ namespace SudokuSolver
             public bool isRandom = false;
 
             private int numRunningTasks = 0;
-            private readonly Queue<Solver> pendingSolvers = new Queue<Solver>();
+            private readonly Stack<Solver> pendingSolvers = new();
             private readonly int maxRunningTasks;
 
             public FindSolutionState(bool isRandom, CancellationToken cancellationToken)
@@ -1169,7 +1169,7 @@ namespace SudokuSolver
                 maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
             }
 
-            public void QueueSolver(Solver solver)
+            public void PushSolver(Solver solver)
             {
                 lock (locker)
                 {
@@ -1181,7 +1181,7 @@ namespace SudokuSolver
                         return;
                     }
 
-                    pendingSolvers.Enqueue(solver);
+                    pendingSolvers.Push(solver);
                 }
             }
 
@@ -1189,7 +1189,7 @@ namespace SudokuSolver
             {
                 lock (locker)
                 {
-                    if (pendingSolvers.TryDequeue(out Solver solver))
+                    if (pendingSolvers.TryPop(out Solver solver))
                     {
                         Task.Run(() => FindSolutionMultiThreaded(solver, this), cancellationToken);
                     }
@@ -1262,7 +1262,7 @@ namespace SudokuSolver
                 newSolver.board[i, j] &= ~valMask;
                 if (newSolver.board[i, j] != 0)
                 {
-                    state.QueueSolver(newSolver);
+                    state.PushSolver(newSolver);
                 }
 
                 // Change the board to only allow this value in the slot
@@ -1324,7 +1324,7 @@ namespace SudokuSolver
             private readonly Stopwatch eventTimer;
 
             private int numRunningTasks = 0;
-            private readonly Queue<Solver> pendingSolvers;
+            private readonly Stack<Solver> pendingSolvers;
             private readonly int maxRunningTasks;
 
             public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, Action<Solver> solutionEvent, HashSet<string> skipSolutions, CancellationToken cancellationToken)
@@ -1337,7 +1337,7 @@ namespace SudokuSolver
                 this.cancellationToken = cancellationToken;
                 eventTimer = Stopwatch.StartNew();
                 countdownEvent = multiThread ? new CountdownEvent(1) : null;
-                pendingSolvers = multiThread ? new Queue<Solver>() : null;
+                pendingSolvers = multiThread ? new Stack<Solver>() : null;
                 maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
             }
 
@@ -1366,7 +1366,7 @@ namespace SudokuSolver
                 }
             }
 
-            public void QueueSolver(Solver solver)
+            public void PushSolver(Solver solver)
             {
                 lock (solutionLock)
                 {
@@ -1378,7 +1378,7 @@ namespace SudokuSolver
                         return;
                     }
 
-                    pendingSolvers.Enqueue(solver);
+                    pendingSolvers.Push(solver);
                 }
             }
 
@@ -1386,7 +1386,7 @@ namespace SudokuSolver
             {
                 lock (solutionLock)
                 {
-                    if ((maxSolutions <= 0 || numSolutions < maxSolutions) && pendingSolvers.TryDequeue(out Solver solver))
+                    if ((maxSolutions <= 0 || numSolutions < maxSolutions) && pendingSolvers.TryPop(out Solver solver))
                     {
                         Task.Run(() => solver.CountSolutionsMultiThreaded(this), cancellationToken);
                     }
@@ -1512,7 +1512,7 @@ namespace SudokuSolver
                 newSolver.board[i, j] &= ~valMask;
                 if (newSolver.board[i, j] != 0)
                 {
-                    state.QueueSolver(newSolver);
+                    state.PushSolver(newSolver);
                 }
 
                 if (!SetValue(i, j, val))
