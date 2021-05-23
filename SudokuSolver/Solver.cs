@@ -1282,14 +1282,14 @@ namespace SudokuSolver
         /// <param name="progressEvent">An event to receive the progress count as solutions are found.</param>
         /// <param name="cancellationToken">Pass in to support cancelling the count.</param>
         /// <returns>The solution count found.</returns>
-        public ulong CountSolutions(ulong maxSolutions = 0, bool multiThread = false, Action<ulong> progressEvent = null, Action<Solver> solutionEvent = null, CancellationToken cancellationToken = default)
+        public ulong CountSolutions(ulong maxSolutions = 0, bool multiThread = false, Action<ulong> progressEvent = null, Action<Solver> solutionEvent = null, HashSet<string> skipSolutions = null, CancellationToken cancellationToken = default)
         {
             if (seenMap == null)
             {
                 throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
             }
 
-            using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken);
+            using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, skipSolutions, cancellationToken);
             try
             {
                 if (state.multiThread)
@@ -1316,6 +1316,7 @@ namespace SudokuSolver
             public readonly ulong maxSolutions;
             public readonly Action<ulong> progressEvent;
             public readonly Action<Solver> solutionEvent;
+            public readonly HashSet<string> skipSolutions;
             public readonly CancellationToken cancellationToken;
             public readonly CountdownEvent countdownEvent;
 
@@ -1326,12 +1327,13 @@ namespace SudokuSolver
             private readonly Queue<Solver> pendingSolvers;
             private readonly int maxRunningTasks;
 
-            public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken)
+            public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, Action<Solver> solutionEvent, HashSet<string> skipSolutions, CancellationToken cancellationToken)
             {
                 this.maxSolutions = maxSolutions;
                 this.multiThread = multiThread;
                 this.progressEvent = progressEvent;
                 this.solutionEvent = solutionEvent;
+                this.skipSolutions = skipSolutions;
                 this.cancellationToken = cancellationToken;
                 eventTimer = Stopwatch.StartNew();
                 countdownEvent = multiThread ? new CountdownEvent(1) : null;
@@ -1344,6 +1346,11 @@ namespace SudokuSolver
                 bool invokeProgress = false;
                 lock (solutionLock)
                 {
+                    if (skipSolutions != null && skipSolutions.Contains(solver.GivenString))
+                    {
+                        return;
+                    }
+
                     solutionEvent?.Invoke(solver);
 
                     numSolutions++;
@@ -1379,7 +1386,7 @@ namespace SudokuSolver
             {
                 lock (solutionLock)
                 {
-                    if (pendingSolvers.TryDequeue(out Solver solver))
+                    if ((maxSolutions <= 0 || numSolutions < maxSolutions) && pendingSolvers.TryDequeue(out Solver solver))
                     {
                         Task.Run(() => solver.CountSolutionsMultiThreaded(this), cancellationToken);
                     }
@@ -1496,7 +1503,7 @@ namespace SudokuSolver
                 }
 
                 // Try a possible value for this cell
-                int val = MinValue(board[i, j]);
+                int val = state.skipSolutions != null ? GetRandomValue(board[i, j]) : MinValue(board[i, j]);
                 uint valMask = ValueMask(val);
 
                 // Create a solver without this value and start a task for it
@@ -1522,6 +1529,8 @@ namespace SudokuSolver
             public readonly uint[] fixedBoard;
             public readonly bool[] candidatesFixed;
             public readonly int[] tasksRemainingPerCell;
+            public readonly int[] numSolutions;
+            public readonly HashSet<string> solutionsCounted;
 
             public readonly Action<uint[]> progressEvent;
             public readonly Stopwatch eventTimer = Stopwatch.StartNew();
@@ -1530,7 +1539,7 @@ namespace SudokuSolver
             public readonly bool multiThread;
             public bool boardInvalid = false;
 
-            public FillRealCandidatesState(int numCells, Action<uint[]> progressEvent, CancellationToken cancellationToken, bool multiThread)
+            public FillRealCandidatesState(bool multiThread, int numCells, Action<uint[]> progressEvent, int[] numSolutions, CancellationToken cancellationToken)
             {
                 fixedBoard = new uint[numCells];
                 candidatesFixed = new bool[numCells];
@@ -1538,6 +1547,8 @@ namespace SudokuSolver
                 this.progressEvent = progressEvent;
                 this.cancellationToken = cancellationToken;
                 this.multiThread = multiThread;
+                this.numSolutions = numSolutions;
+                solutionsCounted = (numSolutions != null) ? new() : null;
             }
 
             public void CheckProgressEvent()
@@ -1563,24 +1574,34 @@ namespace SudokuSolver
         /// <summary>
         /// Remove any candidates which do not lead to an actual solution to the board.
         /// </summary>
-        /// <param name="progressEvent">Recieve progress notifications. Will send 0 through 80 (assume 81 is 100%, though that will never be sent).</param>
+        /// <param name="multiThread">If true, uses multiple threads to calculate.</param>
+        /// <param name="skipConsolidate">If true, the initial consolidate board is skipped.</param>
+        /// <param name="progressEvent">Recieve progress notifications. Sends the true candidates currently found.</param>
+        /// <param name="numSolutions">Expected to be HEIGHT * WIDTH * MAX_VALUE in size. The number of solutions per candidate, capped to 9.</param>
         /// <param name="cancellationToken">Pass in to support cancelling.</param>
         /// <returns>True if there are solutions and candidates are filled. False if there are no solutions.</returns>
-        public bool FillRealCandidates(bool multiThread = false, bool skipConsolidate = false, Action<uint[]> progressEvent = null, CancellationToken cancellationToken = default)
+        public bool FillRealCandidates(bool multiThread = false, bool skipConsolidate = false, Action<uint[]> progressEvent = null, int[] numSolutions = null, CancellationToken cancellationToken = default)
         {
             if (seenMap == null)
             {
                 throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
             }
 
+            if (numSolutions != null && numSolutions.Length != HEIGHT * WIDTH * MAX_VALUE)
+            {
+                throw new InvalidOperationException($"numSolutions was incorrect size. Expected {HEIGHT * WIDTH * MAX_VALUE} got {numSolutions.Length}");
+            }
+
             Stopwatch timeSinceCheck = Stopwatch.StartNew();
 
+            isBruteForcing = true;
             if (!skipConsolidate && ConsolidateBoard() == LogicResult.Invalid)
             {
+                isBruteForcing = false;
                 return false;
             }
 
-            FillRealCandidatesState state = new(NUM_CELLS, progressEvent, cancellationToken, multiThread);
+            FillRealCandidatesState state = new(multiThread, NUM_CELLS, progressEvent, numSolutions, cancellationToken);
             for (int i = 0; i < HEIGHT; i++)
             {
                 for (int j = 0; j < WIDTH; j++)
@@ -1643,6 +1664,7 @@ namespace SudokuSolver
 
             if (state.boardInvalid)
             {
+                isBruteForcing = false;
                 return false;
             }
 
@@ -1674,16 +1696,18 @@ namespace SudokuSolver
                     }
                 }
             }
+            isBruteForcing = false;
             return true;
         }
 
         private void FillRealCandidateAction(int i, int j, int v, FillRealCandidatesState state)
         {
             int cellIndex = i * WIDTH + j;
+            int numSolutionsIndex = cellIndex * MAX_VALUE + (v - 1);
             uint valMask = ValueMask(v);
 
             // Don't bother trying this value if it's already confirmed in the fixed board
-            if (!state.boardInvalid && (state.fixedBoard[cellIndex] & valMask) == 0)
+            if (!state.boardInvalid && ((state.fixedBoard[cellIndex] & valMask) == 0 || state.numSolutions != null && state.numSolutions[numSolutionsIndex] < 8))
             {
                 // Do the solve on a copy of the board
                 Solver boardCopy = Clone();
@@ -1703,15 +1727,46 @@ namespace SudokuSolver
                 }
 
                 // Set the board to use this candidate's value
-                if (boardCopy.SetValue(i, j, v) && boardCopy.FindSolution(multiThread: state.multiThread, cancellationToken: state.cancellationToken, isRandom: true))
+                if (boardCopy.SetValue(i, j, v))
                 {
-                    for (int si = 0; si < HEIGHT; si++)
+                    if (state.numSolutions == null)
                     {
-                        for (int sj = 0; sj < WIDTH; sj++)
+                        if (boardCopy.FindSolution(multiThread: state.multiThread, cancellationToken: state.cancellationToken, isRandom: true))
                         {
-                            uint solutionValMask = boardCopy.board[si, sj] & ~valueSetMask;
-                            state.fixedBoard[si * WIDTH + sj] |= solutionValMask;
+                            for (int si = 0; si < HEIGHT; si++)
+                            {
+                                for (int sj = 0; sj < WIDTH; sj++)
+                                {
+                                    uint solutionValMask = boardCopy.board[si, sj] & ~valueSetMask;
+                                    state.fixedBoard[si * WIDTH + sj] |= solutionValMask;
+                                }
+                            }
                         }
+                    }
+                    else
+                    {
+                        int numSolutionsNeeded = 8 - state.numSolutions[numSolutionsIndex];
+                        int numSolutions = (int)boardCopy.CountSolutions(
+                            maxSolutions: (uint)numSolutionsNeeded,
+                            multiThread: state.multiThread,
+                            skipSolutions: state.solutionsCounted,
+                            cancellationToken: state.cancellationToken,
+                            solutionEvent: (curSolutionBoard) =>
+                            {
+                                state.solutionsCounted.Add(curSolutionBoard.GivenString);
+
+                                for (int si = 0; si < HEIGHT; si++)
+                                {
+                                    for (int sj = 0; sj < WIDTH; sj++)
+                                    {
+                                        uint solutionValMask = curSolutionBoard.board[si, sj] & ~valueSetMask;
+                                        int cellIndex = si * WIDTH + sj;
+                                        state.fixedBoard[cellIndex] |= solutionValMask;
+                                        state.numSolutions[cellIndex * MAX_VALUE + GetValue(curSolutionBoard.board[si, sj]) - 1]++;
+                                    }
+                                }
+                            }
+                        );
                     }
                 }
             }

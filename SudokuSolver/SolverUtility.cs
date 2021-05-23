@@ -278,6 +278,11 @@ namespace SudokuSolver
         public static int GetRandomValue(uint mask)
         {
             int numCellVals = ValueCount(mask);
+            if (numCellVals == 1)
+            {
+                return GetValue(mask);
+            }
+
             int minVal = MinValue(mask);
             int maxVal = MaxValue(mask);
             int targetValIndex = RandomNext(0, numCellVals);

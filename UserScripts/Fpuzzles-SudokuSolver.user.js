@@ -13,17 +13,26 @@
 (function() {
     'use strict';
 
-    let connectButton = new button(canvas.width - 200, 40, 200, 40, ['Setting', 'Solving'], 'Connect', 'Connect');
+    // Makes center and corner marks larger so they're easier to see.
+    let textScale = 1.5;
+    const settingsIcon = '⚙️';
+
+    const connectButton = new button(canvas.width - 208, 40, 215, 40, ['Setting', 'Solving'], 'Connect', 'Connect');
+    const settingsButton = new button(canvas.width - 65, 40, 40, 40, ['Setting', 'Solving'], settingsIcon, settingsIcon);
 
     let nonce = 0;
     let lastCommand = '';
 
     let preventResentCommands = [];
     preventResentCommands['truecandidates'] = true;
+    preventResentCommands['truecandidatescolored'] = true;
 
     let allowCommandWhenUndo = [];
     allowCommandWhenUndo['check'] = true;
     allowCommandWhenUndo['count'] = true;
+
+    let extraSettingsNames = [];
+    extraSettingsNames.push('TrueCandidates');
 
     let solverSocket = null;
     let lastSentPuzzle = {};
@@ -38,6 +47,10 @@
             return;
         }
 
+        if (command === 'truecandidates' && boolSettings['ColoredCandidates']) {
+            command = "truecandidatescolored";
+        }
+
         var puzzle = exportPuzzle();
         if (!preventResentCommands[command] || lastSentPuzzle[command] !== puzzle) {
             nonce = nonce + 1;
@@ -48,18 +61,27 @@
         }
     }
 
+    let clearPencilmarkColors = function() {
+        for (let i = 0; i < size; i++) {
+            for (let j = 0; j < size; j++) {
+                const cell = grid[i][j];
+                if (cell) {
+                    cell.centerPencilMarkColors = null;
+                }
+            }
+        }
+    }
+
     let prevConsoleOutputTop = 0;
     let prevConsoleOutputHeight = 0;
     let trueCandidatesButton = null;
-    let simpleStepsButton = null;
     let cancelButton = null;
     let doCancelableCommand = function(force) {
         if (!force && !this.hovering()) {
             return;
         }
         if (!solverSocket) {
-            this.origClick();
-            return;
+            return this.origClick();
         }
         boolSettings['TrueCandidates'] = false;
 
@@ -73,6 +95,7 @@
             this.title = "Cancel";
             cancelButton = this;
         }
+        return true;
     }
 
     let initCancelableButton = function(button, command) {
@@ -117,14 +140,12 @@
                     if (boolSettings['TrueCandidates']) {
                         sendPuzzle('truecandidates');
                     } else {
+                        clearPencilmarkColors();
                         lastSentPuzzle['truecandidates'] = null;
+                        lastSentPuzzle['truecandidatescolored'] = null;
                     }
+                    return true;
                 }
-            }
-            if (!simpleStepsButton) {
-                boolSettings.push('SimpleStep');
-                boolSettings['SimpleStep'] = false;
-                simpleStepsButton = new button(solutionPathButton.x - buttonLH / 2 - buttonGap / 2, solutionPathButton.y + (buttonLH + buttonGap) * 5, buttonW - buttonLH - buttonGap, buttonLH, ['Solving', 'Setting'], 'SimpleStep', 'Simple Logic')
             }
 
             if (!solutionPathButton.origClick) {
@@ -134,8 +155,7 @@
                         return;
                     }
                     if (!solverSocket) {
-                        this.origClick();
-                        return;
+                        return this.origClick();
                     }
 
                     boolSettings['TrueCandidates'] = false;
@@ -146,6 +166,7 @@
                     } else {
                         sendPuzzle('solvepath');
                     }
+                    return true;
                 }
             }
             if (!stepButton.origClick) {
@@ -155,8 +176,7 @@
                         return;
                     }
                     if (!solverSocket) {
-                        this.origClick();
-                        return;
+                        return this.origClick();
                     }
                     boolSettings['TrueCandidates'] = false;
 
@@ -166,6 +186,7 @@
                     } else {
                         sendPuzzle('step');
                     }
+                    return true;
                 }
             }
             initCancelableButton(checkButton, 'check');
@@ -183,17 +204,16 @@
 
         const consoleSidebar = sidebars.filter(sb => sb.title === 'Console')[0];
         if (consoleSidebar) {
-            consoleSidebar.sections[0].y += (buttonLH + buttonGap) * 2;
+            consoleSidebar.sections[0].y += (buttonLH + buttonGap);
             consoleSidebar.buttons.push(trueCandidatesButton);
-            consoleSidebar.buttons.push(simpleStepsButton);
         }
 
         if (prevConsoleOutputTop === 0) {
             prevConsoleOutputTop = consoleOutput.style.top;
             prevConsoleOutputHeight = consoleOutput.style.height;
         }
-        consoleOutput.style.top = "51.6%";
-        consoleOutput.style.height = "42%";
+        consoleOutput.style.top = "45.6%";
+        consoleOutput.style.height = "48%";
     }
 
     let hideSolverButtons = function() {
@@ -204,7 +224,7 @@
 
         const consoleSidebar = sidebars.filter(sb => sb.title === 'Console')[0];
         if (consoleSidebar) {
-            consoleSidebar.sections[0].y -= (buttonLH + buttonGap) * 2;
+            consoleSidebar.sections[0].y -= (buttonLH + buttonGap);
 
             let index = consoleSidebar.buttons.indexOf(trueCandidatesButton);
             if (index > -1) {
@@ -221,6 +241,8 @@
             consoleOutput.style.top = prevConsoleOutputTop;
             consoleOutput.style.height = prevConsoleOutputHeight;
         }
+
+        clearPencilmarkColors();
     }
 
     let origCreateSidebarConsole = createSidebarConsole;
@@ -239,19 +261,66 @@
         hookSolverButtons();
     }
 
+    const lerpColor = function(a, b, amount) {
+        const ar = a >> 16;
+        const ag = a >> 8 & 0xff;
+        const ab = a & 0xff;
+
+        const br = b >> 16;
+        const bg = b >> 8 & 0xff;
+        const bb = b & 0xff;
+
+        const rr = ar + amount * (br - ar);
+        const rg = ag + amount * (bg - ag);
+        const rb = ab + amount * (bb - ab);
+
+        const colorStr = '000000' + (((rr << 16) + (rg << 8) + (rb | 0))).toString(16);
+        return '#' + colorStr.substr(colorStr.length - 6);
+    };
+
+    const oneSolutionColor = "#299b20";
+    const twoSolutionColor = 0xAFAFFF;
+    const eightSolutionColor = 0x0000FF;
+    const setCenterMarkColor = function(cell, numSolutionsStr, candidateIndex) {
+        if (!numSolutionsStr) {
+            return;
+        }
+
+        if (!cell.centerPencilMarkColors) {
+            cell.centerPencilMarkColors = {};
+        }
+        const numSolutions = parseInt(numSolutionsStr[cell.i * size * size + cell.j * size + candidateIndex]);
+        let curColor = oneSolutionColor;
+        if (numSolutions > 1) {
+            curColor = lerpColor(twoSolutionColor, eightSolutionColor, (numSolutions - 2) / 6);
+        }
+        cell.centerPencilMarkColors[candidateIndex + 1] = curColor;
+    }
+
     let importCandidates = function(str, distinguished) {
+        clearPencilmarkColors();
+
         if (size <= 9) {
-            const numCells = str.length / size;
+            let candidateStr = str;
+            let numSolutionsStr = null;
+            const candidateStrLen = size * size * size;
+            if (str.length === candidateStrLen * 2) {
+                candidateStr = str.substring(0, candidateStrLen);
+                numSolutionsStr = str.substring(candidateStrLen);
+            }
+            const numCells = candidateStr.length / size;
             for (let i = 0; i < numCells; i++) {
                 const cell = grid[Math.floor(i / size)][i % size];
                 if (!cell || cell.given) {
                     continue;
                 }
+
                 const candidates = [];
                 for (let candidateIndex = 0; candidateIndex < size; candidateIndex++) {
                     const candidate = parseInt(str[i * size + candidateIndex]);
                     if (!isNaN(candidate) && candidate != 0) {
                         candidates.push(candidate);
+                        setCenterMarkColor(cell, numSolutionsStr, candidateIndex);
                     }
                 }
 
@@ -271,12 +340,22 @@
                 }
             }
         } else {
+            let candidateStr = str;
+            let numSolutionsStr = null;
+            const candidateStrLen = size * size * size * 2;
+            const numSolutionsStrLen = size * size * size;
+            if (str.length === candidateStrLen + numSolutionsStrLen) {
+                candidateStr = str.substring(0, candidateStrLen);
+                numSolutionsStr = str.substring(candidateStrLen);
+            }
+
             const numCells = str.length / (size * 2);
             for (let i = 0; i < numCells; i++) {
                 const cell = grid[Math.floor(i / size)][i % size];
                 if (!cell || cell.given) {
                     continue;
                 }
+
                 const candidates = [];
                 for (let candidateIndex = 0; candidateIndex < size * 2; candidateIndex += 2) {
                     const startIndex = i * size * 2 + candidateIndex;
@@ -285,6 +364,7 @@
                     if (!isNaN(digit0) && !isNaN(digit1) && (digit0 == 1 || digit1 != 0)) {
                         const candidate = parseInt(digit0) * 10 + parseInt(digit1);
                         candidates.push(candidate);
+                        setCenterMarkColor(cell, numSolutionsStr, candidateIndex);
                     }
                 }
 
@@ -458,7 +538,7 @@
                     processingMessage = true;
                     thisMessageWasStep = false;
                     commandIsComplete = true;
-                    if (lastCommand === 'truecandidates') {
+                    if (lastCommand === 'truecandidates' || lastCommand === 'truecandidatescolored') {
                         handleTrueCandidates(payload);
                     } else if (lastCommand === 'solve') {
                         handleSolve(payload);
@@ -493,8 +573,73 @@
             solverSocket.close();
             solverSocket = null;
         }
+        return true;
     }
     buttons.push(connectButton);
+
+    popups.solversettings = { w: 600, h: 205 };
+    const origDrawPopups = drawPopups;
+    drawPopups = function(overlapSidebars) {
+        origDrawPopups(overlapSidebars);
+
+        if (overlapSidebars && popup === 'solversettings') {
+            const box = popups[cID(popup)];
+
+            ctx.lineWidth = lineWW;
+            ctx.fillStyle = boolSettings['Dark Mode'] ? '#404040' : '#E0E0E0';
+            ctx.strokeStyle = '#000000';
+            ctx.fillRect(canvas.width / 2 - box.w / 2, canvas.height / 2 - box.h / 2, box.w, 90);
+            ctx.strokeRect(canvas.width / 2 - box.w / 2, canvas.height / 2 - box.h / 2, box.w, 90);
+
+            ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
+            ctx.font = '60px Arial';
+            ctx.fillText('Solver Settings', canvas.width / 2, canvas.height / 2 - box.h / 2 + 66);
+        }
+    }
+
+    settingsButton.click = function() {
+        if (!this.hovering()) {
+            return;
+        }
+
+        togglePopup('solversettings');
+        return true;
+    }
+    buttons.push(settingsButton);
+
+    const closeSettingsButton = new button(canvas.width / 2 + popups[cID('solversettings')].w / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 - 20, 40, 40, ['solversettings'], 'X', 'X');
+    buttons.push(closeSettingsButton);
+
+    var numSettingsButtons = 0;
+    const simpleStepsButton = new button(canvas.width / 2 - (buttonSH + buttonGap) / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 + 110 + (buttonSH + buttonGap) * numSettingsButtons, 450, buttonSH, ['solversettings'], 'SimpleStep', 'Simple Logic Only');
+    boolSettings.push('SimpleStep');
+    boolSettings['SimpleStep'] = false;
+    extraSettingsNames.push('SimpleStep');
+    buttons.push(simpleStepsButton);
+    numSettingsButtons++;
+
+    const coloredCandidatesButton = new button(canvas.width / 2 - (buttonSH + buttonGap) / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 + 110 + (buttonSH + buttonGap) * numSettingsButtons, 450, buttonSH, ['solversettings'], 'ColoredCandidates', 'Colored True Candidates');
+    boolSettings.push('ColoredCandidates');
+    boolSettings['ColoredCandidates'] = false;
+    extraSettingsNames.push('ColoredCandidates');
+    buttons.push(coloredCandidatesButton);
+    coloredCandidatesButton.origClick = coloredCandidatesButton.click;
+    coloredCandidatesButton.click = function() {
+        if (!this.hovering()) {
+            return;
+        }
+
+        this.origClick();
+
+        if (boolSettings['TrueCandidates']) {
+            clearPencilmarkColors();
+            lastSentPuzzle['truecandidates'] = null;
+            lastSentPuzzle['truecandidatescolored'] = null;
+            sendPuzzle('truecandidates');
+        }
+        return true;
+    }
+    numSettingsButtons++;
 
     let installChangeProxy = function() {
         // a proxy for the changes array
@@ -549,17 +694,18 @@
 
     let origCreateOtherButtons = createOtherButtons;
     createOtherButtons = function() {
-        let index = boolSettings.indexOf('TrueCandidates');
-        if (index > -1) {
-            boolSettings.splice(index, 1);
-        }
-        index = boolSettings.indexOf('SimpleStep');
-        if (index > -1) {
-            boolSettings.splice(index, 1);
+        for (let i = 0; i < extraSettingsNames.length; i++) {
+            let name = extraSettingsNames[i];
+            let index = boolSettings.indexOf(name);
+            if (index > -1) {
+                boolSettings.splice(index, 1);
+            }
         }
         origCreateOtherButtons();
-        boolSettings.push('TrueCandidates');
-        boolSettings.push('SimpleStep');
+        for (let i = 0; i < extraSettingsNames.length; i++) {
+            let name = extraSettingsNames[i];
+            boolSettings.push(name);
+        }
 
         buttons.filter(b => b.modes.includes('Export') && b !== openCTCButton && b !== openSudokuLabButton && b.x < canvas.width / 2).forEach(b => b.y -= 90);
     }
@@ -574,6 +720,7 @@
             return;
         }
         window.open('https://app.crackingthecryptic.com/sudoku/?puzzleid=fpuzzles' + encodeURIComponent(exportPuzzle()));
+        return true;
     }
 
     openSudokuLabButton.click = function() {
@@ -581,8 +728,65 @@
             return;
         }
         window.open('https://www.sudokulab.net/?fpuzzle=' + exportPuzzle());
+        return true;
     }
 
     buttons.filter(b => b.modes.includes('Export')).forEach(b => b.y -= 90);
     document.getElementById('previewTypeBox').style.top = '29%';
+
+    // Replace cell rendering to support colors
+    let origCell = cell;
+    cell = function(i, j, outside) {
+        const c = new origCell(i, j, outside);
+        c.origShowTop = c.showTop;
+        c.showTop = function() {
+            if (currentTool === 'Regions' && !previewMode || this.value) {
+                this.origShowTop();
+            } else if (!previewMode) {
+                const TLInterference = constraints[cID('Killer Cage')].some(a => a.value.length && a.cells[0] === this) ||
+                    cosmetics[cID('Cage')].some(a => a.value.length && a.cells[0] === this) ||
+                    constraints[cID('Quadruple')].some(a => a.cells[3] === this);
+                const TRInterference = constraints[cID('Quadruple')].some(a => a.cells[2] === this);
+                const BLInterference = constraints[cID('Quadruple')].some(a => a.cells[1] === this);
+                const BRInterference = constraints[cID('Quadruple')].some(a => a.cells[0] === this);
+
+                ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
+                ctx.font = (cellSL * 0.19 * textScale) + 'px Arial';
+                for (var a = 0; a < Math.min(4, this.cornerPencilMarks.length); a++) {
+                    var x = this.x + (cellSL * 0.14) + (cellSL * 0.70 * (a % 2));
+                    if ((a === 0 && TLInterference) || (a === 2 && BLInterference))
+                        x += cellSL * 0.285;
+                    if ((a === 1 && TRInterference) || (a === 3 && BRInterference))
+                        x -= cellSL * 0.285;
+                    var y = this.y + (cellSL * 0.25) + (cellSL * 0.64 * (a > 1));
+                    ctx.fillText(this.cornerPencilMarks[a], x, y);
+                }
+
+                const defaultFillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
+                ctx.font = (cellSL * 0.19 * textScale) + 'px Arial';
+                const centerPencilMarks = Array(Math.ceil(this.centerPencilMarks.length / 5)).fill().map((a, i) => i * 5).map(a => this.centerPencilMarks.slice(a, a + 5));
+                if (!this.centerPencilMarkColors) {
+                    ctx.fillStyle = defaultFillStyle;
+                    for (let a = 0; a < centerPencilMarks.length; a++) {
+                        ctx.fillText(centerPencilMarks[a].join(''), this.x + cellSL / 2, this.y + (cellSL * 0.6) - ((centerPencilMarks.length - 1) / 2 - a) * cellSL * 0.1666 * textScale);
+                    }
+                } else {
+                    const deltaX = (cellSL * 0.19 * textScale) * (5.0 / 9.0);
+                    for (let a = 0; a < centerPencilMarks.length; a++) {
+                        const curMarks = centerPencilMarks[a];
+                        const x = this.x + cellSL / 2;
+                        const y = this.y + (cellSL * 0.6) - ((centerPencilMarks.length - 1) / 2 - a) * cellSL * 0.1666 * textScale;
+                        for (let m = 0; m < curMarks.length; m++) {
+                            let v = curMarks[m];
+                            const color = this.centerPencilMarkColors[v];
+                            ctx.fillStyle = color ? color : defaultFillStyle;
+                            ctx.fillText(v, x + (m - (curMarks.length - 1) / 2) * deltaX, y);
+                        }
+                    }
+                }
+            }
+        }
+        return c;
+    }
+
 })();
