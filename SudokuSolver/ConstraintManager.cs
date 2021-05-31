@@ -50,6 +50,24 @@ namespace SudokuSolver
                         constraintGroup.AddConstraints(solver);
                         break;
                 }
+                List<string> constraintStrings;
+                if (solver.customInfo.TryGetValue("ConstraintStrings", out object constraintStringsObj))
+                {
+                    constraintStrings = (List<string>)constraintStringsObj;
+                }
+                else
+                {
+                    solver.customInfo["ConstraintStrings"] = constraintStrings = new();
+                }
+
+                if (string.IsNullOrWhiteSpace(options))
+                {
+                    constraintStrings.Add(type.Name);
+                }
+                else
+                {
+                    constraintStrings.Add($"{type.Name}:{options}");
+                }
             }
             catch (Exception e)
             {

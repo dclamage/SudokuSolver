@@ -8,6 +8,7 @@ using WatsonWebsocket;
 using SudokuSolver;
 using System.IO;
 using System.Threading;
+using System.Collections;
 
 namespace SudokuSolverConsole
 {
@@ -16,8 +17,8 @@ namespace SudokuSolverConsole
         private WatsonWsServer server;
         private readonly object serverLock = new();
         private readonly Dictionary<string, CancellationTokenSource> cancellationTokenMap = new();
-        private readonly Dictionary<string, string> trueCandidatesResponseCache = new();
-        private readonly Dictionary<string, string> trueCandidatesColoredResponseCache = new();
+        private readonly Dictionary<byte[], string> trueCandidatesResponseCache = new(new ByteArrayComparer());
+        private readonly Dictionary<byte[], string> trueCandidatesColoredResponseCache = new(new ByteArrayComparer());
 
         public async Task Listen(string host, int port)
         {
@@ -68,18 +69,7 @@ namespace SudokuSolverConsole
                 {
                     cancellationTokenSource.Cancel();
                 }
-                if (command == "truecandidates" || command == "truecandidatescolored")
-                {
-                    lock (serverLock)
-                    {
-                        var cache = command == "truecandidates" ? trueCandidatesResponseCache : trueCandidatesColoredResponseCache;
-                        if (cache.TryGetValue(data, out string response))
-                        {
-                            server.SendAsync(args.IpPort, $"{nonce}:{response}");
-                            return;
-                        }
-                    }
-                }
+                
                 if (command == "cancel")
                 {
                     server.SendAsync(args.IpPort, $"{nonce}:canceled");
@@ -107,6 +97,22 @@ namespace SudokuSolverConsole
                         }
 
                         Solver solver = SolverFactory.CreateFromFPuzzles(data, onlyGivens: onlyGivens);
+                        if (command == "truecandidates" || command == "truecandidatescolored")
+                        {
+                            if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
+                            {
+                                var cache = command == "truecandidates" ? trueCandidatesResponseCache : trueCandidatesColoredResponseCache;
+                                lock (serverLock)
+                                {
+                                    if (cache.TryGetValue(comparableData, out string response))
+                                    {
+                                        server.SendAsync(args.IpPort, $"{nonce}:{response}");
+                                        return;
+                                    }
+                                }
+                            }
+                        }
+
                         solver.customInfo["fpuzzlesdata"] = data;
                         switch (command)
                         {
@@ -188,10 +194,10 @@ namespace SudokuSolverConsole
                 string fpuzzles = $"{nonce}:{payload}";
                 lock (serverLock)
                 {
-                    if (solver.customInfo.TryGetValue("fpuzzlesdata", out object inputObj) && inputObj is string input)
+                    if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
                     {
                         var cache = !colored ? trueCandidatesResponseCache : trueCandidatesColoredResponseCache;
-                        cache[input] = payload;
+                        cache[comparableData] = payload;
                     }
 
                     server.SendAsync(ipPort, fpuzzles, CancellationToken.None);

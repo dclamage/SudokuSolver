@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
@@ -189,6 +190,9 @@ namespace SudokuSolver
 
         public static Solver CreateFromFPuzzles(string fpuzzlesURL, IEnumerable<string> additionalConstraints = null, bool onlyGivens = false)
         {
+            using MemoryStream comparableDataStream = new();
+            using BinaryWriter comparableData = new(comparableDataStream);
+
             if (fpuzzlesURL.Contains("?load="))
             {
                 int trimStart = fpuzzlesURL.IndexOf("?load=") + "?load=".Length;
@@ -206,6 +210,8 @@ namespace SudokuSolver
             {
                 throw new ArgumentException($"f-puzzles import is non-square {height}x{width}");
             }
+            comparableData.Write(height);
+            comparableData.Write(width);
 
             // Start with default regions
             int[,] regions = DefaultRegions(height);
@@ -238,6 +244,14 @@ namespace SudokuSolver
                 }
             }
 
+            for (i = 0; i < height; i++)
+            {
+                for (j = 0; j < width; j++)
+                {
+                    comparableData.Write(regions[i, j]);
+                }
+            }
+
             Solver solver = new(width, width, width)
             {
                 Title = fpuzzlesData.title,
@@ -249,23 +263,23 @@ namespace SudokuSolver
             // Extra groups
             if (fpuzzlesData.diagonalp)
             {
-                ConstraintManager.AddConstraint(solver, typeof(DiagonalPositiveGroupConstraint), string.Empty);
+                solver.AddConstraint(typeof(DiagonalPositiveGroupConstraint), string.Empty);
             }
             if (fpuzzlesData.diagonaln)
             {
-                ConstraintManager.AddConstraint(solver, typeof(DiagonalNegativeGroupConstraint), string.Empty);
+                solver.AddConstraint(typeof(DiagonalNegativeGroupConstraint), string.Empty);
             }
             if (fpuzzlesData.antiknight)
             {
-                ConstraintManager.AddConstraint(solver, typeof(KnightConstraint), string.Empty);
+                solver.AddConstraint(typeof(KnightConstraint), string.Empty);
             }
             if (fpuzzlesData.antiking)
             {
-                ConstraintManager.AddConstraint(solver, typeof(KingConstraint), string.Empty);
+                solver.AddConstraint(typeof(KingConstraint), string.Empty);
             }
             if (fpuzzlesData.disjointgroups)
             {
-                ConstraintManager.AddConstraint(solver, typeof(DisjointConstraintGroup), string.Empty);
+                solver.AddConstraint(typeof(DisjointConstraintGroup), string.Empty);
             }
 
             // Marked constraints
@@ -288,7 +302,7 @@ namespace SudokuSolver
                         {
                             cells.Append(cell);
                         }
-                        ConstraintManager.AddConstraint(solver, typeof(ArrowSumConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(ArrowSumConstraint), cells.ToString());
                     }
                 }
             }
@@ -306,7 +320,7 @@ namespace SudokuSolver
                     {
                         cells.Append(cell);
                     }
-                    ConstraintManager.AddConstraint(solver, typeof(KillerCageConstraint), cells.ToString());
+                    solver.AddConstraint(typeof(KillerCageConstraint), cells.ToString());
                 }
             }
 
@@ -316,7 +330,7 @@ namespace SudokuSolver
                 {
                     if (!string.IsNullOrWhiteSpace(lksum.value) && lksum.value != "0")
                     {
-                        ConstraintManager.AddConstraint(solver, typeof(LittleKillerConstraint), $"{lksum.value};{lksum.cell};{lksum.direction}");
+                        solver.AddConstraint(typeof(LittleKillerConstraint), $"{lksum.value};{lksum.cell};{lksum.direction}");
                     }
                 }
             }
@@ -331,7 +345,7 @@ namespace SudokuSolver
                         cells.Append(cell.cell);
                     }
                 }
-                ConstraintManager.AddConstraint(solver, typeof(OddConstraint), cells.ToString());
+                solver.AddConstraint(typeof(OddConstraint), cells.ToString());
             }
 
             if (fpuzzlesData.even != null && fpuzzlesData.even.Length > 0)
@@ -344,7 +358,7 @@ namespace SudokuSolver
                         cells.Append(cell.cell);
                     }
                 }
-                ConstraintManager.AddConstraint(solver, typeof(EvenConstraint), cells.ToString());
+                solver.AddConstraint(typeof(EvenConstraint), cells.ToString());
             }
 
             if (fpuzzlesData.minimum != null && fpuzzlesData.minimum.Length > 0)
@@ -357,7 +371,7 @@ namespace SudokuSolver
                         cells.Append(cell.cell);
                     }
                 }
-                ConstraintManager.AddConstraint(solver, typeof(MinimumConstraint), cells.ToString());
+                solver.AddConstraint(typeof(MinimumConstraint), cells.ToString());
             }
 
             if (fpuzzlesData.maximum != null && fpuzzlesData.maximum.Length > 0)
@@ -370,7 +384,7 @@ namespace SudokuSolver
                         cells.Append(cell.cell);
                     }
                 }
-                ConstraintManager.AddConstraint(solver, typeof(MaximumConstraint), cells.ToString());
+                solver.AddConstraint(typeof(MaximumConstraint), cells.ToString());
             }
 
             if (fpuzzlesData.extraregion != null)
@@ -385,7 +399,7 @@ namespace SudokuSolver
                             cells.Append(cell);
                         }
                     }
-                    ConstraintManager.AddConstraint(solver, typeof(ExtraRegionConstraint), cells.ToString());
+                    solver.AddConstraint(typeof(ExtraRegionConstraint), cells.ToString());
                 }
             }
 
@@ -403,7 +417,7 @@ namespace SudokuSolver
                                 cells.Append(cell);
                             }
                         }
-                        ConstraintManager.AddConstraint(solver, typeof(ThermometerConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(ThermometerConstraint), cells.ToString());
                     }
                 }
             }
@@ -422,7 +436,7 @@ namespace SudokuSolver
                                 cells.Append(cell);
                             }
                         }
-                        ConstraintManager.AddConstraint(solver, typeof(PalindromeConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(PalindromeConstraint), cells.ToString());
                     }
                 }
             }
@@ -441,7 +455,7 @@ namespace SudokuSolver
                                 cells.Append(cell);
                             }
                         }
-                        ConstraintManager.AddConstraint(solver, typeof(BetweenLineConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(BetweenLineConstraint), cells.ToString());
                     }
                 }
             }
@@ -481,7 +495,7 @@ namespace SudokuSolver
 
                 if (ratioParams.Length > 0)
                 {
-                    ConstraintManager.AddConstraint(solver, typeof(RatioConstraint), ratioParams.ToString());
+                    solver.AddConstraint(typeof(RatioConstraint), ratioParams.ToString());
                 }
             }
 
@@ -517,7 +531,7 @@ namespace SudokuSolver
 
                 if (differenceParams.Length > 0)
                 {
-                    ConstraintManager.AddConstraint(solver, typeof(DifferenceConstraint), differenceParams.ToString());
+                    solver.AddConstraint(typeof(DifferenceConstraint), differenceParams.ToString());
                 }
             }
 
@@ -564,7 +578,7 @@ namespace SudokuSolver
 
                 if (sumParams.Length > 0)
                 {
-                    ConstraintManager.AddConstraint(solver, typeof(SumConstraint), sumParams.ToString());
+                    solver.AddConstraint(typeof(SumConstraint), sumParams.ToString());
                 }
             }
 
@@ -591,7 +605,7 @@ namespace SudokuSolver
 
                     if (cloneParams.Length > 0)
                     {
-                        ConstraintManager.AddConstraint(solver, typeof(CloneConstraint), cloneParams.ToString());
+                        solver.AddConstraint(typeof(CloneConstraint), cloneParams.ToString());
                     }
                 }
             }
@@ -621,7 +635,7 @@ namespace SudokuSolver
 
                     if (quadParams.Length > 0)
                     {
-                        ConstraintManager.AddConstraint(solver, typeof(QuadrupleConstraint), quadParams.ToString());
+                        solver.AddConstraint(typeof(QuadrupleConstraint), quadParams.ToString());
                     }
                 }
             }
@@ -635,7 +649,7 @@ namespace SudokuSolver
                         continue;
                     }
 
-                    ConstraintManager.AddConstraint(solver, typeof(SandwichConstraint), $"{sandwich.value}{sandwich.cell}");
+                    solver.AddConstraint(typeof(SandwichConstraint), $"{sandwich.value}{sandwich.cell}");
                 }
             }
 
@@ -664,6 +678,7 @@ namespace SudokuSolver
                         if (val.value > 0)
                         {
                             solver.SetValue(i, j, val.value);
+                            comparableData.Write((uint)val.value);
                         }
                         else if (val.centerPencilMarks != null && val.centerPencilMarks.Length > 0)
                         {
@@ -672,14 +687,30 @@ namespace SudokuSolver
                             {
                                 marksMask |= ValueMask(v);
                             }
+                            comparableData.Write(marksMask);
                             solver.KeepMask(i, j, marksMask);
                         }
+                    }
+                    else
+                    {
+                        comparableData.Write((uint)0);
                     }
                     isOriginalGiven[i, j] = val.given;
                     j++;
                 }
                 i++;
             }
+
+            if (solver.customInfo.TryGetValue("ConstraintStrings", out object constraintStringsObj) && constraintStringsObj is List<string> constraintStrings)
+            {
+                constraintStrings.Sort();
+                foreach (string constraint in constraintStrings)
+                {
+                    comparableData.Write(constraint);
+                }
+            }
+            solver.customInfo["ComparableData"] = comparableDataStream.ToArray();
+
             return solver;
         }
 
