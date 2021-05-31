@@ -468,7 +468,7 @@ namespace SudokuSolver.Constraints
                                     int curDigit = remainingComboSum % 10;
                                     remainingComboSum /= 10;
 
-                                    if (valueCombination.Contains(curDigit))
+                                    if (!arrowCells.Contains(circleCells[digitIndex]) && valueCombination.Contains(curDigit))
                                     {
                                         canUseCombination = false;
                                         break;
