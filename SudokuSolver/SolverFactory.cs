@@ -661,7 +661,11 @@ namespace SudokuSolver
                 {
                     if (val.given || !onlyGivens)
                     {
-                        if (val.centerPencilMarks != null && val.centerPencilMarks.Length > 0)
+                        if (val.value > 0)
+                        {
+                            solver.SetValue(i, j, val.value);
+                        }
+                        else if (val.centerPencilMarks != null && val.centerPencilMarks.Length > 0)
                         {
                             uint marksMask = 0;
                             foreach (int v in val.centerPencilMarks)
@@ -669,10 +673,6 @@ namespace SudokuSolver
                                 marksMask |= ValueMask(v);
                             }
                             solver.KeepMask(i, j, marksMask);
-                        }
-                        else if (val.value > 0)
-                        {
-                            solver.SetValue(i, j, val.value);
                         }
                     }
                     isOriginalGiven[i, j] = val.given;
