@@ -673,12 +673,14 @@ namespace SudokuSolver
                 j = 0;
                 foreach (var val in row)
                 {
+                    bool wroteValue = false;
                     if (val.given || !onlyGivens)
                     {
                         if (val.value > 0)
                         {
                             solver.SetValue(i, j, val.value);
-                            comparableData.Write((uint)val.value);
+                            comparableData.Write(ValueMask(val.value) | valueSetMask);
+                            wroteValue = true;
                         }
                         else if (val.centerPencilMarks != null && val.centerPencilMarks.Length > 0)
                         {
@@ -687,14 +689,17 @@ namespace SudokuSolver
                             {
                                 marksMask |= ValueMask(v);
                             }
-                            comparableData.Write(marksMask);
                             solver.KeepMask(i, j, marksMask);
+                            comparableData.Write(marksMask);
+                            wroteValue = true;
                         }
                     }
-                    else
+
+                    if (!wroteValue)
                     {
                         comparableData.Write((uint)0);
                     }
+
                     isOriginalGiven[i, j] = val.given;
                     j++;
                 }
