@@ -458,6 +458,11 @@ namespace SudokuSolver.Constraints
                                 continue;
                             }
 
+                            if (!IsPossibleCircleValue(sudokuSolver, valueComboSum))
+                            {
+                                continue;
+                            }
+
                             bool canUseCombination = true;
                             if (isAllGrouped)
                             {
@@ -477,10 +482,6 @@ namespace SudokuSolver.Constraints
                                 }
                             }
                             if (!canUseCombination)
-                            {
-                                continue;
-                            }
-                            if (!IsPossibleCircleValue(sudokuSolver, valueComboSum))
                             {
                                 continue;
                             }
