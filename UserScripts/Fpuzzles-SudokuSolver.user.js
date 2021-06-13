@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-SudokuSolver
 // @namespace    http://tampermonkey.net/
-// @version      0.2.5-alpha
+// @version      0.2.6-alpha
 // @description  Connect f-puzzles to SudokuSolver
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -24,6 +24,7 @@
 
         let nonce = 0;
         let lastCommand = '';
+        let lastClearCommand = '';
 
         let preventResentCommands = [];
         preventResentCommands['truecandidates'] = true;
@@ -55,11 +56,21 @@
 
             var puzzle = exportPuzzle();
             if (!preventResentCommands[command] || lastSentPuzzle[command] !== puzzle) {
-                nonce = nonce + 1;
-                lastCommand = command;
+                if (command === '')
+                    nonce = nonce + 1;
                 solverSocket.send('fpuzzles:' + nonce + ':' + command + ':' + puzzle);
                 lastSentPuzzle[command] = puzzle;
                 connectButton.title = "Calculating...";
+
+                if (command === 'solve' ||
+                    command === 'check' ||
+                    command === 'count' ||
+                    command === 'solvepath' || command === 'simplepath' ||
+                    (command === 'step' || command === 'simplestep') && !(lastClearCommand === 'step' || lastClearCommand === 'simplestep')) {
+                    clearConsole();
+                    lastClearCommand = command;
+                }
+                lastCommand = command;
             }
         }
 
@@ -416,18 +427,28 @@
             onInputEnd();
         }
 
-        let lastMessageWasStep = false;
-        let thisMessageWasStep = false;
-        let handleTrueCandidates = function(puzzle) {
-            if (puzzle === 'Invalid') {
+        const handleInvalid = function(puzzle) {
+            if (puzzle.startsWith('Invalid')) {
+                const split = puzzle.split(':');
+                if (split.length == 2) {
+                    log(split[1]);
+                } else {
+                    log('Invalid board (no solutions).');
+                }
+                return true;
+            }
+            return false;
+        }
+
+        const handleTrueCandidates = function(puzzle) {
+            if (handleInvalid(puzzle)) {
                 clearGrid(false, true);
-                connectButton.title = 'INVALID';
             } else {
                 importCandidates(puzzle);
             }
         }
-        let handleSolve = function(puzzle) {
-            if (puzzle === 'Invalid') {
+        const handleSolve = function(puzzle) {
+            if (handleInvalid(puzzle)) {
                 clearGrid(false, true);
             } else {
                 importGivens(puzzle);
@@ -437,10 +458,10 @@
                 cancelButton = null;
             }
         }
-        let handleCheck = function(puzzle) {
+        const handleCheck = function(puzzle) {
+            let complete = false;
             if (puzzle.startsWith('final:')) {
                 let count = puzzle.substring('final:'.length);
-                clearConsole();
                 if (count == 0) {
                     log('There are no solutions.');
                 } else if (count == 1) {
@@ -448,13 +469,17 @@
                 } else {
                     log('There are multiple solutions.');
                 }
-                if (cancelButton) {
-                    cancelButton.title = cancelButton.origTitle;
-                    cancelButton = null;
-                }
+                complete = true;
+            } else if (handleInvalid(puzzle)) {
+                complete = true;
+            }
+            if (cancelButton && complete) {
+                cancelButton.title = cancelButton.origTitle;
+                cancelButton = null;
             }
         }
-        let handleCount = function(puzzle) {
+        const handleCount = function(puzzle) {
+            let complete = false;
             if (puzzle.startsWith('progress:')) {
                 let count = puzzle.substring('progress:'.length);
                 clearConsole();
@@ -470,33 +495,35 @@
                 } else {
                     log('There are exactly ' + count + ' solutions.');
                 }
-                if (cancelButton) {
-                    cancelButton.title = cancelButton.origTitle;
-                    cancelButton = null;
+                complete = true;
+            } else if (handleInvalid(puzzle)) {
+                complete = true;
+            }
+            if (cancelButton && complete) {
+                cancelButton.title = cancelButton.origTitle;
+                cancelButton = null;
+            }
+        }
+        const handlePath = function(puzzle) {
+            if (!handleInvalid(puzzle)) {
+                let colonIndex = puzzle.indexOf(':');
+                if (colonIndex >= 0) {
+                    let candidateString = puzzle.substring(0, colonIndex);
+                    let description = puzzle.substring(colonIndex + 1);
+                    importCandidates(candidateString);
+                    log(description, { newLine: false });
                 }
             }
         }
-        let handlePath = function(puzzle) {
-            let colonIndex = puzzle.indexOf(':');
-            if (colonIndex >= 0) {
-                let candidateString = puzzle.substring(0, colonIndex);
-                let description = puzzle.substring(colonIndex + 1);
-                importCandidates(candidateString);
-                clearConsole();
-                log(description, { newLine: false });
-            }
-        }
-        let handleStep = function(puzzle) {
-            let colonIndex = puzzle.indexOf(':');
-            if (colonIndex >= 0) {
-                let candidateString = puzzle.substring(0, colonIndex);
-                let description = puzzle.substring(colonIndex + 1);
-                importCandidates(candidateString, true);
-                if (!lastMessageWasStep) {
-                    clearConsole();
+        const handleStep = function(puzzle) {
+            if (!handleInvalid(puzzle)) {
+                let colonIndex = puzzle.indexOf(':');
+                if (colonIndex >= 0) {
+                    let candidateString = puzzle.substring(0, colonIndex);
+                    let description = puzzle.substring(colonIndex + 1);
+                    importCandidates(candidateString, true);
+                    log(description, { newLine: false });
                 }
-                log(description, { newLine: false });
-                thisMessageWasStep = true;
             }
         }
 
@@ -538,7 +565,6 @@
                         }
 
                         processingMessage = true;
-                        thisMessageWasStep = false;
                         commandIsComplete = true;
                         if (lastCommand === 'truecandidates' || lastCommand === 'truecandidatescolored') {
                             handleTrueCandidates(payload);
@@ -553,7 +579,6 @@
                         } else if (lastCommand === 'step' || lastCommand === 'simplestep') {
                             handleStep(payload);
                         }
-                        lastMessageWasStep = thisMessageWasStep;
 
                         if (commandIsComplete) {
                             connectButton.title = 'Disconnect';

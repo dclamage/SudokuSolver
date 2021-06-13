@@ -678,7 +678,10 @@ namespace SudokuSolver
                     {
                         if (val.value > 0)
                         {
-                            solver.SetValue(i, j, val.value);
+                            if (!solver.SetValue(i, j, val.value))
+                            {
+                                throw new ArgumentException("ERROR: The givens are invalid (no solutions).");
+                            }
                             comparableData.Write(ValueMask(val.value) | valueSetMask);
                             wroteValue = true;
                         }
@@ -689,7 +692,10 @@ namespace SudokuSolver
                             {
                                 marksMask |= ValueMask(v);
                             }
-                            solver.KeepMask(i, j, marksMask);
+                            if (solver.KeepMask(i, j, marksMask) == LogicResult.Invalid)
+                            {
+                                throw new ArgumentException("ERROR: The center marks are invalid (no solutions).");
+                            }
                             comparableData.Write(marksMask);
                             wroteValue = true;
                         }

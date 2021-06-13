@@ -153,10 +153,9 @@ namespace SudokuSolverConsole
                     }
                     catch (Exception e)
                     {
-                        Console.WriteLine($"Exception processing message: {e.Message}");
                         lock (serverLock)
                         {
-                            server.SendAsync(ipPort, nonce + ":Invalid");
+                            server.SendAsync(ipPort, nonce + ":Invalid:" + e.Message);
                         }
                     }
                 }, cancellationToken);
@@ -170,7 +169,7 @@ namespace SudokuSolverConsole
             {
                 lock (serverLock)
                 {
-                    server.SendAsync(ipPort, nonce + ":Invalid", CancellationToken.None);
+                    server.SendAsync(ipPort, nonce + ":Invalid:No solutions found.", CancellationToken.None);
                 }
             }
             else
@@ -213,7 +212,7 @@ namespace SudokuSolverConsole
                 {
                     lock (serverLock)
                     {
-                        server.SendAsync(ipPort, nonce + ":Invalid", CancellationToken.None);
+                        server.SendAsync(ipPort, nonce + ":Invalid:No solutions found.", CancellationToken.None);
                     }
                 }
             }
