@@ -89,7 +89,7 @@
         let prevConsoleOutputHeight = 0;
         let trueCandidatesButton = null;
         let cancelButton = null;
-        let doCancelableCommand = function(force) {
+        const doCancelableCommand = function(force) {
             if (!force && !this.hovering()) {
                 return;
             }
@@ -172,6 +172,7 @@
                         }
 
                         boolSettings['TrueCandidates'] = false;
+                        boolSettings['EditGivenMarks'] = false;
 
                         forgetFutureChanges();
                         if (boolSettings['SimpleStep']) {
@@ -192,6 +193,7 @@
                             return this.origClick();
                         }
                         boolSettings['TrueCandidates'] = false;
+                        boolSettings['EditGivenMarks'] = false;
 
                         forgetFutureChanges();
                         if (boolSettings['SimpleStep']) {
@@ -604,7 +606,6 @@
         }
         buttons.push(connectButton);
 
-        popups.solversettings = { w: 600, h: 205 };
         const origDrawPopups = drawPopups;
         drawPopups = function(overlapSidebars) {
             origDrawPopups(overlapSidebars);
@@ -634,39 +635,65 @@
         }
         buttons.push(settingsButton);
 
+        const settingsButtons = [{
+                id: 'SimpleStep',
+                label: 'Simple Logic Only'
+            },
+            {
+                id: 'ColoredCandidates',
+                label: 'Colored True Candidates',
+                click: function() {
+                    if (!this.hovering()) {
+                        return;
+                    }
+
+                    this.origClick();
+
+                    if (boolSettings['TrueCandidates']) {
+                        clearPencilmarkColors();
+                        lastSentPuzzle['truecandidates'] = null;
+                        lastSentPuzzle['truecandidatescolored'] = null;
+                        sendPuzzle('truecandidates');
+                    }
+                    return true;
+                }
+            },
+            {
+                id: 'EditGivenMarks',
+                label: 'Edit Given Pencilmarks'
+            },
+        ];
+        popups.solversettings = { w: 600, h: 125 + (buttonSH + buttonGap) * settingsButtons.length };
         const closeSettingsButton = new button(canvas.width / 2 + popups[cID('solversettings')].w / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 - 20, 40, 40, ['solversettings'], 'X', 'X');
         buttons.push(closeSettingsButton);
 
         var numSettingsButtons = 0;
-        const simpleStepsButton = new button(canvas.width / 2 - (buttonSH + buttonGap) / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 + 110 + (buttonSH + buttonGap) * numSettingsButtons, 450, buttonSH, ['solversettings'], 'SimpleStep', 'Simple Logic Only');
-        boolSettings.push('SimpleStep');
-        boolSettings['SimpleStep'] = false;
-        extraSettingsNames.push('SimpleStep');
-        buttons.push(simpleStepsButton);
-        numSettingsButtons++;
+        for (let buttonData of settingsButtons) {
+            const newButton = new button(canvas.width / 2 - (buttonSH + buttonGap) / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 + 110 + (buttonSH + buttonGap) * numSettingsButtons, 450, buttonSH, ['solversettings'], buttonData.id, buttonData.label);
+            boolSettings.push(buttonData.id);
+            boolSettings[buttonData.id] = false;
+            extraSettingsNames.push(buttonData.id);
+            buttons.push(newButton);
+            if (buttonData.click) {
+                newButton.origClick = newButton.click;
+                newButton.click = function() {
+                    if (!this.hovering()) {
+                        return;
+                    }
 
-        const coloredCandidatesButton = new button(canvas.width / 2 - (buttonSH + buttonGap) / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 + 110 + (buttonSH + buttonGap) * numSettingsButtons, 450, buttonSH, ['solversettings'], 'ColoredCandidates', 'Colored True Candidates');
-        boolSettings.push('ColoredCandidates');
-        boolSettings['ColoredCandidates'] = false;
-        extraSettingsNames.push('ColoredCandidates');
-        buttons.push(coloredCandidatesButton);
-        coloredCandidatesButton.origClick = coloredCandidatesButton.click;
-        coloredCandidatesButton.click = function() {
-            if (!this.hovering()) {
-                return;
+                    this.origClick();
+
+                    if (boolSettings['TrueCandidates']) {
+                        clearPencilmarkColors();
+                        lastSentPuzzle['truecandidates'] = null;
+                        lastSentPuzzle['truecandidatescolored'] = null;
+                        sendPuzzle('truecandidates');
+                    }
+                    return true;
+                }
             }
-
-            this.origClick();
-
-            if (boolSettings['TrueCandidates']) {
-                clearPencilmarkColors();
-                lastSentPuzzle['truecandidates'] = null;
-                lastSentPuzzle['truecandidatescolored'] = null;
-                sendPuzzle('truecandidates');
-            }
-            return true;
+            numSettingsButtons++;
         }
-        numSettingsButtons++;
 
         let installChangeProxy = function() {
             // a proxy for the changes array
@@ -762,13 +789,44 @@
         document.getElementById('previewTypeBox').style.top = '29%';
 
         // Replace cell rendering to support colors
-        let origCell = cell;
+        const origCell = cell;
         cell = function(i, j, outside) {
             const c = new origCell(i, j, outside);
-            c.origShowTop = c.showTop;
+
+            c.origEnterSS = c.enter;
+            c.enter = function(value, forced, isLast) {
+                if (forced || this.given || !boolSettings['EditGivenMarks'] || tempEnterMode !== 'Center') {
+                    this.origEnterSS(value, forced, isLast);
+                    return;
+                }
+
+                value = parseInt(value);
+                if (value <= size) {
+                    if (!value) {
+                        this.givenPencilMarks = [];
+                    } else {
+                        if (!this.givenPencilMarks) {
+                            this.givenPencilMarks = [];
+                        }
+                        if (this.givenPencilMarks.includes(value)) {
+                            this.givenPencilMarks.splice(this.givenPencilMarks.indexOf(value), 1);
+                        } else {
+                            this.givenPencilMarks.push(value);
+                        }
+                        this.givenPencilMarks.sort((a, b) => a - b);
+                    }
+                }
+            }
+
+            c.origShowTopSS = c.showTop;
             c.showTop = function() {
+                const defaultFillStyle = boolSettings['Dark Mode'] ? '#FFFFFF' : '#000000';
+                const givenMarkFillStyle = boolSettings['Dark Mode'] ? '#FF8080' : '#800000';
+
+                const haveGivenMarks = (currentTool !== 'Regions' && !this.given && this.givenPencilMarks && this.givenPencilMarks.length > 0);
+
                 if (currentTool === 'Regions' && !previewMode || this.value) {
-                    this.origShowTop();
+                    this.origShowTopSS();
                 } else if (!previewMode) {
                     const TLInterference = constraints[cID('Killer Cage')].some(a => a.value.length && a.cells[0] === this) ||
                         cosmetics[cID('Cage')].some(a => a.value.length && a.cells[0] === this) ||
@@ -789,20 +847,20 @@
                         ctx.fillText(this.cornerPencilMarks[a], x, y);
                     }
 
-                    const defaultFillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
-                    ctx.font = (cellSL * 0.19 * textScale) + 'px Arial';
+                    const centerMarkOffsetY = haveGivenMarks ? 0.4 : 0.6;
                     const centerPencilMarks = Array(Math.ceil(this.centerPencilMarks.length / 5)).fill().map((a, i) => i * 5).map(a => this.centerPencilMarks.slice(a, a + 5));
+                    ctx.font = `${(cellSL * 0.19 * textScale)}px Arial`;
                     if (!this.centerPencilMarkColors) {
                         ctx.fillStyle = defaultFillStyle;
                         for (let a = 0; a < centerPencilMarks.length; a++) {
-                            ctx.fillText(centerPencilMarks[a].join(''), this.x + cellSL / 2, this.y + (cellSL * 0.6) - ((centerPencilMarks.length - 1) / 2 - a) * cellSL * 0.1666 * textScale);
+                            ctx.fillText(centerPencilMarks[a].join(''), this.x + cellSL / 2, this.y + (cellSL * centerMarkOffsetY) - ((centerPencilMarks.length - 1) / 2 - a) * cellSL * 0.1666 * textScale);
                         }
                     } else {
                         const deltaX = (cellSL * 0.19 * textScale) * (5.0 / 9.0);
                         for (let a = 0; a < centerPencilMarks.length; a++) {
                             const curMarks = centerPencilMarks[a];
                             const x = this.x + cellSL / 2;
-                            const y = this.y + (cellSL * 0.6) - ((centerPencilMarks.length - 1) / 2 - a) * cellSL * 0.1666 * textScale;
+                            const y = this.y + (cellSL * centerMarkOffsetY) - ((centerPencilMarks.length - 1) / 2 - a) * cellSL * 0.1666 * textScale;
                             for (let m = 0; m < curMarks.length; m++) {
                                 let v = curMarks[m];
                                 const color = this.centerPencilMarkColors[v];
@@ -812,9 +870,52 @@
                         }
                     }
                 }
+
+                if (haveGivenMarks) {
+                    ctx.font = `bold ${(cellSL * 0.19 * textScale)}px  Arial`;
+                    const centerPencilMarks = Array(Math.ceil(this.givenPencilMarks.length / 5)).fill().map((a, i) => i * 5).map(a => this.givenPencilMarks.slice(a, a + 5));
+                    ctx.fillStyle = givenMarkFillStyle;
+                    for (let a = 0; a < centerPencilMarks.length; a++) {
+                        ctx.fillText(centerPencilMarks[a].join(''), this.x + cellSL / 2, this.y + (cellSL * 0.85) - ((centerPencilMarks.length - 1) / 2 - a) * cellSL * 0.1666 * textScale);
+                    }
+                }
             }
 
             return c;
+        }
+
+        // Additional import/export data
+        const origExportPuzzle = exportPuzzle;
+        exportPuzzle = function(includeCandidates) {
+            const compressed = origExportPuzzle(includeCandidates);
+            const puzzle = JSON.parse(compressor.decompressFromBase64(compressed));
+            for (let i = 0; i < size; i++) {
+                for (let j = 0; j < size; j++) {
+                    const cell = window.grid[i][j];
+                    puzzle.grid[i][j].givenPencilMarks = cell.givenPencilMarks && cell.givenPencilMarks.length > 0 ? cell.givenPencilMarks : null;
+                }
+            }
+            return compressor.compressToBase64(JSON.stringify(puzzle));
+        }
+
+        const origImportPuzzle = importPuzzle;
+        importPuzzle = function(string, clearHistory) {
+            origImportPuzzle(string, clearHistory);
+
+            const puzzle = JSON.parse(compressor.decompressFromBase64(string));
+            for (let i = 0; i < size; i++) {
+                for (let j = 0; j < size; j++) {
+                    if (puzzle.grid[i][j].givenPencilMarks && puzzle.grid[i][j].givenPencilMarks.length > 0) {
+                        grid[i][j].givenPencilMarks = puzzle.grid[i][j].givenPencilMarks;
+                    }
+                }
+            }
+
+            if (clearHistory) {
+                generateCandidates();
+                resetKnownPuzzleInformation();
+                clearChangeHistory();
+            }
         }
     }
 

@@ -59,6 +59,7 @@ namespace SudokuSolver.PuzzleFormats
         int value,
         bool given,
         int[] centerPencilMarks,
+        int[] givenPencilMarks,
         int region = -1);
 
     public record FPuzzlesArrowEntry(

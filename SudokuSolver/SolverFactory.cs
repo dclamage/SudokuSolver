@@ -674,31 +674,30 @@ namespace SudokuSolver
                 foreach (var val in row)
                 {
                     bool wroteValue = false;
-                    if (val.given || !onlyGivens)
+                    int value = val.given || !onlyGivens ? val.value : 0;
+                    int[] pencilMarks = !onlyGivens && val.centerPencilMarks != null && val.centerPencilMarks.Length > 0 ? val.centerPencilMarks : val.givenPencilMarks;
+                    if (value != 0)
                     {
-                        if (val.value > 0)
+                        if (!solver.SetValue(i, j, value))
                         {
-                            if (!solver.SetValue(i, j, val.value))
-                            {
-                                throw new ArgumentException("ERROR: The givens are invalid (no solutions).");
-                            }
-                            comparableData.Write(ValueMask(val.value) | valueSetMask);
-                            wroteValue = true;
+                            throw new ArgumentException("ERROR: The givens are invalid (no solutions).");
                         }
-                        else if (val.centerPencilMarks != null && val.centerPencilMarks.Length > 0)
+                        comparableData.Write(ValueMask(val.value) | valueSetMask);
+                        wroteValue = true;
+                    }
+                    else if (pencilMarks != null && pencilMarks.Length > 0)
+                    {
+                        uint marksMask = 0;
+                        foreach (int v in pencilMarks)
                         {
-                            uint marksMask = 0;
-                            foreach (int v in val.centerPencilMarks)
-                            {
-                                marksMask |= ValueMask(v);
-                            }
-                            if (solver.KeepMask(i, j, marksMask) == LogicResult.Invalid)
-                            {
-                                throw new ArgumentException("ERROR: The center marks are invalid (no solutions).");
-                            }
-                            comparableData.Write(marksMask);
-                            wroteValue = true;
+                            marksMask |= ValueMask(v);
                         }
+                        if (solver.KeepMask(i, j, marksMask) == LogicResult.Invalid)
+                        {
+                            throw new ArgumentException("ERROR: The center marks are invalid (no solutions).");
+                        }
+                        comparableData.Write(marksMask);
+                        wroteValue = true;
                     }
 
                     if (!wroteValue)
@@ -780,6 +779,7 @@ namespace SudokuSolver
                         value: value,
                         given: given,
                         centerPencilMarks: centerPencilMarks,
+                        givenPencilMarks: null,
                         region: region
                     );
                 }
