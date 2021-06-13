@@ -40,7 +40,7 @@
         let solverSocket = null;
         let lastSentPuzzle = {};
         let commandIsComplete = false;
-        let sendPuzzle = function(command) {
+        const sendPuzzle = function(command) {
             if (!solverSocket) {
                 return;
             }
@@ -65,8 +65,8 @@
                 if (command === 'solve' ||
                     command === 'check' ||
                     command === 'count' ||
-                    command === 'solvepath' || command === 'simplepath' ||
-                    (command === 'step' || command === 'simplestep') && !(lastClearCommand === 'step' || lastClearCommand === 'simplestep')) {
+                    command === 'solvepath' ||
+                    command === 'step' && lastClearCommand !== 'step') {
                     clearConsole();
                     lastClearCommand = command;
                 }
@@ -74,7 +74,7 @@
             }
         }
 
-        let clearPencilmarkColors = function() {
+        const clearPencilmarkColors = function() {
             for (let i = 0; i < size; i++) {
                 for (let j = 0; j < size; j++) {
                     const cell = grid[i][j];
@@ -141,6 +141,7 @@
                 if (!trueCandidatesButton) {
                     boolSettings.push('TrueCandidates');
                     boolSettings['TrueCandidates'] = false;
+                    defaultSettings.push(false);
                     trueCandidatesButton = new button(solutionPathButton.x - buttonLH / 2 - buttonGap / 2, solutionPathButton.y + (buttonLH + buttonGap) * 4, buttonW - buttonLH - buttonGap, buttonLH, ['Solving', 'Setting'], 'TrueCandidates', 'True Candid.')
                     trueCandidatesButton.origClick = trueCandidatesButton.click;
                     trueCandidatesButton.click = function() {
@@ -175,11 +176,7 @@
                         boolSettings['EditGivenMarks'] = false;
 
                         forgetFutureChanges();
-                        if (boolSettings['SimpleStep']) {
-                            sendPuzzle('simplepath');
-                        } else {
-                            sendPuzzle('solvepath');
-                        }
+                        sendPuzzle('solvepath');
                         return true;
                     }
                 }
@@ -196,11 +193,7 @@
                         boolSettings['EditGivenMarks'] = false;
 
                         forgetFutureChanges();
-                        if (boolSettings['SimpleStep']) {
-                            sendPuzzle('simplestep');
-                        } else {
-                            sendPuzzle('step');
-                        }
+                        sendPuzzle('step');
                         return true;
                     }
                 }
@@ -572,9 +565,9 @@
                             handleCheck(payload);
                         } else if (lastCommand === 'count') {
                             handleCount(payload);
-                        } else if (lastCommand === 'solvepath' || lastCommand === 'simplepath') {
+                        } else if (lastCommand === 'solvepath') {
                             handlePath(payload);
-                        } else if (lastCommand === 'step' || lastCommand === 'simplestep') {
+                        } else if (lastCommand === 'step') {
                             handleStep(payload);
                         }
 
@@ -632,8 +625,29 @@
         buttons.push(settingsButton);
 
         const settingsButtons = [{
-                id: 'SimpleStep',
-                label: 'Simple Logic Only'
+                id: 'EnableLogicTuples',
+                label: 'Enable Logic: Tuples',
+                default: true,
+            },
+            {
+                id: 'EnableLogicPointing',
+                label: 'Enable Logic: Pointing',
+                default: true,
+            },
+            {
+                id: 'EnableLogicFishes',
+                label: 'Enable Logic: Fishes',
+                default: true,
+            },
+            {
+                id: 'EnableLogicWings',
+                label: 'Enable Logic: Wings',
+                default: true,
+            },
+            {
+                id: 'EnableLogicContradictions',
+                label: 'Enable Logic: Contradictions',
+                default: true,
             },
             {
                 id: 'ColoredCandidates',
@@ -667,7 +681,8 @@
         for (let buttonData of settingsButtons) {
             const newButton = new button(canvas.width / 2 - (buttonSH + buttonGap) / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 + 110 + (buttonSH + buttonGap) * numSettingsButtons, 450, buttonSH, ['solversettings'], buttonData.id, buttonData.label);
             boolSettings.push(buttonData.id);
-            boolSettings[buttonData.id] = false;
+            defaultSettings.push(buttonData.default ? true : false);
+            boolSettings[buttonData.id] = buttonData.default ? true : false;
             extraSettingsNames.push(buttonData.id);
             buttons.push(newButton);
             if (buttonData.click) {
@@ -755,6 +770,7 @@
             for (let i = 0; i < extraSettingsNames.length; i++) {
                 let name = extraSettingsNames[i];
                 boolSettings.push(name);
+                defaultSettings.push(false);
             }
 
             buttons.filter(b => b.modes.includes('Export') && b !== openCTCButton && b !== openSudokuLabButton && b.x < canvas.width / 2).forEach(b => b.y -= 90);
@@ -881,6 +897,7 @@
         }
 
         // Additional import/export data
+        const enableLogicPrefix = 'enablelogic';
         const origExportPuzzle = exportPuzzle;
         exportPuzzle = function(includeCandidates) {
             const compressed = origExportPuzzle(includeCandidates);
@@ -889,6 +906,14 @@
                 for (let j = 0; j < size; j++) {
                     const cell = window.grid[i][j];
                     puzzle.grid[i][j].givenPencilMarks = cell.givenPencilMarks && cell.givenPencilMarks.length > 0 ? cell.givenPencilMarks : null;
+                }
+            }
+
+            puzzle.disabledlogic = [];
+            for (let settingName of boolSettings) {
+                const settingNameLower = settingName.toLowerCase();
+                if (settingNameLower.startsWith(enableLogicPrefix) && !boolSettings[settingName]) {
+                    puzzle.disabledlogic.push(settingNameLower.substr(enableLogicPrefix.length));
                 }
             }
             return compressor.compressToBase64(JSON.stringify(puzzle));

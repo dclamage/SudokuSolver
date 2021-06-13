@@ -52,6 +52,10 @@ namespace SudokuSolver
         public string Title { get; init; }
         public string Author { get; init; }
         public string Rules { get; init; }
+        public bool DisableTuples { get; set; } = false;
+        public bool DisablePointing { get; set; } = false;
+        public bool DisableFishes { get; set; } = false;
+        public bool DisableWings { get; set; } = false;
         public bool DisableContradictions { get; set; } = false;
 
         private uint[,] board;
@@ -263,6 +267,10 @@ namespace SudokuSolver
             Title = other.Title;
             Author = other.Author;
             Rules = other.Rules;
+            DisableTuples = other.DisableTuples;
+            DisablePointing = other.DisablePointing;
+            DisableFishes = other.DisableFishes;
+            DisableWings = other.DisableWings;
             DisableContradictions = other.DisableContradictions;
             board = (uint[,])other.board.Clone();
             regions = other.regions;
@@ -1871,64 +1879,79 @@ namespace SudokuSolver
                 return LogicResult.None;
             }
 
-#if PROFILING
-            timers["FindNakedTuples"].Start();
-#endif
-            result = FindNakedTuples(stepDescription);
-#if PROFILING
-            timers["FindNakedTuples"].Stop();
-#endif
-            if (result != LogicResult.None)
+            if (!DisableTuples)
             {
-                return result;
+#if PROFILING
+                timers["FindNakedTuples"].Start();
+#endif
+                result = FindNakedTuples(stepDescription);
+#if PROFILING
+                timers["FindNakedTuples"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
             }
 
-#if PROFILING
-            timers["FindPointingTuples"].Start();
-#endif
-            result = FindPointingTuples(stepDescription);
-#if PROFILING
-            timers["FindPointingTuples"].Stop();
-#endif
-            if (result != LogicResult.None)
+            if (!DisablePointing)
             {
-                return result;
+#if PROFILING
+                timers["FindPointingTuples"].Start();
+#endif
+                result = FindPointingTuples(stepDescription);
+#if PROFILING
+                timers["FindPointingTuples"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
             }
 
-#if PROFILING
-            timers["FindUnorthodoxTuples"].Start();
-#endif
-            result = FindUnorthodoxTuples(stepDescription);
-#if PROFILING
-            timers["FindUnorthodoxTuples"].Stop();
-#endif
-            if (result != LogicResult.None)
+            if (!DisableTuples)
             {
-                return result;
+#if PROFILING
+                timers["FindUnorthodoxTuples"].Start();
+#endif
+                result = FindUnorthodoxTuples(stepDescription);
+#if PROFILING
+                timers["FindUnorthodoxTuples"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
             }
 
-#if PROFILING
-            timers["FindFishes"].Start();
-#endif
-            result = FindFishes(stepDescription);
-#if PROFILING
-            timers["FindFishes"].Stop();
-#endif
-            if (result != LogicResult.None)
+            if (!DisableFishes)
             {
-                return result;
+#if PROFILING
+                timers["FindFishes"].Start();
+#endif
+                result = FindFishes(stepDescription);
+#if PROFILING
+                timers["FindFishes"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
             }
 
-#if PROFILING
-            timers["FindYWings"].Start();
-#endif
-            result = FindYWings(stepDescription);
-#if PROFILING
-            timers["FindYWings"].Stop();
-#endif
-            if (result != LogicResult.None)
+            if (!DisableWings)
             {
-                return result;
+#if PROFILING
+                timers["FindYWings"].Start();
+#endif
+                result = FindYWings(stepDescription);
+#if PROFILING
+                timers["FindYWings"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
             }
 
 #if PROFILING

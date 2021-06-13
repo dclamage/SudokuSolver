@@ -258,6 +258,31 @@ namespace SudokuSolver
                 Author = fpuzzlesData.author,
                 Rules = fpuzzlesData.ruleset
             };
+            if (fpuzzlesData.disabledlogic != null)
+            {
+                foreach (string logicName in fpuzzlesData.disabledlogic)
+                {
+                    switch (logicName.ToLowerInvariant())
+                    {
+                        case "tuples":
+                            solver.DisableTuples = true;
+                            break;
+                        case "pointing":
+                            solver.DisablePointing = true;
+                            break;
+                        case "fishes":
+                            solver.DisableFishes = true;
+                            break;
+                        case "wings":
+                            solver.DisableWings = true;
+                            break;
+                        case "contradictions":
+                            solver.DisableContradictions = true;
+                            break;
+                    }
+                }
+            }
+
             solver.SetRegions(regions);
 
             // Extra groups
@@ -1005,7 +1030,8 @@ namespace SudokuSolver
                 clone: clone.ToArray(),
                 quadruple: quadruple.ToArray(),
                 betweenline: betweenline.ToArray(),
-                sandwichsum: sandwichsum.ToArray()
+                sandwichsum: sandwichsum.ToArray(),
+                disabledlogic: null
             );
 
             string fpuzzlesJson = JsonSerializer.Serialize(fp);

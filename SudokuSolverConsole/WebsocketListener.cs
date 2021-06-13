@@ -134,15 +134,7 @@ namespace SudokuSolverConsole
                             case "solvepath":
                                 SendSolvePath(ipPort, nonce, solver);
                                 break;
-                            case "simplepath":
-                                solver.DisableContradictions = true;
-                                SendSolvePath(ipPort, nonce, solver);
-                                break;
                             case "step":
-                                SendStep(ipPort, nonce, solver);
-                                break;
-                            case "simplestep":
-                                solver.DisableContradictions = true;
                                 SendStep(ipPort, nonce, solver);
                                 break;
                         }
