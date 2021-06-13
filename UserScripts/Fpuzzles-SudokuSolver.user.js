@@ -245,10 +245,6 @@
                 if (index > -1) {
                     consoleSidebar.buttons.splice(index, 1);
                 }
-                index = consoleSidebar.buttons.indexOf(simpleStepsButton);
-                if (index > -1) {
-                    consoleSidebar.buttons.splice(index, 1);
-                }
             }
 
             boolSettings['TrueCandidates'] = false;
