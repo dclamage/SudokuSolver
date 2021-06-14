@@ -53,7 +53,8 @@ namespace SudokuSolver.PuzzleFormats
         FPuzzlesQuadruple[] quadruple,
         FPuzzlesLines[] betweenline,
         FPuzzlesCell[] sandwichsum,
-        string[] disabledlogic
+        string[] disabledlogic = null,
+        string[] truecandidatesoptions = null
     );
 
     public record FPuzzlesGridEntry(

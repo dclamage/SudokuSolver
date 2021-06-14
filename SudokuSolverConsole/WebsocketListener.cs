@@ -9,6 +9,7 @@ using SudokuSolver;
 using System.IO;
 using System.Threading;
 using System.Collections;
+using System.Drawing;
 
 namespace SudokuSolverConsole
 {
@@ -18,7 +19,6 @@ namespace SudokuSolverConsole
         private readonly object serverLock = new();
         private readonly Dictionary<string, CancellationTokenSource> cancellationTokenMap = new();
         private readonly Dictionary<byte[], string> trueCandidatesResponseCache = new(new ByteArrayComparer());
-        private readonly Dictionary<byte[], string> trueCandidatesColoredResponseCache = new(new ByteArrayComparer());
 
         public async Task Listen(string host, int port)
         {
@@ -88,7 +88,6 @@ namespace SudokuSolverConsole
                         switch (command)
                         {
                             case "truecandidates":
-                            case "truecandidatescolored":
                             case "solve":
                             case "check":
                             case "count":
@@ -97,14 +96,13 @@ namespace SudokuSolverConsole
                         }
 
                         Solver solver = SolverFactory.CreateFromFPuzzles(data, onlyGivens: onlyGivens);
-                        if (command == "truecandidates" || command == "truecandidatescolored")
+                        if (command == "truecandidates")
                         {
                             if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
                             {
-                                var cache = command == "truecandidates" ? trueCandidatesResponseCache : trueCandidatesColoredResponseCache;
                                 lock (serverLock)
                                 {
-                                    if (cache.TryGetValue(comparableData, out string response))
+                                    if (trueCandidatesResponseCache.TryGetValue(comparableData, out string response))
                                     {
                                         server.SendAsync(args.IpPort, $"{nonce}:{response}");
                                         return;
@@ -117,10 +115,7 @@ namespace SudokuSolverConsole
                         switch (command)
                         {
                             case "truecandidates":
-                                SendTrueCandidates(ipPort, nonce, false, solver, cancellationToken);
-                                break;
-                            case "truecandidatescolored":
-                                SendTrueCandidates(ipPort, nonce, true, solver, cancellationToken);
+                                SendTrueCandidates(ipPort, nonce, solver, cancellationToken);
                                 break;
                             case "solve":
                                 SendSolve(ipPort, nonce, solver, cancellationToken);
@@ -154,45 +149,89 @@ namespace SudokuSolverConsole
             }
         }
 
-        void SendTrueCandidates(string ipPort, string nonce, bool colored, Solver solver, CancellationToken cancellationToken)
+        bool GetBooleanOption(Solver solver, string option)
         {
-            int[] numSolutions = colored ? new int[solver.HEIGHT * solver.WIDTH * solver.MAX_VALUE] : null;
+            if (solver.customInfo.TryGetValue(option, out object obj) && obj is bool value)
+            {
+                return value;    
+            }
+            return false;
+        }
+
+        void SendTrueCandidates(string ipPort, string nonce, Solver solver, CancellationToken cancellationToken)
+        {
+            bool colored = GetBooleanOption(solver, "truecandidatescolored");
+            bool logical = GetBooleanOption(solver, "truecandidateslogical");
+
+            Solver logicalSolver = null;
+            if (logical)
+            {
+                logicalSolver = solver.Clone();
+                if (logicalSolver.ConsolidateBoard() == LogicResult.Invalid)
+                {
+                    lock (serverLock)
+                    {
+                        server.SendAsync(ipPort, nonce + ":Invalid:No solutions found.", CancellationToken.None);
+                    }
+                    return;
+                }
+            }
+
+            int totalCandidates = solver.HEIGHT * solver.WIDTH * solver.MAX_VALUE;
+            int[] numSolutions = colored ? new int[totalCandidates] : null;
             if (!solver.FillRealCandidates(multiThread: true, numSolutions: numSolutions, cancellationToken: cancellationToken))
             {
                 lock (serverLock)
                 {
                     server.SendAsync(ipPort, nonce + ":Invalid:No solutions found.", CancellationToken.None);
                 }
+                return;
+            }
+
+            string realCandidateString = solver.CandidateString;
+            string logicalCandidateString = logicalSolver?.CandidateString;
+            string candidateString = logicalCandidateString ?? realCandidateString;
+
+            string payload;
+            if (colored)
+            {
+                StringBuilder numSolutionsString = new(numSolutions.Length);
+                for (int i = 0; i < numSolutions.Length; i++)
+                {
+                    int curNumSolutions = Math.Min(8, numSolutions[i]);
+                    numSolutionsString.Append(curNumSolutions);
+                }
+                payload = candidateString + numSolutionsString.ToString();
+            }
+            else if (logical)
+            {
+                StringBuilder numSolutionsString = new(totalCandidates);
+                for (int i = 0; i < totalCandidates; i++)
+                {
+                    if (realCandidateString[i] == '.')
+                    {
+                        numSolutionsString.Append('0');
+                    }
+                    else
+                    {
+                        numSolutionsString.Append('9');
+                    }
+                }
+                payload = candidateString + numSolutionsString.ToString();
             }
             else
             {
-                string candidateString = solver.CandidateString;
-                string payload;
-                if (colored)
+                payload = candidateString;
+            }
+            string fpuzzles = $"{nonce}:{payload}";
+            lock (serverLock)
+            {
+                if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
                 {
-                    StringBuilder numSolutionsString = new(numSolutions.Length);
-                    for (int i = 0; i < numSolutions.Length; i++)
-                    {
-                        int curNumSolutions = Math.Min(8, numSolutions[i]);
-                        numSolutionsString.Append(curNumSolutions);
-                    }
-                    payload = candidateString + numSolutionsString.ToString();
+                    trueCandidatesResponseCache[comparableData] = payload;
                 }
-                else
-                {
-                    payload = candidateString;
-                }
-                string fpuzzles = $"{nonce}:{payload}";
-                lock (serverLock)
-                {
-                    if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
-                    {
-                        var cache = !colored ? trueCandidatesResponseCache : trueCandidatesColoredResponseCache;
-                        cache[comparableData] = payload;
-                    }
 
-                    server.SendAsync(ipPort, fpuzzles, CancellationToken.None);
-                }
+                server.SendAsync(ipPort, fpuzzles, CancellationToken.None);
             }
         }
 

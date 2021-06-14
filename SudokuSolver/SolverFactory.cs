@@ -258,6 +258,7 @@ namespace SudokuSolver
                 Author = fpuzzlesData.author,
                 Rules = fpuzzlesData.ruleset
             };
+            uint disabledLogicFlags = 0;
             if (fpuzzlesData.disabledlogic != null)
             {
                 foreach (string logicName in fpuzzlesData.disabledlogic)
@@ -266,22 +267,44 @@ namespace SudokuSolver
                     {
                         case "tuples":
                             solver.DisableTuples = true;
+                            disabledLogicFlags |= (1u << 0);
                             break;
                         case "pointing":
                             solver.DisablePointing = true;
+                            disabledLogicFlags |= (1u << 1);
                             break;
                         case "fishes":
                             solver.DisableFishes = true;
+                            disabledLogicFlags |= (1u << 2);
                             break;
                         case "wings":
                             solver.DisableWings = true;
+                            disabledLogicFlags |= (1u << 3);
                             break;
                         case "contradictions":
                             solver.DisableContradictions = true;
+                            disabledLogicFlags |= (1u << 4);
                             break;
                     }
                 }
             }
+            comparableData.Write(disabledLogicFlags);
+
+            uint trueCandidatesOptionFlags = 0;
+            if (fpuzzlesData.truecandidatesoptions != null)
+            {
+                if (fpuzzlesData.truecandidatesoptions.Contains("colored"))
+                {
+                    solver.customInfo.Add("truecandidatescolored", true);
+                    trueCandidatesOptionFlags |= (1u << 0);
+                }
+                if (fpuzzlesData.truecandidatesoptions.Contains("logical"))
+                {
+                    solver.customInfo.Add("truecandidateslogical", true);
+                    trueCandidatesOptionFlags |= (1u << 1);
+                }
+            }
+            comparableData.Write(trueCandidatesOptionFlags);
 
             solver.SetRegions(regions);
 
@@ -1030,8 +1053,7 @@ namespace SudokuSolver
                 clone: clone.ToArray(),
                 quadruple: quadruple.ToArray(),
                 betweenline: betweenline.ToArray(),
-                sandwichsum: sandwichsum.ToArray(),
-                disabledlogic: null
+                sandwichsum: sandwichsum.ToArray()
             );
 
             string fpuzzlesJson = JsonSerializer.Serialize(fp);

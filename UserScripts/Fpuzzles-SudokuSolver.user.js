@@ -28,7 +28,6 @@
 
         let preventResentCommands = [];
         preventResentCommands['truecandidates'] = true;
-        preventResentCommands['truecandidatescolored'] = true;
 
         let allowCommandWhenUndo = [];
         allowCommandWhenUndo['check'] = true;
@@ -48,10 +47,6 @@
             if (command === "cancel") {
                 solverSocket.send('fpuzzles:' + nonce + ':cancel:cancel');
                 return;
-            }
-
-            if (command === 'truecandidates' && boolSettings['ColoredCandidates']) {
-                command = "truecandidatescolored";
             }
 
             var puzzle = exportPuzzle();
@@ -156,7 +151,6 @@
                         } else {
                             clearPencilmarkColors();
                             lastSentPuzzle['truecandidates'] = null;
-                            lastSentPuzzle['truecandidatescolored'] = null;
                         }
                         return true;
                     }
@@ -282,6 +276,8 @@
             return '#' + colorStr.substr(colorStr.length - 6);
         };
 
+        const baselineColor = "#000000";
+        const zeroSolutionColor = "#CC0000";
         const oneSolutionColor = "#299b20";
         const twoSolutionColor = 0xAFAFFF;
         const eightSolutionColor = 0x0000FF;
@@ -295,8 +291,12 @@
             }
             const numSolutions = parseInt(numSolutionsStr[cell.i * size * size + cell.j * size + candidateIndex]);
             let curColor = oneSolutionColor;
-            if (numSolutions > 1) {
+            if (numSolutions >= 9) {
+                curColor = baselineColor;
+            } else if (numSolutions > 1) {
                 curColor = lerpColor(twoSolutionColor, eightSolutionColor, (numSolutions - 2) / 6);
+            } else if (numSolutions === 0) {
+                curColor = zeroSolutionColor;
             }
             cell.centerPencilMarkColors[candidateIndex + 1] = curColor;
         }
@@ -344,7 +344,6 @@
                     }
                 }
             } else {
-                let candidateStr = str;
                 let numSolutionsStr = null;
                 const candidateStrLen = size * size * size * 2;
                 const numSolutionsStrLen = size * size * size;
@@ -557,7 +556,7 @@
 
                         processingMessage = true;
                         commandIsComplete = true;
-                        if (lastCommand === 'truecandidates' || lastCommand === 'truecandidatescolored') {
+                        if (lastCommand === 'truecandidates') {
                             handleTrueCandidates(payload);
                         } else if (lastCommand === 'solve') {
                             handleSolve(payload);
@@ -596,6 +595,80 @@
         buttons.push(connectButton);
 
         const origDrawPopups = drawPopups;
+
+        const trueCandidatesOptionChanged = function() {
+            if (!this.hovering()) {
+                return;
+            }
+
+            this.origClickSS();
+
+            if (boolSettings['TrueCandidates']) {
+                clearPencilmarkColors();
+                lastSentPuzzle['truecandidates'] = null;
+                sendPuzzle('truecandidates');
+            }
+            return true;
+        };
+
+        const settingsButtons = [{
+                heading: 'Logical Solve Settings'
+            },
+            {
+                id: 'EnableLogicTuples',
+                label: 'Tuples',
+                default: true,
+                click: trueCandidatesOptionChanged,
+            },
+            {
+                id: 'EnableLogicPointing',
+                label: 'Pointing',
+                default: true,
+                click: trueCandidatesOptionChanged,
+            },
+            {
+                id: 'EnableLogicFishes',
+                label: 'Fishes',
+                default: true,
+                click: trueCandidatesOptionChanged,
+            },
+            {
+                id: 'EnableLogicWings',
+                label: 'Wings',
+                default: true,
+                click: trueCandidatesOptionChanged,
+            },
+            {
+                id: 'EnableLogicContradictions',
+                label: 'Contradictions',
+                default: true,
+                click: trueCandidatesOptionChanged,
+            },
+            {
+                heading: 'True Candidates Settings'
+            },
+            {
+                id: 'ColoredCandidates',
+                label: 'Solution Count',
+                default: false,
+                click: trueCandidatesOptionChanged,
+            },
+            {
+                id: 'LogicalCandidates',
+                label: 'Include Logical Candidates',
+                default: false,
+                click: trueCandidatesOptionChanged,
+            },
+            {
+                heading: 'Input Settings'
+            },
+            {
+                id: 'EditGivenMarks',
+                label: 'Edit Given Pencilmarks',
+                default: false,
+            },
+        ];
+
         drawPopups = function(overlapSidebars) {
             origDrawPopups(overlapSidebars);
 
@@ -611,6 +684,18 @@
                 ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
                 ctx.font = '60px Arial';
                 ctx.fillText('Solver Settings', canvas.width / 2, canvas.height / 2 - box.h / 2 + 66);
+
+                ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
+                ctx.font = `bold ${Math.floor(buttonSH)}px Arial`;
+                const offsetX = canvas.width / 2 - (buttonSH + buttonGap) / 2;
+                const offsetY = canvas.height / 2 - popups[cID('solversettings')].h / 2 + 135;
+                let numSettingsButtons = 0;
+                for (let buttonData of settingsButtons) {
+                    if (buttonData.heading) {
+                        ctx.fillText(buttonData.heading, offsetX, offsetY + (buttonSH + buttonGap) * numSettingsButtons);
+                    }
+                    numSettingsButtons++;
+                }
             }
         }
 
@@ -624,83 +709,22 @@
         }
         buttons.push(settingsButton);
 
-        const settingsButtons = [{
-                id: 'EnableLogicTuples',
-                label: 'Enable Logic: Tuples',
-                default: true,
-            },
-            {
-                id: 'EnableLogicPointing',
-                label: 'Enable Logic: Pointing',
-                default: true,
-            },
-            {
-                id: 'EnableLogicFishes',
-                label: 'Enable Logic: Fishes',
-                default: true,
-            },
-            {
-                id: 'EnableLogicWings',
-                label: 'Enable Logic: Wings',
-                default: true,
-            },
-            {
-                id: 'EnableLogicContradictions',
-                label: 'Enable Logic: Contradictions',
-                default: true,
-            },
-            {
-                id: 'ColoredCandidates',
-                label: 'Colored True Candidates',
-                click: function() {
-                    if (!this.hovering()) {
-                        return;
-                    }
-
-                    this.origClick();
-
-                    if (boolSettings['TrueCandidates']) {
-                        clearPencilmarkColors();
-                        lastSentPuzzle['truecandidates'] = null;
-                        lastSentPuzzle['truecandidatescolored'] = null;
-                        sendPuzzle('truecandidates');
-                    }
-                    return true;
-                }
-            },
-            {
-                id: 'EditGivenMarks',
-                label: 'Edit Given Pencilmarks'
-            },
-        ];
         popups.solversettings = { w: 600, h: 125 + (buttonSH + buttonGap) * settingsButtons.length };
         const closeSettingsButton = new button(canvas.width / 2 + popups[cID('solversettings')].w / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 - 20, 40, 40, ['solversettings'], 'X', 'X');
         buttons.push(closeSettingsButton);
 
-        var numSettingsButtons = 0;
+        let numSettingsButtons = 0;
         for (let buttonData of settingsButtons) {
-            const newButton = new button(canvas.width / 2 - (buttonSH + buttonGap) / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 + 110 + (buttonSH + buttonGap) * numSettingsButtons, 450, buttonSH, ['solversettings'], buttonData.id, buttonData.label);
-            boolSettings.push(buttonData.id);
-            defaultSettings.push(buttonData.default ? true : false);
-            boolSettings[buttonData.id] = buttonData.default ? true : false;
-            extraSettingsNames.push(buttonData.id);
-            buttons.push(newButton);
-            if (buttonData.click) {
-                newButton.origClick = newButton.click;
-                newButton.click = function() {
-                    if (!this.hovering()) {
-                        return;
-                    }
-
-                    this.origClick();
-
-                    if (boolSettings['TrueCandidates']) {
-                        clearPencilmarkColors();
-                        lastSentPuzzle['truecandidates'] = null;
-                        lastSentPuzzle['truecandidatescolored'] = null;
-                        sendPuzzle('truecandidates');
-                    }
-                    return true;
+            if (!buttonData.heading) {
+                const newButton = new button(canvas.width / 2 - (buttonSH + buttonGap) / 2, canvas.height / 2 - popups[cID('solversettings')].h / 2 + 110 + (buttonSH + buttonGap) * numSettingsButtons, 450, buttonSH, ['solversettings'], buttonData.id, buttonData.label);
+                boolSettings.push(buttonData.id);
+                defaultSettings.push(buttonData.default ? true : false);
+                boolSettings[buttonData.id] = buttonData.default ? true : false;
+                extraSettingsNames.push(buttonData.id);
+                buttons.push(newButton);
+                if (buttonData.click) {
+                    newButton.origClickSS = newButton.click;
+                    newButton.click = buttonData.click;
                 }
             }
             numSettingsButtons++;
@@ -916,6 +940,15 @@
                     puzzle.disabledlogic.push(settingNameLower.substr(enableLogicPrefix.length));
                 }
             }
+
+            puzzle.truecandidatesoptions = [];
+            if (boolSettings['ColoredCandidates']) {
+                puzzle.truecandidatesoptions.push('colored');
+            }
+            if (boolSettings['LogicalCandidates']) {
+                puzzle.truecandidatesoptions.push('logical');
+            }
+
             return compressor.compressToBase64(JSON.stringify(puzzle));
         }
 
