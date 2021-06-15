@@ -138,7 +138,7 @@ namespace SudokuSolver.Constraints
                 }
 
                 int clearCurValStart = nextValueSet ? GetValue(nextMask) : MaxValue(nextMask);
-                clearMask = board[nextCell.Item1, nextCell.Item2] & MaskValAndHigher(clearCurValStart);
+                clearMask = board[curCell.Item1, curCell.Item2] & MaskValAndHigher(clearCurValStart);
                 clearResult = sudokuSolver.ClearMask(curCell.Item1, curCell.Item2, clearMask);
                 if (clearResult == LogicResult.Invalid)
                 {
