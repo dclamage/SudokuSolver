@@ -1650,30 +1650,49 @@ namespace SudokuSolver
                     }
                 }
             }
-            cellValuesByPriority.Sort((a, b) => b.Item1.CompareTo(a.Item1));
 
-            try
+            if (cellValuesByPriority.Count == 0)
             {
-                foreach (var (p, i, j, v) in cellValuesByPriority)
+                if (numSolutions != null)
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    FillRealCandidateAction(i, j, v, state);
-                    if (state.boardInvalid)
+                    for (int i = 0; i < HEIGHT; i++)
                     {
-                        break;
+                        for (int j = 0; j < WIDTH; j++)
+                        {
+                            uint mask = Board[i, j];
+                            int value = GetValue(mask);
+                            numSolutions[(i * WIDTH + j) * MAX_VALUE + (value - 1)] = 1;
+                        }
                     }
                 }
             }
-            catch (OperationCanceledException)
+            else
             {
-                state.boardInvalid = true;
-            }
+                cellValuesByPriority.Sort((a, b) => b.Item1.CompareTo(a.Item1));
 
-            if (state.boardInvalid)
-            {
-                isBruteForcing = false;
-                return false;
+                try
+                {
+                    foreach (var (p, i, j, v) in cellValuesByPriority)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+
+                        FillRealCandidateAction(i, j, v, state);
+                        if (state.boardInvalid)
+                        {
+                            break;
+                        }
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    state.boardInvalid = true;
+                }
+
+                if (state.boardInvalid)
+                {
+                    isBruteForcing = false;
+                    return false;
+                }
             }
 
             for (int i = 0; i < HEIGHT; i++)
