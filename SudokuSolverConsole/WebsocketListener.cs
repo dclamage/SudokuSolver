@@ -2,23 +2,37 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
-using System.Text.RegularExpressions;
+using System.Text.Json;
 using System.Threading.Tasks;
 using WatsonWebsocket;
 using SudokuSolver;
-using System.IO;
 using System.Threading;
-using System.Collections;
-using System.Drawing;
 
 namespace SudokuSolverConsole
 {
+    record Message(int nonce, string command, string dataType, string data);
+
+    record BaseResponse(int nonce, string type);
+
+    record CanceledResponse(int nonce) : BaseResponse(nonce, "canceled");
+
+    record InvalidResponse(int nonce, string message) : BaseResponse(nonce, "invalid");
+
+    record TrueCandidatesResponse(int nonce, int[] solutionsPerCandidate) : BaseResponse(nonce, "truecandidates");
+
+    record SolvedResponse(int nonce, int[] solution) : BaseResponse(nonce, "solved");
+
+    record CountResponse(int nonce, ulong count, bool inProgress) : BaseResponse(nonce, "count");
+
+    record LogicalCell(int value, int[] candidates);
+    record LogicalResponse(int nonce, LogicalCell[] cells, string message, bool isValid) : BaseResponse(nonce, "logical");
+
     class WebsocketListener : IDisposable
     {
         private WatsonWsServer server;
         private readonly object serverLock = new();
         private readonly Dictionary<string, CancellationTokenSource> cancellationTokenMap = new();
-        private readonly Dictionary<byte[], string> trueCandidatesResponseCache = new(new ByteArrayComparer());
+        private readonly Dictionary<byte[], BaseResponse> trueCandidatesResponseCache = new(new ByteArrayComparer());
 
         public async Task Listen(string host, int port)
         {
@@ -52,30 +66,22 @@ namespace SudokuSolverConsole
 
         void MessageReceived(MessageReceivedEventArgs args)
         {
-            string message = Encoding.UTF8.GetString(args.Data);
-            string[] split = message.Split(':');
-            if (split.Length != 4)
+            string messageString = Encoding.UTF8.GetString(args.Data);
+            Message message = JsonSerializer.Deserialize<Message>(messageString);
+
+            if (cancellationTokenMap.TryGetValue(args.IpPort, out var cancellationTokenSource))
             {
+                cancellationTokenSource.Cancel();
+            }
+
+            if (message.command == "cancel")
+            {
+                SendMessage(args.IpPort, new CanceledResponse(message.nonce));
                 return;
             }
 
-            string platform = split[0];
-            string nonce = split[1];
-            string command = split[2];
-            string data = split[3];
-            if (platform == "fpuzzles")
+            if (message.dataType == "fpuzzles")
             {
-                if (cancellationTokenMap.TryGetValue(args.IpPort, out var cancellationTokenSource))
-                {
-                    cancellationTokenSource.Cancel();
-                }
-                
-                if (command == "cancel")
-                {
-                    server.SendAsync(args.IpPort, $"{nonce}:canceled");
-                    return;
-                }
-
                 cancellationTokenSource = cancellationTokenMap[args.IpPort] = new();
                 var cancellationToken = cancellationTokenSource.Token;
 
@@ -85,7 +91,7 @@ namespace SudokuSolverConsole
                     try
                     {
                         bool onlyGivens = false;
-                        switch (command)
+                        switch (message.command)
                         {
                             case "truecandidates":
                             case "solve":
@@ -95,42 +101,42 @@ namespace SudokuSolverConsole
                                 break;
                         }
 
-                        Solver solver = SolverFactory.CreateFromFPuzzles(data, onlyGivens: onlyGivens);
-                        if (command == "truecandidates")
+                        Solver solver = SolverFactory.CreateFromFPuzzles(message.data, onlyGivens: onlyGivens);
+                        if (message.command == "truecandidates")
                         {
                             if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
                             {
                                 lock (serverLock)
                                 {
-                                    if (trueCandidatesResponseCache.TryGetValue(comparableData, out string response))
+                                    if (trueCandidatesResponseCache.TryGetValue(comparableData, out BaseResponse response))
                                     {
-                                        server.SendAsync(args.IpPort, $"{nonce}:{response}");
+                                        SendMessage(ipPort, response with { nonce = message.nonce });
                                         return;
                                     }
                                 }
                             }
                         }
 
-                        solver.customInfo["fpuzzlesdata"] = data;
-                        switch (command)
+                        solver.customInfo["fpuzzlesdata"] = message.data;
+                        switch (message.command)
                         {
                             case "truecandidates":
-                                SendTrueCandidates(ipPort, nonce, solver, cancellationToken);
+                                SendTrueCandidates(ipPort, message.nonce, solver, cancellationToken);
                                 break;
                             case "solve":
-                                SendSolve(ipPort, nonce, solver, cancellationToken);
+                                SendSolve(ipPort, message.nonce, solver, cancellationToken);
                                 break;
                             case "check":
-                                SendCount(ipPort, nonce, solver, 2, cancellationToken);
+                                SendCount(ipPort, message.nonce, solver, 2, cancellationToken);
                                 break;
                             case "count":
-                                SendCount(ipPort, nonce, solver, 0, cancellationToken);
+                                SendCount(ipPort, message.nonce, solver, 0, cancellationToken);
                                 break;
                             case "solvepath":
-                                SendSolvePath(ipPort, nonce, solver);
+                                SendSolvePath(ipPort, message.nonce, solver);
                                 break;
                             case "step":
-                                SendStep(ipPort, nonce, solver);
+                                SendStep(ipPort, message.nonce, solver);
                                 break;
                         }
                     }
@@ -140,10 +146,7 @@ namespace SudokuSolverConsole
                     }
                     catch (Exception e)
                     {
-                        lock (serverLock)
-                        {
-                            server.SendAsync(ipPort, nonce + ":Invalid:" + e.Message);
-                        }
+                        SendMessage(ipPort, new InvalidResponse(message.nonce, e.Message));
                     }
                 }, cancellationToken);
             }
@@ -158,7 +161,20 @@ namespace SudokuSolverConsole
             return false;
         }
 
-        void SendTrueCandidates(string ipPort, string nonce, Solver solver, CancellationToken cancellationToken)
+        void SendMessage(string ipPort, BaseResponse response, byte[] trueCandidatesKey = null)
+        {
+            string json = JsonSerializer.Serialize(response, response.GetType());
+            lock (serverLock)
+            {
+                if (trueCandidatesKey != null)
+                {
+                    trueCandidatesResponseCache[trueCandidatesKey] = response;
+                }
+                server.SendAsync(ipPort, json);
+            }
+        }
+
+        void SendTrueCandidates(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
         {
             bool colored = GetBooleanOption(solver, "truecandidatescolored");
             bool logical = GetBooleanOption(solver, "truecandidateslogical");
@@ -169,10 +185,7 @@ namespace SudokuSolverConsole
                 logicalSolver = solver.Clone();
                 if (logicalSolver.ConsolidateBoard() == LogicResult.Invalid)
                 {
-                    lock (serverLock)
-                    {
-                        server.SendAsync(ipPort, nonce + ":Invalid:No solutions found.", CancellationToken.None);
-                    }
+                    SendMessage(ipPort, new InvalidResponse(nonce, "No solutions found."));
                     return;
                 }
             }
@@ -181,118 +194,97 @@ namespace SudokuSolverConsole
             int[] numSolutions = colored ? new int[totalCandidates] : null;
             if (!solver.FillRealCandidates(multiThread: true, numSolutions: numSolutions, cancellationToken: cancellationToken))
             {
-                lock (serverLock)
-                {
-                    server.SendAsync(ipPort, nonce + ":Invalid:No solutions found.", CancellationToken.None);
-                }
+                SendMessage(ipPort, new InvalidResponse(nonce, "No solutions found."));
                 return;
             }
 
-            string realCandidateString = solver.CandidateString;
-            string logicalCandidateString = logicalSolver?.CandidateString;
-            string candidateString = logicalCandidateString ?? realCandidateString;
+            if (numSolutions == null)
+            {
+                numSolutions = new int[totalCandidates];
+            }
 
-            string payload;
-            if (colored)
+            int maxValue = solver.MAX_VALUE;
+            var realFlatBoard = solver.FlatBoard;
+            var logicalFlat = logicalSolver?.FlatBoard;
+            for (int i = 0; i < realFlatBoard.Length; i++)
             {
-                StringBuilder numSolutionsString = new(numSolutions.Length);
-                for (int i = 0; i < numSolutions.Length; i++)
+                uint realMask = realFlatBoard[i];
+                uint logicalMask = logicalFlat != null ? logicalFlat[i] : realMask;
+                for (int v = 0; v < maxValue; v++)
                 {
-                    int curNumSolutions = Math.Min(8, numSolutions[i]);
-                    numSolutionsString.Append(curNumSolutions);
-                }
-                payload = candidateString + numSolutionsString.ToString();
-            }
-            else if (logical)
-            {
-                StringBuilder numSolutionsString = new(totalCandidates);
-                for (int i = 0; i < totalCandidates; i++)
-                {
-                    if (realCandidateString[i] == '.')
+                    int solutionIndex = i * maxValue + v;
+                    uint valueMask = SolverUtility.ValueMask(v + 1);
+                    bool haveValueReal = (realMask & valueMask) != 0;
+                    bool haveLogicalReal = (logicalMask & valueMask) != 0;
+                    if (!haveValueReal && haveLogicalReal)
                     {
-                        numSolutionsString.Append('0');
+                        numSolutions[solutionIndex] = -1;
                     }
-                    else
+                    else if (haveValueReal && !colored)
                     {
-                        numSolutionsString.Append('9');
+                        numSolutions[solutionIndex] = 1;
                     }
                 }
-                payload = candidateString + numSolutionsString.ToString();
             }
-            else
-            {
-                payload = candidateString;
-            }
-            string fpuzzles = $"{nonce}:{payload}";
+
+            TrueCandidatesResponse response = new(nonce, numSolutions);
             lock (serverLock)
             {
                 if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
                 {
-                    trueCandidatesResponseCache[comparableData] = payload;
+                    SendMessage(ipPort, response, comparableData);
                 }
-
-                server.SendAsync(ipPort, fpuzzles, CancellationToken.None);
+                else
+                {
+                    SendMessage(ipPort, response);
+                }
             }
         }
 
-        void SendSolve(string ipPort, string nonce, Solver solver, CancellationToken cancellationToken)
+        void SendSolve(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
         {
             if (!solver.FindSolution(multiThread: true, isRandom: true, cancellationToken: cancellationToken))
             {
-                if (!cancellationToken.IsCancellationRequested)
-                {
-                    lock (serverLock)
-                    {
-                        server.SendAsync(ipPort, nonce + ":Invalid:No solutions found.", CancellationToken.None);
-                    }
-                }
+                SendMessage(ipPort, new InvalidResponse(nonce, "No solutions found."));
             }
-            else if (!cancellationToken.IsCancellationRequested)
+            else
             {
-                string givenString = solver.GivenString;
-                string fpuzzles = $"{nonce}:{givenString}";
-                lock (serverLock)
-                {
-                    server.SendAsync(ipPort, fpuzzles, CancellationToken.None);
-                }
+                SendMessage(ipPort, new SolvedResponse(nonce, solver.FlatBoard.Select(mask => SolverUtility.GetValue(mask)).ToArray()));
             }
         }
 
-        void SendCount(string ipPort, string nonce, Solver solver, ulong maxSolutions, CancellationToken cancellationToken)
+        void SendCount(string ipPort, int nonce, Solver solver, ulong maxSolutions, CancellationToken cancellationToken)
         {
             ulong numSolutions = solver.CountSolutions(maxSolutions, true, cancellationToken: cancellationToken, progressEvent: (count) =>
             {
-                server.SendAsync(ipPort, $"{nonce}:progress:{count}", CancellationToken.None);
+                SendMessage(ipPort, new CountResponse(nonce, count, true));
             });
             if (!cancellationToken.IsCancellationRequested)
             {
-                server.SendAsync(ipPort, $"{nonce}:final:{numSolutions}", CancellationToken.None);
+                SendMessage(ipPort, new CountResponse(nonce, numSolutions, false));
             }
         }
 
-        void SendSolvePath(string ipPort, string nonce, Solver solver)
+        void SendSolvePath(string ipPort, int nonce, Solver solver)
         {
             StringBuilder stepsDescription = new();
             var logicResult = solver.ConsolidateBoard(stepsDescription);
             SendLogicResponse(ipPort, nonce, solver, logicResult, stepsDescription);
         }
 
-        void SendStep(string ipPort, string nonce, Solver solver)
+        void SendStep(string ipPort, int nonce, Solver solver)
         {
             StringBuilder stepDescription = new();
             var logicResult = solver.StepLogic(stepDescription, true);
             SendLogicResponse(ipPort, nonce, solver, logicResult, stepDescription);
         }
 
-        void SendLogicResponse(string ipPort, string nonce, Solver solver, LogicResult logicResult, StringBuilder description)
+        void SendLogicResponse(string ipPort, int nonce, Solver solver, LogicResult logicResult, StringBuilder description)
         {
             if (!description.ToString().EndsWith(Environment.NewLine))
             {
                 description.AppendLine();
             }
-
-            StringBuilder finalMessage = new();
-            finalMessage.Append(nonce).Append(':');
 
             if (logicResult == LogicResult.Invalid)
             {
@@ -302,13 +294,31 @@ namespace SudokuSolverConsole
             {
                 description.AppendLine("No logical steps found.");
             }
-            finalMessage.Append(solver.DistinguishedCandidateString).Append(':');
-            finalMessage.Append(description);
 
-            lock (serverLock)
+            var flatBoard = solver.FlatBoard;
+            LogicalCell[] cells = new LogicalCell[flatBoard.Length];
+            for (int i = 0; i < cells.Length; i++)
             {
-                server.SendAsync(ipPort, finalMessage.ToString(), CancellationToken.None);
+                uint mask = flatBoard[i];
+                if (SolverUtility.IsValueSet(mask))
+                {
+                    cells[i] = new(SolverUtility.GetValue(mask), null);
+                }
+                else
+                {
+                    List<int> candidates = new();
+                    for (int v = 1; v <= solver.MAX_VALUE; v++)
+                    {
+                        uint valueMask = SolverUtility.ValueMask(v);
+                        if ((mask & valueMask) != 0)
+                        {
+                            candidates.Add(v);
+                        }
+                    }
+                    cells[i] = new(0, candidates.ToArray());
+                }
             }
+            SendMessage(ipPort, new LogicalResponse(nonce, cells, description.ToString().TrimStart(), logicResult != LogicResult.Invalid));
         }
 
         public void Dispose()

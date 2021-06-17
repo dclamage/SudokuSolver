@@ -26,10 +26,7 @@
         let lastCommand = '';
         let lastClearCommand = '';
 
-        let preventResentCommands = [];
-        preventResentCommands['truecandidates'] = true;
-
-        let allowCommandWhenUndo = [];
+        const allowCommandWhenUndo = [];
         allowCommandWhenUndo['check'] = true;
         allowCommandWhenUndo['count'] = true;
 
@@ -37,36 +34,49 @@
         extraSettingsNames.push('TrueCandidates');
 
         let solverSocket = null;
-        let lastSentPuzzle = {};
         let commandIsComplete = false;
+
+        const sendPuzzleDelayed = function(message) {
+            if (nonce === message.nonce) {
+                solverSocket.send(JSON.stringify(message));
+            }
+        }
+
         const sendPuzzle = function(command) {
             if (!solverSocket) {
                 return;
             }
+            nonce++;
 
             if (command === "cancel") {
-                solverSocket.send('fpuzzles:' + nonce + ':cancel:cancel');
+                const message = {
+                    nonce: nonce,
+                    command: 'cancel',
+                }
+                solverSocket.send(JSON.stringify(message));
                 return;
             }
 
             var puzzle = exportPuzzle();
-            if (!preventResentCommands[command] || lastSentPuzzle[command] !== puzzle) {
-                if (command === '')
-                    nonce = nonce + 1;
-                solverSocket.send('fpuzzles:' + nonce + ':' + command + ':' + puzzle);
-                lastSentPuzzle[command] = puzzle;
-                connectButton.title = "Calculating...";
-
-                if (command === 'solve' ||
-                    command === 'check' ||
-                    command === 'count' ||
-                    command === 'solvepath' ||
-                    command === 'step' && lastClearCommand !== 'step') {
-                    clearConsole();
-                    lastClearCommand = command;
-                }
-                lastCommand = command;
+            const message = {
+                nonce: nonce,
+                command: command,
+                dataType: 'fpuzzles',
+                data: puzzle
             }
+            setTimeout(() => sendPuzzleDelayed(message), 250);
+
+            connectButton.title = "Calculating...";
+
+            if (command === 'solve' ||
+                command === 'check' ||
+                command === 'count' ||
+                command === 'solvepath' ||
+                command === 'step' && lastClearCommand !== 'step') {
+                clearConsole();
+                lastClearCommand = command;
+            }
+            lastCommand = command;
         }
 
         const clearPencilmarkColors = function() {
@@ -163,7 +173,6 @@
                             sendPuzzle('truecandidates');
                         } else {
                             clearPencilmarkColors();
-                            lastSentPuzzle['truecandidates'] = null;
                         }
                         return true;
                     }
@@ -294,141 +303,106 @@
         const oneSolutionColor = "#299b20";
         const twoSolutionColor = 0xAFAFFF;
         const eightSolutionColor = 0x0000FF;
-        const setCenterMarkColor = function(cell, numSolutionsStr, candidateIndex) {
-            if (!numSolutionsStr) {
-                return;
-            }
-
+        const setCenterMarkColor = function(cell, numSolutions, candidateIndex) {
             if (!cell.centerPencilMarkColors) {
-                cell.centerPencilMarkColors = {};
+                cell.centerPencilMarkColors = [];
             }
-            const numSolutions = parseInt(numSolutionsStr[cell.i * size * size + cell.j * size + candidateIndex]);
             let curColor = oneSolutionColor;
-            if (numSolutions >= 9) {
+            if (numSolutions < 0) {
                 curColor = baselineColor;
-            } else if (numSolutions > 1) {
-                curColor = lerpColor(twoSolutionColor, eightSolutionColor, (numSolutions - 2) / 6);
             } else if (numSolutions === 0) {
                 curColor = zeroSolutionColor;
+            } else if (numSolutions > 1) {
+                curColor = lerpColor(twoSolutionColor, eightSolutionColor, Math.min(6, numSolutions - 2) / 6);
             }
             cell.centerPencilMarkColors[candidateIndex + 1] = curColor;
         }
 
-        const importCandidates = function(str, distinguished) {
+        const importCandidates = function(response) {
             clearPencilmarkColors();
 
-            if (size <= 9) {
-                let candidateStr = str;
-                let numSolutionsStr = null;
-                const candidateStrLen = size * size * size;
-                if (str.length === candidateStrLen * 2) {
-                    candidateStr = str.substring(0, candidateStrLen);
-                    numSolutionsStr = str.substring(candidateStrLen);
-                }
-                const numCells = candidateStr.length / size;
-                for (let i = 0; i < numCells; i++) {
-                    const cell = grid[Math.floor(i / size)][i % size];
-                    if (!cell || cell.given) {
-                        continue;
-                    }
-
-                    const candidates = [];
-                    for (let candidateIndex = 0; candidateIndex < size; candidateIndex++) {
-                        const candidate = parseInt(str[i * size + candidateIndex]);
-                        if (!isNaN(candidate) && candidate != 0) {
-                            candidates.push(candidate);
-                            setCenterMarkColor(cell, numSolutionsStr, candidateIndex);
+            if (response.type === 'truecandidates') {
+                const solutions = response.solutionsPerCandidate;
+                const colored = boolSettings['ColoredCandidates'];
+                for (let i = 0; i < size; i++) {
+                    for (let j = 0; j < size; j++) {
+                        const cell = grid[i][j];
+                        if (!cell || cell.given) {
+                            continue;
                         }
-                    }
 
-                    let isSet = false;
-                    if (candidates.length == size && candidates[0] == candidates[1]) {
-                        candidates.splice(1);
-                        isSet = true;
-                    }
-
-                    cell.value = 0;
-                    cell.centerPencilMarks = [];
-                    cell.candidates = candidates;
-                    if (candidates.length == 1 && (isSet || !distinguished)) {
-                        cell.value = candidates[0];
-                    } else {
-                        cell.centerPencilMarks = candidates;
-                    }
-                }
-            } else {
-                let numSolutionsStr = null;
-                const candidateStrLen = size * size * size * 2;
-                const numSolutionsStrLen = size * size * size;
-                if (str.length === candidateStrLen + numSolutionsStrLen) {
-                    candidateStr = str.substring(0, candidateStrLen);
-                    numSolutionsStr = str.substring(candidateStrLen);
-                }
-
-                const numCells = str.length / (size * 2);
-                for (let i = 0; i < numCells; i++) {
-                    const cell = grid[Math.floor(i / size)][i % size];
-                    if (!cell || cell.given) {
-                        continue;
-                    }
-
-                    const candidates = [];
-                    for (let candidateIndex = 0; candidateIndex < size * 2; candidateIndex += 2) {
-                        const startIndex = i * size * 2 + candidateIndex;
-                        const digit0 = parseInt(str[startIndex]);
-                        const digit1 = parseInt(str[startIndex + 1]);
-                        if (!isNaN(digit0) && !isNaN(digit1) && (digit0 == 1 || digit1 != 0)) {
-                            const candidate = parseInt(digit0) * 10 + parseInt(digit1);
-                            candidates.push(candidate);
-                            setCenterMarkColor(cell, numSolutionsStr, candidateIndex);
+                        const cellIndex = i * size + j;
+                        const candidates = [];
+                        for (let candidateIndex = 0; candidateIndex < size; candidateIndex++) {
+                            const numSolutions = solutions[cellIndex * size + candidateIndex];
+                            if (numSolutions !== 0) {
+                                candidates.push(candidateIndex + 1);
+                                if (colored) {
+                                    setCenterMarkColor(cell, numSolutions, candidateIndex);
+                                }
+                            }
                         }
-                    }
 
-                    let isSet = false;
-                    if (candidates.length == size && candidates[0] == candidates[1]) {
-                        candidates.splice(1);
-                        isSet = true;
+                        cell.value = 0;
+                        cell.centerPencilMarks = [];
+                        cell.candidates = candidates;
+                        if (candidates.length == 1) {
+                            cell.value = candidates[0];
+                        } else {
+                            cell.centerPencilMarks = candidates;
+                        }
+                        cell.tcerror = false;
                     }
+                }
+            } else if (response.type === 'logical') {
+                const responseCells = response.cells;
+                for (let i = 0; i < size; i++) {
+                    for (let j = 0; j < size; j++) {
+                        const cell = grid[i][j];
+                        if (!cell || cell.given) {
+                            continue;
+                        }
 
-                    cell.value = 0;
-                    cell.centerPencilMarks = [];
-                    cell.candidates = candidates;
-                    if (candidates.length == 1 && (isSet || !distinguished)) {
-                        cell.value = candidates[0];
-                    } else {
-                        cell.centerPencilMarks = candidates;
+                        const cellIndex = i * size + j;
+                        const responseCell = responseCells[cellIndex];
+                        if (responseCell.value != 0) {
+                            cell.value = responseCell.value;
+                            cell.centerPencilMarks = [];
+                            cell.candidates = [responseCell.value];
+                        } else {
+                            cell.value = 0;
+                            cell.centerPencilMarks = responseCell.candidates;
+                            cell.candidates = responseCell.candidates;
+                        }
+                        cell.centerPencilMarkColors = null;
+                        cell.tcerror = false;
                     }
                 }
             }
+
             onInputEnd();
         }
 
-        const importGivens = function(str) {
-            if (size <= 9) {
-                const numCells = str.length;
-                for (let i = 0; i < numCells; i++) {
-                    const cell = grid[Math.floor(i / size)][i % size];
-                    if (!cell || cell.given) {
-                        continue;
+        const importGivens = function(response) {
+            if (response.type === 'solved') {
+                const solution = response.solution;
+                for (let i = 0; i < size; i++) {
+                    for (let j = 0; j < size; j++) {
+                        const cell = grid[i][j];
+                        if (!cell || cell.given) {
+                            continue;
+                        }
+
+                        const cellIndex = i * size + j;
+                        cell.value = solution[cellIndex];
+                        cell.centerPencilMarks = [];
+                        cell.candidates = [cell.value];
+                        cell.centerPencilMarkColors = null;
+                        cell.tcerror = false;
                     }
-                    cell.value = parseInt(str[i]);
-                    cell.centerPencilMarks = [];
-                    cell.candidates = [cell.value];
-                    cell.tcerror = false;
-                }
-            } else {
-                const numCells = str.length / 2;
-                for (let i = 0; i < numCells; i++) {
-                    const cell = grid[Math.floor(i / size)][i % size];
-                    if (!cell || cell.given) {
-                        continue;
-                    }
-                    cell.value = parseInt(str[i * 2]) * 10 + parseInt(str[i * 2 + 1]);
-                    cell.centerPencilMarks = [];
-                    cell.candidates = [cell.value];
-                    cell.tcerror = false;
                 }
             }
+
             onInputEnd();
         }
 
@@ -441,16 +415,16 @@
                     }
                     cell.value = 0;
                     cell.centerPencilMarks = [];
+                    cell.centerPencilMarkColors = null;
                     cell.tcerror = true;
                 }
             }
         }
 
-        const handleInvalid = function(puzzle) {
-            if (puzzle.startsWith('Invalid')) {
-                const split = puzzle.split(':');
-                if (split.length == 2) {
-                    log(split[1]);
+        const handleInvalid = function(response) {
+            if (response.type === 'invalid') {
+                if (response.message && response.message.length > 0) {
+                    log(response.message);
                 } else {
                     log('Invalid board (no solutions).');
                 }
@@ -459,37 +433,39 @@
             return false;
         }
 
-        const handleTrueCandidates = function(puzzle) {
-            if (handleInvalid(puzzle)) {
+        const handleTrueCandidates = function(response) {
+            if (handleInvalid(response)) {
                 clearCandidates();
             } else {
-                importCandidates(puzzle);
+                importCandidates(response);
             }
         }
-        const handleSolve = function(puzzle) {
-            if (handleInvalid(puzzle)) {
+        const handleSolve = function(response) {
+            if (handleInvalid(response)) {
                 clearCandidates();
             } else {
-                importGivens(puzzle);
+                importGivens(response);
             }
             if (cancelButton) {
                 cancelButton.title = cancelButton.origTitle;
                 cancelButton = null;
             }
         }
-        const handleCheck = function(puzzle) {
+        const handleCheck = function(response) {
             let complete = false;
-            if (puzzle.startsWith('final:')) {
-                let count = puzzle.substring('final:'.length);
-                if (count == 0) {
-                    log('There are no solutions.');
-                } else if (count == 1) {
-                    log('There is a unique solution.');
-                } else {
-                    log('There are multiple solutions.');
+            if (response.type === 'count') {
+                if (!response.inProgress) {
+                    const count = response.count;
+                    if (count == 0) {
+                        log('There are no solutions.');
+                    } else if (count == 1) {
+                        log('There is a unique solution.');
+                    } else {
+                        log('There are multiple solutions.');
+                    }
+                    complete = true;
                 }
-                complete = true;
-            } else if (handleInvalid(puzzle)) {
+            } else if (handleInvalid(response)) {
                 complete = true;
             }
             if (cancelButton && complete) {
@@ -497,25 +473,27 @@
                 cancelButton = null;
             }
         }
-        const handleCount = function(puzzle) {
+
+        const handleCount = function(response) {
             let complete = false;
-            if (puzzle.startsWith('progress:')) {
-                let count = puzzle.substring('progress:'.length);
-                clearConsole();
-                log('Found ' + count + ' solutions so far...');
-                commandIsComplete = false;
-            } else if (puzzle.startsWith('final:')) {
-                let count = puzzle.substring('final:'.length);
-                clearConsole();
-                if (count == 0) {
-                    log('There are no solutions.');
-                } else if (count == 1) {
-                    log('There is a unique solution.');
+            if (response.type === 'count') {
+                const count = response.count;
+                if (response.inProgress) {
+                    clearConsole();
+                    log('Found ' + count + ' solutions so far...');
+                    commandIsComplete = false;
                 } else {
-                    log('There are exactly ' + count + ' solutions.');
+                    clearConsole();
+                    if (count == 0) {
+                        log('There are no solutions.');
+                    } else if (count == 1) {
+                        log('There is a unique solution.');
+                    } else {
+                        log('There are exactly ' + count + ' solutions.');
+                    }
+                    complete = true;
                 }
-                complete = true;
-            } else if (handleInvalid(puzzle)) {
+            } else if (handleInvalid(response)) {
                 complete = true;
             }
             if (cancelButton && complete) {
@@ -523,26 +501,18 @@
                 cancelButton = null;
             }
         }
-        const handlePath = function(puzzle) {
-            if (!handleInvalid(puzzle)) {
-                let colonIndex = puzzle.indexOf(':');
-                if (colonIndex >= 0) {
-                    let candidateString = puzzle.substring(0, colonIndex);
-                    let description = puzzle.substring(colonIndex + 1);
-                    importCandidates(candidateString);
-                    log(description, { newLine: false });
-                }
+
+        const handlePath = function(response) {
+            if (!handleInvalid(response)) {
+                importCandidates(response);
+                log(response.message, { newLine: false });
             }
         }
-        const handleStep = function(puzzle) {
-            if (!handleInvalid(puzzle)) {
-                let colonIndex = puzzle.indexOf(':');
-                if (colonIndex >= 0) {
-                    let candidateString = puzzle.substring(0, colonIndex);
-                    let description = puzzle.substring(colonIndex + 1);
-                    importCandidates(candidateString, true);
-                    log(description, { newLine: false });
-                }
+
+        const handleStep = function(response) {
+            if (!handleInvalid(response)) {
+                importCandidates(response);
+                log(response.message, { newLine: false });
             }
         }
 
@@ -564,15 +534,14 @@
                 };
 
                 socket.onmessage = function(msg) {
-                    let expectedNonce = nonce + ':';
-                    if (msg.data.startsWith(expectedNonce)) {
+                    const response = JSON.parse(msg.data);
+                    if (response.nonce === nonce) {
                         if (!allowCommandWhenUndo[lastCommand] && changeIndex < changes.length - 1) {
                             // Undo has been pressed
                             return;
                         }
 
-                        let payload = msg.data.substring(expectedNonce.length);
-                        if (payload === 'canceled') {
+                        if (response.type === 'canceled') {
                             log('Operation canceled.');
                             if (cancelButton) {
                                 cancelButton.title = cancelButton.origTitle;
@@ -586,17 +555,17 @@
                         processingMessage = true;
                         commandIsComplete = true;
                         if (lastCommand === 'truecandidates') {
-                            handleTrueCandidates(payload);
+                            handleTrueCandidates(response);
                         } else if (lastCommand === 'solve') {
-                            handleSolve(payload);
+                            handleSolve(response);
                         } else if (lastCommand === 'check') {
-                            handleCheck(payload);
+                            handleCheck(response);
                         } else if (lastCommand === 'count') {
-                            handleCount(payload);
+                            handleCount(response);
                         } else if (lastCommand === 'solvepath') {
-                            handlePath(payload);
+                            handlePath(response);
                         } else if (lastCommand === 'step') {
-                            handleStep(payload);
+                            handleStep(response);
                         }
 
                         if (commandIsComplete) {
@@ -611,7 +580,6 @@
                     connectButton.title = 'Connect';
                     console.log("Connection closed");
                     solverSocket = null;
-                    lastSentPuzzle = {};
                     hideSolverButtons();
                 };
                 solverSocket = socket;
@@ -634,7 +602,6 @@
 
             if (boolSettings['TrueCandidates']) {
                 clearPencilmarkColors();
-                lastSentPuzzle['truecandidates'] = null;
                 sendPuzzle('truecandidates');
             }
             return true;
