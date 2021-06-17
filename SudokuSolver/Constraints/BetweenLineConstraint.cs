@@ -384,6 +384,33 @@ namespace SudokuSolver.Constraints
                 uint unsetOuterMask = outerSet0 ? outerMask1 : outerMask0;
                 var unsetOuterCell = outerSet0 ? outerCell1 : outerCell0;
 
+                // Clear out any impossible outer values (must be minUniqueInnerValues away from the set value)
+                {
+                    int minUnsetValue = setOuterVal - minUniqueInnerValues - 1;
+                    int maxUnsetValue = setOuterVal + minUniqueInnerValues + 1;
+                    uint clearUnsetMask = (minUnsetValue < 1) ? MaskValAndLower(setOuterVal) : MaskBetweenInclusive(minUnsetValue + 1, setOuterVal);
+                    clearUnsetMask |= (maxUnsetValue > MAX_VALUE) ? MaskValAndHigher(setOuterVal) : MaskBetweenInclusive(setOuterVal, maxUnsetValue - 1);
+                    clearUnsetMask &= board[unsetOuterCell.Item1, unsetOuterCell.Item2];
+                    if (clearUnsetMask != 0)
+                    {
+                        var logicResult = sudokuSolver.ClearMask(unsetOuterCell.Item1, unsetOuterCell.Item2, clearUnsetMask);
+                        if (logicResult == LogicResult.Invalid)
+                        {
+                            if (logicalStepDescription != null)
+                            {
+                                logicalStepDescription.Clear();
+                                logicalStepDescription.Append($"All candidates in {CellName(unsetOuterCell)} ({MaskToString(unsetOuterMask)}) would break the cells on the line.");
+                            }
+                            return LogicResult.Invalid;
+                        }
+                        if (logicResult == LogicResult.Changed)
+                        {
+                            logicalStepDescription?.Append($"Candidates {MaskToString(clearUnsetMask)} removed from {CellName(unsetOuterCell)}.");
+                            return LogicResult.Changed;
+                        }
+                    }
+                }
+
                 var (minInner, maxInner) = GetMinMaxInnerValues(sudokuSolver);
                 if (minInner <= maxInner)
                 {
