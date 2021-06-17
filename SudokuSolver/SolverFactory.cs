@@ -126,7 +126,7 @@ namespace SudokuSolver
                 size = (int)Math.Sqrt(givens.Length);
                 if (givens.Length != size * size)
                 {
-                    throw new ArgumentException($"ERROR: A givens string must be a perfect square in length (Provided length: {givens.Length}).");
+                    throw new WrongLengthGivensException($"ERROR: A givens string must be a perfect square in length (Provided length: {givens.Length}).");
                 }
             }
             else
@@ -134,7 +134,7 @@ namespace SudokuSolver
                 size = (int)Math.Sqrt(givens.Length / 2);
                 if (givens.Length != size * size * 2)
                 {
-                    throw new ArgumentException($"ERROR: A givens string must be a perfect square in length (Provided length: {givens.Length}).");
+                    throw new WrongLengthGivensException($"ERROR: A givens string must be a perfect square in length (Provided length: {givens.Length}).");
                 }
             }
 
@@ -188,6 +188,34 @@ namespace SudokuSolver
             return solver;
         }
 
+        public static string FixGivensString(string givens)
+        {
+            givens = givens.Trim();
+
+            int delta = int.MaxValue;
+            for (int potSideLength = 1; potSideLength <= 31; potSideLength++) // 31 is the max grid size
+            {
+                int potStrLength = potSideLength <= 9 ? potSideLength * potSideLength : potSideLength * potSideLength * 2;
+                int potError = givens.Length - potStrLength;
+                if (Math.Abs(potError) < Math.Abs(delta))
+                {
+                    delta = potError;
+                }
+            }
+
+            int potIntendedLength = givens.Length - delta;
+
+            while (givens.Length < potIntendedLength)
+            {
+                givens += '.';
+            }
+            if (givens.Length > potIntendedLength)
+            {
+                givens = givens.Substring(0, potIntendedLength);
+            }
+            
+            return givens;
+        }
         public static Solver CreateFromFPuzzles(string fpuzzlesURL, IEnumerable<string> additionalConstraints = null, bool onlyGivens = false)
         {
             using MemoryStream comparableDataStream = new();

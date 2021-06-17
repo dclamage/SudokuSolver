@@ -202,45 +202,13 @@ namespace SudokuSolverConsole
                     {
                         solver = SolverFactory.CreateFromGivens(givens, constraints);
                     }
-                    catch (ArgumentException e)
+                    catch (WrongLengthGivensException e)
                     {
-                        if (e.Message.StartsWith($"ERROR: A givens string must be a perfect square in length (Provided length: "))
-                        {
-                            givens = givens.Trim();
+                        Console.WriteLine($"Tried to parse givens string with invalid length. By adding or removing from the end we found this to be our best guess for your intention:");
 
-                            int delta = int.MaxValue;
-                            for (int potSideLength = 1; potSideLength <= 31; potSideLength++) // 31 is the max grid size
-                            {
-                                int potStrLength = potSideLength <= 9 ? potSideLength * potSideLength : potSideLength * potSideLength * 2;
-                                int potError = givens.Length - potStrLength;
-                                if (Math.Abs(potError) < Math.Abs(delta))
-                                {
-                                    delta = potError;
-                                }
-                            }
-
-                            if (delta == int.MaxValue)
-                            {
-                                throw; // rethrow with same stack trace
-                            }
-
-                            int potIntendedLength = givens.Length - delta;
-
-                            while (givens.Length < potIntendedLength)
-                            {
-                                givens += '.';
-                            }
-                            if (givens.Length > potIntendedLength)
-                            {
-                                givens = givens.Substring(0, potIntendedLength);
-                            }
-
-                            Console.WriteLine($"Tried to givens string with invalid length. By adding or removing from the end we found this to be our best guess for your intention:");
-
-                            Solver forPrint = SolverFactory.CreateFromGivens(givens);
-                            forPrint.Print();
-                        }
-                        throw; // rethrow with same stack trace
+                        Solver forPrint = SolverFactory.CreateFromGivens(SolverFactory.FixGivensString(givens));
+                        forPrint.Print();
+                        throw; // Rethrow with same stack trace
                     }
                 }
                 else if (haveFPuzzlesURL)
