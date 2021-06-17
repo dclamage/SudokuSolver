@@ -75,6 +75,18 @@
                     const cell = grid[i][j];
                     if (cell) {
                         cell.centerPencilMarkColors = null;
+                        cell.tcerror = false;
+                    }
+                }
+            }
+        }
+
+        const clearTCError = function() {
+            for (let i = 0; i < size; i++) {
+                for (let j = 0; j < size; j++) {
+                    const cell = grid[i][j];
+                    if (cell) {
+                        cell.tcerror = false;
                     }
                 }
             }
@@ -147,6 +159,7 @@
                         this.origClick();
 
                         if (boolSettings['TrueCandidates']) {
+                            clearTCError();
                             sendPuzzle('truecandidates');
                         } else {
                             clearPencilmarkColors();
@@ -301,7 +314,7 @@
             cell.centerPencilMarkColors[candidateIndex + 1] = curColor;
         }
 
-        let importCandidates = function(str, distinguished) {
+        const importCandidates = function(str, distinguished) {
             clearPencilmarkColors();
 
             if (size <= 9) {
@@ -390,7 +403,7 @@
             onInputEnd();
         }
 
-        let importGivens = function(str) {
+        const importGivens = function(str) {
             if (size <= 9) {
                 const numCells = str.length;
                 for (let i = 0; i < numCells; i++) {
@@ -401,6 +414,7 @@
                     cell.value = parseInt(str[i]);
                     cell.centerPencilMarks = [];
                     cell.candidates = [cell.value];
+                    cell.tcerror = false;
                 }
             } else {
                 const numCells = str.length / 2;
@@ -412,9 +426,24 @@
                     cell.value = parseInt(str[i * 2]) * 10 + parseInt(str[i * 2 + 1]);
                     cell.centerPencilMarks = [];
                     cell.candidates = [cell.value];
+                    cell.tcerror = false;
                 }
             }
             onInputEnd();
+        }
+
+        const clearCandidates = function() {
+            for (let i = 0; i < size; i++) {
+                for (let j = 0; j < size; j++) {
+                    const cell = grid[i][j];
+                    if (!cell || cell.given) {
+                        continue;
+                    }
+                    cell.value = 0;
+                    cell.centerPencilMarks = [];
+                    cell.tcerror = true;
+                }
+            }
         }
 
         const handleInvalid = function(puzzle) {
@@ -432,14 +461,14 @@
 
         const handleTrueCandidates = function(puzzle) {
             if (handleInvalid(puzzle)) {
-                clearGrid(false, true);
+                clearCandidates();
             } else {
                 importCandidates(puzzle);
             }
         }
         const handleSolve = function(puzzle) {
             if (handleInvalid(puzzle)) {
-                clearGrid(false, true);
+                clearCandidates();
             } else {
                 importGivens(puzzle);
             }
@@ -914,6 +943,12 @@
                     for (let a = 0; a < centerPencilMarks.length; a++) {
                         ctx.fillText(centerPencilMarks[a].join(''), this.x + cellSL / 2, this.y + (cellSL * 0.85) - ((centerPencilMarks.length - 1) / 2 - a) * cellSL * 0.1666 * textScale);
                     }
+                }
+
+                if (boolSettings['TrueCandidates'] && this.tcerror && this.value === 0 && this.centerPencilMarks.length === 0 && !this.given) {
+                    ctx.font = `bold ${(cellSL * 0.8)}px  Arial`;
+                    ctx.fillStyle = '#FF000080';
+                    ctx.fillText('X', this.x + cellSL / 2, this.y + (cellSL * 0.8));
                 }
             }
 
