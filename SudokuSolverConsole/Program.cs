@@ -55,6 +55,7 @@ namespace SudokuSolverConsole
             string candidates = null;
             bool listen = false;
             string portStr = null;
+            bool disableFindShortestContradiction = false;
 
             var options = new OptionSet {
                 // Non-solve options
@@ -78,6 +79,7 @@ namespace SudokuSolverConsole
                 { "k|check", "Check if there are 0, 1, or 2+ solutions.", k => check = k != null },
                 { "n|solutioncount", "Provide an exact solution count.", n => solutionCount = n != null },
                 { "t|multithread", "Use multithreading.", t => multiThread = t != null },
+                { "e|dontfindshortestcontradiction", "Don't find the shortest contradiction.", e => disableFindShortestContradiction = e!=null },
 
                 // Post-solve options
                 { "o|out=", "Output solution(s) to file.", o => outputPath = o },
@@ -226,6 +228,8 @@ namespace SudokuSolverConsole
                 Console.WriteLine(e.Message);
                 return;
             }
+
+            solver.DisableFindShortestContradiction = disableFindShortestContradiction;
 
             if (print)
             {

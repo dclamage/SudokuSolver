@@ -57,6 +57,7 @@ namespace SudokuSolver
         public bool DisableFishes { get; set; } = false;
         public bool DisableWings { get; set; } = false;
         public bool DisableContradictions { get; set; } = false;
+        public bool DisableFindShortestContradiction { get; set; } = false;
 
         private uint[,] board;
         private int[,] regions = null;
@@ -272,6 +273,7 @@ namespace SudokuSolver
             DisableFishes = other.DisableFishes;
             DisableWings = other.DisableWings;
             DisableContradictions = other.DisableContradictions;
+            DisableFindShortestContradiction = other.DisableFindShortestContradiction;
             board = (uint[,])other.board.Clone();
             regions = other.regions;
             seenMap = other.seenMap;
@@ -3030,6 +3032,7 @@ namespace SudokuSolver
         {
             for (int allowedValueCount = 2; allowedValueCount <= MAX_VALUE; allowedValueCount++)
             {
+                Tuple<int, Solver, int, int, int, StringBuilder> bestContradiction = null; // countChanges, solver, x, y, value, formattedContradictionReason
                 for (int i = 0; i < HEIGHT; i++)
                 {
                     for (int j = 0; j < WIDTH; j++)
@@ -3065,7 +3068,7 @@ namespace SudokuSolver
                                                 isTrivial = true;
                                             }
                                         }
-                                        if (!DisableContradictions || isTrivial)
+                                        if (isTrivial || DisableFindShortestContradiction) // Since this is trivial it will always be as "easy" or "easier" than any other contradiction.
                                         {
                                             stepDescription?.Append($"Setting {CellName(i, j)} to {v} causes a contradiction:")
                                                 .AppendLine()
@@ -3082,15 +3085,58 @@ namespace SudokuSolver
                                             }
                                             return LogicResult.Changed;
                                         }
+                                        if (!DisableContradictions)
+                                        {
+                                            int changes = boardCopy.amountCellsFilled() - this.amountCellsFilled();
+                                            if (bestContradiction == null || changes < bestContradiction.Item1)
+                                            {
+                                                bestContradiction = Tuple.Create(changes, boardCopy, i, j, v, formattedContraditionReason);
+                                            }
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
+                if (bestContradiction != null)
+                {
+                    int i = bestContradiction.Item3;
+                    int j = bestContradiction.Item4;
+                    int v = bestContradiction.Item5;
+                    StringBuilder formattedContraditionReason = bestContradiction.Item6;
+
+                    stepDescription?.Append($"Setting {CellName(i, j)} to {v} causes a contradiction:")
+                                    .AppendLine()
+                                    .Append(formattedContraditionReason);
+
+                    if (!ClearValue(i, j, v))
+                    {
+                        if (stepDescription != null)
+                        {
+                            stepDescription.AppendLine();
+                            stepDescription.Append($"This clears the last candidate from {CellName(i, j)}.");
+                        }
+                        return LogicResult.Invalid;
+                    }
+                    return LogicResult.Changed;
+                }
             }
 
             return LogicResult.None;
+        }
+
+        private int amountCellsFilled()
+        {
+            int counter = 0;
+            for (int x = 0; x < WIDTH; x++)
+            {
+                for (int y = 0; y < HEIGHT; y++)
+                {
+                    counter += IsValueSet(x, y) ? 1 : 0;
+                }
+            }
+            return counter;
         }
     }
 }
