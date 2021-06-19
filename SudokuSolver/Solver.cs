@@ -3032,7 +3032,7 @@ namespace SudokuSolver
         {
             for (int allowedValueCount = 2; allowedValueCount <= MAX_VALUE; allowedValueCount++)
             {
-                Tuple<int, Solver, int, int, int, StringBuilder> bestContradiction = null; // countChanges, solver, x, y, value, formattedContradictionReason
+                ContradictionResult bestContradiction = null;
                 for (int i = 0; i < HEIGHT; i++)
                 {
                     for (int j = 0; j < WIDTH; j++)
@@ -3087,10 +3087,10 @@ namespace SudokuSolver
                                         }
                                         if (!DisableContradictions)
                                         {
-                                            int changes = boardCopy.amountCellsFilled() - this.amountCellsFilled();
-                                            if (bestContradiction == null || changes < bestContradiction.Item1)
+                                            int changes = boardCopy.AmountCellsFilled() - this.AmountCellsFilled();
+                                            if (bestContradiction == null || changes < bestContradiction.Changes)
                                             {
-                                                bestContradiction = Tuple.Create(changes, boardCopy, i, j, v, formattedContraditionReason);
+                                                bestContradiction = new ContradictionResult(changes, boardCopy, i, j, v, formattedContraditionReason);
                                             }
                                         }
                                     }
@@ -3101,21 +3101,16 @@ namespace SudokuSolver
                 }
                 if (bestContradiction != null)
                 {
-                    int i = bestContradiction.Item3;
-                    int j = bestContradiction.Item4;
-                    int v = bestContradiction.Item5;
-                    StringBuilder formattedContraditionReason = bestContradiction.Item6;
-
-                    stepDescription?.Append($"Setting {CellName(i, j)} to {v} causes a contradiction:")
+                    stepDescription?.Append($"Setting {CellName(bestContradiction.I, bestContradiction.J)} to {bestContradiction.V} causes a contradiction:")
                                     .AppendLine()
-                                    .Append(formattedContraditionReason);
+                                    .Append(bestContradiction.FormattedContraditionReason);
 
-                    if (!ClearValue(i, j, v))
+                    if (!ClearValue(bestContradiction.I, bestContradiction.J, bestContradiction.V))
                     {
                         if (stepDescription != null)
                         {
                             stepDescription.AppendLine();
-                            stepDescription.Append($"This clears the last candidate from {CellName(i, j)}.");
+                            stepDescription.Append($"This clears the last candidate from {CellName(bestContradiction.I, bestContradiction.J)}.");
                         }
                         return LogicResult.Invalid;
                     }
@@ -3126,17 +3121,26 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
-        private int amountCellsFilled()
+        private int AmountCellsFilled()
         {
             int counter = 0;
-            for (int x = 0; x < WIDTH; x++)
+            for (int i = 0; i < HEIGHT; i++)
             {
-                for (int y = 0; y < HEIGHT; y++)
+                for (int j = 0; j < WIDTH; j++)
                 {
-                    counter += IsValueSet(x, y) ? 1 : 0;
+                    counter += IsValueSet(i, j) ? 1 : 0;
                 }
             }
             return counter;
         }
+
+        private record ContradictionResult
+        (
+            int Changes,
+            Solver BoardCopy,
+            int I,
+            int J,
+            int V,
+            StringBuilder FormattedContraditionReason);
     }
 }
