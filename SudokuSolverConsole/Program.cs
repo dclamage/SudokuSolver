@@ -202,7 +202,7 @@ namespace SudokuSolverConsole
                     {
                         solver = SolverFactory.CreateFromGivens(givens, constraints);
                     }
-                    catch (WrongLengthGivensException e)
+                    catch (WrongLengthGivensException)
                     {
                         Console.WriteLine($"Tried to parse givens string with invalid length. By adding or removing from the end we found this to be our best guess for your intention:");
 
