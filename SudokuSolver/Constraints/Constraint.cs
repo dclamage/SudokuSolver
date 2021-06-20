@@ -122,6 +122,14 @@ namespace SudokuSolver.Constraints
         public virtual List<(int, int)> Group => null;
 
         /// <summary>
+        /// Returns a list of cells which must contain the given value.
+        /// </summary>
+        /// <param name="sudokuSolver">The solver.</param>
+        /// <param name="value">The value which must by contained</param>
+        /// <returns>A list of cells which must contain that value, or null if none.</returns>
+        public virtual List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => null;
+
+        /// <summary>
         /// Useful for constraints that just need to enforce seen cells.
         /// </summary>
         /// <param name="sudokuSolver"></param>

@@ -122,6 +122,7 @@ namespace SudokuSolver.Constraints
                 LogicResult clearResult = sudokuSolver.ClearMask(nextCell.Item1, nextCell.Item2, clearMask);
                 if (clearResult == LogicResult.Invalid)
                 {
+                    logicalStepDescription?.Append($"{CellName(nextCell)} has no more valid candidates.");
                     return LogicResult.Invalid;
                 }
                 if (clearResult == LogicResult.Changed)

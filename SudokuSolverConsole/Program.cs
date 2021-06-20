@@ -19,8 +19,9 @@ namespace SudokuSolverConsole
 #if false
             args = new string[]
             {
-                @"-f=N4IgzglgXgpiBcBOANCALhNAbO8QBUAnCABxwAJ8ALQmAQzRFToFc0qB7QhEADw4B2MACbk6A0QEUIArC15MQhFjjAxGeAHJcAtnSzkAgoUIcA7uWWqxJMgE8AOgIDaAEQgBzTGDFZBH8nYYMRNzcjAWHUCOQKpggUiAIxhCchlY4IBjCEJMnAA6cgBJADMxcmzciggfNDMYzJgsLB8/AQ9kNLQ0n1o6UTofOkD68mFPTHIEnWTUktMonBLutBjiDyo0AF0nJ0UPYmEEZ2dgAF9kc8uLq9uQADd9FlwARlQve5gBBDRlGBuAdctshToDbmCIUCQeDrrCYfCzsDQXDIQioci0ZiAUisSi8eccaiiSjCfjieCcQ8nrgAEzvCCfb7wX7PclsrbAkB0UJmY6gLAyGBgY7OEAAJReAGEAByKMU0yUAdjlAGZJQA2OUAFklAFY5brJVq5erJSqQBzUI1msL4KKJTK5VLEBabiABUJbSdxQrZagxWrlf6dZr/Yb9f7Tcb/YqzRbOdaWscfY7/QqXVs3R6hSLxWq/eKdUHxYbQ+LTRHxbHo+LpXHLSBE1686mWxms4Kvfa65WxXWy32lXLEK3BxmE00k3ba3rXZd3Z3cw6aXKFeb/WqV8HJS8DZKt+Wd3LY7v/XWVw2m8mHafxVKLx3PUvYwPTcWxYaC2KdeOrZPm2KL5zvyi52vaaq9gqNYBnGG5GvGf42teEGupmQA",
+                @"-f=N4IgzglgXgpiBcBOANCALhNAbO8QFEATQiGMEVAQwFc0ALAewCcEQBFBwmAYwpCeo4wMNKwByzALaUsAAjDVCDANbVZAobMoAHbVgCeAOgA6AOzMBBJkwYB3MPFkARCAHNMYLVganXW01rWdrIQAfQwsq5MEISyktRgaPLUkrJoDGl0ESTuSaEhaJ7cEEzcOIbObh5xlPrqMNowlEkyPn6UAZRBtibmpgDyxAD0MABuMKaOAMIwWFietph0/rIM2pQAjtQRUTB1xaU4cQlJAEYRnIQVM3MLSytrm9uRTHvyW10R8Ymy57JjE16fCiMQQAG0wcAAL7IaGwmFwxEI5HwgC6yEhKKR8Jx2Oh6MxuKxxKJBLxJPJaIxlJpxLJFIZpOpjNpVMJrNp9KJ3M56JAl3BoG4sywrAASgAWKYSkAIkDCubiqUANllsPlIvFyqmqrlCtFeDF2plUL5ANMgo1isNAA4pja1ULNYaAEz2x1Wg0gMVul0e/Xiu1+01UbqWrChMjgsHegDMUwArHwfYnkwBGVOovn68jwGNi+NJ1FyiOmKN5/MJqax5NVv2oMVVtMgLOoHPg71VmvF9Wl8sQztTADstfdDariBb2ZFucrw5bJcjs/zQ9TDbtSYbiEz09uHbFq6Li7Ly+9q8n66mF+92+vYu3DtbntnZ6vC97S+jr+bl5/N6m9bena3a7vM+6rs2PagH2p4FlMf4pghGZ+k+7Z5nG8HvtBn4VhhDoNm6I4Nhmj6gS+cGPse/b5vGNYNvGMoNlKm6DkWGIYXR3puox3oZjKqEzvutFYSAMFfkaAHJquIFtoJ6ESShppQkAA==",
                 //"-b=9",
+                //"-c=renban:r1-6c1",
                 //"-c=chess:v1,2,3,4,5,6,7;1,1;2,2;3,3;4,4;5,5;6,6;7,7;8,8",
                 //"-c=ratio:neg2",
                 //"-c=difference:neg1",
@@ -28,7 +29,7 @@ namespace SudokuSolverConsole
                 //"-o=candidates.txt",
                 //"-uv",
                 //"-st",
-                "-pts",
+                "-ps",
             };
 #endif
 

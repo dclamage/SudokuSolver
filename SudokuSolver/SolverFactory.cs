@@ -517,6 +517,25 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.renban != null)
+            {
+                foreach (var renban in fpuzzlesData.renban)
+                {
+                    foreach (var line in renban.lines)
+                    {
+                        StringBuilder cells = new();
+                        foreach (var cell in line)
+                        {
+                            if (!string.IsNullOrWhiteSpace(cell))
+                            {
+                                cells.Append(cell);
+                            }
+                        }
+                        solver.AddConstraint(typeof(RenbanConstraint), cells.ToString());
+                    }
+                }
+            }
+
             if (fpuzzlesData.betweenline != null)
             {
                 foreach (var betweenline in fpuzzlesData.betweenline)
@@ -972,6 +991,13 @@ namespace SudokuSolver
                 palindrome.Add(new(new string[][] { cells }));
             }
 
+            List<FPuzzlesLines> renban = new();
+            foreach (var c in solver.Constraints<RenbanConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                renban.Add(new(new string[][] { cells }));
+            }
+
             List<FPuzzlesCells> difference = new();
             foreach (var marker in solver.Constraints<DifferenceConstraint>().SelectMany(c => c.markers))
             {
@@ -1075,6 +1101,7 @@ namespace SudokuSolver
                 extraregion: extraregion.ToArray(),
                 thermometer: thermometer.ToArray(),
                 palindrome: palindrome.ToArray(),
+                renban: renban.ToArray(),
                 difference: difference.ToArray(),
                 xv: xv.ToArray(),
                 ratio: ratio.ToArray(),

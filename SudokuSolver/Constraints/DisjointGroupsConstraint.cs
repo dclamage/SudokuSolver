@@ -25,28 +25,22 @@ namespace SudokuSolver.Constraints
     public class DisjointGroupConstraint : Constraint
     {
         private readonly int groupIndex = 0;
-        private List<(int, int)> group = null;
+        private readonly List<(int, int)> group = new();
 
         public DisjointGroupConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
             groupIndex = int.Parse(options) - 1;
+            InitGroup(sudokuSolver);
         }
 
         public DisjointGroupConstraint(Solver sudokuSolver, int groupIndex) : base(sudokuSolver)
         {
             this.groupIndex = groupIndex;
+            InitGroup(sudokuSolver);
         }
 
-        public override string SpecificName => $"Disjoint Group {groupIndex + 1}";
-
-        public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true;
-
-        public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing) => LogicResult.None;
-
-        public override LogicResult InitCandidates(Solver sudokuSolver)
+        protected void InitGroup(Solver sudokuSolver)
         {
-            group = new(WIDTH);
-
             var regions = sudokuSolver.Regions;
             int[] numSeen = new int[WIDTH];
             for (int i = 0; i < HEIGHT; i++)
@@ -60,8 +54,15 @@ namespace SudokuSolver.Constraints
                     }
                 }
             }
-            return LogicResult.None;
         }
+
+        public override string SpecificName => $"Disjoint Group {groupIndex + 1}";
+
+        public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true;
+
+        public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing) => LogicResult.None;
+
+        public override LogicResult InitCandidates(Solver sudokuSolver) => LogicResult.None;
 
         public override List<(int, int)> Group => group;
     }

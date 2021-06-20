@@ -13,7 +13,7 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver
 {
-    public record SudokuGroup(string Name, List<(int, int)> Cells)
+    public record SudokuGroup(string Name, List<(int, int)> Cells, Constraint FromConstraint)
     {
         public override string ToString() => Name;
     }
@@ -308,7 +308,7 @@ namespace SudokuSolver
                 {
                     cells.Add((i, j));
                 }
-                SudokuGroup group = new($"Row {i + 1}", cells);
+                SudokuGroup group = new($"Row {i + 1}", cells, null);
                 Groups.Add(group);
                 InitMapForGroup(group);
             }
@@ -321,7 +321,7 @@ namespace SudokuSolver
                 {
                     cells.Add((i, j));
                 }
-                SudokuGroup group = new($"Column {j + 1}", cells);
+                SudokuGroup group = new($"Column {j + 1}", cells, null);
                 Groups.Add(group);
                 InitMapForGroup(group);
             }
@@ -340,7 +340,7 @@ namespace SudokuSolver
                         }
                     }
                 }
-                SudokuGroup group = new($"Region {region + 1}", cells);
+                SudokuGroup group = new($"Region {region + 1}", cells, null);
                 Groups.Add(group);
                 InitMapForGroup(group);
             }
@@ -439,7 +439,7 @@ namespace SudokuSolver
                 var cells = constraint.Group;
                 if (cells != null)
                 {
-                    SudokuGroup group = new(constraint.SpecificName, cells.ToList());
+                    SudokuGroup group = new(constraint.SpecificName, cells.ToList(), constraint);
                     Groups.Add(group);
                     InitMapForGroup(group);
                 }
@@ -819,7 +819,7 @@ namespace SudokuSolver
             isInSetValue = true;
 
             LogicResult result = LogicResult.None;
-            uint curMask = board[i, j];
+            uint curMask = board[i, j] & ~valueSetMask;
             uint newMask = curMask & mask;
             if (newMask != curMask)
             {
@@ -2287,7 +2287,7 @@ namespace SudokuSolver
         {
             foreach (var group in Groups)
             {
-                if (group.Cells.Count != MAX_VALUE)
+                if (group.Cells.Count != MAX_VALUE && group.FromConstraint == null)
                 {
                     continue;
                 }
@@ -2299,8 +2299,18 @@ namespace SudokuSolver
                         continue;
                     }
 
-                    (int, int)[] cellsWithValue = group.Cells.Where(cell => HasValue(board[cell.Item1, cell.Item2], v)).ToArray();
-                    if (cellsWithValue.Length <= 1 || cellsWithValue.Length > 3)
+                    List<(int, int)> cellsFromConstraint = null;
+                    if (group.Cells.Count != MAX_VALUE && group.FromConstraint != null)
+                    {
+                        cellsFromConstraint = group.FromConstraint.CellsMustContain(this, v);
+                        if (cellsFromConstraint == null)
+                        {
+                            continue;
+                        }
+                    }
+
+                    (int, int)[] cellsWithValue = cellsFromConstraint?.ToArray() ?? group.Cells.Where(cell => HasValue(board[cell.Item1, cell.Item2], v)).ToArray();
+                    if (cellsWithValue.Length <= 1)
                     {
                         continue;
                     }
