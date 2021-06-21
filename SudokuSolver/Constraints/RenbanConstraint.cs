@@ -261,13 +261,19 @@ namespace SudokuSolver.Constraints
                 {
                     if (logicalStepDescription != null)
                     {
-                        logicalStepDescription.Append($"Cleared values ");
+                        logicalStepDescription.Append($"Cleared values");
+                        bool first = true;
                         for (int cellIndex = 0; cellIndex < numUnsetCells; cellIndex++)
                         {
                             if (clearedMasks[cellIndex] != 0)
                             {
                                 var cell = unsetCells[cellIndex];
-                                logicalStepDescription.Append($"{ MaskToString(clearedMasks[cellIndex])} from {CellName(cell)}");
+                                if (!first)
+                                {
+                                    logicalStepDescription.Append(';');
+                                }
+                                logicalStepDescription.Append($" {MaskToString(clearedMasks[cellIndex])} from {CellName(cell)}");
+                                first = false;
                             }
                         }
                     }

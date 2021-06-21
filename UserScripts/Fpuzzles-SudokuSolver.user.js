@@ -299,8 +299,8 @@
             return '#' + colorStr.substr(colorStr.length - 6);
         };
 
-        const baselineColor = "#000000";
-        const zeroSolutionColor = "#CC0000";
+        const baseSolutionColor = "#000000";
+        const logicalSolutionColor = "#CC0000";
         const oneSolutionColor = "#299b20";
         const twoSolutionColor = 0xAFAFFF;
         const eightSolutionColor = 0x0000FF;
@@ -308,11 +308,11 @@
             if (!cell.centerPencilMarkColors) {
                 cell.centerPencilMarkColors = [];
             }
-            let curColor = oneSolutionColor;
+            let curColor = baseSolutionColor;
             if (numSolutions < 0) {
-                curColor = baselineColor;
-            } else if (numSolutions === 0) {
-                curColor = zeroSolutionColor;
+                curColor = logicalSolutionColor;
+            } else if (numSolutions === 1) {
+                curColor = oneSolutionColor;
             } else if (numSolutions > 1) {
                 curColor = lerpColor(twoSolutionColor, eightSolutionColor, Math.min(6, numSolutions - 2) / 6);
             }
@@ -335,13 +335,19 @@
                         const cellIndex = i * size + j;
                         const candidates = [];
                         for (let candidateIndex = 0; candidateIndex < size; candidateIndex++) {
-                            const numSolutions = solutions[cellIndex * size + candidateIndex];
+                            let numSolutions = solutions[cellIndex * size + candidateIndex];
                             if (numSolutions !== 0) {
                                 candidates.push(candidateIndex + 1);
-                                if (colored) {
-                                    setCenterMarkColor(cell, numSolutions, candidateIndex);
+
+                                if (!colored && numSolutions > 0) {
+                                    numSolutions = 0;
                                 }
+                                setCenterMarkColor(cell, numSolutions, candidateIndex);
                             }
+                        }
+
+                        if (cell.centerPencilMarkColors && cell.centerPencilMarkColors.every(c => c === baseSolutionColor)) {
+                            cell.centerPencilMarkColors = null;
                         }
 
                         cell.value = 0;
@@ -952,35 +958,14 @@
                 puzzle.truecandidatesoptions.push('logical');
             }
 
-            // Add cosmetic version of renban for those not using the solver plugin
-            if (puzzle.renban && puzzle.renban.length > 0) {
-                if (!puzzle.line) {
-                    puzzle.line = [];
-                }
-                for (let renban of puzzle.renban) {
-                    puzzle.line.push({
-                        lines: renban.lines,
-                        outlineC: '#C060C0',
-                        width: 0.4,
-                        fromRangskSolver: true
-                    });
-                }
-            }
-
             return compressor.compressToBase64(JSON.stringify(puzzle));
         }
 
         const origImportPuzzle = importPuzzle;
         importPuzzle = function(string, clearHistory) {
-            // Remove any generated cosmetics
-            const puzzle = JSON.parse(compressor.decompressFromBase64(string));
-            if (puzzle.line) {
-                puzzle.line = puzzle.line.filter(line => !line.fromRangskSolver);
-            }
-
-            string = compressor.compressToBase64(JSON.stringify(puzzle));
             origImportPuzzle(string, clearHistory);
 
+            const puzzle = JSON.parse(compressor.decompressFromBase64(string));
             for (let i = 0; i < size; i++) {
                 for (let j = 0; j < size; j++) {
                     if (puzzle.grid[i][j].givenPencilMarks && puzzle.grid[i][j].givenPencilMarks.length > 0) {
@@ -994,205 +979,6 @@
                 resetKnownPuzzleInformation();
                 clearChangeHistory();
             }
-        }
-
-        // New constraints
-        const origDrawConstraints = drawConstraints;
-        drawConstraints = function(layer) {
-            if (layer === 'Bottom') {
-                for (var a = 0; a < constraints[cID('Renban')].length; a++) {
-                    constraints[cID('Renban')][a].show();
-                }
-            }
-            origDrawConstraints(layer);
-        }
-
-        const origCandidatePossibleInCell = candidatePossibleInCell;
-        candidatePossibleInCell = function(n, cell, options) {
-            if (!options) {
-                options = {};
-            }
-            if (!options.bruteForce && cell.value) {
-                return cell.value === n;
-            }
-
-            if (!origCandidatePossibleInCell(n, cell, options)) {
-                return false;
-            }
-
-            for (let renban of constraints[cID('Renban')]) {
-                for (let line of renban.lines) {
-                    const index = line.indexOf(cell);
-                    if (index > -1) {
-                        let numMatchingValue = 0;
-                        let minValue = -1;
-                        let maxValue = -1;
-                        for (let cell of line) {
-                            if (cell.value) {
-                                minValue = minValue === -1 || minValue > cell.value ? cell.value : minValue;
-                                maxValue = maxValue === -1 || maxValue < cell.value ? cell.value : maxValue;
-                                if (cell.value === n) {
-                                    numMatchingValue++;
-                                    if (numMatchingValue > 1) {
-                                        return false;
-                                    }
-                                }
-                            }
-                        }
-                        if (minValue !== -1 && maxValue !== -1) {
-                            if (n - minValue > line.length - 1 || maxValue - n > line.length - 1) {
-                                return false;
-                            }
-                        }
-                    }
-                }
-            }
-
-            return true;
-        }
-
-        window.renban = function(cell) {
-            this.lines = [
-                [cell]
-            ];
-
-            this.show = function() {
-                for (var a = 0; a < this.lines.length; a++) {
-                    ctx.lineWidth = cellSL * 0.2;
-                    ctx.fillStyle = boolSettings['Dark Mode'] ? '#603060' : '#C060C0';
-                    ctx.strokeStyle = boolSettings['Dark Mode'] ? '#603060' : '#C060C0';
-                    ctx.beginPath();
-                    ctx.arc(this.lines[a][0].x + cellSL / 2, this.lines[a][0].y + cellSL / 2, ctx.lineWidth / 2, 0, Math.PI * 2);
-                    ctx.fill();
-                    ctx.beginPath();
-                    ctx.moveTo(this.lines[a][0].x + cellSL / 2, this.lines[a][0].y + cellSL / 2);
-                    for (var b = 1; b < this.lines[a].length; b++)
-                        ctx.lineTo(this.lines[a][b].x + cellSL / 2, this.lines[a][b].y + cellSL / 2);
-                    ctx.stroke();
-                    ctx.beginPath();
-                    ctx.arc(this.lines[a][this.lines[a].length - 1].x + cellSL / 2, this.lines[a][this.lines[a].length - 1].y + cellSL / 2, ctx.lineWidth / 2, 0, Math.PI * 2);
-                    ctx.fill();
-                }
-            }
-
-            this.addCellToLine = function(cell) {
-                if (this.lines[this.lines.length - 1].length < size) {
-                    this.lines[this.lines.length - 1].push(cell);
-                }
-            }
-        }
-
-        const origCategorizeTools = categorizeTools;
-        categorizeTools = function() {
-            origCategorizeTools();
-            toolConstraints.splice(toolConstraints.indexOf('Thermometer') + 1, 0, 'Renban');
-            lineConstraints.splice(lineConstraints.indexOf('Thermometer') + 1, 0, 'Renban');
-
-            draggableConstraints = [...new Set([...lineConstraints, ...regionConstraints])];
-            multicellConstraints = [...new Set([...lineConstraints, ...regionConstraints, ...borderConstraints, ...cornerConstraints])];
-            betweenCellConstraints = [...borderConstraints, ...cornerConstraints];
-            allConstraints = [...boolConstraints, ...toolConstraints];
-            tools = [...toolConstraints, ...toolCosmetics];
-            selectableTools = [...selectableConstraints, ...selectableCosmetics];
-            lineTools = [...lineConstraints, ...lineCosmetics];
-            regionTools = [...regionConstraints, ...regionCosmetics];
-            diagonalRegionTools = [...diagonalRegionConstraints, ...diagonalRegionCosmetics];
-            outsideTools = [...outsideConstraints, ...outsideCosmetics];
-            outsideCornerTools = [...outsideCornerConstraints, ...outsideCornerCosmetics];
-            oneCellAtATimeTools = [...perCellConstraints, ...draggableConstraints, ...draggableCosmetics];
-            draggableTools = [...draggableConstraints, ...draggableCosmetics];
-            multicellTools = [...multicellConstraints, ...multicellCosmetics];
-        }
-
-        descriptions['Renban'] = [
-            'Numbers on a renban line must be consecutive, but in any order.',
-            'Digits cannot repeat on a renban line.',
-            '',
-            'Click and drag to draw a renban line.',
-            'Click on a renban line to remove it.',
-            'Shift click and drag to draw overlapping renban lines.',
-        ];
-
-        getPuzzleTitle = function() {
-            var title = '';
-
-            ctx.font = titleLSize + 'px Arial';
-
-            if (customTitle.length) {
-                title = customTitle;
-            } else {
-                if (size !== 9)
-                    title += size + 'x' + size + ' ';
-                if (getCells().some(a => a.region !== (Math.floor(a.i / regionH) * regionH) + Math.floor(a.j / regionW)))
-                    title += 'Irregular ';
-                if (constraints[cID('Extra Region')].length)
-                    title += 'Extra-Region ';
-                if (constraints[cID('Odd')].length && !constraints[cID('Even')].length)
-                    title += 'Odd ';
-                if (!constraints[cID('Odd')].length && constraints[cID('Even')].length)
-                    title += 'Even ';
-                if (constraints[cID('Odd')].length && constraints[cID('Even')].length)
-                    title += 'Odd-Even ';
-                if (constraints[cID('Diagonal +')] !== constraints[cID('Diagonal -')])
-                    title += 'Single-Diagonal ';
-                if (constraints[cID('Nonconsecutive')] && !(constraints[cID('Difference')].length && constraints[cID('Difference')].some(a => ['', '1'].includes(a.value))) && !constraints[cID('Ratio')].negative)
-                    title += 'Nonconsecutive ';
-                if (constraints[cID('Nonconsecutive')] && constraints[cID('Difference')].length && constraints[cID('Difference')].some(a => ['', '1'].includes(a.value)) && !constraints[cID('Ratio')].negative)
-                    title += 'Consecutive ';
-                if (!constraints[cID('Nonconsecutive')] && constraints[cID('Difference')].length && constraints[cID('Difference')].every(a => ['', '1'].includes(a.value)))
-                    title += 'Consecutive-Pairs ';
-                if (constraints[cID('Antiknight')])
-                    title += 'Antiknight ';
-                if (constraints[cID('Antiking')])
-                    title += 'Antiking ';
-                if (constraints[cID('Disjoint Groups')])
-                    title += 'Disjoint-Group ';
-                if (constraints[cID('XV')].length || constraints[cID('XV')].negative)
-                    title += 'XV ' + (constraints[cID('XV')].negative ? '(-) ' : '');
-                if (constraints[cID('Little Killer Sum')].length)
-                    title += 'Little Killer ';
-                if (constraints[cID('Sandwich Sum')].length)
-                    title += 'Sandwich ';
-                if (constraints[cID('Thermometer')].length)
-                    title += 'Thermo ';
-                if (constraints[cID('Renban')].length)
-                    title += 'Renban ';
-                if (constraints[cID('Palindrome')].length)
-                    title += 'Palindrome ';
-                if (constraints[cID('Difference')].length && constraints[cID('Difference')].some(a => !['', '1'].includes(a.value)) && !(constraints[cID('Nonconsecutive')] && constraints[cID('Ratio')].negative))
-                    title += 'Difference ';
-                if ((constraints[cID('Ratio')].length || constraints[cID('Ratio')].negative) && !(constraints[cID('Nonconsecutive')] && constraints[cID('Ratio')].negative))
-                    title += 'Ratio ' + (constraints[cID('Ratio')].negative ? '(-) ' : '');;
-                if (constraints[cID('Nonconsecutive')] && constraints[cID('Ratio')].negative)
-                    title += 'Kropki ';
-                if (constraints[cID('Killer Cage')].length)
-                    title += 'Killer ';
-                if (constraints[cID('Clone')].length)
-                    title += 'Clone ';
-                if (constraints[cID('Arrow')].length)
-                    title += 'Arrow ';
-                if (constraints[cID('Between Line')].length)
-                    title += 'Between ';
-                if (constraints[cID('Quadruple')].length)
-                    title += 'Quadruples '
-                if (constraints[cID('Minimum')].length || constraints[cID('Maximum')].length)
-                    title += 'Extremes '
-
-                title += 'Sudoku';
-
-                if (constraints[cID('Diagonal +')] && constraints[cID('Diagonal -')])
-                    title += ' X';
-
-                if (title === 'Sudoku')
-                    title = 'Classic Sudoku';
-
-                if (ctx.measureText(title).width > (canvas.width - connectButtonOffset * 2 - 80))
-                    title = 'Extreme Variant Sudoku';
-            }
-
-            buttons[buttons.findIndex(a => a.id === 'EditInfo')].x = canvas.width / 2 + ctx.measureText(title).width / 2 + 40;
-
-            return title;
         }
     }
 

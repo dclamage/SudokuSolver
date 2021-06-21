@@ -47,6 +47,7 @@ namespace SudokuSolver.PuzzleFormats
         FPuzzlesLines[] thermometer,
         FPuzzlesLines[] palindrome,
         FPuzzlesLines[] renban,
+        FPuzzlesLines[] whispers,
         FPuzzlesCells[] difference,
         FPuzzlesCells[] xv,
         FPuzzlesCells[] ratio,
