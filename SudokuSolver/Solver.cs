@@ -2111,7 +2111,7 @@ namespace SudokuSolver
             {
                 var groupCells = group.Cells;
                 int numCells = group.Cells.Count;
-                if (numCells != MAX_VALUE)
+                if (numCells != MAX_VALUE && group.FromConstraint == null)
                 {
                     continue;
                 }
@@ -2157,7 +2157,7 @@ namespace SudokuSolver
                     }
                 }
 
-                if (zeroValIndex >= 0)
+                if (zeroValIndex >= 0 && numCells == MAX_VALUE)
                 {
                     if (stepDescription != null)
                     {
@@ -2170,31 +2170,46 @@ namespace SudokuSolver
                 if (singleValIndex >= 0)
                 {
                     int val = singleValIndex + 1;
-                    uint valMask = 1u << singleValIndex;
-                    int vali = 0;
-                    int valj = 0;
-                    foreach (var (i, j) in group.Cells)
+                    int vali = -1;
+                    int valj = -1;
+                    if (numCells == MAX_VALUE)
                     {
-                        uint mask = board[i, j];
-                        if ((board[i, j] & valMask) != 0)
+                        uint valMask = 1u << singleValIndex;
+                        foreach (var (i, j) in group.Cells)
                         {
-                            vali = i;
-                            valj = j;
-                            break;
+                            uint mask = board[i, j];
+                            if ((board[i, j] & valMask) != 0)
+                            {
+                                vali = i;
+                                valj = j;
+                                break;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        List<(int, int)> cellsMustContain = group.FromConstraint?.CellsMustContain(this, val);
+                        if (cellsMustContain != null && cellsMustContain.Count == 1)
+                        {
+                            vali = cellsMustContain[0].Item1;
+                            valj = cellsMustContain[0].Item2;
                         }
                     }
 
-                    if (!SetValue(vali, valj, val))
+                    if (vali >= 0)
                     {
-                        if (stepDescription != null)
+                        if (!SetValue(vali, valj, val))
                         {
-                            stepDescription.Clear();
-                            stepDescription.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}, but it cannot be set to that value.");
+                            if (stepDescription != null)
+                            {
+                                stepDescription.Clear();
+                                stepDescription.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}, but it cannot be set to that value.");
+                            }
+                            return LogicResult.Invalid;
                         }
-                        return LogicResult.Invalid;
+                        stepDescription?.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}");
+                        return LogicResult.Changed;
                     }
-                    stepDescription?.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}");
-                    return LogicResult.Changed;
                 }
             }
             return finalFindResult;
