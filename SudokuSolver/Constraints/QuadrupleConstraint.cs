@@ -14,11 +14,11 @@ namespace SudokuSolver.Constraints
         private readonly HashSet<(int, int)> cellsLookup;
         public readonly uint requiredMask = 0;
         private readonly int numRequiredValues;
-        private bool isGroup = false;
+        private List<(int, int)> groupCells = null;
 
         public override string SpecificName => $"Quadruple at {CellName(cells[0])}";
 
-        public override List<(int, int)> Group => isGroup ? cells : null;
+        public override List<(int, int)> Group => groupCells;
 
         public QuadrupleConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
         {
@@ -56,14 +56,14 @@ namespace SudokuSolver.Constraints
             }
 
             var board = sudokuSolver.Board;
-            int numCellsSupportingValues = 0;
             uint availableMask = 0;
+            List<(int, int)> possibleCells = new();
             foreach (var (i, j) in cells)
             {
                 uint cellMask = board[i, j];
                 if ((cellMask & requiredMask) != 0)
                 {
-                    numCellsSupportingValues++;
+                    possibleCells.Add((i, j));
                 }
                 availableMask |= cellMask;
             }
@@ -73,15 +73,15 @@ namespace SudokuSolver.Constraints
                 return LogicResult.Invalid;
             }
 
-            if (numCellsSupportingValues < numRequiredValues)
+            if (possibleCells.Count < numRequiredValues)
             {
                 return LogicResult.Invalid;
             }
 
             bool changed = false;
-            if (numCellsSupportingValues == numRequiredValues)
+            if (possibleCells.Count == numRequiredValues)
             {
-                foreach (var (i, j) in cells)
+                foreach (var (i, j) in possibleCells)
                 {
                     uint clearMask = ~requiredMask & ALL_VALUES_MASK;
                     var clearResult = sudokuSolver.ClearMask(i, j, clearMask);
@@ -91,7 +91,7 @@ namespace SudokuSolver.Constraints
                     }
                     changed |= clearResult == LogicResult.Changed;
                 }
-                isGroup = true;
+                groupCells = possibleCells;
             }
             return changed ? LogicResult.Changed : LogicResult.None;
         }
@@ -145,8 +145,8 @@ namespace SudokuSolver.Constraints
             }
             int numRemainingRequired = ValueCount(remainingRequiredMask);
 
-            int numCellsSupportingValues = 0;
             uint availableMask = 0;
+            List<(int, int)> possibleCells = new();
             foreach (var (i, j) in cells)
             {
                 uint cellMask = board[i, j];
@@ -157,7 +157,7 @@ namespace SudokuSolver.Constraints
 
                 if ((cellMask & remainingRequiredMask) != 0)
                 {
-                    numCellsSupportingValues++;
+                    possibleCells.Add((i, j));
                 }
                 availableMask |= cellMask;
             }
@@ -168,46 +168,43 @@ namespace SudokuSolver.Constraints
                 return LogicResult.Invalid;
             }
 
-            if (numCellsSupportingValues < numRemainingRequired)
+            if (possibleCells.Count < numRemainingRequired)
             {
                 logicalStepDescription?.Append($"Can no longer fulfill all required values.");
                 return LogicResult.Invalid;
             }
 
-            if (numCellsSupportingValues == numRemainingRequired)
+            if (possibleCells.Count == numRemainingRequired)
             {
                 bool changed = false;
-                foreach (var (i, j) in cells)
+                foreach (var (i, j) in possibleCells)
                 {
                     uint cellMask = board[i, j];
-                    if (!IsValueSet(cellMask) && (cellMask & remainingRequiredMask) != 0)
+                    var result = sudokuSolver.ClearMask(i, j, ~remainingRequiredMask);
+                    if (result == LogicResult.Invalid)
                     {
-                        var result = sudokuSolver.ClearMask(i, j, ~remainingRequiredMask);
-                        if (result == LogicResult.Invalid)
+                        if (logicalStepDescription != null)
                         {
-                            if (logicalStepDescription != null)
-                            {
-                                logicalStepDescription.Clear();
-                                logicalStepDescription.Append($"{CellName(i, j)} must be one of the remaining quadruple values {MaskToString(remainingRequiredMask)} but it cannot be those values.");
-                            }
-                            return LogicResult.Invalid;
+                            logicalStepDescription.Clear();
+                            logicalStepDescription.Append($"{CellName(i, j)} must be one of the remaining quadruple values {MaskToString(remainingRequiredMask)} but it cannot be those values.");
                         }
+                        return LogicResult.Invalid;
+                    }
 
-                        if (result == LogicResult.Changed)
+                    if (result == LogicResult.Changed)
+                    {
+                        if (logicalStepDescription != null)
                         {
-                            if (logicalStepDescription != null)
+                            if (changed)
                             {
-                                if (changed)
-                                {
-                                    logicalStepDescription.Append($"The remaining value{(numRemainingRequired != 1 ? "s" : "")} {MaskToString(remainingRequiredMask)} must be in {CellName(i, j)}");
-                                }
-                                else
-                                {
-                                    logicalStepDescription.Append($", {CellName(i, j)}");
-                                }
+                                logicalStepDescription.Append($"The remaining value{(numRemainingRequired != 1 ? "s" : "")} {MaskToString(remainingRequiredMask)} must be in {CellName(i, j)}");
                             }
-                            changed = true;
+                            else
+                            {
+                                logicalStepDescription.Append($", {CellName(i, j)}");
+                            }
                         }
+                        changed = true;
                     }
                 }
 
