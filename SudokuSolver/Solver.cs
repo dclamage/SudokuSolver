@@ -446,6 +446,10 @@ namespace SudokuSolver
             }
 
             smallGroupsBySize = Groups.Where(g => g.Cells.Count < MAX_VALUE).OrderBy(g => g.Cells.Count).ToList();
+            if (smallGroupsBySize.Count == 0)
+            {
+                smallGroupsBySize = null;
+            }
 
             seenMap = new bool[HEIGHT, WIDTH, HEIGHT, WIDTH, MAX_VALUE + 1];
             for (int i0 = 0; i0 < HEIGHT; i0++)
@@ -802,7 +806,7 @@ namespace SudokuSolver
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool SetMask(int i, int j,  IEnumerable<int> values)
+        public bool SetMask(int i, int j, IEnumerable<int> values)
         {
             return SetMask(i, j, values.ToArray());
         }
@@ -852,7 +856,7 @@ namespace SudokuSolver
             return result;
         }
 
-        private (int, int) GetLeastCandidateCell(bool[] ignoreCell = null)
+        private (int, int, int) GetLeastCandidateCell(bool[] ignoreCell = null)
         {
             int i = -1, j = -1;
             int numCandidates = MAX_VALUE + 1;
@@ -874,7 +878,7 @@ namespace SudokuSolver
                             int curNumCandidates = ValueCount(board[x, y]);
                             if (curNumCandidates == 2)
                             {
-                                return (x, y);
+                                return (x, y, 0);
                             }
                             if (curNumCandidates < numCandidates)
                             {
@@ -888,60 +892,25 @@ namespace SudokuSolver
                 }
                 if (i != -1)
                 {
-                    return (i, j);
+                    return (i, j, 0);
                 }
             }
 
-            for (int x = 0; x < HEIGHT; x++)
+            if (ignoreCell == null)
             {
-                for (int y = 0; y < WIDTH; y++)
+                for (int x = 0; x < HEIGHT; x++)
                 {
-                    if (!IsValueSet(x, y) && (ignoreCell == null || !ignoreCell[x * WIDTH + y]))
+                    for (int y = 0; y < WIDTH; y++)
                     {
-                        int curNumCandidates = ValueCount(board[x, y]);
-                        if (curNumCandidates == 2)
-                        {
-                            return (x, y);
-                        }
-                        if (curNumCandidates < numCandidates)
-                        {
-                            numCandidates = curNumCandidates;
-                            i = x;
-                            j = y;
-                        }
-                    }
-                }
-            }
-            return (i, j);
-        }
-
-        private (int, int) GetMostCandidateCell(bool[] ignoreCell = null)
-        {
-            int i = -1, j = -1;
-            int numCandidates = 0;
-            if (smallGroupsBySize != null)
-            {
-                int lastValidGroupSize = MAX_VALUE + 1;
-                foreach (var group in smallGroupsBySize)
-                {
-                    int groupSize = group.Cells.Count;
-                    if (lastValidGroupSize < groupSize)
-                    {
-                        break;
-                    }
-
-                    foreach ((int x, int y) in group.Cells)
-                    {
-                        if (!IsValueSet(x, y) && (ignoreCell == null || !ignoreCell[x * WIDTH + y]))
+                        if (!IsValueSet(x, y))
                         {
                             int curNumCandidates = ValueCount(board[x, y]);
-                            if (curNumCandidates == MAX_VALUE)
+                            if (curNumCandidates == 2)
                             {
-                                return (x, y);
+                                return (x, y, 0);
                             }
-                            if (curNumCandidates > numCandidates)
+                            if (curNumCandidates < numCandidates)
                             {
-                                lastValidGroupSize = groupSize;
                                 numCandidates = curNumCandidates;
                                 i = x;
                                 j = y;
@@ -949,33 +918,41 @@ namespace SudokuSolver
                         }
                     }
                 }
-                if (i != -1)
-                {
-                    return (i, j);
-                }
             }
-
-            for (int x = 0; x < HEIGHT; x++)
+            else
             {
-                for (int y = 0; y < WIDTH; y++)
+                for (int x = 0; x < HEIGHT; x++)
                 {
-                    if (!IsValueSet(x, y) && (ignoreCell == null || !ignoreCell[x * WIDTH + y]))
+                    for (int y = 0; y < WIDTH; y++)
                     {
-                        int curNumCandidates = ValueCount(board[x, y]);
-                        if (curNumCandidates == MAX_VALUE)
+                        if (!IsValueSet(x, y) && !ignoreCell[x * WIDTH + y])
                         {
-                            return (x, y);
-                        }
-                        if (curNumCandidates > numCandidates)
-                        {
-                            numCandidates = curNumCandidates;
-                            i = x;
-                            j = y;
+                            int curNumCandidates = ValueCount(board[x, y]);
+                            if (curNumCandidates == 2)
+                            {
+                                return (x, y, 0);
+                            }
+                            if (curNumCandidates < numCandidates)
+                            {
+                                numCandidates = curNumCandidates;
+                                i = x;
+                                j = y;
+                            }
                         }
                     }
                 }
             }
-            return (i, j);
+
+            if (numCandidates > 2)
+            {
+                var (bi, bj, bval) = FindBilocalValue();
+                if (bval > 0)
+                {
+                    return (bi, bj, bval);
+                }
+            }
+
+            return (i, j, 0);
         }
 
         private int CellPriority(int i, int j)
@@ -1124,7 +1101,7 @@ namespace SudokuSolver
 
                 if (logicResult != LogicResult.Invalid)
                 {
-                    (int i, int j) = solver.GetLeastCandidateCell();
+                    (int i, int j, int v) = solver.GetLeastCandidateCell();
                     if (i < 0)
                     {
                         initialSolver.board = solver.board;
@@ -1132,7 +1109,7 @@ namespace SudokuSolver
                     }
 
                     // Try a possible value for this cell
-                    int val = isRandom ? GetRandomValue(solver.board[i, j]) : MinValue(solver.board[i, j]);
+                    int val = v != 0 ? v : isRandom ? GetRandomValue(solver.board[i, j]) : MinValue(solver.board[i, j]);
                     uint valMask = ValueMask(val);
 
                     // Create a backup board in case it needs to be restored
@@ -1255,7 +1232,7 @@ namespace SudokuSolver
                     break;
                 }
 
-                (int i, int j) = solver.GetLeastCandidateCell();
+                (int i, int j, int v) = solver.GetLeastCandidateCell();
                 if (i < 0)
                 {
                     state.ReportSolution(solver);
@@ -1263,7 +1240,7 @@ namespace SudokuSolver
                 }
 
                 // Try a possible value for this cell
-                int val = state.isRandom ? GetRandomValue(solver.board[i, j]) : MinValue(solver.board[i, j]);
+                int val = v != 0 ? v : state.isRandom ? GetRandomValue(solver.board[i, j]) : MinValue(solver.board[i, j]);
                 uint valMask = ValueMask(val);
 
                 // Create a backup board in case it needs to be restored
@@ -1306,7 +1283,7 @@ namespace SudokuSolver
                 {
                     Solver boardCopy = Clone();
                     boardCopy.isBruteForcing = true;
-                    boardCopy.CountSolutionsMultiThreaded(state);
+                    CountSolutionsMultiThreaded(boardCopy, state);
                     state.Wait();
                 }
                 else
@@ -1336,6 +1313,7 @@ namespace SudokuSolver
             private int numRunningTasks = 0;
             private readonly Stack<Solver> pendingSolvers;
             private readonly int maxRunningTasks;
+            private readonly bool fastIncrement;
 
             public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, Action<Solver> solutionEvent, HashSet<string> skipSolutions, CancellationToken cancellationToken)
             {
@@ -1349,25 +1327,44 @@ namespace SudokuSolver
                 countdownEvent = multiThread ? new CountdownEvent(1) : null;
                 pendingSolvers = multiThread ? new Stack<Solver>() : null;
                 maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
+                fastIncrement = skipSolutions == null && solutionEvent == null;
             }
 
             public void IncrementSolutions(Solver solver)
             {
                 bool invokeProgress = false;
-                lock (solutionLock)
+                if (fastIncrement)
                 {
-                    if (skipSolutions != null && skipSolutions.Contains(solver.GivenString))
-                    {
-                        return;
-                    }
-
-                    solutionEvent?.Invoke(solver);
-
-                    numSolutions++;
+                    Interlocked.Increment(ref numSolutions);
                     if (eventTimer.ElapsedMilliseconds > 500)
                     {
-                        invokeProgress = true;
-                        eventTimer.Restart();
+                        lock (solutionLock)
+                        {
+                            if (eventTimer.ElapsedMilliseconds > 500)
+                            {
+                                invokeProgress = true;
+                                eventTimer.Restart();
+                            }
+                        }
+                    }
+                }
+                else
+                {
+                    lock (solutionLock)
+                    {
+                        if (skipSolutions != null && skipSolutions.Contains(solver.GivenString))
+                        {
+                            return;
+                        }
+
+                        solutionEvent?.Invoke(solver);
+
+                        numSolutions++;
+                        if (eventTimer.ElapsedMilliseconds > 500)
+                        {
+                            invokeProgress = true;
+                            eventTimer.Restart();
+                        }
                     }
                 }
                 if (invokeProgress)
@@ -1383,7 +1380,7 @@ namespace SudokuSolver
                     if (numRunningTasks < maxRunningTasks)
                     {
                         numRunningTasks++;
-                        Task.Run(() => solver.CountSolutionsMultiThreaded(this));
+                        Task.Run(() => CountSolutionsMultiThreaded(solver, this));
                         countdownEvent.AddCount();
                         return;
                     }
@@ -1392,20 +1389,18 @@ namespace SudokuSolver
                 }
             }
 
-            public void TaskComplete()
+            public Solver TaskComplete()
             {
+                Solver solver = null;
                 lock (solutionLock)
                 {
-                    if ((maxSolutions <= 0 || numSolutions < maxSolutions) && pendingSolvers.TryPop(out Solver solver))
-                    {
-                        Task.Run(() => solver.CountSolutionsMultiThreaded(this), cancellationToken);
-                    }
-                    else
+                    if (!(maxSolutions <= 0 || numSolutions < maxSolutions) || !pendingSolvers.TryPop(out solver))
                     {
                         numRunningTasks--;
                         countdownEvent.Signal();
                     }
                 }
+                return solver;
             }
 
             public void Wait()
@@ -1440,7 +1435,7 @@ namespace SudokuSolver
                 }
                 else if (logicResult != LogicResult.Invalid)
                 {
-                    (int i, int j) = solver.GetLeastCandidateCell();
+                    (int i, int j, int v) = solver.GetLeastCandidateCell();
                     if (i < 0)
                     {
                         state.IncrementSolutions(solver);
@@ -1452,7 +1447,7 @@ namespace SudokuSolver
                     else
                     {
                         // Try a possible value for this cell
-                        int val = MinValue(solver.board[i, j]);
+                        int val = v != 0 ? v : MinValue(solver.board[i, j]);
                         uint valMask = ValueMask(val);
 
                         // Create a board without this value and push it to the stack
@@ -1480,58 +1475,65 @@ namespace SudokuSolver
             }
         }
 
-        private void CountSolutionsMultiThreaded(CountSolutionsState state)
+        private static void CountSolutionsMultiThreaded(Solver solver, CountSolutionsState state)
         {
             while (true)
             {
-                // If reached max solutions, bail out
-                if (state.maxSolutions > 0 && state.numSolutions >= state.maxSolutions)
+                while (true)
                 {
-                    break;
+                    // If reached max solutions, bail out
+                    if (state.maxSolutions > 0 && state.numSolutions >= state.maxSolutions)
+                    {
+                        break;
+                    }
+
+                    state.cancellationToken.ThrowIfCancellationRequested();
+
+                    var logicResult = solver.ConsolidateBoard();
+                    if (logicResult == LogicResult.PuzzleComplete)
+                    {
+                        state.IncrementSolutions(solver);
+                        break;
+                    }
+
+                    if (logicResult == LogicResult.Invalid)
+                    {
+                        break;
+                    }
+
+                    // Start with the cell that has the least possible candidates
+                    (int i, int j, int v) = solver.GetLeastCandidateCell();
+                    if (i < 0)
+                    {
+                        state.IncrementSolutions(solver);
+                        break;
+                    }
+
+                    // Try a possible value for this cell
+                    int val = v != 0 ? v : state.skipSolutions != null ? GetRandomValue(solver.board[i, j]) : MinValue(solver.board[i, j]);
+                    uint valMask = ValueMask(val);
+
+                    // Create a solver without this value and start a task for it
+                    Solver newSolver = solver.Clone();
+                    newSolver.isBruteForcing = true;
+                    newSolver.board[i, j] &= ~valMask;
+                    if (newSolver.board[i, j] != 0)
+                    {
+                        state.PushSolver(newSolver);
+                    }
+
+                    if (!solver.SetValue(i, j, val))
+                    {
+                        break;
+                    }
                 }
 
-                state.cancellationToken.ThrowIfCancellationRequested();
-
-                var logicResult = ConsolidateBoard();
-                if (logicResult == LogicResult.PuzzleComplete)
-                {
-                    state.IncrementSolutions(this);
-                    break;
-                }
-
-                if (logicResult == LogicResult.Invalid)
-                {
-                    break;
-                }
-
-                // Start with the cell that has the least possible candidates
-                (int i, int j) = GetLeastCandidateCell();
-                if (i < 0)
-                {
-                    state.IncrementSolutions(this);
-                    break;
-                }
-
-                // Try a possible value for this cell
-                int val = state.skipSolutions != null ? GetRandomValue(board[i, j]) : MinValue(board[i, j]);
-                uint valMask = ValueMask(val);
-
-                // Create a solver without this value and start a task for it
-                Solver newSolver = Clone();
-                newSolver.isBruteForcing = true;
-                newSolver.board[i, j] &= ~valMask;
-                if (newSolver.board[i, j] != 0)
-                {
-                    state.PushSolver(newSolver);
-                }
-
-                if (!SetValue(i, j, val))
+                solver = state.TaskComplete();
+                if (solver == null)
                 {
                     break;
                 }
             }
-
-            state.TaskComplete();
         }
 
         private class FillRealCandidatesState
@@ -2105,79 +2107,55 @@ namespace SudokuSolver
 
         private LogicResult FindHiddenSingle(StringBuilder stepDescription)
         {
-            LogicResult finalFindResult = LogicResult.None;
-            Span<int> valueCounts = stackalloc int[MAX_VALUE];
             foreach (var group in Groups)
             {
                 var groupCells = group.Cells;
                 int numCells = group.Cells.Count;
-                if (numCells != MAX_VALUE && group.FromConstraint == null)
+                if (numCells != MAX_VALUE && (isBruteForcing || group.FromConstraint == null))
                 {
                     continue;
                 }
 
-                for (int valIndex = 0; valIndex < MAX_VALUE; valIndex++)
-                {
-                    valueCounts[valIndex] = 0;
-                }
+                uint atLeastOnce = 0;
+                uint moreThanOnce = 0;
+                uint setMask = 0;
                 for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
                 {
                     var (i, j) = groupCells[cellIndex];
                     uint mask = board[i, j];
                     if (IsValueSet(mask))
                     {
-                        int valIndex = GetValue(mask) - 1;
-                        valueCounts[valIndex] = -1;
+                        setMask |= mask;
                     }
                     else
                     {
-                        for (int valIndex = 0; valIndex < MAX_VALUE; valIndex++)
-                        {
-                            if ((mask & (1u << valIndex)) != 0)
-                            {
-                                valueCounts[valIndex]++;
-                            }
-                        }
+                        moreThanOnce |= atLeastOnce & mask;
+                        atLeastOnce |= mask;
                     }
                 }
-
-                int singleValIndex = -1;
-                int zeroValIndex = -1;
-                for (int valIndex = 0; valIndex < MAX_VALUE; valIndex++)
-                {
-                    int curValCount = valueCounts[valIndex];
-                    if (curValCount == 1)
-                    {
-                        singleValIndex = valIndex;
-                    }
-                    else if (curValCount == 0)
-                    {
-                        zeroValIndex = valIndex;
-                        break;
-                    }
-                }
-
-                if (zeroValIndex >= 0 && numCells == MAX_VALUE)
+                setMask &= ~valueSetMask;
+                if (numCells == MAX_VALUE && (atLeastOnce | setMask) != ALL_VALUES_MASK)
                 {
                     if (stepDescription != null)
                     {
                         stepDescription.Clear();
-                        stepDescription.Append($"{group.Name} has nowhere to place {zeroValIndex + 1}.");
+                        stepDescription.Append($"{group.Name} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~atLeastOnce)}.");
                     }
                     return LogicResult.Invalid;
                 }
 
-                if (singleValIndex >= 0)
+                uint exactlyOnce = atLeastOnce & ~moreThanOnce;
+                if (exactlyOnce != 0)
                 {
-                    int val = singleValIndex + 1;
+                    int val = 0;
                     int vali = -1;
                     int valj = -1;
                     if (numCells == MAX_VALUE)
                     {
-                        uint valMask = 1u << singleValIndex;
+                        val = MinValue(exactlyOnce);
+                        uint valMask = ValueMask(val);
                         foreach (var (i, j) in group.Cells)
                         {
-                            uint mask = board[i, j];
                             if ((board[i, j] & valMask) != 0)
                             {
                                 vali = i;
@@ -2188,11 +2166,21 @@ namespace SudokuSolver
                     }
                     else
                     {
-                        List<(int, int)> cellsMustContain = group.FromConstraint?.CellsMustContain(this, val);
-                        if (cellsMustContain != null && cellsMustContain.Count == 1)
+                        int minValue = MinValue(exactlyOnce);
+                        int maxValue = MaxValue(exactlyOnce);
+                        for (int v = minValue; v <= maxValue; v++)
                         {
-                            vali = cellsMustContain[0].Item1;
-                            valj = cellsMustContain[0].Item2;
+                            if ((exactlyOnce & v) != 0)
+                            {
+                                List<(int, int)> cellsMustContain = group.FromConstraint?.CellsMustContain(this, val);
+                                if (cellsMustContain != null && cellsMustContain.Count == 1)
+                                {
+                                    val = v;
+                                    vali = cellsMustContain[0].Item1;
+                                    valj = cellsMustContain[0].Item2;
+                                    break;
+                                }
+                            }
                         }
                     }
 
@@ -2212,7 +2200,47 @@ namespace SudokuSolver
                     }
                 }
             }
-            return finalFindResult;
+            return LogicResult.None;
+        }
+
+        private (int, int, int) FindBilocalValue()
+        {
+            foreach (var group in Groups)
+            {
+                var groupCells = group.Cells;
+                int numCells = group.Cells.Count;
+                if (numCells != MAX_VALUE)
+                {
+                    continue;
+                }
+
+                uint atLeastOnce = 0;
+                uint atLeastTwice = 0;
+                uint moreThanTwice = 0;
+                for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
+                {
+                    var (i, j) = groupCells[cellIndex];
+                    uint mask = board[i, j];
+                    moreThanTwice |= atLeastTwice & mask;
+                    atLeastTwice |= atLeastOnce & mask;
+                    atLeastOnce |= mask;
+                }
+
+                uint exactlyTwice = atLeastTwice & ~moreThanTwice & ~valueSetMask;
+                if (exactlyTwice != 0)
+                {
+                    int val = MinValue(exactlyTwice);
+                    uint valMask = ValueMask(val);
+                    foreach (var (i, j) in group.Cells)
+                    {
+                        if ((board[i, j] & valMask) != 0)
+                        {
+                            return (i, j, val);
+                        }
+                    }
+                }
+            }
+            return (-1, -1, 0);
         }
 
         private LogicResult FindNakedTuples(StringBuilder stepDescription)
