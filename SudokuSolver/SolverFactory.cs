@@ -17,6 +17,7 @@ namespace SudokuSolver
         public static Solver CreateBlank(int size, IEnumerable<string> constraints = null)
         {
             Solver solver = new(size, size, size);
+            solver.SetRegions(DefaultRegions(size));
             if (constraints != null)
             {
                 ApplyConstraints(solver, constraints);
@@ -52,6 +53,7 @@ namespace SudokuSolver
             }
 
             Solver solver = new(size, size, size);
+            solver.SetRegions(DefaultRegions(size));
             if (constraints != null)
             {
                 ApplyConstraints(solver, constraints);
@@ -139,6 +141,7 @@ namespace SudokuSolver
             }
 
             Solver solver = new(size, size, size);
+            solver.SetRegions(DefaultRegions(size));
             if (constraints != null)
             {
                 ApplyConstraints(solver, constraints);
