@@ -43,6 +43,7 @@ namespace SudokuSolverConsole
             string outputPath = null;
             List<string> constraints = new();
             bool multiThread = false;
+            uint? contradictionStepCountLimit = null;
             bool solveBruteForce = false;
             bool solveRandomBruteForce = false;
             bool solveLogically = false;
@@ -79,6 +80,7 @@ namespace SudokuSolverConsole
                 { "k|check", "Check if there are 0, 1, or 2+ solutions.", k => check = k != null },
                 { "n|solutioncount", "Provide an exact solution count.", n => solutionCount = n != null },
                 { "t|multithread", "Use multithreading.", t => multiThread = t != null },
+                { "cl|contradictionlimit=", "Largest amount of steps a contradiction may take.",  l => contradictionStepCountLimit = uint.Parse(l)},
 
                 // Post-solve options
                 { "o|out=", "Output solution(s) to file.", o => outputPath = o },
@@ -217,6 +219,7 @@ namespace SudokuSolverConsole
                 return;
             }
 
+            solver.ContradictionStepCountLimit = contradictionStepCountLimit;
             if (print)
             {
                 Console.WriteLine("Input puzzle:");

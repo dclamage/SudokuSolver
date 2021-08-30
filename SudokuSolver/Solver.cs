@@ -58,6 +58,7 @@ namespace SudokuSolver
         public bool DisableWings { get; set; } = false;
         public bool DisableContradictions { get; set; } = false;
         public bool DisableFindShortestContradiction { get; set; } = false;
+        public uint? ContradictionStepCountLimit { get; set; } = null;
 
         private uint[,] board;
         private int[,] regions = null;
@@ -274,6 +275,7 @@ namespace SudokuSolver
             DisableWings = other.DisableWings;
             DisableContradictions = other.DisableContradictions;
             DisableFindShortestContradiction = other.DisableFindShortestContradiction;
+            ContradictionStepCountLimit = other.ContradictionStepCountLimit;
             board = (uint[,])other.board.Clone();
             regions = other.regions;
             seenMap = other.seenMap;
@@ -3141,7 +3143,8 @@ namespace SudokuSolver
                                         if (!DisableContradictions)
                                         {
                                             int changes = boardCopy.AmountCellsFilled() - this.AmountCellsFilled();
-                                            if (bestContradiction == null || changes < bestContradiction.Changes)
+                                            // Plus one here since we don't count the cell without candidates as "step", but the AmountCellsFilled method does
+                                            if (changes <= (ContradictionStepCountLimit + 1) && (bestContradiction == null || changes < bestContradiction.Changes))
                                             {
                                                 bestContradiction = new ContradictionResult(changes, boardCopy, i, j, v, formattedContraditionReason);
                                             }
@@ -3154,7 +3157,7 @@ namespace SudokuSolver
                 }
                 if (bestContradiction != null)
                 {
-                    stepDescription?.Append($"Setting {CellName(bestContradiction.I, bestContradiction.J)} to {bestContradiction.V} causes a contradiction:")
+                    stepDescription?.Append($"Setting {CellName(bestContradiction.I, bestContradiction.J)} to {bestContradiction.V} causes a contradiction ({bestContradiction.Changes} cells filled before contradiction was detected):")
                                     .AppendLine()
                                     .Append(bestContradiction.FormattedContraditionReason);
 
