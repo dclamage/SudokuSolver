@@ -3157,7 +3157,7 @@ namespace SudokuSolver
                 }
                 if (bestContradiction != null)
                 {
-                    stepDescription?.Append($"Setting {CellName(bestContradiction.I, bestContradiction.J)} to {bestContradiction.V} causes a contradiction ({bestContradiction.Changes} cells filled before contradiction was detected):")
+                    stepDescription?.Append($"Setting {CellName(bestContradiction.I, bestContradiction.J)} to {bestContradiction.V} causes a contradiction:")
                                     .AppendLine()
                                     .Append(bestContradiction.FormattedContraditionReason);
 
