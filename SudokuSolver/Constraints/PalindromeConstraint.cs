@@ -212,5 +212,28 @@ namespace SudokuSolver.Constraints
             }
             return LogicResult.None;
         }
+
+        public override void InitLinks(Solver sudokuSolver)
+        {
+            var weakLinks = sudokuSolver.WeakLinks;
+
+            foreach (var (cell0, cell1) in cellToClone)
+            {
+                int cellIndex0 = FlatIndex(cell0);
+                int cellIndex1 = FlatIndex(cell1);
+                for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+                {
+                    int candIndex0 = cellIndex0 * MAX_VALUE + v0 - 1;
+                    for (int v1 = 1; v1 <= MAX_VALUE; v1++)
+                    {
+                        if (v0 != v1)
+                        {
+                            int candIndex1 = cellIndex1 * MAX_VALUE + v1 - 1;
+                            sudokuSolver.AddWeakLink(candIndex0, candIndex1);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

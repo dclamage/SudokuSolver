@@ -1,4 +1,5 @@
 ﻿//#define PROFILING
+//#define INFINITE_LOOP_CHECK
 
 using System;
 using System.Collections.Generic;
@@ -16,6 +17,31 @@ namespace SudokuSolver
     public record SudokuGroup(string Name, List<(int, int)> Cells, Constraint FromConstraint)
     {
         public override string ToString() => Name;
+
+        public bool MustContain(Solver solver, int val)
+        {
+            if (Cells.Count == solver.MAX_VALUE)
+            {
+                return true;
+            }
+
+            var mustContain = FromConstraint?.CellsMustContain(solver, val);
+            return mustContain != null && mustContain.Count > 0;
+        }
+
+        public List<(int, int)> CellsMustContain(Solver solver, int val)
+        {
+            var board = solver.Board;
+            if (Cells.Count == solver.MAX_VALUE)
+            {
+                return Cells.Where(cell => HasValue(board[cell.Item1, cell.Item2], val)).ToList();
+            }
+            if (FromConstraint != null)
+            {
+                return FromConstraint.CellsMustContain(solver, val);
+            }
+            return null;
+        }
     }
 
     public enum LogicResult
@@ -32,9 +58,9 @@ namespace SudokuSolver
         public static readonly Dictionary<string, Stopwatch> timers = new();
         public static void PrintTimers()
         {
-            foreach (var timer in Solver.timers.OrderByDescending(timer => timer.Value.Elapsed))
+            foreach (var timer in timers.OrderByDescending(timer => timer.Value.Elapsed))
             {
-                if (timer.Key != "Global")
+                //if (timer.Key != "Global")
                 {
                     Console.WriteLine($"{timer.Key}: {timer.Value.Elapsed.TotalMilliseconds}ms");
                 }
@@ -56,13 +82,16 @@ namespace SudokuSolver
         public bool DisablePointing { get; set; } = false;
         public bool DisableFishes { get; set; } = false;
         public bool DisableWings { get; set; } = false;
+        public bool DisableAIC { get; set; } = false;
         public bool DisableContradictions { get; set; } = false;
         public bool DisableFindShortestContradiction { get; set; } = false;
 
         private uint[,] board;
         private int[,] regions = null;
+        private readonly HashSet<int>[] weakLinks;
         public uint[,] Board => board;
         public int[,] Regions => regions;
+        public HashSet<int>[] WeakLinks => weakLinks;
         public Dictionary<string, object> customInfo = new();
         // Returns whether two cells cannot be the same value for a specific value
         // i0, j0, i1, j0, value or 0 for any value
@@ -255,6 +284,13 @@ namespace SudokuSolver
             }
             Groups = new();
             CellToGroupMap = new();
+
+            int numCandidates = HEIGHT * WIDTH * MAX_VALUE;
+            weakLinks = new HashSet<int>[numCandidates];
+            for (int ci = 0; ci < numCandidates; ci++)
+            {
+                weakLinks[ci] = new();
+            }
         }
 
         public Solver(Solver other)
@@ -272,6 +308,7 @@ namespace SudokuSolver
             DisablePointing = other.DisablePointing;
             DisableFishes = other.DisableFishes;
             DisableWings = other.DisableWings;
+            DisableAIC = other.DisableAIC;
             DisableContradictions = other.DisableContradictions;
             DisableFindShortestContradiction = other.DisableFindShortestContradiction;
             board = (uint[,])other.board.Clone();
@@ -283,6 +320,12 @@ namespace SudokuSolver
             smallGroupsBySize = other.smallGroupsBySize;
             CellToGroupMap = other.CellToGroupMap;
             customInfo = other.customInfo;
+
+            // For now, weak links are constant after initialization
+            // Constraints like arrow, killer, LK and the like could add more weak links during the solve,
+            // but for now they will not.
+            weakLinks = other.weakLinks;
+            //weakLinks = other.weakLinks.Select(s => new HashSet<int>(s)).ToArray();
         }
 
         private void InitCombinations()
@@ -384,12 +427,27 @@ namespace SudokuSolver
         public void AddConstraint(Constraint constraint)
         {
 #if PROFILING
-            if (!timers.ContainsKey(constraint.GetType().FullName))
+            string constraintName = constraint.GetType().FullName;
+            if (!timers.ContainsKey(constraintName))
             {
-                timers[constraint.GetType().FullName] = new();
+                timers[constraintName] = new();
             }
 #endif
             constraints.Add(constraint);
+        }
+
+        public void AddWeakLink(int candIndex0, int candIndex1)
+        {
+            if (candIndex0 != candIndex1)
+            {
+                var (i0, j0, v0) = CandIndexToCoord(candIndex0);
+                var (i1, j1, v1) = CandIndexToCoord(candIndex1);
+                if (HasValue(board[i0, j0], v0) && HasValue(board[i1, j1], v1))
+                {
+                    weakLinks[candIndex0].Add(candIndex1);
+                    weakLinks[candIndex1].Add(candIndex0);
+                }
+            }
         }
 
         /// <summary>
@@ -399,14 +457,20 @@ namespace SudokuSolver
         public bool FinalizeConstraints()
         {
 #if PROFILING
-            timers["FindNakedSingles"] = new();
-            timers["FindHiddenSingle"] = new();
-            timers["FindNakedTuples"] = new();
-            timers["FindPointingTuples"] = new();
-            timers["FindFishes"] = new();
-            timers["FindYWings"] = new();
-            timers["FindSimpleContradictions"] = new();
-            timers["Global"] = Stopwatch.StartNew();
+            if (!timers.ContainsKey("Global"))
+            {
+                timers["Global"] = Stopwatch.StartNew();
+
+                timers["FindNakedSingles"] = new();
+                timers["FindHiddenSingle"] = new();
+                timers["FindNakedTuples"] = new();
+                timers["FindPointingTuples"] = new();
+                timers["FindUnorthodoxTuples"] = new();
+                timers["FindFishes"] = new();
+                timers["FindYWings"] = new();
+                timers["FindAIC"] = new();
+                timers["FindSimpleContradictions"] = new();
+            }
 #endif
             if (regions == null)
             {
@@ -469,6 +533,41 @@ namespace SudokuSolver
                         }
                     }
                 }
+            }
+
+            for (int i0 = 0; i0 < HEIGHT; i0++)
+            {
+                for (int j0 = 0; j0 < WIDTH; j0++)
+                {
+                    int cellIndex = i0 * WIDTH + j0;
+                    for (int v = 1; v <= MAX_VALUE; v++)
+                    {
+                        uint mask = ValueMask(v);
+                        int candIndex0 = cellIndex * MAX_VALUE + v - 1;
+
+                        // Add weak links to all seen cells
+                        foreach (var (i1, j1) in SeenCellsByValueMask(mask, (i0, j0)))
+                        {
+                            int candIndex1 = CandidateIndex((i1, j1), v);
+                            AddWeakLink(candIndex0, candIndex1);
+                        }
+
+                        // Add weak links to all other candidates within the same cell
+                        for (int v1 = 1; v1 <= MAX_VALUE; v1++)
+                        {
+                            if (v != v1)
+                            {
+                                int candIndex1 = CandidateIndex((i0, j0), v1);
+                                AddWeakLink(candIndex0, candIndex1);
+                            }
+                        }
+                    }
+                }
+            }
+
+            foreach (var constraint in constraints)
+            {
+                constraint.InitLinks(this);
             }
 
             SetCanHaveUnorthodoxTuples();
@@ -647,6 +746,31 @@ namespace SudokuSolver
             return true;
         }
 
+        public bool IsGroup(IEnumerable<(int, int)> cells, int value)
+        {
+            List<int> candIndexes = CandidateIndexes(ValueMask(value), cells);
+            if (candIndexes.Count <= 1)
+            {
+                return true;
+            }
+
+            for (int i0 = 0; i0 < candIndexes.Count - 1; i0++)
+            {
+                int cand0 = candIndexes[i0];
+                var weakLinks0 = weakLinks[cand0];
+                for (int i1 = i0 + 1; i1 < candIndexes.Count; i1++)
+                {
+                    int cand1 = candIndexes[i1];
+                    if (cand0 != cand1 && !weakLinks0.Contains(cand1))
+                    {
+                        return false;
+                    }
+                }
+            }
+
+            return true;
+        }
+
         public bool IsGroupByValueMask(List<(int, int)> cells, uint valueMask)
         {
             for (int i0 = 0; i0 < cells.Count - 1; i0++)
@@ -705,31 +829,30 @@ namespace SudokuSolver
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public bool ClearValue(int i, int j, int val)
+        public bool ClearValue(int i, int j, int v)
         {
-            uint curMask = board[i, j];
-            uint valMask = ValueMask(val);
+            board[i, j] &= ~ValueMask(v);
+            return (board[i, j] & ~valueSetMask) != 0;
+        }
 
-            if ((curMask & valMask) == 0)
-            {
-                // Clearing the bit would do nothing
-                return true;
-            }
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal bool ClearCandidate(int candidate)
+        {
+            var (i, j, v) = CandIndexToCoord(candidate);
+            return ClearValue(i, j, v);
+        }
 
-            // From this point on, a bit will be cleared
-            uint newMask = curMask & ~valMask;
-            if ((newMask & ~valueSetMask) == 0)
+        internal bool ClearCandidates(IEnumerable<int> candidates)
+        {
+            bool valid = true;
+            foreach (int c in candidates)
             {
-                // Can't clear the only remaining bit
-                if (!IsValueSet(curMask))
+                if (!ClearCandidate(c))
                 {
-                    board[i, j] = 0;
+                    valid = false;
                 }
-                return false;
             }
-
-            board[i, j] = newMask;
-            return true;
+            return valid;
         }
 
         public bool SetValue(int i, int j, int val)
@@ -756,16 +879,14 @@ namespace SudokuSolver
 
             board[i, j] = valueSetMask | valMask;
 
-            // Enforce distinctness in groups
-            var setCell = (i, j);
-            foreach (var group in CellToGroupMap[setCell])
+            // Apply all weak links
+            int setCandidateIndex = CandidateIndex((i, j), val);
+            foreach (int elimCandIndex in weakLinks[setCandidateIndex])
             {
-                foreach (var cell in group.Cells)
+                var (i1, j1, v1) = CandIndexToCoord(elimCandIndex);
+                if (!ClearValue(i1, j1, v1))
                 {
-                    if (cell != setCell && !ClearValue(cell.Item1, cell.Item2, val))
-                    {
-                        return false;
-                    }
+                    return false;
                 }
             }
 
@@ -1281,9 +1402,9 @@ namespace SudokuSolver
             {
                 if (state.multiThread)
                 {
-                    Solver boardCopy = Clone();
-                    boardCopy.isBruteForcing = true;
-                    CountSolutionsMultiThreaded(boardCopy, state);
+                	Solver boardCopy = Clone();
+                	boardCopy.isBruteForcing = true;
+                    boardCopy.CountSolutionsMultiThreaded(state);
                     state.Wait();
                 }
                 else
@@ -1416,9 +1537,6 @@ namespace SudokuSolver
 
         private static void CountSolutionsSingleThread(Solver solver, CountSolutionsState state)
         {
-            solver = solver.Clone();
-            solver.isBruteForcing = true;
-
             var boardStack = new Stack<Solver>();
             while (true)
             {
@@ -1592,7 +1710,7 @@ namespace SudokuSolver
         /// <param name="numSolutions">Expected to be HEIGHT * WIDTH * MAX_VALUE in size. The number of solutions per candidate, capped to 9.</param>
         /// <param name="cancellationToken">Pass in to support cancelling.</param>
         /// <returns>True if there are solutions and candidates are filled. False if there are no solutions.</returns>
-        public bool FillRealCandidates(bool multiThread = false, bool skipConsolidate = false, Action<uint[]> progressEvent = null, int[] numSolutions = null, CancellationToken cancellationToken = default)
+        public bool FillRealCandidates(bool multiThread = false, Action<uint[]> progressEvent = null, int[] numSolutions = null, CancellationToken cancellationToken = default)
         {
             if (seenMap == null)
             {
@@ -1606,13 +1724,13 @@ namespace SudokuSolver
 
             Stopwatch timeSinceCheck = Stopwatch.StartNew();
 
-            isBruteForcing = true;
-            if (!skipConsolidate && ConsolidateBoard() == LogicResult.Invalid)
+            LogicResult logicResult = PrepForBruteForce();
+            if (logicResult == LogicResult.Invalid)
             {
-                isBruteForcing = false;
                 return false;
             }
 
+            isBruteForcing = true;
             FillRealCandidatesState state = new(multiThread, NUM_CELLS, progressEvent, numSolutions, cancellationToken);
             for (int i = 0; i < HEIGHT; i++)
             {
@@ -1628,34 +1746,39 @@ namespace SudokuSolver
                 }
             }
 
-            List<(int, int, int, int)> cellValuesByPriority = new(NUM_CELLS);
-            for (int i = 0; i < HEIGHT; i++)
+            int numUnsetCells = logicResult == LogicResult.PuzzleComplete ? 0 : NUM_CELLS - NumSetValues;
+            List<(int, int, int, int)> cellValuesByPriority = null;
+            if (numUnsetCells > 0)
             {
-                for (int j = 0; j < WIDTH; j++)
+                cellValuesByPriority = new(numUnsetCells);
+                for (int i = 0; i < HEIGHT; i++)
                 {
-                    int cellPriority = CellPriority(i, j);
-                    if (cellPriority < 0)
+                    for (int j = 0; j < WIDTH; j++)
                     {
-                        continue;
-                    }
-
-                    for (int v = 1; v <= MAX_VALUE; v++)
-                    {
-                        // Don't bother trying the value if it's not a possibility
-                        uint valMask = ValueMask(v);
-                        if ((board[i, j] & valMask) == 0)
+                        int cellPriority = CellPriority(i, j);
+                        if (cellPriority < 0)
                         {
                             continue;
                         }
 
-                        int cellIndex = i * WIDTH + j;
-                        state.tasksRemainingPerCell[cellIndex]++;
-                        cellValuesByPriority.Add((cellPriority, i, j, v));
+                        for (int v = 1; v <= MAX_VALUE; v++)
+                        {
+                            // Don't bother trying the value if it's not a possibility
+                            uint valMask = ValueMask(v);
+                            if ((board[i, j] & valMask) == 0)
+                            {
+                                continue;
+                            }
+
+                            int cellIndex = i * WIDTH + j;
+                            state.tasksRemainingPerCell[cellIndex]++;
+                            cellValuesByPriority.Add((cellPriority, i, j, v));
+                        }
                     }
                 }
             }
 
-            if (cellValuesByPriority.Count == 0)
+            if (cellValuesByPriority == null || cellValuesByPriority.Count == 0)
             {
                 if (numSolutions != null)
                 {
@@ -1815,26 +1938,111 @@ namespace SudokuSolver
             state.CheckProgressEvent();
         }
 
+#if INFINITE_LOOP_CHECK
+        public bool IsSame(Solver other)
+        {
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    if (other.Board[i, j] != Board[i, j])
+                    {
+                        return false;
+                    }
+                }
+            }
+            return true;
+        }
+#endif
+
         /// <summary>
         /// Perform a logical solve until either the board is solved or there are no logical steps found.
         /// </summary>
         /// <param name="stepsDescription">Get a full description of all logical steps taken.</param>
         /// <returns></returns>
-        public LogicResult ConsolidateBoard(StringBuilder stepsDescription = null)
+        public LogicResult ConsolidateBoard(List<LogicalStepDesc> logicalStepDescs = null)
         {
             if (seenMap == null)
             {
                 throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
             }
 
+            bool changed = false;
             LogicResult result;
             do
             {
-                StringBuilder stepDescription = stepsDescription != null ? new() : null;
-                result = StepLogic(stepDescription);
-                stepsDescription?.Append(stepDescription).AppendLine();
+                Solver clone = Clone();
+                result = StepLogic(logicalStepDescs);
+#if INFINITE_LOOP_CHECK
+                if (result == LogicResult.Changed && IsSame(clone))
+                {
+                    throw new InvalidOperationException("Logic step returned a change, but no changed to candidates occured.");
+                }
+#endif
+                changed |= result == LogicResult.Changed;
             } while (result == LogicResult.Changed);
 
+            return (result == LogicResult.None && changed) ? LogicResult.Changed : result;
+        }
+
+        public LogicResult PrepForBruteForce()
+        {
+            if (seenMap == null)
+            {
+                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+            }
+
+            DisableTuples = false;
+            DisablePointing = false;
+            DisableFishes = false;
+            DisableWings = false;
+            DisableAIC = true;
+            DisableContradictions = false;
+            DisableFindShortestContradiction = true;
+
+            bool changed = false;
+            LogicResult result;
+            do
+            {
+                Solver clone = Clone();
+                result = StepLogic(null);
+#if INFINITE_LOOP_CHECK
+                if (result == LogicResult.Changed && IsSame(clone))
+                {
+                    throw new InvalidOperationException("Logic step returned a change, but no changed to candidates occured.");
+                }
+#endif
+                changed |= result == LogicResult.Changed;
+            } while (result == LogicResult.Changed);
+
+            return (result == LogicResult.None && changed) ? LogicResult.Changed : result;
+        }
+
+        public LogicResult ApplySingles()
+        {
+            if (seenMap == null)
+            {
+                throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+            }
+
+            bool changed = false;
+            LogicResult result;
+            do
+            {
+                result = FindSingles();
+                changed |= result == LogicResult.Changed;
+            } while (result == LogicResult.Changed);
+
+            return (result == LogicResult.None && changed) ? LogicResult.Changed : result;
+        }
+
+        private LogicResult FindSingles()
+        {
+            LogicResult result = FindNakedSingles(null);
+            if (result == LogicResult.None)
+            {
+                result = FindHiddenSingle(null);
+            }
             return result;
         }
 
@@ -1844,7 +2052,7 @@ namespace SudokuSolver
         /// </summary>
         /// <param name="stepDescription"></param>
         /// <returns></returns>
-        public LogicResult StepLogic(StringBuilder stepDescription, bool humanStepping = false)
+        public LogicResult StepLogic(List<LogicalStepDesc> logicalStepDescs)
         {
             if (seenMap == null)
             {
@@ -1856,7 +2064,7 @@ namespace SudokuSolver
 #if PROFILING
             timers["FindNakedSingles"].Start();
 #endif
-            result = FindNakedSingles(stepDescription, humanStepping);
+            result = FindNakedSingles(logicalStepDescs);
 #if PROFILING
             timers["FindNakedSingles"].Stop();
 #endif
@@ -1868,7 +2076,7 @@ namespace SudokuSolver
 #if PROFILING
             timers["FindHiddenSingle"].Start();
 #endif
-            result = FindHiddenSingle(stepDescription);
+            result = FindHiddenSingle(logicalStepDescs);
 #if PROFILING
             timers["FindHiddenSingle"].Stop();
 #endif
@@ -1879,20 +2087,16 @@ namespace SudokuSolver
 
             foreach (var constraint in constraints)
             {
-                string constraintName = constraint.GetType().FullName;
 #if PROFILING
+                string constraintName = constraint.GetType().FullName;
                 timers[constraintName].Start();
 #endif
-                result = constraint.StepLogic(this, stepDescription, isBruteForcing);
+                result = constraint.StepLogic(this, logicalStepDescs, isBruteForcing);
 #if PROFILING
                 timers[constraintName].Stop();
 #endif
                 if (result != LogicResult.None)
                 {
-                    if (stepDescription != null)
-                    {
-                        stepDescription.Insert(0, $"{constraint.SpecificName}: ");
-                    }
                     return result;
                 }
             }
@@ -1907,7 +2111,7 @@ namespace SudokuSolver
 #if PROFILING
                 timers["FindNakedTuples"].Start();
 #endif
-                result = FindNakedTuples(stepDescription);
+                result = FindNakedTuples(logicalStepDescs);
 #if PROFILING
                 timers["FindNakedTuples"].Stop();
 #endif
@@ -1922,7 +2126,7 @@ namespace SudokuSolver
 #if PROFILING
                 timers["FindPointingTuples"].Start();
 #endif
-                result = FindPointingTuples(stepDescription);
+                result = FindPointingTuples(logicalStepDescs);
 #if PROFILING
                 timers["FindPointingTuples"].Stop();
 #endif
@@ -1937,7 +2141,7 @@ namespace SudokuSolver
 #if PROFILING
                 timers["FindUnorthodoxTuples"].Start();
 #endif
-                result = FindUnorthodoxTuples(stepDescription);
+                result = FindUnorthodoxTuples(logicalStepDescs);
 #if PROFILING
                 timers["FindUnorthodoxTuples"].Stop();
 #endif
@@ -1952,7 +2156,7 @@ namespace SudokuSolver
 #if PROFILING
                 timers["FindFishes"].Start();
 #endif
-                result = FindFishes(stepDescription);
+                result = FindFishes(logicalStepDescs);
 #if PROFILING
                 timers["FindFishes"].Stop();
 #endif
@@ -1967,9 +2171,24 @@ namespace SudokuSolver
 #if PROFILING
                 timers["FindYWings"].Start();
 #endif
-                result = FindYWings(stepDescription);
+                result = FindYWings(logicalStepDescs);
 #if PROFILING
                 timers["FindYWings"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
+            }
+
+            if (!DisableAIC)
+            {
+#if PROFILING
+                timers["FindAIC"].Start();
+#endif
+                result = FindAIC(logicalStepDescs);
+#if PROFILING
+                timers["FindAIC"].Stop();
 #endif
                 if (result != LogicResult.None)
                 {
@@ -1980,7 +2199,7 @@ namespace SudokuSolver
 #if PROFILING
             timers["FindSimpleContradictions"].Start();
 #endif
-            result = FindSimpleContradictions(stepDescription);
+            result = FindSimpleContradictions(logicalStepDescs);
 #if PROFILING
             timers["FindSimpleContradictions"].Stop();
 #endif
@@ -1992,117 +2211,76 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
-        private LogicResult FindNakedSingles(StringBuilder stepDescription, bool humanStepping)
+        private LogicResult FindNakedSingles(List<LogicalStepDesc> logicalStepDescs)
         {
-            if (humanStepping)
-            {
-                return FindNakedSinglesHelper(stepDescription, humanStepping);
-            }
-
-            bool haveChange = false;
-            while (true)
-            {
-                StringBuilder curStepDescription = stepDescription != null ? new() : null;
-                LogicResult findResult = FindNakedSinglesHelper(curStepDescription, humanStepping);
-                if (curStepDescription != null && curStepDescription.Length > 0)
-                {
-                    if (stepDescription.Length > 0)
-                    {
-                        stepDescription.AppendLine();
-                    }
-                    stepDescription.Append(curStepDescription);
-                }
-                switch (findResult)
-                {
-                    case LogicResult.None:
-                        return haveChange ? LogicResult.Changed : LogicResult.None;
-                    case LogicResult.Changed:
-                        haveChange = true;
-                        break;
-                    default:
-                        return findResult;
-                }
-            }
-        }
-
-        private LogicResult FindNakedSinglesHelper(StringBuilder stepDescription, bool humanStepping)
-        {
-            string stepPrefix = humanStepping ? "Naked Single:" : "Naked Single(s):";
-
             bool hasUnsetCells = false;
-            bool hadChanges = false;
-            for (int i = 0; i < HEIGHT; i++)
+            if (logicalStepDescs == null)
             {
-                for (int j = 0; j < WIDTH; j++)
+                bool changed = false;
+                for (int i = 0; i < HEIGHT; i++)
                 {
-                    uint mask = board[i, j];
-
-                    // If there are no possibilies on a square, then bail out
-                    if (mask == 0)
+                    for (int j = 0; j < WIDTH; j++)
                     {
-                        if (stepDescription != null)
+                        uint mask = board[i, j];
+                        if ((mask & ~valueSetMask) == 0)
                         {
-                            stepDescription.AppendLine();
-                            stepDescription.Append($"{CellName(i, j)} has no possible values.");
+                            return LogicResult.Invalid;
                         }
-                        return LogicResult.Invalid;
-                    }
 
-                    if (!IsValueSet(mask))
-                    {
-                        hasUnsetCells = true;
-
-                        if (ValueCount(mask) == 1)
+                        if (!IsValueSet(mask))
                         {
-                            int value = GetValue(mask);
-                            if (!hadChanges)
-                            {
-                                stepDescription?.Append($"{stepPrefix} {CellName(i, j)} = {value}");
-                                hadChanges = true;
-                            }
-                            else
-                            {
-                                stepDescription?.Append($", {CellName(i, j)} = {value}");
-                            }
+                            hasUnsetCells = true;
 
-                            if (!SetValue(i, j, value))
+                            if (ValueCount(mask) == 1)
                             {
-                                for (int ci = 0; ci < HEIGHT; ci++)
+                                int value = GetValue(mask);
+                                if (!SetValue(i, j, value))
                                 {
-                                    for (int cj = 0; cj < WIDTH; cj++)
-                                    {
-                                        if (board[ci, cj] == 0)
-                                        {
-                                            stepDescription?.AppendLine().Append($"{CellName(ci, cj)} has no candidates remaining.");
-                                            return LogicResult.Invalid;
-                                        }
-                                    }
+                                    return LogicResult.Invalid;
                                 }
-                                stepDescription?.AppendLine().Append($"{CellName(i, j)} cannot be {value}.");
-                                return LogicResult.Invalid;
+                                changed = true;
                             }
+                        }
+                    }
+                }
+                if (changed)
+                {
+                    return LogicResult.Changed;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < HEIGHT; i++)
+                {
+                    for (int j = 0; j < WIDTH; j++)
+                    {
+                        uint mask = board[i, j];
+                        if ((mask & ~valueSetMask) == 0)
+                        {
+                            logicalStepDescs.Add(new($"{CellName(i, j)} has no possible values.", (i, j)));
+                            return LogicResult.Invalid;
+                        }
 
-                            if (humanStepping)
+                        if (!IsValueSet(mask))
+                        {
+                            hasUnsetCells = true;
+
+                            if (ValueCount(mask) == 1)
                             {
+                                int value = GetValue(mask);
+                                if (!SetValue(i, j, value))
+                                {
+                                    logicalStepDescs.Add(new($"Naked Single: {CellName(i, j)} cannot be set to {value}.", (i, j)));
+                                    return LogicResult.Invalid;
+                                }
+                                logicalStepDescs.Add(new($"Naked Single: {CellName(i, j)}={value}", CandidateIndex((i, j), value).ToEnumerable(), null, isSingle: true));
                                 return LogicResult.Changed;
                             }
                         }
                     }
                 }
             }
-            if (!hasUnsetCells)
-            {
-                if (stepDescription != null)
-                {
-                    if (stepDescription.Length > 0)
-                    {
-                        stepDescription.AppendLine();
-                    }
-                    stepDescription.Append("Solution found!");
-                }
-                return LogicResult.PuzzleComplete;
-            }
-            return hadChanges ? LogicResult.Changed : LogicResult.None;
+            return !hasUnsetCells ? LogicResult.PuzzleComplete : LogicResult.None;
         }
 
         private LogicResult FindHiddenSingle(StringBuilder stepDescription)
@@ -2136,11 +2314,7 @@ namespace SudokuSolver
                 setMask &= ~valueSetMask;
                 if (numCells == MAX_VALUE && (atLeastOnce | setMask) != ALL_VALUES_MASK)
                 {
-                    if (stepDescription != null)
-                    {
-                        stepDescription.Clear();
-                        stepDescription.Append($"{group.Name} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~atLeastOnce)}.");
-                    }
+                    logicalStepDescs?.Add(new($"{group.Name} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~atLeastOnce)}.", group.Cells));
                     return LogicResult.Invalid;
                 }
 
@@ -2188,14 +2362,10 @@ namespace SudokuSolver
                     {
                         if (!SetValue(vali, valj, val))
                         {
-                            if (stepDescription != null)
-                            {
-                                stepDescription.Clear();
-                                stepDescription.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}, but it cannot be set to that value.");
-                            }
+                        	logicalStepDescs?.Add(new($"Hidden Single in {group.Name}: {CellName(vali, valj)} cannot be set to {val}.", (vali, valj)));
                             return LogicResult.Invalid;
                         }
-                        stepDescription?.Append($"Hidden single {val} in {group.Name} {CellName(vali, valj)}");
+                        logicalStepDescs?.Add(new($"Hidden Single in {group.Name}: {CellName(vali, valj)}={val}", CandidateIndex((vali, valj), val).ToEnumerable(), null, isSingle: true));
                         return LogicResult.Changed;
                     }
                 }
@@ -2243,13 +2413,18 @@ namespace SudokuSolver
             return (-1, -1, 0);
         }
 
-        private LogicResult FindNakedTuples(StringBuilder stepDescription)
+        private LogicResult FindNakedTuples(List<LogicalStepDesc> logicalStepDescs)
         {
             List<(int, int)> unsetCells = new(MAX_VALUE);
             for (int tupleSize = 2; tupleSize < MAX_VALUE; tupleSize++)
             {
                 foreach (var group in Groups)
                 {
+                    if (group.Cells.Count <= tupleSize)
+                    {
+                        continue;
+                    }
+
                     // Make a list of pairs for the group which aren't already filled
                     unsetCells.Clear();
                     foreach (var cell in group.Cells)
@@ -2265,58 +2440,23 @@ namespace SudokuSolver
                         continue;
                     }
 
-                    int[] cellCombinations = combinations[unsetCells.Count - 1][tupleSize - 1];
-                    int numCombinations = cellCombinations.Length / tupleSize;
-                    for (int combinationIndex = 0; combinationIndex < numCombinations; combinationIndex++)
+                    foreach (var tupleCells in unsetCells.Combinations(tupleSize))
                     {
-                        Span<int> curCombination = new(cellCombinations, combinationIndex * tupleSize, tupleSize);
-
-                        uint combinationMask = 0;
-                        foreach (int cellIndex in curCombination)
+                        uint tupleMask = CandidateMask(tupleCells);
+                        if (ValueCount(tupleMask) == tupleSize)
                         {
-                            var curCell = unsetCells[cellIndex];
-                            combinationMask |= board[curCell.Item1, curCell.Item2];
-                        }
-
-                        if (ValueCount(combinationMask) == tupleSize)
-                        {
-                            uint invCombinationMask = ~combinationMask;
-
-                            bool changed = false;
-                            (int, int)[] tupleCells = new (int, int)[tupleSize];
-                            int tupleCellIndex = 0;
-                            foreach (int cellIndex in curCombination)
+                            var elims = CalcElims(tupleMask, tupleCells);
+                            if (elims.Count > 0)
                             {
-                                tupleCells[tupleCellIndex++] = unsetCells[cellIndex];
-                            }
-
-                            foreach (var curCell in SeenCellsByValueMask(combinationMask, tupleCells))
-                            {
-                                var clearResult = ClearMask(curCell.Item1, curCell.Item2, combinationMask);
-                                if (clearResult == LogicResult.Invalid)
+                                logicalStepDescs?.Add(new(
+                                    desc: $"Tuple: {CompactName(tupleMask, tupleCells)} in {group} => {DescribeElims(elims)}",
+                                    sourceCandidates: CandidateIndexes(tupleMask, tupleCells),
+                                    elimCandidates: elims
+                                ));
+                                if (!ClearCandidates(elims))
                                 {
-                                    if (stepDescription != null)
-                                    {
-                                        stepDescription.Clear();
-                                        stepDescription.Append($"{group} has too many cells which can only have {MaskToString(combinationMask)}");
-                                    }
                                     return LogicResult.Invalid;
                                 }
-                                if (clearResult == LogicResult.Changed)
-                                {
-                                    if (!changed)
-                                    {
-                                        stepDescription?.Append($"{group} has tuple {MaskToString(combinationMask)}, removing those values from {CellName(curCell)}");
-                                        changed = true;
-                                    }
-                                    else
-                                    {
-                                        stepDescription?.Append($", {CellName(curCell)}");
-                                    }
-                                }
-                            }
-                            if (changed)
-                            {
                                 return LogicResult.Changed;
                             }
                         }
@@ -2326,7 +2466,7 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
-        private LogicResult FindPointingTuples(StringBuilder stepDescription)
+        private LogicResult FindPointingTuples(List<LogicalStepDesc> logicalStepDescs)
         {
             foreach (var group in Groups)
             {
@@ -2335,93 +2475,63 @@ namespace SudokuSolver
                     continue;
                 }
 
+                uint setValuesMask = 0;
+                uint unsetValuesMask = 0;
+                foreach (var cell in group.Cells)
+                {
+                    uint mask = board[cell.Item1, cell.Item2];
+                    if (ValueCount(mask) == 1)
+                    {
+                        setValuesMask |= mask;
+                    }
+                    else
+                    {
+                        unsetValuesMask |= mask;
+                    }
+                }
+
                 for (int v = 1; v <= MAX_VALUE; v++)
                 {
-                    if (group.Cells.Any(cell => IsValueSet(cell.Item1, cell.Item2) && GetValue(cell) == v))
+                    if (HasValue(setValuesMask, v) || !HasValue(unsetValuesMask, v))
                     {
                         continue;
                     }
 
-                    List<(int, int)> cellsFromConstraint = null;
-                    if (group.Cells.Count != MAX_VALUE && group.FromConstraint != null)
-                    {
-                        cellsFromConstraint = group.FromConstraint.CellsMustContain(this, v);
-                        if (cellsFromConstraint == null)
-                        {
-                            continue;
-                        }
-                    }
-
-                    (int, int)[] cellsWithValue = cellsFromConstraint?.ToArray() ?? group.Cells.Where(cell => HasValue(board[cell.Item1, cell.Item2], v)).ToArray();
-                    if (cellsWithValue.Length <= 1)
+                    List<(int, int)> cellsMustContain = group.CellsMustContain(this, v);
+                    if (cellsMustContain == null || cellsMustContain.Count <= 1)
                     {
                         continue;
                     }
 
                     uint valueMask = ValueMask(v);
-                    var seenCells = SeenCellsByValueMask(valueMask, cellsWithValue);
-                    if (seenCells.Count == 0)
+                    var elims = CalcElims(valueMask, cellsMustContain);
+                    if (elims == null || elims.Count == 0)
                     {
                         continue;
                     }
 
-                    StringBuilder cellsWithValueStringBuilder = null;
-                    bool changed = false;
-                    foreach ((int i, int j) in seenCells)
+                    logicalStepDescs?.Add(new(
+                                    desc: $"Pointing: {v} locked to {CompactName(cellsMustContain)} in {group} => {DescribeElims(elims)}",
+                                    sourceCandidates: CandidateIndexes(valueMask, cellsMustContain),
+                                    elimCandidates: elims
+                                ));
+                    if (!ClearCandidates(elims))
                     {
-                        if (cellsWithValue.Contains((i, j)))
-                        {
-                            continue;
-                        }
-                        if ((board[i, j] & valueMask) != 0)
-                        {
-                            if (cellsWithValueStringBuilder == null)
-                            {
-                                cellsWithValueStringBuilder = new();
-                                foreach (var cell in cellsWithValue)
-                                {
-                                    if (cellsWithValueStringBuilder.Length != 0)
-                                    {
-                                        cellsWithValueStringBuilder.Append(", ");
-                                    }
-                                    cellsWithValueStringBuilder.Append(CellName(cell));
-                                }
-                            }
-
-                            if (!ClearValue(i, j, v))
-                            {
-                                if (stepDescription != null)
-                                {
-                                    stepDescription.Clear();
-                                    stepDescription.Append($"{v} is limited to {cellsWithValueStringBuilder} in {group}, but that value cannot be removed from {CellName(i, j)}");
-                                }
-                                return LogicResult.Invalid;
-                            }
-                            if (stepDescription != null)
-                            {
-                                if (!changed)
-                                {
-                                    stepDescription.Append($"{v} is limited to {cellsWithValueStringBuilder} in {group}, which removes that value from {CellName((i, j))}");
-                                }
-                                else
-                                {
-                                    stepDescription.Append($", {CellName((i, j))}");
-                                }
-                            }
-                            changed = true;
-                        }
+                        return LogicResult.Invalid;
                     }
-                    if (changed)
-                    {
-                        return LogicResult.Changed;
-                    }
+                    return LogicResult.Changed;
                 }
             }
             return LogicResult.None;
         }
 
-        private LogicResult FindUnorthodoxTuples(StringBuilder stepDescription)
+        private LogicResult FindUnorthodoxTuples(List<LogicalStepDesc> logicalStepDescs)
         {
+            if (!canHaveUnorthodoxTuples)
+            {
+                return LogicResult.None;
+            }
+            
             for (int tupleSize = 2; tupleSize < MAX_VALUE / 2; tupleSize++)
             {
                 // Go through every value combination for this tuple size
@@ -2450,210 +2560,150 @@ namespace SudokuSolver
                     // Look for sets of cells which form a tuple of this size
                     foreach (var possibleCells in possibleTupleCells.Combinations(tupleSize))
                     {
-                        if (!IsGroupByValueMask(possibleCells, tupleValuesMask))
+                        if (!IsGroup(possibleCells))
                         {
                             continue;
                         }
 
-                        bool changed = false;
-                        foreach (var curCell in SeenCellsByValueMask(tupleValuesMask, possibleCells.ToArray()))
+                        var elims = CalcElims(tupleValuesMask, possibleCells);
+                        if (elims == null || elims.Count == 0)
                         {
-                            var clearResult = ClearMask(curCell.Item1, curCell.Item2, tupleValuesMask);
-                            if (clearResult == LogicResult.Invalid)
-                            {
-                                if (stepDescription != null)
-                                {
-                                    stepDescription.Clear();
-                                    stepDescription.Append($"Cells {possibleCells.CellNames()} form an unorthodox tuple {MaskToString(tupleValuesMask)} and all see {CellName(curCell)}, clearing all candidates from it.");
-                                }
-                                return LogicResult.Invalid;
-                            }
-                            if (clearResult == LogicResult.Changed)
-                            {
-                                if (!changed)
-                                {
-                                    stepDescription?.Append($"Cells {possibleCells.CellNames()} form an unorthodox tuple {MaskToString(tupleValuesMask)} clearing those candidates from: {CellName(curCell)}");
-                                    changed = true;
-                                }
-                                else
-                                {
-                                    stepDescription?.Append($", {CellName(curCell)}");
-                                }
-                            }
+                            continue;
                         }
-                        if (changed)
+
+                        logicalStepDescs?.Add(new(
+                                    desc: $"Unorthodox Tuple: {CompactName(tupleValuesMask, possibleCells)} => {DescribeElims(elims)}",
+                                    sourceCandidates: CandidateIndexes(tupleValuesMask, possibleCells),
+                                    elimCandidates: elims
+                                ));
+                        if (!ClearCandidates(elims))
                         {
-                            return LogicResult.Changed;
+                            return LogicResult.Invalid;
                         }
+                        return LogicResult.Changed;
                     }
                 }
             }
             return LogicResult.None;
         }
 
-        private LogicResult FindFishes(StringBuilder stepDescription)
+        private LogicResult FindFishes(List<LogicalStepDesc> logicalStepDescs)
         {
-#pragma warning disable CS0162
-            if (WIDTH != MAX_VALUE || HEIGHT != MAX_VALUE)
+            if (true || WIDTH != MAX_VALUE || HEIGHT != MAX_VALUE)
             {
                 return LogicResult.None;
             }
-#pragma warning restore CS0162
+            // Since these are all guaranteed equal at this point, only MAX_VALUE will be used for all three purposes.
 
-            for (int n = 2; n <= 4; n++)
+            // Construct a transformed lookup of which values are in which rows/cols
+            uint[][,] rowcolIndexByValue = new uint[2][,];
+            rowcolIndexByValue[0] = new uint[MAX_VALUE, MAX_VALUE];
+            rowcolIndexByValue[1] = new uint[MAX_VALUE, MAX_VALUE];
+            for (int i = 0; i < MAX_VALUE; i++)
+            {
+                for (int j = 0; j < MAX_VALUE; j++)
+                {
+                    uint mask = board[i, j] & ~valueSetMask;
+                    int minVal = MinValue(mask);
+                    int maxVal = MaxValue(mask);
+                    for (int v = minVal; v <= maxVal; v++)
+                    {
+                        rowcolIndexByValue[0][v - 1, j] |= (1u << i);
+                        rowcolIndexByValue[1][v - 1, i] |= (1u << j);
+                    }
+                }
+            }
+
+            List<int> unsetRowOrCols = new(MAX_VALUE);
+            for (int tupleSize = 2; tupleSize <= MAX_VALUE / 2; tupleSize++)
             {
                 for (int rowOrCol = 0; rowOrCol < 2; rowOrCol++)
                 {
-                    bool isCol = rowOrCol != 0;
-                    int height = isCol ? WIDTH : HEIGHT;
-                    int width = isCol ? HEIGHT : WIDTH;
-                    for (int v = 1; v <= MAX_VALUE; v++)
+                    uint[,] indexByValue = rowcolIndexByValue[rowOrCol];
+
+                    for (int v = 0; v < MAX_VALUE; v++)
                     {
-                        uint[] rows = new uint[height];
-                        for (int curRow = 0; curRow < height; curRow++)
+                        // Make a list of pairs for the row/col which aren't already filled
+                        unsetRowOrCols.Clear();
+                        for (int j = 0; j < MAX_VALUE; j++)
                         {
-                            for (int curCol = 0; curCol < width; curCol++)
+                            uint cellMask = indexByValue[v, j];
+                            if (ValueCount(cellMask) <= tupleSize)
                             {
-                                int i = isCol ? curCol : curRow;
-                                int j = isCol ? curRow : curCol;
-                                uint curMask = board[i, j];
-                                if ((curMask & (1u << (v - 1))) != 0)
-                                {
-                                    rows[curRow] |= 1u << curCol;
-                                }
-                            }
-                            int rowCount = ValueCount(rows[curRow]);
-                            if (rowCount == 1 || rowCount > n)
-                            {
-                                rows[curRow] = 0;
+                                unsetRowOrCols.Add(j);
                             }
                         }
-
-                        int[] rowCombinations = combinations[height - 1][n - 1];
-                        int numCombinations = rowCombinations.Length / n;
-                        for (int combinationIndex = 0; combinationIndex < numCombinations; combinationIndex++)
+                        if (unsetRowOrCols.Count < tupleSize)
                         {
-                            Span<int> curCombination = new(rowCombinations, combinationIndex * n, n);
-                            bool validCombination = true;
-                            uint rowMask = 0;
-                            uint colMask = 0;
-                            foreach (int rowIndex in curCombination)
-                            {
-                                uint curColMask = rows[rowIndex];
-                                if (curColMask == 0)
-                                {
-                                    validCombination = false;
-                                    break;
-                                }
-                                rowMask |= 1u << rowIndex;
-                                colMask |= curColMask;
-                            }
-                            if (!validCombination)
-                            {
-                                continue;
-                            }
+                            continue;
+                        }
 
-                            int colCount = ValueCount(colMask);
-                            if (colCount > n)
+                        foreach (var tupleRowOrCols in unsetRowOrCols.Combinations(tupleSize))
+                        {
+                            uint tupleMask = 0;
+                            foreach (int j in tupleRowOrCols)
                             {
-                                continue;
+                                tupleMask |= indexByValue[v, j];
                             }
-                            if (colCount < n)
+                            if (ValueCount(tupleMask) == tupleSize)
                             {
-                                if (stepDescription != null)
+                                List<int> elims = null;
+                                for (int j = 0; j < MAX_VALUE; j++)
                                 {
-                                    string rowName = isCol ? "Cols" : "Rows";
-
-                                    string rowList = "";
-                                    foreach (int rowIndex in curCombination)
-                                    {
-                                        if (rowList.Length > 0)
-                                        {
-                                            rowList += ", ";
-                                        }
-                                        rowList += (char)('0' + (rowIndex + 1));
-                                    }
-                                    stepDescription.Clear();
-                                    stepDescription.Append($"{rowName} {rowList} have too few locations for {v}");
-                                }
-                                return LogicResult.Invalid;
-                            }
-
-                            uint valueMask = ValueMask(v);
-                            uint invRowMask = ~rowMask;
-                            bool changed = false;
-                            string fishDesc = null;
-                            for (int curRow = 0; curRow < height; curRow++)
-                            {
-                                if ((invRowMask & (1u << curRow)) == 0)
-                                {
-                                    continue;
-                                }
-
-                                for (int curCol = 0; curCol < width; curCol++)
-                                {
-                                    if ((colMask & (1u << curCol)) == 0)
+                                    if (tupleRowOrCols.Contains(j))
                                     {
                                         continue;
                                     }
 
-                                    int i = isCol ? curCol : curRow;
-                                    int j = isCol ? curRow : curCol;
-                                    if ((board[i, j] & valueMask) == 0)
+                                    uint mask = indexByValue[v, j];
+                                    uint elimMask = mask & tupleMask;
+                                    if (elimMask != 0)
                                     {
-                                        continue;
-                                    }
-
-                                    bool clearValueSucceeded = ClearValue(i, j, v);
-                                    if (stepDescription != null)
-                                    {
-                                        if (fishDesc == null)
+                                        for (int i = 0; i < MAX_VALUE; i++)
                                         {
-                                            string rowName = isCol ? "c" : "r";
-                                            string desc = "";
-                                            foreach (int fishRow in curCombination)
+                                            if ((elimMask & (1u << i)) != 0)
                                             {
-                                                desc = $"{desc}{rowName}{fishRow + 1}";
+                                                elims ??= new();
+                                                elims.Add(CandidateIndex(rowOrCol == 0 ? (i, j) : (j, i), v));
                                             }
-
-                                            string techniqueName = n switch
-                                            {
-                                                2 => "X-Wing",
-                                                3 => "Swordfish",
-                                                4 => "Jellyfish",
-                                                _ => $"{n}-Fish",
-                                            };
-
-                                            fishDesc = $"{techniqueName} on {desc} for value {v}";
-                                        }
-
-                                        if (!clearValueSucceeded)
-                                        {
-                                            stepDescription.Clear();
-                                            stepDescription.Append($"{fishDesc}, but it cannot be removed from {CellName(i, j)}");
-                                            return LogicResult.Invalid;
-                                        }
-
-                                        if (!changed)
-                                        {
-                                            stepDescription.Append($"{fishDesc}, removing that value from {CellName(i, j)}");
-                                        }
-                                        else
-                                        {
-                                            stepDescription.Append($", {CellName(i, j)}");
                                         }
                                     }
-                                    else if (!clearValueSucceeded)
+                                }
+
+                                if (elims != null && elims.Count > 0)
+                                {
+                                    string techniqueName = tupleSize switch
+                                    {
+                                        2 => "X-Wing",
+                                        3 => "Swordfish",
+                                        4 => "Jellyfish",
+                                        _ => $"{tupleSize}-Fish",
+                                    };
+
+                                    List<(int, int)> fishCells = new();
+                                    foreach (int j in tupleRowOrCols)
+                                    {
+                                        uint mask = indexByValue[v, j];
+                                        for (int i = 0; i < MAX_VALUE; i++)
+                                        {
+                                            if ((mask & (1u << i)) != 0)
+                                            {
+                                                fishCells.Add(rowOrCol == 0 ? (i, j) : (j, i));
+                                            }
+                                        }
+                                    }
+
+                                    logicalStepDescs?.Add(new(
+                                        desc: $"{techniqueName}: {v} {CompactName(fishCells)} => {DescribeElims(elims)}",
+                                        sourceCandidates: CandidateIndexes(ValueMask(v), fishCells),
+                                        elimCandidates: elims
+                                    ));
+                                    if (!ClearCandidates(elims))
                                     {
                                         return LogicResult.Invalid;
                                     }
-
-                                    changed = true;
+                                    return LogicResult.Changed;
                                 }
-                            }
-                            if (changed)
-                            {
-                                return LogicResult.Changed;
                             }
                         }
                     }
@@ -2663,17 +2713,16 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
-        private LogicResult FindYWings(StringBuilder stepDescription)
+        private LogicResult FindYWings(List<LogicalStepDesc> logicalStepDescs)
         {
-            if (isBruteForcing)
+            if (true || isBruteForcing)
             {
                 return LogicResult.None;
             }
 
-            // A y-wing always involves three cells with two candidates remaining.
-            // The three cells have 3 candidates between them, and one cell sees both of them.
-            // Any cell seen by the "wings" that don't see each other cannot be the candidate that's
-            // not in the "hinge" cell.
+            // A y-wing always involves three bivalue cells.
+            // The three cells have 3 candidates between them, and one cell called the "pivot" sees the other two "pincers".
+            // A strong link is formed between the common candidate between the two "pincer" cells.
             List<(int, int)> candidateCells = new();
             for (int i = 0; i < HEIGHT; i++)
             {
@@ -2717,87 +2766,53 @@ namespace SudokuSolver
                         uint combinedMask = mask0 | mask1 | mask2;
                         if (ValueCount(combinedMask) == 3)
                         {
-                            var seen0 = SeenCellsByValueMask(mask0, (i0, j0));
-                            var seen1 = SeenCellsByValueMask(mask1, (i1, j1));
-                            var seen2 = SeenCellsByValueMask(mask2, (i2, j2));
-                            (int, int) pivot = (0, 0);
-                            (int, int) pincer0 = (0, 0);
-                            (int, int) pincer1 = (0, 0);
-                            uint pivotMask = 0;
-                            uint pincer0Mask = 0;
-                            uint pincer1Mask = 0;
-                            uint removeMask = 0;
-                            HashSet<(int, int)> removeFrom = null;
-                            if (seen0.Contains((i1, j1)) && seen0.Contains((i2, j2)) && !seen1.Contains((i2, j2)))
+                            int value01 = GetValue(mask0 & mask1);
+                            int value02 = GetValue(mask0 & mask2);
+                            int value12 = GetValue(mask1 & mask2);
+                            int cand01_0 = CandidateIndex((i0, j0), value01);
+                            int cand01_1 = CandidateIndex((i1, j1), value01);
+                            int cand02_0 = CandidateIndex((i0, j0), value02);
+                            int cand02_2 = CandidateIndex((i2, j2), value02);
+                            int cand12_1 = CandidateIndex((i1, j1), value12);
+                            int cand12_2 = CandidateIndex((i2, j2), value12);
+                            bool weak01 = weakLinks[cand01_0].Contains(cand01_1);
+                            bool weak02 = weakLinks[cand02_0].Contains(cand02_2);
+                            bool weak12 = weakLinks[cand12_1].Contains(cand12_2);
+                            int weakCount = (weak01 ? 1 : 0) + (weak02 ? 1 : 0) + (weak12 ? 1 : 0);
+                            if (weakCount != 2)
                             {
-                                // Hinge is 0, the shared value is the value not in cell 0
-                                removeMask = combinedMask & ~mask0;
-                                removeFrom = SeenCellsByValueMask(removeMask, (i1, j1), (i2, j2));
-                                pivot = (i0, j0);
-                                pincer0 = (i1, j1);
-                                pincer1 = (i2, j2);
-                                pivotMask = mask0;
-                                pincer0Mask = mask1;
-                                pincer1Mask = mask2;
-                            }
-                            else if (seen1.Contains((i0, j0)) && seen1.Contains((i2, j2)) && !seen0.Contains((i2, j2)))
-                            {
-                                // Hinge is 1, the shared value is the value not in cell 1
-                                removeMask = combinedMask & ~mask1;
-                                removeFrom = SeenCellsByValueMask(removeMask, (i0, j0), (i2, j2));
-                                pivot = (i1, j1);
-                                pincer0 = (i0, j0);
-                                pincer1 = (i2, j2);
-                                pivotMask = mask1;
-                                pincer0Mask = mask0;
-                                pincer1Mask = mask2;
-                            }
-                            else if (seen2.Contains((i0, j0)) && seen2.Contains((i1, j1)) && !seen0.Contains((i1, j1)))
-                            {
-                                // Hinge is 2, the shared value is the value not in cell 2
-                                removeMask = combinedMask & ~mask2;
-                                removeFrom = SeenCellsByValueMask(removeMask, (i0, j0), (i1, j1));
-                                pivot = (i2, j2);
-                                pincer0 = (i0, j0);
-                                pincer1 = (i1, j1);
-                                pivotMask = mask2;
-                                pincer0Mask = mask0;
-                                pincer1Mask = mask1;
+                                continue;
                             }
 
-                            if (removeFrom != null)
+                            List<int> elims;
+                            if (weak01 && weak02)
                             {
-                                List<(int, int)> removedFrom = new();
-                                foreach (var (ri, rj) in removeFrom)
+                                // Pivot is 0, eliminate from the shared 12 value
+                                elims = CalcElims(cand12_1, cand12_2).ToList();
+                            }
+                            else if (weak01 && weak12)
+                            {
+                                // Pivot is 1, eliminate from the shared 02 value
+                                elims = CalcElims(cand02_0, cand02_2).ToList();
+                            }
+                            else
+                            {
+                                // Pivot is 2, elimiate from the shared 01 value
+                                elims = CalcElims(cand01_0, cand01_1).ToList();
+                            }
+                            if (elims.Count > 0)
+                            {
+                                List<(int, int)> cells = new() { (i0, j0), (i1, j1), (i2, j2) };
+                                logicalStepDescs?.Add(new(
+                                        desc: $"Y-Wing: {MaskToString(combinedMask)} in {CompactName(cells)} => {DescribeElims(elims)}",
+                                        sourceCandidates: CandidateIndexes(combinedMask, cells),
+                                        elimCandidates: elims
+                                    ));
+                                if (!ClearCandidates(elims))
                                 {
-                                    LogicResult removeResult = ClearMask(ri, rj, removeMask);
-                                    if (removeResult == LogicResult.Invalid)
-                                    {
-                                        return LogicResult.Invalid;
-                                    }
-                                    if (removeResult == LogicResult.Changed)
-                                    {
-                                        removedFrom.Add((ri, rj));
-                                    }
+                                    return LogicResult.Invalid;
                                 }
-                                if (removedFrom.Count > 0)
-                                {
-                                    if (stepDescription != null)
-                                    {
-                                        stepDescription.Append($"Y-Wing with pivot at {CellName(pivot)} ({MaskToString(pivotMask)}) and pincers at {CellName(pincer0)} ({MaskToString(pincer0Mask)}), {CellName(pincer1)} ({MaskToString(pincer1Mask)}) clears candidate {GetValue(removeMask)} from cell{(removedFrom.Count == 1 ? "" : "s")}: ");
-                                        bool needComma = false;
-                                        foreach (var cell in removedFrom)
-                                        {
-                                            if (needComma)
-                                            {
-                                                stepDescription.Append(", ");
-                                            }
-                                            stepDescription.Append($"{CellName(cell)}");
-                                            needComma = true;
-                                        }
-                                    }
-                                    return LogicResult.Changed;
-                                }
+                                return LogicResult.Changed;
                             }
                         }
                     }
@@ -2818,260 +2833,164 @@ namespace SudokuSolver
                         continue;
                     }
 
-                    uint combMask = mask0 | mask1;
-                    if (ValueCount(combMask) != 3)
+                    uint combinedMask = mask0 | mask1;
+                    if (ValueCount(combinedMask) != 3)
                     {
                         continue;
                     }
 
-                    uint removeMask = mask0 & mask1;
+                    // These two cells are potentially pincers.
+                    // They will have exactly one shared value between them.
+                    uint sharedMask = mask0 & mask1;
+                    int sharedVal = GetValue(sharedMask);
+                    int sharedCand0 = CandidateIndex((i0, j0), sharedVal);
+                    int sharedCand1 = CandidateIndex((i1, j1), sharedVal);
 
-                    // Look for a cells seen by both of these pincers that contains these exact 3 candidates:
-                    foreach (var (pi, pj) in SeenCellsByValueMask(combMask, (i0, j0), (i1, j1)))
+                    // Skip these cells if they have a weak link on this candidate, since pincers by definition can't see each other.
+                    if (weakLinks[sharedCand0].Contains(sharedCand1))
                     {
-                        if (board[pi, pj] == combMask)
+                        continue;
+                    }
+
+                    // Look for cells which have a weak link on the shared candidate and have all three values of the combined mask.
+                    // This is the pivot for the XYZ-wing.
+                    List<int> elims = CalcElims(sharedCand0, sharedCand1).ToList();
+                    if (elims.Count <= 1)
+                    {
+                        continue;
+                    }
+                    foreach (int elimCandidate in elims)
+                    {
+                        var (i2, j2, v2) = CandIndexToCoord(elimCandidate);
+                        uint mask2 = board[i2, j2];
+                        if (mask2 != combinedMask)
                         {
-                            // Check for cells seen by all three
-                            List<(int, int)> removedFrom = new();
-                            foreach (var (ri, rj) in SeenCellsByValueMask(combMask, (i0, j0), (i1, j1), (pi, pj)))
-                            {
-                                LogicResult removeResult = ClearMask(ri, rj, removeMask);
-                                if (removeResult == LogicResult.Invalid)
-                                {
-                                    return LogicResult.Invalid;
-                                }
-                                if (removeResult == LogicResult.Changed)
-                                {
-                                    removedFrom.Add((ri, rj));
-                                }
-                            }
-                            if (removedFrom.Count > 0)
-                            {
-                                if (stepDescription != null)
-                                {
-                                    stepDescription?.Append($"XYZ-Wing with pivot at {CellName((pi, pj))} ({MaskToString(combMask)}) and pincers at {CellName((i0, j0))} ({MaskToString(mask0)}), {CellName((i1, j1))} ({MaskToString(mask1)}) clears candidate {GetValue(removeMask)} from cell{(removedFrom.Count == 1 ? "" : "s")}: ");
-                                    bool needComma = false;
-                                    foreach (var cell in removedFrom)
-                                    {
-                                        if (needComma)
-                                        {
-                                            stepDescription?.Append(", ");
-                                        }
-                                        stepDescription?.Append($"{CellName(cell)}");
-                                        needComma = true;
-                                    }
-                                }
-                                return LogicResult.Changed;
-                            }
+                            continue;
                         }
+
+                        List<(int, int)> cells = new() { (i0, j0), (i1, j1), (i2, j2) };
+                        logicalStepDescs?.Add(new(
+                                desc: $"XYZ-Wing: {MaskToString(combinedMask)} in {CompactName(cells)} => {DescribeElims(elims)}",
+                                sourceCandidates: CandidateIndexes(combinedMask, cells),
+                                elimCandidates: elims
+                            ));
+                        if (!ClearCandidates(elims))
+                        {
+                            return LogicResult.Invalid;
+                        }
+                        return LogicResult.Changed;
                     }
                 }
             }
 
             // Look for WXYZ-Wings
+            // A WXYZ-Wing is 4 candidates limited to 4 cells.
+            // Looking at each candidate, all but one of them cannot repeat within those cells.
+            // This implies that any cell seen by the instances of that last candidate can be eliminated.
+            // This process can be extended to any N number of candidates in N cells, but it would be too slow to search for.
             candidateCells.Clear();
             for (int i = 0; i < HEIGHT; i++)
             {
                 for (int j = 0; j < WIDTH; j++)
                 {
                     uint mask = board[i, j];
-                    if (IsValueSet(mask))
-                    {
-                        continue;
-                    }
-                    if (ValueCount(mask) <= 3)
+                    if (!IsValueSet(mask) && ValueCount(mask) <= 4)
                     {
                         candidateCells.Add((i, j));
                     }
                 }
             }
 
-            for (int c0 = 0; c0 < candidateCells.Count - 2; c0++)
+            for (int c0 = 0; c0 < candidateCells.Count - 3; c0++)
             {
                 var (i0, j0) = candidateCells[c0];
                 uint mask0 = board[i0, j0];
-                for (int c1 = c0 + 1; c1 < candidateCells.Count - 1; c1++)
+                for (int c1 = c0 + 1; c1 < candidateCells.Count - 2; c1++)
                 {
                     var (i1, j1) = candidateCells[c1];
                     uint mask1 = board[i1, j1];
-                    for (int c2 = c1 + 1; c2 < candidateCells.Count; c2++)
+                    uint mask01 = mask0 | mask1;
+                    if (ValueCount(mask01) > 4)
+                    {
+                        continue;
+                    }
+
+                    for (int c2 = c1 + 1; c2 < candidateCells.Count - 1; c2++)
                     {
                         var (i2, j2) = candidateCells[c2];
                         uint mask2 = board[i2, j2];
-
-                        uint removeMask = mask0 & mask1 & mask2;
-                        if (removeMask == 0 || ValueCount(removeMask) != 1)
+                        uint mask012 = mask01 | mask2;
+                        if (ValueCount(mask012) > 4)
                         {
                             continue;
                         }
 
-                        uint combMask = mask0 | mask1 | mask2;
-                        if (ValueCount(combMask) != 4)
+                        for (int c3 = c2 + 1; c3 < candidateCells.Count; c3++)
                         {
-                            continue;
-                        }
-
-                        int count0 = ValueCount(mask0);
-                        int count1 = ValueCount(mask1);
-                        int count2 = ValueCount(mask2);
-                        // If all three pincers have three candidates it can't be valid
-                        if (count0 == 3 && count1 == 3 && count2 == 3)
-                        {
-                            continue;
-                        }
-
-                        // If all three pincers have two candidates it's always valid
-                        if (count0 != 2 || count1 != 2 || count2 != 2)
-                        {
-                            bool seen01 = SeenCellsByValueMask(combMask, (i0, j0)).Contains((i1, j1));
-                            bool seen02 = SeenCellsByValueMask(combMask, (i0, j0)).Contains((i2, j2));
-                            bool seen12 = SeenCellsByValueMask(combMask, (i1, j1)).Contains((i2, j2));
-
-                            // If two pincers have three candidates, then they must have equal candidates and see each other
-                            if (count0 == 3 && count1 == 3 && (mask0 != mask1 || !seen01) ||
-                                count0 == 3 && count2 == 3 && (mask0 != mask2 || !seen02) ||
-                                count1 == 3 && count2 == 3 && (mask1 != mask2 || !seen12))
-                            {
-                                continue;
-                            }
-                            // If one pincer has three candidates, it must see one of the other pincers and have all the candidates of that pincer
-                            else if (count0 == 3 && count1 == 2 && count2 == 2)
-                            {
-                                if (seen01 && seen02)
-                                {
-                                    if ((mask0 & mask1) != mask1 && (mask0 & mask2) != mask2)
-                                    {
-                                        continue;
-                                    }
-                                }
-                                else if (seen01)
-                                {
-                                    if ((mask0 & mask1) != mask1)
-                                    {
-                                        continue;
-                                    }
-                                }
-                                else if (seen02)
-                                {
-                                    if ((mask0 & mask2) != mask2)
-                                    {
-                                        continue;
-                                    }
-                                }
-                                continue;
-                            }
-                            else if (count1 == 3 && count0 == 2 && count2 == 2)
-                            {
-                                if (seen01 && seen12)
-                                {
-                                    if ((mask1 & mask0) != mask0 && (mask1 & mask2) != mask2)
-                                    {
-                                        continue;
-                                    }
-                                }
-                                else if (seen01)
-                                {
-                                    if ((mask1 & mask0) != mask0)
-                                    {
-                                        continue;
-                                    }
-                                }
-                                else if (seen12)
-                                {
-                                    if ((mask1 & mask2) != mask2)
-                                    {
-                                        continue;
-                                    }
-                                }
-                                continue;
-                            }
-                            else if (count2 == 3 && count0 == 2 && count1 == 2)
-                            {
-                                if (seen02 && seen12)
-                                {
-                                    if ((mask2 & mask0) != mask0 && (mask2 & mask1) != mask1)
-                                    {
-                                        continue;
-                                    }
-                                }
-                                else if (seen02)
-                                {
-                                    if ((mask2 & mask0) != mask0)
-                                    {
-                                        continue;
-                                    }
-                                }
-                                else if (seen12)
-                                {
-                                    if ((mask2 & mask1) != mask1)
-                                    {
-                                        continue;
-                                    }
-                                }
-                                continue;
-                            }
-                        }
-
-                        // Look for a pivot that sees all three of these pincers and has all only the candidates present in the pincers
-                        foreach (var (pi, pj) in SeenCellsByValueMask(combMask, (i0, j0), (i1, j1), (i2, j2)))
-                        {
-                            uint maskp = board[pi, pj];
-                            if (IsValueSet(maskp) || (maskp & combMask) != maskp)
+                            var (i3, j3) = candidateCells[c3];
+                            uint mask3 = board[i3, j3];
+                            uint mask0123 = mask012 | mask3;
+                            if (ValueCount(mask0123) != 4)
                             {
                                 continue;
                             }
 
-                            List<(int, int)> removedFrom = new();
-                            if ((maskp & removeMask) == 0)
+                            List<(int, int)> cells = new() { (i0, j0), (i1, j1), (i2, j2), (i3, j3) };
+                            bool isInvalid = false;
+                            int ungroupedValue = 0;
+                            for (int v = 1; v <= 9; v++)
                             {
-                                // The pivot does not contain the shared digit among the pincers.
-                                // This means any cells that just the pincers see can have that shared digit removed
-                                foreach (var (ri, rj) in SeenCellsByValueMask(combMask, (i0, j0), (i1, j1), (i2, j2)))
+                                uint valueMask = ValueMask(v);
+                                if ((mask0123 & valueMask) != 0)
                                 {
-                                    LogicResult removeResult = ClearMask(ri, rj, removeMask);
-                                    if (removeResult == LogicResult.Invalid)
+                                    int numWithCandidate =
+                                        ((mask0 & valueMask) != 0 ? 1 : 0) +
+                                        ((mask1 & valueMask) != 0 ? 1 : 0) +
+                                        ((mask2 & valueMask) != 0 ? 1 : 0) +
+                                        ((mask3 & valueMask) != 0 ? 1 : 0);
+                                    if (numWithCandidate == 1)
                                     {
-                                        return LogicResult.Invalid;
+                                        isInvalid = true;
+                                        break;
                                     }
-                                    if (removeResult == LogicResult.Changed)
+
+                                    if (!IsGroup(cells, v))
                                     {
-                                        removedFrom.Add((ri, rj));
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                // The pivot does contain the shared digit among the pincers.
-                                foreach (var (ri, rj) in SeenCellsByValueMask(combMask, (i0, j0), (i1, j1), (i2, j2), (pi, pj)))
-                                {
-                                    LogicResult removeResult = ClearMask(ri, rj, removeMask);
-                                    if (removeResult == LogicResult.Invalid)
-                                    {
-                                        return LogicResult.Invalid;
-                                    }
-                                    if (removeResult == LogicResult.Changed)
-                                    {
-                                        removedFrom.Add((ri, rj));
-                                    }
-                                }
-                            }
-                            if (removedFrom.Count > 0)
-                            {
-                                if (stepDescription != null)
-                                {
-                                    stepDescription.Append($"WXYZ-Wing with pivot at {CellName((pi, pj))} ({MaskToString(maskp)}) and pincers at {CellName((i0, j0))} ({MaskToString(mask0)}), {CellName((i1, j1))} ({MaskToString(mask1)}), {CellName((i2, j2))} ({MaskToString(mask2)}) clears candidate {GetValue(removeMask)} from cell{(removedFrom.Count == 1 ? "" : "s")}: ");
-                                    bool needComma = false;
-                                    foreach (var cell in removedFrom)
-                                    {
-                                        if (needComma)
+                                        if (ungroupedValue == 0)
                                         {
-                                            stepDescription.Append(", ");
+                                            ungroupedValue = v;
                                         }
-                                        stepDescription.Append($"{CellName(cell)}");
-                                        needComma = true;
+                                        else
+                                        {
+                                            isInvalid = true;
+                                            break;
+                                        }
                                     }
                                 }
-                                return LogicResult.Changed;
+                            }
+
+                            if (!isInvalid)
+                            {
+                                // Eliminate the ungrouped value from any candidates with a weak link to all the cells which contain this value.
+                                var elims = CalcElims(ValueMask(ungroupedValue), cells);
+                                if (elims == null || elims.Count == 0)
+                                {
+                                    continue;
+                                }
+
+                                foreach (int elimCandidate in elims)
+                                {
+                                    logicalStepDescs?.Add(new(
+                                            desc: $"WXYZ-Wing: {MaskToString(mask0123)} in {CompactName(cells)} => {DescribeElims(elims)}",
+                                            sourceCandidates: CandidateIndexes(mask0123, cells),
+                                            elimCandidates: elims
+                                        ));
+                                    if (!ClearCandidates(elims))
+                                    {
+                                        return LogicResult.Invalid;
+                                    }
+                                    return LogicResult.Changed;
+                                }
                             }
                         }
                     }
@@ -3081,7 +3000,797 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
-        private LogicResult FindSimpleContradictions(StringBuilder stepDescription)
+        internal string CompactName(uint mask, List<(int, int)> cells) =>
+            string.Join(MAX_VALUE <= 9 ? "" : ",", Enumerable.Range(1, MAX_VALUE).Where(v => HasValue(mask, v))) + CompactName(cells);
+
+        internal string CompactName(List<(int, int)> cells)
+        {
+            string cellSep = MAX_VALUE <= 9 ? string.Empty : ",";
+            char groupSep = ',';
+
+            if (cells.Count == 0)
+            {
+                return "";
+            }
+
+            if (cells.Count == 1)
+            {
+                return CellName(cells[0]);
+            }
+
+            if (cells.All(cell => cell.Item1 == cells[0].Item1))
+            {
+                // All share a row
+                return $"r{cells[0].Item1 + 1}c{string.Join(cellSep, cells.Select(cell => cell.Item2 + 1).OrderBy(x => x))}";
+            }
+
+            if (cells.All(cell => cell.Item2 == cells[0].Item2))
+            {
+                // All share a column
+                return $"r{string.Join(cellSep, cells.Select(cell => cell.Item1 + 1).OrderBy(x => x))}c{cells[0].Item2 + 1}";
+            }
+
+            List<int>[] colsPerRow = new List<int>[HEIGHT];
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                colsPerRow[i] = new();
+            }
+            foreach (var cell in cells)
+            {
+                colsPerRow[cell.Item1].Add(cell.Item2 + 1);
+            }
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                colsPerRow[i].Sort();
+            }
+
+            List<string> groups = new();
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                if (colsPerRow[i].Count == 0)
+                {
+                    continue;
+                }
+
+                List<int> rowsInGroup = new() { i + 1 };
+                for (int j = i + 1; j < HEIGHT; j++)
+                {
+                    if (colsPerRow[j].SequenceEqual(colsPerRow[i]))
+                    {
+                        rowsInGroup.Add(j + 1);
+                        colsPerRow[j].Clear();
+                    }
+                }
+
+                groups.Add($"r{string.Join(cellSep, rowsInGroup)}c{string.Join(cellSep, colsPerRow[i])}");
+            }
+
+            return string.Join(groupSep, groups);
+        }
+
+        private readonly struct StrongLinkDesc
+        {
+            public readonly string humanDesc;
+            public readonly List<(int, int)> alsCells;
+
+            public StrongLinkDesc(string humanDesc, IEnumerable<(int, int)> alsCells = null)
+            {
+                this.humanDesc = humanDesc;
+                this.alsCells = alsCells != null ? new(alsCells) : null;
+            }
+
+            public static StrongLinkDesc Empty => new(string.Empty, null);
+        }
+        private Dictionary<int, StrongLinkDesc>[] FindStrongLinks()
+        {
+            Dictionary<int, StrongLinkDesc>[] strongLinks = new Dictionary<int, StrongLinkDesc>[NUM_CELLS * MAX_VALUE];
+            for (int candIndex = 0; candIndex < strongLinks.Length; candIndex++)
+            {
+                strongLinks[candIndex] = new();
+            }
+
+            // Add bivalue strong links
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    uint mask = board[i, j];
+                    if (!IsValueSet(mask) && ValueCount(mask) == 2)
+                    {
+                        int v0 = MinValue(mask);
+                        int v1 = MaxValue(mask);
+                        int cand0 = CandidateIndex((i, j), v0);
+                        int cand1 = CandidateIndex((i, j), v1);
+                        strongLinks[cand0][cand1] = StrongLinkDesc.Empty;
+                        strongLinks[cand1][cand0] = StrongLinkDesc.Empty;
+                    }
+                }
+            }
+
+            // Add bilocal strong links
+            foreach (var group in Groups)
+            {
+                if (group.Cells.Count == MAX_VALUE)
+                {
+                    int[] valueCount = new int[MAX_VALUE];
+                    foreach (var (i, j) in group.Cells)
+                    {
+                        uint mask = board[i, j];
+                        for (int v = 1; v <= MAX_VALUE; v++)
+                        {
+                            if ((mask & ValueMask(v)) != 0)
+                            {
+                                valueCount[v - 1]++;
+                            }
+                        }
+                    }
+
+                    for (int v = 1; v <= MAX_VALUE; v++)
+                    {
+                        if (valueCount[v - 1] == 2)
+                        {
+                            (int, int) cell0 = (-1, -1);
+                            (int, int) cell1 = (-1, -1);
+                            foreach (var (i, j) in group.Cells)
+                            {
+                                uint mask = board[i, j];
+                                if ((mask & ValueMask(v)) != 0)
+                                {
+                                    if (cell0.Item1 == -1)
+                                    {
+                                        cell0 = (i, j);
+                                    }
+                                    else
+                                    {
+                                        cell1 = (i, j);
+                                        break;
+                                    }
+                                }
+                            }
+
+                            int cand0 = CandidateIndex(cell0, v);
+                            int cand1 = CandidateIndex(cell1, v);
+                            strongLinks[cand0][cand1] = StrongLinkDesc.Empty;
+                            strongLinks[cand1][cand0] = StrongLinkDesc.Empty;
+                        }
+                    }
+                }
+                else if (group.FromConstraint != null)
+                {
+                    for (int v = 1; v <= MAX_VALUE; v++)
+                    {
+                        var cells = group.FromConstraint.CellsMustContain(this, v);
+                        if (cells != null && cells.Count == 2)
+                        {
+                            int cand0 = CandidateIndex(cells[0], v);
+                            int cand1 = CandidateIndex(cells[1], v);
+                            string constraintName = group.FromConstraint.SpecificName;
+                            StrongLinkDesc strongLinkDesc = new(constraintName);
+                            strongLinks[cand0][cand1] = strongLinkDesc;
+                            strongLinks[cand1][cand0] = strongLinkDesc;
+                        }
+                    }
+                }
+            }
+
+            // Add ALS (Almost Locked Set) strong links
+            // These occur when n cells in the same group have n+1 total candidates,
+            // and two of those candidates only appear once.
+            // There is a strong link between those two candidates.
+            // (If both were missing, then there would be n-1 candidates for n cells).
+            foreach (var group in Groups)
+            {
+                var unsetCells = group.Cells.Where(cell => !IsValueSet(board[cell.Item1, cell.Item2])).ToList();
+
+                for (int alsSize = 2; alsSize < unsetCells.Count; alsSize++)
+                {
+                    foreach (var combination in unsetCells.Combinations(alsSize))
+                    {
+                        uint totalMask = 0;
+                        foreach (var cell in combination)
+                        {
+                            totalMask |= board[cell.Item1, cell.Item2];
+                        }
+
+                        if (ValueCount(totalMask) != alsSize + 1)
+                        {
+                            continue;
+                        }
+
+                        List<int>[] candIndexPerValue = new List<int>[MAX_VALUE];
+                        for (int v = 1; v <= MAX_VALUE; v++)
+                        {
+                            candIndexPerValue[v - 1] = new();
+                        }
+                        foreach (var (i, j) in combination)
+                        {
+                            uint mask = board[i, j];
+                            for (int v = 1; v <= MAX_VALUE; v++)
+                            {
+                                if ((mask & ValueMask(v)) != 0)
+                                {
+                                    int candIndex = CandidateIndex((i, j), v);
+                                    candIndexPerValue[v - 1].Add(candIndex);
+                                }
+                            }
+                        }
+
+                        List<int> singleValues = new();
+                        for (int v = 1; v <= MAX_VALUE; v++)
+                        {
+                            if (candIndexPerValue[v - 1].Count == 1)
+                            {
+                                singleValues.Add(candIndexPerValue[v - 1][0]);
+                            }
+                        }
+
+                        if (singleValues.Count > 1)
+                        {
+                            foreach (var candIndices in singleValues.Combinations(2))
+                            {
+                                int cand0 = candIndices[0];
+                                int cand1 = candIndices[1];
+
+                                string valSep = MAX_VALUE <= 9 ? string.Empty : ",";
+                                StringBuilder alsDesc = new();
+                                alsDesc.Append("ALS:");
+                                alsDesc.Append(CompactName(totalMask, combination));
+
+                                string alsDescStr = alsDesc.ToString();
+                                StrongLinkDesc strongLinkDesc = new(alsDescStr, combination);
+                                strongLinks[cand0][cand1] = strongLinkDesc;
+                                strongLinks[cand1][cand0] = strongLinkDesc;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return strongLinks;
+        }
+
+        public uint CandidateMask(IEnumerable<(int, int)> cells)
+        {
+            uint mask = 0;
+            foreach (var curCell in cells)
+            {
+                mask |= board[curCell.Item1, curCell.Item2];
+            }
+            return mask & ~valueSetMask;
+        }
+
+        internal int CandidateIndex((int, int) cell, int v) => (cell.Item1 * WIDTH + cell.Item2) * MAX_VALUE + v - 1;
+
+        internal List<int> CandidateIndexes(uint valueMask, IEnumerable<(int, int)> cells)
+        {
+            List<int> result = new();
+            foreach (var cell in cells)
+            {
+                uint mask = board[cell.Item1, cell.Item2] & valueMask;
+                if (mask != 0)
+                {
+                    int minVal = MinValue(mask);
+                    int maxVal = MaxValue(mask);
+                    for (int v = minVal; v <= maxVal; v++)
+                    {
+                        if (HasValue(mask, v))
+                        {
+                            result.Add(CandidateIndex(cell, v));
+                        }
+                    }
+                }
+            }
+            return result;
+        }
+
+        internal (int, int, int) CandIndexToCoord(int candIndex)
+        {
+            int v = (candIndex % MAX_VALUE) + 1;
+            candIndex /= MAX_VALUE;
+
+            int j = candIndex % WIDTH;
+            candIndex /= WIDTH;
+
+            int i = candIndex;
+            return (i, j, v);
+        }
+
+        internal string CandIndexDesc(int candIndex)
+        {
+            var (i, j, v) = CandIndexToCoord(candIndex);
+            return $"{v}{CellName(i, j)}";
+        }
+
+        internal bool IsCandIndexValid(int candIndex)
+        {
+            var (i, j, v) = CandIndexToCoord(candIndex);
+            uint mask = board[i, j];
+            return !IsValueSet(mask) && HasValue(mask, v);
+        }
+
+        // Returns true if cell 0 has the ability to eliminate all candidates from cell 1
+        internal bool HasFullWeakLinks((int, int) cell0, (int, int) cell1)
+        {
+            uint mask0 = board[cell0.Item1, cell0.Item2];
+            uint mask1 = board[cell1.Item1, cell1.Item2];
+            uint sharedMask = mask0 & mask1;
+            if (sharedMask != mask1)
+            {
+                return false;
+            }
+            for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+            {
+                uint valueMask0 = ValueMask(v0);
+                if ((mask0 & valueMask0) == 0)
+                {
+                    continue;
+                }
+                int cand0 = CandidateIndex(cell0, v0);
+                for (int v1 = 1; v1 <= MAX_VALUE; v1++)
+                {
+                    uint valueMask1 = ValueMask(v1);
+                    if ((mask1 & valueMask1) == 0)
+                    {
+                        continue;
+                    }
+                    int cand1 = CandidateIndex(cell1, v1);
+                    if (weakLinks[cand0].Contains(cand1))
+                    {
+                        mask1 &= ~valueMask1;
+                        if (mask1 == 0)
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        internal IEnumerable<int> CalcElims(int candIndex0, int candIndex1) =>
+            weakLinks[candIndex0].Where(IsCandIndexValid).Intersect(weakLinks[candIndex1].Where(IsCandIndexValid));
+
+        internal IEnumerable<int> CalcElims(IEnumerable<int> candIndexes)
+        {
+            IEnumerable<int> result = null;
+            foreach (int candIndex in candIndexes)
+            {
+                IEnumerable<int> curElims = weakLinks[candIndex].Where(IsCandIndexValid);
+                if (result == null)
+                {
+                    result = curElims;
+                }
+                else
+                {
+                    result = result.Intersect(curElims);
+                }
+            }
+            return result;
+        }
+
+        internal HashSet<int> CalcElims(uint clearMask, List<(int, int)> cells)
+        {
+            HashSet<int> elims = null;
+            for (int v = 1; v <= MAX_VALUE; v++)
+            {
+                if (!HasValue(clearMask, v))
+                {
+                    continue;
+                }
+
+                var curElims = CalcElims(cells.Where(cell => HasValue(board[cell.Item1, cell.Item2], v)).Select(cell => CandidateIndex(cell, v)));
+                if (curElims != null)
+                {
+                    if (elims == null)
+                    {
+                        elims = curElims.ToHashSet();
+                    }
+                    else
+                    {
+                        elims.UnionWith(curElims);
+                    }
+                }
+            }
+            return elims;
+        }
+
+        internal void CalcElims(HashSet<int> outElims, uint clearMask, List<(int, int)> cells)
+        {
+            for (int v = 1; v <= MAX_VALUE; v++)
+            {
+                if (!HasValue(clearMask, v))
+                {
+                    continue;
+                }
+
+                var curElims = CalcElims(cells.Where(cell => HasValue(board[cell.Item1, cell.Item2], v)).Select(cell => CandidateIndex(cell, v)));
+                if (curElims != null)
+                {
+                    outElims.UnionWith(curElims);
+                }
+            }
+        }
+
+        internal string DescribeElims(IEnumerable<int> elims)
+        {
+            List<(int, int)>[] elimsByVal = new List<(int, int)>[MAX_VALUE];
+            foreach (int elimCandIndex in elims)
+            {
+                var (i, j, v) = CandIndexToCoord(elimCandIndex);
+                elimsByVal[v - 1] ??= new();
+                elimsByVal[v - 1].Add((i, j));
+            }
+
+            List<string> elimDescs = new();
+            for (int v = 1; v <= MAX_VALUE; v++)
+            {
+                var elimCells = elimsByVal[v - 1];
+                if (elimCells != null && elimCells.Count > 0)
+                {
+                    elimCells.Sort();
+                    elimDescs.Add($"-{v}{CompactName(elimCells)}");
+                }
+            }
+            return string.Join(';', elimDescs);
+        }
+
+        // 0 = 1 - 2 = 3 - 4 = 5 - 6 = 7 - 8 = 9
+        // 0 = 3, 0 = 5, 0 = 7, 0 = 9
+        // 2 = 5, 2 = 7, 2 = 9
+        // 4 = 7, 4 = 9
+        // 6 = 9
+        private HashSet<int> CalcStrongElims(List<int> chain)
+        {
+            HashSet<int> elims = new();
+            for (int chainIndex0 = 0; chainIndex0 < chain.Count; chainIndex0 += 2)
+            {
+                int cand0 = chain[chainIndex0];
+                for (int chainIndex1 = chainIndex0 + 1; chainIndex1 < chain.Count; chainIndex1 += 2)
+                {
+                    int cand1 = chain[chainIndex1];
+                    elims.UnionWith(CalcElims(cand0, cand1));
+                }
+            }
+            return elims;
+        }
+
+        // 0 = 1 - 2 = 3 - 4 = 5 - 0
+        // 1 - 2, 1 - 4, 1 - 0
+        // 3 - 4, 3 - 0
+        // 5 - 0
+        private HashSet<int> CalcWeakToStrongElims(List<int> chain)
+        {
+            HashSet<int> elims = new();
+            for (int chainIndex0 = 1; chainIndex0 < chain.Count; chainIndex0 += 2)
+            {
+                int cand0 = chain[chainIndex0];
+                for (int chainIndex1 = chainIndex0 + 1; chainIndex1 < chain.Count; chainIndex1 += 2)
+                {
+                    int cand1 = chain[chainIndex1];
+                    elims.UnionWith(CalcElims(cand0, cand1));
+                }
+            }
+            return elims;
+        }
+
+        // For CNLs, all strong links convert to also be weak links.
+        // If those weak links are part of an ALS, the other candidates
+        // in the ALS must be present.
+        private HashSet<int> CalcStrongToWeakElims(Dictionary<int, StrongLinkDesc>[] strongLinks, List<int> chain)
+        {
+            HashSet<int> elims = new();
+            for (int chainIndex0 = 0; chainIndex0 < chain.Count; chainIndex0 += 2)
+            {
+                int cand0 = chain[chainIndex0];
+                for (int chainIndex1 = chainIndex0 + 1; chainIndex1 < chain.Count; chainIndex1 += 2)
+                {
+                    int cand1 = chain[chainIndex1];
+                    var (_, _, v0) = CandIndexToCoord(cand0);
+                    var (_, _, v1) = CandIndexToCoord(cand1);
+                    if (strongLinks[cand0].TryGetValue(cand1, out StrongLinkDesc strongLinkDescOut) && strongLinkDescOut.alsCells != null)
+                    {
+                        uint totalMask = 0;
+                        foreach (var cell in strongLinkDescOut.alsCells)
+                        {
+                            totalMask |= board[cell.Item1, cell.Item2];
+                        }
+                        uint clearMask = totalMask & ~ValueMask(v0) & ~ValueMask(v1) & ~valueSetMask;
+                        CalcElims(elims, clearMask, strongLinkDescOut.alsCells);
+                    }
+                }
+
+            }
+            return elims;
+        }
+
+        private int NumSetValues
+        {
+            get
+            {
+                int numSetValues = 0;
+                for (int i = 0; i < HEIGHT; i++)
+                {
+                    for (int j = 0; j < WIDTH; j++)
+                    {
+                        if (IsValueSet(i, j))
+                        {
+                            numSetValues++;
+                        }
+                    }
+                }
+                return numSetValues;
+            }
+        }
+
+        private struct ChainQueueEntry
+        {
+            public readonly List<int> chain;
+            public readonly bool allowALS;
+
+            public ChainQueueEntry(List<int> chain, bool allowALS = true)
+            {
+                this.chain = chain;
+                this.allowALS = allowALS;
+            }
+        }
+
+        private LogicResult FindAIC(List<LogicalStepDesc> logicalStepDescs)
+        {
+            const int chainCapacity = 16;
+
+            var strongLinks = FindStrongLinks();
+
+            // Keep track of all dangling chains to process
+            Queue<ChainQueueEntry> chainQueue = new();
+
+            // Seed the chain stack with all candidates which have a strong link
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    int cellIndex = (i * WIDTH + j) * MAX_VALUE;
+                    for (int v = 1; v < MAX_VALUE; v++)
+                    {
+                        int candIndex0 = cellIndex + v - 1;
+                        if (IsCandIndexValid(candIndex0) && strongLinks[candIndex0].Count > 0)
+                        {
+                            chainQueue.Enqueue(new(new() { candIndex0 }));
+                        }
+                    }
+                }
+            }
+
+            // Process each chain found, adding more chains if still viable
+            List<int> bestChain = null;
+            List<int> bestChainElims = null;
+            int bestChainNumSingles = 0;
+            string bestChainDescPrefix = null;
+            int maxChainSize = 0;
+            bool bestChainCausesInvalidBoard = false;
+
+            void CheckBestChain(List<int> chain, List<int> chainElims, string chainDescPrefix)
+            {
+                if (chainElims.Count == 0)
+                {
+                    return;
+                }
+
+                // Apply the eliminations to a board clone
+                Solver clone = Clone();
+                foreach (int elimCandIndex in chainElims)
+                {
+                    var (i, j, v) = CandIndexToCoord(elimCandIndex);
+                    if (!clone.ClearValue(i, j, v))
+                    {
+                        bestChain = new(chain);
+                        bestChainElims = new(chainElims);
+                        bestChainNumSingles = 0;
+                        bestChainDescPrefix = chainDescPrefix;
+                        bestChainCausesInvalidBoard = true;
+                        return;
+                    }
+                }
+                if (clone.ApplySingles() == LogicResult.Invalid)
+                {
+                    bestChain = new(chain);
+                    bestChainElims = new(chainElims);
+                    bestChainNumSingles = 0;
+                    bestChainDescPrefix = chainDescPrefix;
+                    bestChainCausesInvalidBoard = true;
+                    return;
+                }
+
+                int numSingles = clone.NumSetValues;
+                (int, int, int) chainVals = (numSingles, chainElims.Count, -chain.Count);
+                (int, int, int) bestChainVals = bestChain != null ? (bestChainNumSingles, bestChainElims.Count, -bestChain.Count) : default;
+                if (bestChain == null || chainVals.CompareTo(bestChainVals) > 0)
+                {
+                    if (bestChain == null)
+                    {
+                        maxChainSize = chain.Count + 4;
+                    }
+                    bestChain = new(chain);
+                    bestChainElims = new(chainElims);
+                    bestChainNumSingles = numSingles;
+                    bestChainDescPrefix = chainDescPrefix;
+                }
+            }
+
+            while (chainQueue.Count > 0 && !bestChainCausesInvalidBoard && bestChainNumSingles < NUM_CELLS)
+            {
+                var chainEntry = chainQueue.Dequeue();
+                var chain = chainEntry.chain;
+                if (bestChain != null && maxChainSize > 0 && chain.Count + 1 > maxChainSize)
+                {
+                    // Prefer reporting shorter chains
+                    break;
+                }
+
+                // Append a strong link to each weak link and see if this causes eliminations.
+                foreach (int strongIndexEnd in strongLinks[chain[^1]].Keys)
+                {
+                    if (!IsCandIndexValid(strongIndexEnd))
+                    {
+                        continue;
+                    }
+
+                    // Reject any strong links to repeated nodes, unless it's the first node that's repeated
+                    if (chain.IndexOf(strongIndexEnd) > 0)
+                    {
+                        continue;
+                    }
+
+                    List<int> newChain = new(chainCapacity);
+                    newChain.AddRange(chain);
+                    newChain.Add(strongIndexEnd);
+
+                    bool isDNL = newChain[0] == strongIndexEnd;
+
+                    bool haveALSElim = false;
+                    if (chainEntry.allowALS)
+                    {
+                        var chainElims = CalcStrongElims(newChain);
+                        if (chainElims.Count > 0)
+                        {
+                            haveALSElim = true;
+
+                            CheckBestChain(newChain, chainElims.ToList(), isDNL ? "DNL: " : "AIC: ");
+                            if (bestChainCausesInvalidBoard)
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (isDNL || newChain.Count + 1 > maxChainSize)
+                    {
+                        continue;
+                    }
+
+                    // Add a placeholder weak link
+                    newChain.Add(-1);
+
+                    // Check for a CNL
+                    if (weakLinks[strongIndexEnd].Contains(newChain[0]))
+                    {
+                        newChain[^1] = newChain[0];
+
+                        var chainElims = CalcStrongElims(newChain);
+                        chainElims.UnionWith(CalcWeakToStrongElims(newChain));
+                        chainElims.UnionWith(CalcStrongToWeakElims(strongLinks, newChain));
+                        if (chainElims.Count > 0)
+                        {
+                            CheckBestChain(newChain, chainElims.ToList(), "CNL: ");
+                        }
+                    }
+
+                    // Add all chain continuations
+                    if (!bestChainCausesInvalidBoard)
+                    {
+                        foreach (int weakIndexEnd in weakLinks[strongIndexEnd])
+                        {
+                            if (IsCandIndexValid(weakIndexEnd) && !newChain.Contains(weakIndexEnd))
+                            {
+                                newChain[^1] = weakIndexEnd;
+                                chainQueue.Enqueue(new(newChain, chainEntry.allowALS && !haveALSElim));
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (bestChain != null)
+            {
+                // Form the description string
+                StringBuilder stepDescription = null;
+                if (logicalStepDescs != null)
+                {
+                    stepDescription = new();
+                    stepDescription.Append(bestChainDescPrefix);
+
+                    bool strong = false;
+                    for (int ci = 0; ci < bestChain.Count; ci++, strong = !strong)
+                    {
+                        if (ci > 0)
+                        {
+                            if (strong)
+                            {
+                                int candIndex0 = bestChain[ci - 1];
+                                int candIndex1 = bestChain[ci];
+                                if (strongLinks[candIndex0].TryGetValue(candIndex1, out StrongLinkDesc strongLinkDescOut) && !string.IsNullOrWhiteSpace(strongLinkDescOut.humanDesc))
+                                {
+                                    stepDescription.Append($" = [{strongLinkDescOut.humanDesc}]");
+                                }
+                                else
+                                {
+                                    stepDescription.Append($" = ");
+                                }
+                            }
+                            else
+                            {
+                                stepDescription.Append(" - ");
+                            }
+                        }
+
+                        if (ci + 1 < bestChain.Count)
+                        {
+                            int candIndex0 = bestChain[ci];
+                            int candIndex1 = bestChain[ci + 1];
+                            var (i0, j0, v0) = CandIndexToCoord(candIndex0);
+                            var (i1, j1, v1) = CandIndexToCoord(candIndex1);
+                            if (i0 == i1 && j0 == j1)
+                            {
+                                stepDescription.Append($"({v0}{(strong ? "-" : $"=")}{v1}){CellName(i0, j0)}");
+                                strong = !strong;
+                                ci++;
+                                continue;
+                            }
+                        }
+
+                        if (ci > 0)
+                        {
+                            int candIndex0 = bestChain[ci - 1];
+                            int candIndex1 = bestChain[ci];
+                            var (i0, j0, v0) = CandIndexToCoord(candIndex0);
+                            var (i1, j1, v1) = CandIndexToCoord(candIndex1);
+
+                            if (v0 == v1)
+                            {
+                                stepDescription.Append(CellName(i1, j1));
+                                continue;
+                            }
+                        }
+
+                        stepDescription.Append(CandIndexDesc(bestChain[ci]));
+                    }
+
+                    stepDescription.Append(" => ");
+                    stepDescription.Append(DescribeElims(bestChainElims));
+
+                    logicalStepDescs.Add(new(
+                        desc: stepDescription.ToString(),
+                        sourceCandidates: bestChain,
+                        elimCandidates: bestChainElims,
+                        sourceIsAIC: true));
+                }
+
+                // Perform the eliminations
+                foreach (int elimCandIndex in bestChainElims)
+                {
+                    var (i, j, v) = CandIndexToCoord(elimCandIndex);
+                    if (!ClearValue(i, j, v))
+                    {
+                        return LogicResult.Invalid;
+                    }
+                }
+
+                return LogicResult.Changed;
+            }
+            return LogicResult.None;
+        }
+
+        private LogicResult FindSimpleContradictions(List<LogicalStepDesc> logicalStepDescs)
         {
             for (int allowedValueCount = 2; allowedValueCount <= MAX_VALUE; allowedValueCount++)
             {
@@ -3101,39 +3810,30 @@ namespace SudokuSolver
                                     Solver boardCopy = Clone();
                                     boardCopy.isBruteForcing = true;
 
-                                    StringBuilder contradictionReason = stepDescription != null ? new() : null;
-                                    if (!boardCopy.SetValue(i, j, v) || boardCopy.ConsolidateBoard(contradictionReason) == LogicResult.Invalid)
+                                    List<LogicalStepDesc> contradictionSteps = logicalStepDescs != null ? new() : null;
+                                    if (!boardCopy.SetValue(i, j, v) || boardCopy.ConsolidateBoard(contradictionSteps) == LogicResult.Invalid)
                                     {
-                                        bool isTrivial = false;
-                                        StringBuilder formattedContraditionReason = (stepDescription != null) ? new() : null;
-                                        if (stepDescription != null)
+                                        bool isTrivial = contradictionSteps != null && contradictionSteps.Count == 0;
+                                        if (isTrivial)
                                         {
-                                            if (contradictionReason.Length > 0)
-                                            {
-                                                foreach (string line in contradictionReason.ToString().Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-                                                {
-                                                    formattedContraditionReason.Append("  ").Append(line).AppendLine();
-                                                }
-                                            }
-                                            else
-                                            {
-                                                formattedContraditionReason.Append("  ").Append("(For trivial reasons).").AppendLine();
-                                                isTrivial = true;
-                                            }
+                                            contradictionSteps.Add(new LogicalStepDesc(
+                                                desc: "Immediately violates a constraint.",
+                                                sourceCandidates: Enumerable.Empty<int>(),
+                                                elimCandidates: Enumerable.Empty<int>()));
                                         }
-                                        if (isTrivial || DisableFindShortestContradiction) // Since this is trivial it will always be as "easy" or "easier" than any other contradiction.
+
+                                        // Trivial contradictions will always be as "easy" or "easier" than any other contradiction.
+                                        if (isTrivial || DisableFindShortestContradiction || contradictionSteps == null)
                                         {
-                                            stepDescription?.Append($"Setting {CellName(i, j)} to {v} causes a contradiction:")
-                                                .AppendLine()
-                                                .Append(formattedContraditionReason);
+                                            logicalStepDescs?.Add(new(
+                                                desc: $"Setting {CellName(i, j)} to {v} causes a contradiction:",
+                                                sourceCandidates: Enumerable.Empty<int>(),
+                                                elimCandidates: CandidateIndex((i, j), v).ToEnumerable(),
+                                                subSteps: contradictionSteps
+                                            ));
 
                                             if (!ClearValue(i, j, v))
                                             {
-                                                if (stepDescription != null)
-                                                {
-                                                    stepDescription.AppendLine();
-                                                    stepDescription.Append($"This clears the last candidate from {CellName(i, j)}.");
-                                                }
                                                 return LogicResult.Invalid;
                                             }
                                             return LogicResult.Changed;
@@ -3143,7 +3843,7 @@ namespace SudokuSolver
                                             int changes = boardCopy.AmountCellsFilled() - this.AmountCellsFilled();
                                             if (bestContradiction == null || changes < bestContradiction.Changes)
                                             {
-                                                bestContradiction = new ContradictionResult(changes, boardCopy, i, j, v, formattedContraditionReason);
+                                                bestContradiction = new ContradictionResult(changes, boardCopy, i, j, v, contradictionSteps);
                                             }
                                         }
                                     }
@@ -3152,19 +3852,18 @@ namespace SudokuSolver
                         }
                     }
                 }
+
                 if (bestContradiction != null)
                 {
-                    stepDescription?.Append($"Setting {CellName(bestContradiction.I, bestContradiction.J)} to {bestContradiction.V} causes a contradiction:")
-                                    .AppendLine()
-                                    .Append(bestContradiction.FormattedContraditionReason);
+                    logicalStepDescs?.Add(new(
+                        desc: $"Setting {CellName(bestContradiction.I, bestContradiction.J)} to {bestContradiction.V} causes a contradiction:",
+                        sourceCandidates: Enumerable.Empty<int>(),
+                        elimCandidates: CandidateIndex((bestContradiction.I, bestContradiction.J), bestContradiction.V).ToEnumerable(),
+                        subSteps: bestContradiction.ContraditionSteps
+                    ));
 
                     if (!ClearValue(bestContradiction.I, bestContradiction.J, bestContradiction.V))
                     {
-                        if (stepDescription != null)
-                        {
-                            stepDescription.AppendLine();
-                            stepDescription.Append($"This clears the last candidate from {CellName(bestContradiction.I, bestContradiction.J)}.");
-                        }
                         return LogicResult.Invalid;
                     }
                     return LogicResult.Changed;
@@ -3194,6 +3893,6 @@ namespace SudokuSolver
             int I,
             int J,
             int V,
-            StringBuilder FormattedContraditionReason);
+            List<LogicalStepDesc> ContraditionSteps);
     }
 }

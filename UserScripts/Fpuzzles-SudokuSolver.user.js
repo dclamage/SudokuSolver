@@ -642,6 +642,12 @@
                 click: trueCandidatesOptionChanged,
             },
             {
+                id: 'EnableLogicAIC',
+                label: 'AIC',
+                default: true,
+                click: trueCandidatesOptionChanged,
+            },
+            {
                 id: 'EnableLogicContradictions',
                 label: 'Contradictions',
                 default: true,
@@ -911,7 +917,7 @@
                 }
 
                 if (haveGivenMarks) {
-                    ctx.font = `bold ${(cellSL * 0.19 * textScale)}px  Arial`;
+                    ctx.font = `bold ${(cellSL * 0.19 * textScale)}px Arial`;
                     const centerPencilMarks = Array(Math.ceil(this.givenPencilMarks.length / 5)).fill().map((a, i) => i * 5).map(a => this.givenPencilMarks.slice(a, a + 5));
                     ctx.fillStyle = givenMarkFillStyle;
                     for (let a = 0; a < centerPencilMarks.length; a++) {
@@ -920,7 +926,7 @@
                 }
 
                 if (boolSettings['TrueCandidates'] && this.tcerror && this.value === 0 && this.centerPencilMarks.length === 0 && !this.given) {
-                    ctx.font = `bold ${(cellSL * 0.8)}px  Arial`;
+                    ctx.font = `bold ${(cellSL * 0.8)}px Arial`;
                     ctx.fillStyle = '#FF000080';
                     ctx.fillText('X', this.x + cellSL / 2, this.y + (cellSL * 0.8));
                 }

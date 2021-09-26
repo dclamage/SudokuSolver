@@ -250,5 +250,28 @@ namespace SudokuSolver.Constraints
                 }
             }
         }
+
+        public override void InitLinks(Solver sudokuSolver)
+        {
+            var weakLinks = sudokuSolver.WeakLinks;
+            foreach (var minCell in cells)
+            {
+                int minCellIndex = FlatIndex(minCell);
+                for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+                {
+                    int minCellCandIndex = minCellIndex * MAX_VALUE + v0 - 1;
+
+                    foreach (var maxCell in ValidAdjacentCells(minCell.Item1, minCell.Item2))
+                    {
+                        int maxCellIndex = FlatIndex(maxCell);
+                        for (int v1 = 1; v1 <= v0; v1++)
+                        {
+                            int maxCellCandIndex = maxCellIndex * MAX_VALUE + v1 - 1;
+                            sudokuSolver.AddWeakLink(maxCellCandIndex, minCellCandIndex);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

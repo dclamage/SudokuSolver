@@ -111,7 +111,15 @@ namespace SudokuSolver.Constraints
         /// LogicResult.Invalid: Your logic has determined that there are no solutions (such as when removing the last candidate from a cell).
         /// LogicResult.PuzzleComplete: Avoid returning this. It is used internally by the solver.
         /// </returns>
-        public abstract LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing);
+        public virtual LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
+        {
+            StringBuilder sb = logicalStepDescription != null ? new() : null;
+            var res = StepLogic(sudokuSolver, sb, isBruteForcing);
+            logicalStepDescription?.Add(new(sb.ToString(), Enumerable.Empty<int>(), Enumerable.Empty<int>()));
+            return res;
+        }
+
+        public virtual LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing) => LogicResult.None;
 
         /// <summary>
         /// Provide a lists of cells in which all digits must be distinct.
@@ -128,6 +136,12 @@ namespace SudokuSolver.Constraints
         /// <param name="value">The value which must by contained</param>
         /// <returns>A list of cells which must contain that value, or null if none.</returns>
         public virtual List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => null;
+
+        /// <summary>
+        /// Add any weak or strong links that are initially known due to this constraint
+        /// </summary>
+        /// <param name="sudokuSolver">The solver.</param>
+        public virtual void InitLinks(Solver sudokuSolver) { }
 
         /// <summary>
         /// Useful for constraints that just need to enforce seen cells.

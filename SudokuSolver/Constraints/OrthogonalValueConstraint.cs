@@ -3,12 +3,15 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
+using System.Threading.Tasks;
 using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver.Constraints
 {
     public abstract class OrthogonalValueConstraint : Constraint
     {
+        private static int numTimes = 0;
+
         public readonly Dictionary<(int, int, int, int), int> markers = new();
         public readonly bool negativeConstraint = false;
         public readonly Dictionary<int, uint[]> clearValuesPositiveByMarker = new();
@@ -214,7 +217,7 @@ namespace SudokuSolver.Constraints
             return true;
         }
 
-        public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
+        public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
         {
             var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
 
@@ -247,8 +250,7 @@ namespace SudokuSolver.Constraints
                             continue;
                         }
 
-                        bool haveChanges = false;
-                        uint removedValsMask = 0;
+                        List<int> elims = null;
                         for (int v = 1; v <= MAX_VALUE; v++)
                         {
                             uint valueMask = ValueMask(v);
@@ -258,24 +260,19 @@ namespace SudokuSolver.Constraints
                             // then remove this value as a candidate from cell0.
                             if ((mask0 & valueMask) != 0 && (mask1 & ~clearValuesMask) == 0)
                             {
-                                if (!sudokuSolver.ClearValue(i0, j0, v))
-                                {
-                                    if (logicalStepDescription != null)
-                                    {
-                                        logicalStepDescription.Clear();
-                                        logicalStepDescription.Append($"{CellName(i0, j0)} with value {v} removes the only candidates {MaskToString(mask1)} from {CellName(cell1)}");
-                                    }
-                                    return LogicResult.Invalid;
-                                }
-                                removedValsMask |= ValueMask(v);
-                                haveChanges = true;
+                                elims ??= new();
+                                elims.Add(sudokuSolver.CandidateIndex((i0, j0), v));
                             }
                         }
-                        if (haveChanges)
+                        if (elims != null && elims.Count > 0)
                         {
-                            bool removeMulti = ValueCount(removedValsMask) > 1;
-                            logicalStepDescription?.Append($"{CellName(i0, j0)} cannot have value{(removeMulti ? "s" : "")} {MaskToString(removedValsMask)} as {(removeMulti ? "they" : "it")} would remove all candidates {MaskToString(mask1)} from {CellName(i1, j1)}");
-                            return LogicResult.Changed;
+                            bool invalid = !sudokuSolver.ClearCandidates(elims);
+                            logicalStepDescription?.Add(new(
+                                desc: $"{MaskToString(mask1)}{CellName(cell1)} => {sudokuSolver.DescribeElims(elims)}",
+                                sourceCandidates: sudokuSolver.CandidateIndexes(mask0, cell0.ToEnumerable()),
+                                elimCandidates: elims
+                            ));
+                            return invalid ? LogicResult.Invalid : LogicResult.Changed;
                         }
                     }
                 }
@@ -292,11 +289,11 @@ namespace SudokuSolver.Constraints
                         continue;
                     }
 
+                    List<int> elims = null;
                     int maskValueCount = ValueCount(mask);
                     if (maskValueCount > 0 && maskValueCount <= 3)
                     {
                         // Determine if there are any digits that all the candidates in this cell remove
-                        bool haveChanges = false;
                         foreach (var cell1 in AdjacentCells(i, j))
                         {
                             var pair = CellPair(cell0, cell1);
@@ -317,37 +314,20 @@ namespace SudokuSolver.Constraints
 
                             if (clearMask != 0)
                             {
-                                LogicResult clearResult = sudokuSolver.ClearMask(cell1.Item1, cell1.Item2, clearMask);
-                                if (clearResult == LogicResult.Invalid)
-                                {
-                                    if (logicalStepDescription != null)
-                                    {
-                                        logicalStepDescription.Clear();
-                                        logicalStepDescription.Append($"{CellName(i, j)} with values {MaskToString(mask)} removes the only candidates {MaskToString(clearMask)} from {CellName(cell1)}");
-                                    }
-                                    return LogicResult.Invalid;
-                                }
-
-                                if (clearResult == LogicResult.Changed)
-                                {
-                                    if (logicalStepDescription != null)
-                                    {
-                                        if (!haveChanges)
-                                        {
-                                            logicalStepDescription.Append($"{CellName((i, j))} having candidates {MaskToString(mask)} removes {MaskToString(clearMask)} from {CellName(cell1)}");
-                                        }
-                                        else
-                                        {
-                                            logicalStepDescription.Append($", {MaskToString(clearMask)} from {CellName(cell1)}");
-                                        }
-                                    }
-                                    haveChanges = true;
-                                }
+                                elims ??= new();
+                                elims.AddRange(sudokuSolver.CandidateIndexes(clearMask, cell1.ToEnumerable()));
                             }
                         }
-                        if (haveChanges)
+
+                        if (elims != null && elims.Count > 0)
                         {
-                            return LogicResult.Changed;
+                            bool invalid = !sudokuSolver.ClearCandidates(elims);
+                            logicalStepDescription?.Add(new(
+                                desc: $"{MaskToString(mask)}{CellName((i, j))} => {sudokuSolver.DescribeElims(elims)}",
+                                sourceCandidates: sudokuSolver.CandidateIndexes(mask, (i, j).ToEnumerable()),
+                                elimCandidates: elims
+                            ));
+                            return invalid ? LogicResult.Invalid : LogicResult.Changed;
                         }
                     }
                 }
@@ -395,6 +375,8 @@ namespace SudokuSolver.Constraints
                         }
                         if (numValInstances >= 2 && numValInstances <= 5)
                         {
+                            numTimes++;
+
                             bool tooFar = false;
                             var firstCell = valInstances[0];
                             var minCoord = firstCell;
@@ -416,7 +398,7 @@ namespace SudokuSolver.Constraints
                             {
                                 uint clearMask = clearValuesNegative[val - 1] & ~ValueMask(val);
 
-                                bool changed = false;
+                                List<int> elims = null;
                                 for (int i = minCoord.Item1; i <= maxCoord.Item1; i++)
                                 {
                                     for (int j = minCoord.Item2; j <= maxCoord.Item2; j++)
@@ -447,37 +429,21 @@ namespace SudokuSolver.Constraints
                                         }
                                         if (allAdjacent && !hasAnyMarker)
                                         {
-                                            LogicResult clearResult = sudokuSolver.ClearMask(i, j, clearMask);
-                                            if (clearResult == LogicResult.Invalid)
-                                            {
-                                                if (logicalStepDescription != null)
-                                                {
-                                                    logicalStepDescription.Clear();
-                                                    logicalStepDescription.Append($"{group} has {val} always adjacent to {CellName(i, j)}, but cannot clear values {MaskToString(clearMask)} from that cell.");
-                                                }
-                                                return LogicResult.Invalid;
-                                            }
-                                            if (clearResult == LogicResult.Changed)
-                                            {
-                                                if (logicalStepDescription != null)
-                                                {
-                                                    if (!changed)
-                                                    {
-                                                        logicalStepDescription.Append($"{group} has {val} always adjacent to one or more cells, removing {MaskToString(clearMask)} from {CellName(i, j)}");
-                                                    }
-                                                    else
-                                                    {
-                                                        logicalStepDescription.Append($", {CellName(i, j)}");
-                                                    }
-                                                }
-                                                changed = true;
-                                            }
+                                            elims ??= new();
+                                            elims.AddRange(sudokuSolver.CandidateIndexes(clearMask, (i, j).ToEnumerable()));
                                         }
                                     }
                                 }
-                                if (changed)
+
+                                if (elims != null && elims.Count > 0)
                                 {
-                                    return LogicResult.Changed;
+                                    bool invalid = !sudokuSolver.ClearCandidates(elims);
+                                    logicalStepDescription?.Add(new(
+                                        desc: $"{group} has {val} always adjacent to one or more cells => {sudokuSolver.DescribeElims(elims)}",
+                                        sourceCandidates: sudokuSolver.CandidateIndexes(valMask, valInstances),
+                                        elimCandidates: elims
+                                    ));
+                                    return invalid ? LogicResult.Invalid : LogicResult.Changed;
                                 }
                             }
                         }
@@ -568,52 +534,87 @@ namespace SudokuSolver.Constraints
                         {
                             mustHaveVal = valA;
                         }
-                        bool haveChanges = false;
+                        List<int> elims = null;
                         if (mustHaveVal != 0)
                         {
                             uint mustHaveMask = ValueMask(mustHaveVal);
-                            foreach (var otherCell in sudokuSolver.SeenCellsByValueMask(mustHaveMask, cellA, cellB))
-                            {
-                                uint otherMask = board[otherCell.Item1, otherCell.Item2];
-                                if (IsValueSet(otherMask))
-                                {
-                                    continue;
-                                }
-                                LogicResult clearResult = sudokuSolver.ClearMask(otherCell.Item1, otherCell.Item2, mustHaveMask);
-                                if (clearResult == LogicResult.Invalid)
-                                {
-                                    if (logicalStepDescription != null)
-                                    {
-                                        logicalStepDescription.Clear();
-                                        logicalStepDescription.Append($"{CellName(i, j)} with candidates {MaskToString(maskA)} and {CellName(cellB)} with candidates {MaskToString(maskB)} are adjacent, meaning they must contain {mustHaveVal}, but cannot clear that value from {CellName(otherCell)}.");
-                                    }
-                                    return LogicResult.Invalid;
-                                }
-                                if (clearResult == LogicResult.Changed)
-                                {
-                                    if (logicalStepDescription != null)
-                                    {
-                                        if (!haveChanges)
-                                        {
-                                            logicalStepDescription.Append($"{CellName(i, j)} with candidates {MaskToString(maskA)} and {CellName(cellB)} with candidates {MaskToString(maskB)} are adjacent, meaning they must contain {mustHaveVal}, clearing it from {CellName(otherCell)}");
-                                        }
-                                        else
-                                        {
-                                            logicalStepDescription.Append($", {CellName(otherCell)}");
-                                        }
-                                    }
-                                    haveChanges = true;
-                                }
-                            }
+
+                            elims ??= new();
+                            elims.AddRange(sudokuSolver.CandidateIndexes(mustHaveMask, sudokuSolver.SeenCellsByValueMask(mustHaveMask, cellA, cellB)));
                         }
-                        if (haveChanges)
+
+                        if (elims != null && elims.Count > 0)
                         {
-                            return LogicResult.Changed;
+                            bool invalid = !sudokuSolver.ClearCandidates(elims);
+                            logicalStepDescription?.Add(new(
+                                desc: $"{MaskToString(maskA)}{CellName(i, j)} and {MaskToString(maskB)}{CellName(cellB)} are adjacent meaning they must contain {mustHaveVal} => {sudokuSolver.DescribeElims(elims)}",
+                                sourceCandidates: sudokuSolver.CandidateIndexes(ALL_VALUES_MASK, new (int, int)[] { (i, j), cellB }),
+                                elimCandidates: elims
+                            ));
+                            return invalid ? LogicResult.Invalid : LogicResult.Changed;
                         }
                     }
                 }
             }
             return LogicResult.None;
+        }
+
+        public override void InitLinks(Solver sudokuSolver)
+        {
+            var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
+            var weakLinks = sudokuSolver.WeakLinks;
+
+            for (int i0 = 0; i0 < HEIGHT; i0++)
+            {
+                for (int j0 = 0; j0 < WIDTH; j0++)
+                {
+                    var cell0 = (i0, j0);
+                    int cellIndex0 = FlatIndex(cell0);
+                    foreach (var cell1 in AdjacentCells(i0, j0))
+                    {
+                        int cellIndex1 = FlatIndex(cell1);
+                        var pair = CellPair(cell0, cell1);
+                        if (markers.TryGetValue(pair, out int markerValue))
+                        {
+                            for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+                            {
+                                uint clearValues = clearValuesPositiveByMarker[markerValue][v0 - 1];
+                                if (clearValues != 0)
+                                {
+                                    int candIndex0 = cellIndex0 * MAX_VALUE + v0 - 1;
+                                    for (int v1 = 1; v1 <= MAX_VALUE; v1++)
+                                    {
+                                        if ((clearValues & ValueMask(v1)) != 0)
+                                        {
+                                            int candIndex1 = cellIndex1 * MAX_VALUE + v1 - 1;
+                                            sudokuSolver.AddWeakLink(candIndex0, candIndex1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        else if (negativeConstraint && !overrideMarkers.Contains(pair))
+                        {
+                            for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+                            {
+                                uint clearValues = clearValuesNegative[v0 - 1];
+                                if (clearValues != 0)
+                                {
+                                    int candIndex0 = cellIndex0 * MAX_VALUE + v0 - 1;
+                                    for (int v1 = 1; v1 <= MAX_VALUE; v1++)
+                                    {
+                                        if ((clearValues & ValueMask(v1)) != 0)
+                                        {
+                                            int candIndex1 = cellIndex1 * MAX_VALUE + v1 - 1;
+                                            sudokuSolver.AddWeakLink(candIndex0, candIndex1);
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }

@@ -162,5 +162,47 @@ namespace SudokuSolver.Constraints
         }
 
         public override List<(int, int)> Group => cells;
+
+        public override void InitLinks(Solver sudokuSolver)
+        {
+            var weakLinks = sudokuSolver.WeakLinks;
+            for (int lineIndex0 = 0; lineIndex0 < cells.Count; lineIndex0++)
+            {
+                var cell0 = cells[lineIndex0];
+                int cellIndex0 = FlatIndex(cell0) * MAX_VALUE;
+                for (int lineIndex1 = 0; lineIndex1 < cells.Count; lineIndex1++)
+                {
+                    if (lineIndex0 == lineIndex1)
+                    {
+                        continue;
+                    }
+
+                    var cell1 = cells[lineIndex1];
+                    int cellIndex1 = FlatIndex(cell1) * MAX_VALUE;
+
+                    int dist = lineIndex1 - lineIndex0;
+                    for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+                    {
+                        int candIndex0 = cellIndex0 + v0 - 1;
+                        if (dist < 0)
+                        {
+                            for (int v1 = Math.Max(1, v0 + dist + 1); v1 <= MAX_VALUE; v1++)
+                            {
+                                int candIndex1 = cellIndex1 + v1 - 1;
+                                sudokuSolver.AddWeakLink(candIndex0, candIndex1);
+                            }
+                        }
+                        else if (dist > 0)
+                        {
+                            for (int v1 = Math.Min(MAX_VALUE, v0 + dist - 1); v1 >= 1; v1--)
+                            {
+                                int candIndex1 = cellIndex1 + v1 - 1;
+                                sudokuSolver.AddWeakLink(candIndex0, candIndex1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
