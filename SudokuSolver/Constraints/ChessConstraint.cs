@@ -87,19 +87,9 @@ namespace SudokuSolver.Constraints
             offsets = offsetHash.ToList();
         }
 
-        public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
-        {
-            foreach (var cell in SeenCellsByValueMask((i, j), ValueMask(val)))
-            {
-                if (!sudokuSolver.ClearValue(cell.Item1, cell.Item2, val))
-                {
-                    return false;
-                }
-            }
-            return true;
-        }
+        public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true;
 
-        public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing) => LogicResult.None;
+        public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing) => LogicResult.None;
 
         public override IEnumerable<(int, int)> SeenCells((int, int) cell)
         {

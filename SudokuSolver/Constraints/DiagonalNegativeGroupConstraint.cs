@@ -21,7 +21,7 @@ namespace SudokuSolver.Constraints
 
         public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true;
 
-        public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing) => LogicResult.None;
+        public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing) => LogicResult.None;
 
         public override List<(int, int)> Group => group;
     }

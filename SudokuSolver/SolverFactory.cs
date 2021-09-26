@@ -312,9 +312,13 @@ namespace SudokuSolver
                             solver.DisableWings = true;
                             disabledLogicFlags |= (1u << 3);
                             break;
+                        case "aic":
+                            solver.DisableAIC = true;
+                            disabledLogicFlags |= (1u << 4);
+                            break;
                         case "contradictions":
                             solver.DisableContradictions = true;
-                            disabledLogicFlags |= (1u << 4);
+                            disabledLogicFlags |= (1u << 5);
                             break;
                     }
                 }

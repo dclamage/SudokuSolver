@@ -192,7 +192,7 @@ namespace SudokuSolverConsole
 
             int totalCandidates = solver.HEIGHT * solver.WIDTH * solver.MAX_VALUE;
             int[] numSolutions = colored ? new int[totalCandidates] : null;
-            if (!solver.FillRealCandidates(multiThread: true, numSolutions: numSolutions, cancellationToken: cancellationToken))
+            if (!solver.FillRealCandidates(multiThread: false, numSolutions: numSolutions, cancellationToken: cancellationToken))
             {
                 SendMessage(ipPort, new InvalidResponse(nonce, "No solutions found."));
                 return;
@@ -265,18 +265,28 @@ namespace SudokuSolverConsole
             }
         }
 
+        private static StringBuilder StepsDescription(List<LogicalStepDesc> logicalStepDescs)
+        {
+            StringBuilder sb = new();
+            foreach (var step in logicalStepDescs)
+            {
+                sb.AppendLine(step.ToString());
+            }
+            return sb;
+        }
+
         void SendSolvePath(string ipPort, int nonce, Solver solver)
         {
-            StringBuilder stepsDescription = new();
-            var logicResult = solver.ConsolidateBoard(stepsDescription);
-            SendLogicResponse(ipPort, nonce, solver, logicResult, stepsDescription);
+            List<LogicalStepDesc> logicalStepDescs = new();
+            var logicResult = solver.ConsolidateBoard(logicalStepDescs);
+            SendLogicResponse(ipPort, nonce, solver, logicResult, StepsDescription(logicalStepDescs));
         }
 
         void SendStep(string ipPort, int nonce, Solver solver)
         {
-            StringBuilder stepDescription = new();
-            var logicResult = solver.StepLogic(stepDescription, true);
-            SendLogicResponse(ipPort, nonce, solver, logicResult, stepDescription);
+            List<LogicalStepDesc> logicalStepDescs = new();
+            var logicResult = solver.StepLogic(logicalStepDescs);
+            SendLogicResponse(ipPort, nonce, solver, logicResult, StepsDescription(logicalStepDescs));
         }
 
         void SendLogicResponse(string ipPort, int nonce, Solver solver, LogicResult logicResult, StringBuilder description)
