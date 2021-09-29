@@ -487,7 +487,7 @@ namespace SudokuSolver
                 timers["FindPointingTuples"] = new();
                 timers["FindUnorthodoxTuples"] = new();
                 timers["FindFishes"] = new();
-                timers["FindYWings"] = new();
+                timers["FindWings"] = new();
                 timers["FindAIC"] = new();
                 timers["FindSimpleContradictions"] = new();
             }
@@ -2024,7 +2024,7 @@ namespace SudokuSolver
             DisableTuples = false;
             DisablePointing = false;
             DisableFishes = false;
-            DisableWings = false;
+            DisableWings = true;
             DisableAIC = true;
             DisableContradictions = false;
             DisableFindShortestContradiction = true;
@@ -2200,11 +2200,11 @@ namespace SudokuSolver
             if (!DisableWings)
             {
 #if PROFILING
-                timers["FindYWings"].Start();
+                timers["FindWings"].Start();
 #endif
-                result = FindYWings(logicalStepDescs);
+                result = FindWings(logicalStepDescs);
 #if PROFILING
-                timers["FindYWings"].Stop();
+                timers["FindWings"].Stop();
 #endif
                 if (result != LogicResult.None)
                 {
@@ -2426,7 +2426,7 @@ namespace SudokuSolver
                 setMask &= ~valueSetMask;
                 if (numCells == MAX_VALUE && (atLeastOnce | setMask) != ALL_VALUES_MASK)
                 {
-                    logicalStepDescs?.Add(new($"{group} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~atLeastOnce)}.", group.Cells));
+                    logicalStepDescs?.Add(new($"{group} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~(atLeastOnce | setMask))}.", group.Cells));
                     return LogicResult.Invalid;
                 }
 
@@ -2831,9 +2831,9 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
-        private LogicResult FindYWings(List<LogicalStepDesc> logicalStepDescs)
+        private LogicResult FindWings(List<LogicalStepDesc> logicalStepDescs)
         {
-            if (true || isBruteForcing)
+            if (isBruteForcing)
             {
                 return LogicResult.None;
             }
@@ -2847,11 +2847,7 @@ namespace SudokuSolver
                 for (int j = 0; j < WIDTH; j++)
                 {
                     uint mask = board[i, j];
-                    if (IsValueSet(mask))
-                    {
-                        continue;
-                    }
-                    if (ValueCount(mask) == 2)
+                    if (!IsValueSet(mask) && ValueCount(mask) == 2)
                     {
                         candidateCells.Add((i, j));
                     }
@@ -2937,61 +2933,142 @@ namespace SudokuSolver
                 }
             }
 
-            // Look for XYZ-Wings
-            for (int c0 = 0; c0 < candidateCells.Count - 1; c0++)
+            // Look for (N)-Wings [XYZ-Wings, WXYZ-Wings, VWXYZ-Wings, etc]
+            // An (N)-Wing is N candidates limited to N cells.
+            // Looking at each candidate, all but one of them cannot repeat within those cells.
+            // This implies that any cell seen by the instances of that last candidate can be eliminated.
+            for (int wingSize = 3; wingSize <= MAX_VALUE; wingSize++)
             {
-                var (i0, j0) = candidateCells[c0];
-                uint mask0 = board[i0, j0];
-                for (int c1 = c0 + 1; c1 < candidateCells.Count; c1++)
+                var logicResult = FindNWing(logicalStepDescs, wingSize);
+                if (logicResult != LogicResult.None)
                 {
-                    var (i1, j1) = candidateCells[c1];
-                    uint mask1 = board[i1, j1];
-                    if (mask0 == mask1)
-                    {
-                        continue;
-                    }
+                    return logicResult;
+                }
+            }
 
-                    uint combinedMask = mask0 | mask1;
-                    if (ValueCount(combinedMask) != 3)
-                    {
-                        continue;
-                    }
+            return LogicResult.None;
+        }
 
-                    // These two cells are potentially pincers.
-                    // They will have exactly one shared value between them.
-                    uint sharedMask = mask0 & mask1;
-                    int sharedVal = GetValue(sharedMask);
-                    int sharedCand0 = CandidateIndex((i0, j0), sharedVal);
-                    int sharedCand1 = CandidateIndex((i1, j1), sharedVal);
-
-                    // Skip these cells if they have a weak link on this candidate, since pincers by definition can't see each other.
-                    if (weakLinks[sharedCand0].Contains(sharedCand1))
+        private LogicResult FindNWing(List<LogicalStepDesc> logicalStepDescs, int wingSize)
+        {
+            List<(int, int)> candidateCells = new();
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    uint mask = board[i, j];
+                    int valueCount = ValueCount(mask);
+                    if (!IsValueSet(mask) && valueCount > 1 && valueCount <= wingSize)
                     {
-                        continue;
+                        candidateCells.Add((i, j));
                     }
+                }
+            }
 
-                    // Look for cells which have a weak link on the shared candidate and have all three values of the combined mask.
-                    // This is the pivot for the XYZ-wing.
-                    List<int> elims = CalcElims(sharedCand0, sharedCand1).ToList();
-                    if (elims.Count <= 1)
+            int numCandidateCells = candidateCells.Count;
+            if (numCandidateCells < wingSize)
+            {
+                return LogicResult.None;
+            }
+
+            int UngroupedValue(uint valuesMask, List<(int, int)> wingCells, int curUngroupedValue)
+            {
+                if (curUngroupedValue < 0 || ValueCount(valuesMask) > wingSize)
+                {
+                    return -1;
+                }
+
+                if (wingCells.Count <= 1)
+                {
+                    return 0;
+                }
+                bool checkForSingle = wingCells.Count == wingSize;
+                if (checkForSingle && ValueCount(valuesMask) != wingSize)
+                {
+                    return -1;
+                }
+
+                valuesMask &= ~ValueMask(curUngroupedValue);
+
+                int ungroupedValue = curUngroupedValue;
+                int minValue = MinValue(valuesMask);
+                int maxValue = MaxValue(valuesMask);
+                for (int v = minValue; v <= maxValue; v++)
+                {
+                    uint valueMask = ValueMask(v);
+                    if ((valuesMask & valueMask) != 0)
                     {
-                        continue;
-                    }
-                    foreach (int elimCandidate in elims)
-                    {
-                        var (i2, j2, v2) = CandIndexToCoord(elimCandidate);
-                        uint mask2 = board[i2, j2];
-                        if (mask2 != combinedMask)
+                        int numWithCandidate = 0;
+                        for (int k = 0; k < wingCells.Count; k++)
                         {
-                            continue;
+                            var (i, j) = wingCells[k];
+                            if ((board[i, j] & valueMask) != 0)
+                            {
+                                numWithCandidate++;
+                            }
                         }
 
-                        List<(int, int)> cells = new() { (i0, j0), (i1, j1), (i2, j2) };
-                        logicalStepDescs?.Add(new(
-                                desc: $"XYZ-Wing: {MaskToString(combinedMask)} in {CompactName(cells)} => {DescribeElims(elims)}",
-                                sourceCandidates: CandidateIndexes(combinedMask, cells),
-                                elimCandidates: elims
-                            ));
+                        if (checkForSingle && numWithCandidate == 1)
+                        {
+                            return -1;
+                        }
+
+                        if (numWithCandidate > 1 && !IsGroup(wingCells, v))
+                        {
+                            if (ungroupedValue == 0)
+                            {
+                                ungroupedValue = v;
+                            }
+                            else
+                            {
+                                return -1;
+                            }
+                        }
+                    }
+                }
+                return ungroupedValue;
+            }
+
+            List<(int, int)> wingCells = new(wingSize);
+            (int index, (int i, int j) coord, uint accumMask, int ungroupedValue)[] wingInfoArray = new (int, (int, int), uint, int)[wingSize];
+
+            // Initialize the wing info array with the first combination even if it's invalid
+            {
+                uint accumMask = 0;
+                for (int k = 0; k < wingSize; k++)
+                {
+                    var coord = candidateCells[k];
+                    accumMask |= board[coord.Item1, coord.Item2];
+                    wingCells.Add(coord);
+
+                    int ungroupedValue = UngroupedValue(accumMask, wingCells, k == 0 ? 0 : wingInfoArray[k - 1].ungroupedValue);
+                    wingInfoArray[k] = (k, coord, accumMask, ungroupedValue);
+                }
+            }
+
+            while (true)
+            {
+                // Check if this wing info is valid and performs eliminations
+                var (_, _, accumMask, ungroupedValue) = wingInfoArray[wingSize - 1];
+                if (ValueCount(accumMask) == wingSize && ungroupedValue > 0)
+                {
+                    // At least one of the ungrouped candidates is true, so eliminate any candidates with a weak link to all of them.
+                    var elims = CalcElims(ValueMask(ungroupedValue), wingCells);
+                    if (elims != null && elims.Count > 0)
+                    {
+                        if (logicalStepDescs != null)
+                        {
+                            StringBuilder wingName = new();
+                            for (int k = wingSize - 1; k >= 0; k--)
+                            {
+                                wingName.Append((char)('Z' - k));
+                            }
+                            logicalStepDescs?.Add(new(
+                                    desc: $"{wingName}-Wing: {MaskToString(accumMask)} in {CompactName(wingCells)} => {DescribeElims(elims)}",
+                                    sourceCandidates: CandidateIndexes(accumMask, wingCells),
+                                    elimCandidates: elims
+                                ));
+                        }
                         if (!ClearCandidates(elims))
                         {
                             return LogicResult.Invalid;
@@ -2999,119 +3076,64 @@ namespace SudokuSolver
                         return LogicResult.Changed;
                     }
                 }
-            }
 
-            // Look for WXYZ-Wings
-            // A WXYZ-Wing is 4 candidates limited to 4 cells.
-            // Looking at each candidate, all but one of them cannot repeat within those cells.
-            // This implies that any cell seen by the instances of that last candidate can be eliminated.
-            // This process can be extended to any N number of candidates in N cells, but it would be too slow to search for.
-            candidateCells.Clear();
-            for (int i = 0; i < HEIGHT; i++)
-            {
-                for (int j = 0; j < WIDTH; j++)
+                // Find the first invalid index. This is the minimum index to increment.
+                int firstInvalid = wingSize;
+                for (int k = 0; k < wingSize; k++)
                 {
-                    uint mask = board[i, j];
-                    if (!IsValueSet(mask) && ValueCount(mask) <= 4)
+                    var wingInfo = wingInfoArray[k];
+                    if (wingInfo.ungroupedValue < 0)
                     {
-                        candidateCells.Add((i, j));
+                        firstInvalid = k;
+                        break;
                     }
                 }
-            }
 
-            for (int c0 = 0; c0 < candidateCells.Count - 3; c0++)
-            {
-                var (i0, j0) = candidateCells[c0];
-                uint mask0 = board[i0, j0];
-                for (int c1 = c0 + 1; c1 < candidateCells.Count - 2; c1++)
+                // Find the last index which can be incremented
+                int lastCanIncrement = -1;
+                for (int k = wingSize - 1; k >= 0; k--)
                 {
-                    var (i1, j1) = candidateCells[c1];
-                    uint mask1 = board[i1, j1];
-                    uint mask01 = mask0 | mask1;
-                    if (ValueCount(mask01) > 4)
+                    var wingInfo = wingInfoArray[k];
+                    if (wingInfo.index + 1 < numCandidateCells - (wingSize - k))
                     {
-                        continue;
+                        lastCanIncrement = k;
+                        break;
                     }
+                }
 
-                    for (int c2 = c1 + 1; c2 < candidateCells.Count - 1; c2++)
-                    {
-                        var (i2, j2) = candidateCells[c2];
-                        uint mask2 = board[i2, j2];
-                        uint mask012 = mask01 | mask2;
-                        if (ValueCount(mask012) > 4)
-                        {
-                            continue;
-                        }
+                // Check if done
+                if (lastCanIncrement == -1)
+                {
+                    break;
+                }
 
-                        for (int c3 = c2 + 1; c3 < candidateCells.Count; c3++)
-                        {
-                            var (i3, j3) = candidateCells[c3];
-                            uint mask3 = board[i3, j3];
-                            uint mask0123 = mask012 | mask3;
-                            if (ValueCount(mask0123) != 4)
-                            {
-                                continue;
-                            }
+                // Increment the smaller of the first invalid one or the last that can increment.
+                int k0 = Math.Min(lastCanIncrement, firstInvalid);
 
-                            List<(int, int)> cells = new() { (i0, j0), (i1, j1), (i2, j2), (i3, j3) };
-                            bool isInvalid = false;
-                            int ungroupedValue = 0;
-                            for (int v = 1; v <= 9; v++)
-                            {
-                                uint valueMask = ValueMask(v);
-                                if ((mask0123 & valueMask) != 0)
-                                {
-                                    int numWithCandidate =
-                                        ((mask0 & valueMask) != 0 ? 1 : 0) +
-                                        ((mask1 & valueMask) != 0 ? 1 : 0) +
-                                        ((mask2 & valueMask) != 0 ? 1 : 0) +
-                                        ((mask3 & valueMask) != 0 ? 1 : 0);
-                                    if (numWithCandidate == 1)
-                                    {
-                                        isInvalid = true;
-                                        break;
-                                    }
+                wingCells.Clear();
+                for (int k = 0; k < k0; k++)
+                {
+                    wingCells.Add(wingInfoArray[k].coord);
+                }
 
-                                    if (!IsGroup(cells, v))
-                                    {
-                                        if (ungroupedValue == 0)
-                                        {
-                                            ungroupedValue = v;
-                                        }
-                                        else
-                                        {
-                                            isInvalid = true;
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
+                // Increment to the next combination
+                int nextIndex = wingInfoArray[k0].index + 1;
+                var nextCoord = candidateCells[nextIndex];
+                uint nextAccumMask = board[nextCoord.Item1, nextCoord.Item2];
+                if (k0 > 0)
+                {
+                    nextAccumMask |= wingInfoArray[k0 - 1].accumMask;
+                }
+                wingCells.Add(nextCoord);
+                wingInfoArray[k0] = (nextIndex, nextCoord, nextAccumMask, UngroupedValue(nextAccumMask, wingCells, k0 == 0 ? 0 : wingInfoArray[k0 - 1].ungroupedValue));
 
-                            if (!isInvalid)
-                            {
-                                // Eliminate the ungrouped value from any candidates with a weak link to all the cells which contain this value.
-                                var elims = CalcElims(ValueMask(ungroupedValue), cells);
-                                if (elims == null || elims.Count == 0)
-                                {
-                                    continue;
-                                }
-
-                                foreach (int elimCandidate in elims)
-                                {
-                                    logicalStepDescs?.Add(new(
-                                            desc: $"WXYZ-Wing: {MaskToString(mask0123)} in {CompactName(cells)} => {DescribeElims(elims)}",
-                                            sourceCandidates: CandidateIndexes(mask0123, cells),
-                                            elimCandidates: elims
-                                        ));
-                                    if (!ClearCandidates(elims))
-                                    {
-                                        return LogicResult.Invalid;
-                                    }
-                                    return LogicResult.Changed;
-                                }
-                            }
-                        }
-                    }
+                for (int k1 = k0 + 1; k1 < wingSize; k1++)
+                {
+                    nextIndex = wingInfoArray[k1 - 1].index + 1;
+                    nextCoord = candidateCells[nextIndex];
+                    nextAccumMask |= board[nextCoord.Item1, nextCoord.Item2];
+                    wingCells.Add(nextCoord);
+                    wingInfoArray[k1] = (nextIndex, nextCoord, nextAccumMask, UngroupedValue(nextAccumMask, wingCells, wingInfoArray[k1 - 1].ungroupedValue));
                 }
             }
 
@@ -3480,6 +3502,8 @@ namespace SudokuSolver
         internal IEnumerable<int> CalcElims(int candIndex0, int candIndex1) =>
             weakLinks[candIndex0].Where(IsCandIndexValid).Intersect(weakLinks[candIndex1].Where(IsCandIndexValid));
 
+        internal IEnumerable<int> CalcElims(params int[] candIndexes) => CalcElims(candIndexes);
+
         internal IEnumerable<int> CalcElims(IEnumerable<int> candIndexes)
         {
             IEnumerable<int> result = null;
@@ -3693,8 +3717,8 @@ namespace SudokuSolver
             // Process each chain found, adding more chains if still viable
             List<int> bestChain = null;
             List<int> bestChainElims = null;
-            int bestChainNumSingles = 0;
-            int bestChainNumSingles2 = 0;
+            int bestChainDirectSingles = 0;
+            int bestChainSinglesAfterBasics = 0;
             string bestChainDescPrefix = null;
             int maxChainSize = 0;
             bool bestChainCausesInvalidBoard = false;
@@ -3707,49 +3731,49 @@ namespace SudokuSolver
                 }
 
                 // Apply the eliminations to a board clone
-                Solver clone = Clone();
+                Solver directSinglesSolver = Clone();
                 foreach (int elimCandIndex in chainElims)
                 {
                     var (i, j, v) = CandIndexToCoord(elimCandIndex);
-                    if (!clone.ClearValue(i, j, v))
+                    if (!directSinglesSolver.ClearValue(i, j, v))
                     {
                         bestChain = new(chain);
                         bestChainElims = new(chainElims);
-                        bestChainNumSingles = 0;
-                        bestChainNumSingles2 = 0;
+                        bestChainDirectSingles = 0;
+                        bestChainSinglesAfterBasics = 0;
                         bestChainDescPrefix = chainDescPrefix;
                         bestChainCausesInvalidBoard = true;
                         return;
                     }
                 }
-                if (clone.ApplySingles() == LogicResult.Invalid)
+                if (directSinglesSolver.ApplySingles() == LogicResult.Invalid)
                 {
                     bestChain = new(chain);
                     bestChainElims = new(chainElims);
-                    bestChainNumSingles = 0;
-                    bestChainNumSingles2 = 0;
+                    bestChainDirectSingles = 0;
+                    bestChainSinglesAfterBasics = 0;
                     bestChainDescPrefix = chainDescPrefix;
                     bestChainCausesInvalidBoard = true;
                     return;
                 }
 
-                Solver clone2 = clone.Clone();
-                clone2.SetToBasicsOnly();
-                if (clone2.ConsolidateBoard() == LogicResult.Invalid)
+                Solver singlesAfterBasicsSolver = directSinglesSolver.Clone();
+                singlesAfterBasicsSolver.SetToBasicsOnly();
+                if (singlesAfterBasicsSolver.ConsolidateBoard() == LogicResult.Invalid)
                 {
                     bestChain = new(chain);
                     bestChainElims = new(chainElims);
-                    bestChainNumSingles = 0;
-                    bestChainNumSingles2 = 0;
+                    bestChainDirectSingles = 0;
+                    bestChainSinglesAfterBasics = 0;
                     bestChainDescPrefix = chainDescPrefix;
                     bestChainCausesInvalidBoard = true;
                     return;
                 }
 
-                int numSingles = clone.NumSetValues;
-                int numSingles2 = clone2.NumSetValues;
-                (int, int, int, int) chainVals = (numSingles, numSingles2, chainElims.Count, -chain.Count);
-                (int, int, int, int) bestChainVals = bestChain != null ? (bestChainNumSingles, bestChainNumSingles2, bestChainElims.Count, -bestChain.Count) : default;
+                int numDirectSingles = directSinglesSolver.NumSetValues;
+                int numSinglesAfterBasics = singlesAfterBasicsSolver.NumSetValues;
+                (int, int, int, int) chainVals = (numSinglesAfterBasics, numDirectSingles, chainElims.Count, -chain.Count);
+                (int, int, int, int) bestChainVals = bestChain != null ? (bestChainSinglesAfterBasics, bestChainDirectSingles, bestChainElims.Count, -bestChain.Count) : default;
                 if (bestChain == null || chainVals.CompareTo(bestChainVals) > 0)
                 {
                     if (bestChain == null)
@@ -3758,11 +3782,11 @@ namespace SudokuSolver
                     }
                     bestChain = new(chain);
                     bestChainElims = new(chainElims);
-                    bestChainNumSingles = numSingles;
-                    bestChainNumSingles2 = numSingles2;
+                    bestChainDirectSingles = numDirectSingles;
+                    bestChainSinglesAfterBasics = numSinglesAfterBasics;
                     bestChainDescPrefix = chainDescPrefix;
 
-                    if (bestChainNumSingles == NUM_CELLS)
+                    if (bestChainDirectSingles == NUM_CELLS)
                     {
                         maxChainSize = chain.Count;
                     }
