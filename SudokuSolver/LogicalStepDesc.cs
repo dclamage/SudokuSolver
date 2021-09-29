@@ -82,6 +82,29 @@ namespace SudokuSolver
             }
             return sb.ToString();
         }
+
+        private LogicalStepDesc(
+            string desc,
+            List<(int, int)> highlightCells,
+            List<int> sourceCandidates,
+            List<int> elimCandidates,
+            List<(int, int)> strongLinks,
+            List<(int, int)> weakLinks,
+            List<LogicalStepDesc> subSteps,
+            bool isSingle)
+        {
+            this.desc = desc;
+            this.highlightCells = highlightCells;
+            this.sourceCandidates = sourceCandidates;
+            this.elimCandidates = elimCandidates;
+            this.strongLinks = strongLinks;
+            this.weakLinks = weakLinks;
+            this.subSteps = subSteps;
+            this.isSingle = isSingle;
+        }
+
+        public LogicalStepDesc WithPrefix(string descPrefix) =>
+            new(descPrefix + desc, highlightCells, sourceCandidates, elimCandidates, strongLinks, weakLinks, subSteps, isSingle);
     }
 
     public static class LogicalStepDescUtil

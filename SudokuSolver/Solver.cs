@@ -2128,6 +2128,10 @@ namespace SudokuSolver
 #endif
                 if (result != LogicResult.None)
                 {
+                    if (logicalStepDescs.Count > 0)
+                    {
+                        logicalStepDescs[^1] = logicalStepDescs[^1].WithPrefix($"[{constraint.SpecificName}] ");
+                    }
                     return result;
                 }
             }
