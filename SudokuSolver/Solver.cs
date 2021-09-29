@@ -85,10 +85,30 @@ namespace SudokuSolver
         public bool DisableAIC { get; set; } = false;
         public bool DisableContradictions { get; set; } = false;
         public bool DisableFindShortestContradiction { get; set; } = false;
+        public void SetToBasicsOnly()
+        {
+            DisableTuples = false;
+            DisablePointing = false;
+            DisableFishes = true;
+            DisableWings = true;
+            DisableAIC = true;
+            DisableContradictions = true;
+        }
 
         private uint[,] board;
         private int[,] regions = null;
         private readonly HashSet<int>[] weakLinks;
+        private HashSet<int>[] CloneWeakLinks()
+        {
+            int numCandidates = HEIGHT * WIDTH * MAX_VALUE;
+            HashSet<int>[] newWeakLinks = new HashSet<int>[numCandidates];
+            for (int ci = 0; ci < numCandidates; ci++)
+            {
+                newWeakLinks[ci] = new(weakLinks[ci]);
+            }
+            return newWeakLinks;
+        }
+
         public uint[,] Board => board;
         public int[,] Regions => regions;
         public HashSet<int>[] WeakLinks => weakLinks;
@@ -325,7 +345,7 @@ namespace SudokuSolver
             // Constraints like arrow, killer, LK and the like could add more weak links during the solve,
             // but for now they will not.
             weakLinks = other.weakLinks;
-            //weakLinks = other.weakLinks.Select(s => new HashSet<int>(s)).ToArray();
+            //weakLinks = other.CloneWeakLinks();
         }
 
         private void InitCombinations()
@@ -1404,7 +1424,7 @@ namespace SudokuSolver
                 {
                 	Solver boardCopy = Clone();
                 	boardCopy.isBruteForcing = true;
-                    boardCopy.CountSolutionsMultiThreaded(state);
+                    CountSolutionsMultiThreaded(boardCopy, state);
                     state.Wait();
                 }
                 else
@@ -1971,8 +1991,17 @@ namespace SudokuSolver
             LogicResult result;
             do
             {
+#if INFINITE_LOOP_CHECK
                 Solver clone = Clone();
-                result = StepLogic(logicalStepDescs);
+#endif
+                if (!IsBoardValid(logicalStepDescs))
+                {
+                    result = LogicResult.Invalid;
+                }
+                else
+                {
+                    result = StepLogic(logicalStepDescs);
+                }
 #if INFINITE_LOOP_CHECK
                 if (result == LogicResult.Changed && IsSame(clone))
                 {
@@ -2004,7 +2033,9 @@ namespace SudokuSolver
             LogicResult result;
             do
             {
+#if INFINITE_LOOP_CHECK
                 Solver clone = Clone();
+#endif
                 result = StepLogic(null);
 #if INFINITE_LOOP_CHECK
                 if (result == LogicResult.Changed && IsSame(clone))
@@ -2211,6 +2242,87 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
+        private bool IsBoardValid(List<LogicalStepDesc> logicalStepDescs)
+        {
+            // Check for empty cells
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    if ((board[i, j] & ~valueSetMask) == 0)
+                    {
+                        logicalStepDescs?.Add(new($"{CellName(i, j)} has no possible values.", (i, j)));
+                        return false;
+                    }
+                }
+            }
+
+            // Check for values that groups must contain but don't
+            foreach (var group in Groups)
+            {
+                var groupCells = group.Cells;
+                int numCells = group.Cells.Count;
+                if (numCells != MAX_VALUE)
+                {
+                    continue;
+                }
+
+                uint atLeastOnce = 0;
+                for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
+                {
+                    var (i, j) = groupCells[cellIndex];
+                    atLeastOnce |= board[i, j];
+                }
+                atLeastOnce &= ~valueSetMask;
+
+                if (atLeastOnce != ALL_VALUES_MASK && numCells == MAX_VALUE)
+                {
+                    logicalStepDescs?.Add(new($"{group} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~atLeastOnce)}.", group.Cells));
+                    return false;
+                }
+            }
+
+            if (isBruteForcing)
+            {
+                return true;
+            }
+
+            // Check for groups which contain too many cells with a tuple that is too small
+            List<(int, int)> unsetCells = new(MAX_VALUE);
+            foreach (var group in Groups)
+            {
+                for (int tupleSize = 2; tupleSize < MAX_VALUE; tupleSize++)
+                {
+                    unsetCells.Clear();
+                    foreach (var cell in group.Cells)
+                    {
+                        uint cellMask = board[cell.Item1, cell.Item2];
+                        if (!IsValueSet(cellMask))
+                        {
+                            unsetCells.Add(cell);
+                        }
+                    }
+
+                    if (unsetCells.Count < tupleSize)
+                    {
+                        continue;
+                    }
+
+                    foreach (var tupleCells in unsetCells.Combinations(tupleSize))
+                    {
+                        uint tupleMask = CandidateMask(tupleCells);
+                        if (ValueCount(tupleMask) < tupleSize)
+                        {
+                            logicalStepDescs?.Add(new($"{CompactName(tupleCells)} in {group} are {tupleCells.Count} cells with only {ValueCount(tupleMask)} candidates available ({MaskToString(tupleMask)}).", tupleCells));
+                            return false;
+                        }
+                    }
+                }
+            }
+
+            return true;
+        }
+
         private LogicResult FindNakedSingles(List<LogicalStepDesc> logicalStepDescs)
         {
             bool hasUnsetCells = false;
@@ -2283,7 +2395,7 @@ namespace SudokuSolver
             return !hasUnsetCells ? LogicResult.PuzzleComplete : LogicResult.None;
         }
 
-        private LogicResult FindHiddenSingle(StringBuilder stepDescription)
+        private LogicResult FindHiddenSingle(List<LogicalStepDesc> logicalStepDescs)
         {
             foreach (var group in Groups)
             {
@@ -2314,7 +2426,7 @@ namespace SudokuSolver
                 setMask &= ~valueSetMask;
                 if (numCells == MAX_VALUE && (atLeastOnce | setMask) != ALL_VALUES_MASK)
                 {
-                    logicalStepDescs?.Add(new($"{group.Name} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~atLeastOnce)}.", group.Cells));
+                    logicalStepDescs?.Add(new($"{group} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~atLeastOnce)}.", group.Cells));
                     return LogicResult.Invalid;
                 }
 
@@ -2362,10 +2474,10 @@ namespace SudokuSolver
                     {
                         if (!SetValue(vali, valj, val))
                         {
-                        	logicalStepDescs?.Add(new($"Hidden Single in {group.Name}: {CellName(vali, valj)} cannot be set to {val}.", (vali, valj)));
+                        	logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(vali, valj)} cannot be set to {val}.", (vali, valj)));
                             return LogicResult.Invalid;
                         }
-                        logicalStepDescs?.Add(new($"Hidden Single in {group.Name}: {CellName(vali, valj)}={val}", CandidateIndex((vali, valj), val).ToEnumerable(), null, isSingle: true));
+                        logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(vali, valj)}={val}", CandidateIndex((vali, valj), val).ToEnumerable(), null, isSingle: true));
                         return LogicResult.Changed;
                     }
                 }
@@ -2425,7 +2537,7 @@ namespace SudokuSolver
                         continue;
                     }
 
-                    // Make a list of pairs for the group which aren't already filled
+                    // Make a list of cells which aren't already set and contain fewer candidates than the tuple size
                     unsetCells.Clear();
                     foreach (var cell in group.Cells)
                     {
@@ -2589,7 +2701,7 @@ namespace SudokuSolver
 
         private LogicResult FindFishes(List<LogicalStepDesc> logicalStepDescs)
         {
-            if (true || WIDTH != MAX_VALUE || HEIGHT != MAX_VALUE)
+            if (WIDTH != MAX_VALUE || HEIGHT != MAX_VALUE)
             {
                 return LogicResult.None;
             }
@@ -2608,8 +2720,11 @@ namespace SudokuSolver
                     int maxVal = MaxValue(mask);
                     for (int v = minVal; v <= maxVal; v++)
                     {
-                        rowcolIndexByValue[0][v - 1, j] |= (1u << i);
-                        rowcolIndexByValue[1][v - 1, i] |= (1u << j);
+                        if (HasValue(mask, v))
+                        {
+                            rowcolIndexByValue[0][v - 1, j] |= (1u << i);
+                            rowcolIndexByValue[1][v - 1, i] |= (1u << j);
+                        }
                     }
                 }
             }
@@ -2621,14 +2736,17 @@ namespace SudokuSolver
                 {
                     uint[,] indexByValue = rowcolIndexByValue[rowOrCol];
 
-                    for (int v = 0; v < MAX_VALUE; v++)
+                    for (int valueIndex = 0; valueIndex < MAX_VALUE; valueIndex++)
                     {
+                        int value = valueIndex + 1;
+
                         // Make a list of pairs for the row/col which aren't already filled
                         unsetRowOrCols.Clear();
                         for (int j = 0; j < MAX_VALUE; j++)
                         {
-                            uint cellMask = indexByValue[v, j];
-                            if (ValueCount(cellMask) <= tupleSize)
+                            uint cellMask = indexByValue[valueIndex, j];
+                            int valueCount = ValueCount(cellMask);
+                            if (valueCount > 1 && valueCount <= tupleSize)
                             {
                                 unsetRowOrCols.Add(j);
                             }
@@ -2643,7 +2761,7 @@ namespace SudokuSolver
                             uint tupleMask = 0;
                             foreach (int j in tupleRowOrCols)
                             {
-                                tupleMask |= indexByValue[v, j];
+                                tupleMask |= indexByValue[valueIndex, j];
                             }
                             if (ValueCount(tupleMask) == tupleSize)
                             {
@@ -2655,7 +2773,7 @@ namespace SudokuSolver
                                         continue;
                                     }
 
-                                    uint mask = indexByValue[v, j];
+                                    uint mask = indexByValue[valueIndex, j];
                                     uint elimMask = mask & tupleMask;
                                     if (elimMask != 0)
                                     {
@@ -2664,7 +2782,7 @@ namespace SudokuSolver
                                             if ((elimMask & (1u << i)) != 0)
                                             {
                                                 elims ??= new();
-                                                elims.Add(CandidateIndex(rowOrCol == 0 ? (i, j) : (j, i), v));
+                                                elims.Add(CandidateIndex(rowOrCol == 0 ? (i, j) : (j, i), value));
                                             }
                                         }
                                     }
@@ -2683,7 +2801,7 @@ namespace SudokuSolver
                                     List<(int, int)> fishCells = new();
                                     foreach (int j in tupleRowOrCols)
                                     {
-                                        uint mask = indexByValue[v, j];
+                                        uint mask = indexByValue[valueIndex, j];
                                         for (int i = 0; i < MAX_VALUE; i++)
                                         {
                                             if ((mask & (1u << i)) != 0)
@@ -2694,8 +2812,8 @@ namespace SudokuSolver
                                     }
 
                                     logicalStepDescs?.Add(new(
-                                        desc: $"{techniqueName}: {v} {CompactName(fishCells)} => {DescribeElims(elims)}",
-                                        sourceCandidates: CandidateIndexes(ValueMask(v), fishCells),
+                                        desc: $"{techniqueName}: {value} {CompactName(fishCells)} => {DescribeElims(elims)}",
+                                        sourceCandidates: CandidateIndexes(ValueMask(value), fishCells),
                                         elimCandidates: elims
                                     ));
                                     if (!ClearCandidates(elims))
@@ -3089,6 +3207,21 @@ namespace SudokuSolver
                 strongLinks[candIndex] = new();
             }
 
+            void AddStrongLink(int cand0, int cand1, StrongLinkDesc desc)
+            {
+                if (cand0 != cand1)
+                {
+                    if (!strongLinks[cand0].ContainsKey(cand1))
+                    {
+                        strongLinks[cand0][cand1] = desc;
+                    }
+                    if (!strongLinks[cand1].ContainsKey(cand0))
+                    {
+                        strongLinks[cand1][cand0] = desc;
+                    }
+                }
+            }
+
             // Add bivalue strong links
             for (int i = 0; i < HEIGHT; i++)
             {
@@ -3101,8 +3234,7 @@ namespace SudokuSolver
                         int v1 = MaxValue(mask);
                         int cand0 = CandidateIndex((i, j), v0);
                         int cand1 = CandidateIndex((i, j), v1);
-                        strongLinks[cand0][cand1] = StrongLinkDesc.Empty;
-                        strongLinks[cand1][cand0] = StrongLinkDesc.Empty;
+                        AddStrongLink(cand0, cand1, StrongLinkDesc.Empty);
                     }
                 }
             }
@@ -3150,8 +3282,7 @@ namespace SudokuSolver
 
                             int cand0 = CandidateIndex(cell0, v);
                             int cand1 = CandidateIndex(cell1, v);
-                            strongLinks[cand0][cand1] = StrongLinkDesc.Empty;
-                            strongLinks[cand1][cand0] = StrongLinkDesc.Empty;
+                            AddStrongLink(cand0, cand1, StrongLinkDesc.Empty);
                         }
                     }
                 }
@@ -3166,8 +3297,7 @@ namespace SudokuSolver
                             int cand1 = CandidateIndex(cells[1], v);
                             string constraintName = group.FromConstraint.SpecificName;
                             StrongLinkDesc strongLinkDesc = new(constraintName);
-                            strongLinks[cand0][cand1] = strongLinkDesc;
-                            strongLinks[cand1][cand0] = strongLinkDesc;
+                            AddStrongLink(cand0, cand1, strongLinkDesc);
                         }
                     }
                 }
@@ -3238,8 +3368,7 @@ namespace SudokuSolver
 
                                 string alsDescStr = alsDesc.ToString();
                                 StrongLinkDesc strongLinkDesc = new(alsDescStr, combination);
-                                strongLinks[cand0][cand1] = strongLinkDesc;
-                                strongLinks[cand1][cand0] = strongLinkDesc;
+                                AddStrongLink(cand0, cand1, strongLinkDesc);
                             }
                         }
                     }
@@ -3565,6 +3694,7 @@ namespace SudokuSolver
             List<int> bestChain = null;
             List<int> bestChainElims = null;
             int bestChainNumSingles = 0;
+            int bestChainNumSingles2 = 0;
             string bestChainDescPrefix = null;
             int maxChainSize = 0;
             bool bestChainCausesInvalidBoard = false;
@@ -3586,6 +3716,7 @@ namespace SudokuSolver
                         bestChain = new(chain);
                         bestChainElims = new(chainElims);
                         bestChainNumSingles = 0;
+                        bestChainNumSingles2 = 0;
                         bestChainDescPrefix = chainDescPrefix;
                         bestChainCausesInvalidBoard = true;
                         return;
@@ -3596,14 +3727,29 @@ namespace SudokuSolver
                     bestChain = new(chain);
                     bestChainElims = new(chainElims);
                     bestChainNumSingles = 0;
+                    bestChainNumSingles2 = 0;
+                    bestChainDescPrefix = chainDescPrefix;
+                    bestChainCausesInvalidBoard = true;
+                    return;
+                }
+
+                Solver clone2 = clone.Clone();
+                clone2.SetToBasicsOnly();
+                if (clone2.ConsolidateBoard() == LogicResult.Invalid)
+                {
+                    bestChain = new(chain);
+                    bestChainElims = new(chainElims);
+                    bestChainNumSingles = 0;
+                    bestChainNumSingles2 = 0;
                     bestChainDescPrefix = chainDescPrefix;
                     bestChainCausesInvalidBoard = true;
                     return;
                 }
 
                 int numSingles = clone.NumSetValues;
-                (int, int, int) chainVals = (numSingles, chainElims.Count, -chain.Count);
-                (int, int, int) bestChainVals = bestChain != null ? (bestChainNumSingles, bestChainElims.Count, -bestChain.Count) : default;
+                int numSingles2 = clone2.NumSetValues;
+                (int, int, int, int) chainVals = (numSingles, numSingles2, chainElims.Count, -chain.Count);
+                (int, int, int, int) bestChainVals = bestChain != null ? (bestChainNumSingles, bestChainNumSingles2, bestChainElims.Count, -bestChain.Count) : default;
                 if (bestChain == null || chainVals.CompareTo(bestChainVals) > 0)
                 {
                     if (bestChain == null)
@@ -3613,11 +3759,17 @@ namespace SudokuSolver
                     bestChain = new(chain);
                     bestChainElims = new(chainElims);
                     bestChainNumSingles = numSingles;
+                    bestChainNumSingles2 = numSingles2;
                     bestChainDescPrefix = chainDescPrefix;
+
+                    if (bestChainNumSingles == NUM_CELLS)
+                    {
+                        maxChainSize = chain.Count;
+                    }
                 }
             }
 
-            while (chainQueue.Count > 0 && !bestChainCausesInvalidBoard && bestChainNumSingles < NUM_CELLS)
+            while (chainQueue.Count > 0 && !bestChainCausesInvalidBoard)
             {
                 var chainEntry = chainQueue.Dequeue();
                 var chain = chainEntry.chain;
@@ -3663,7 +3815,7 @@ namespace SudokuSolver
                         }
                     }
 
-                    if (isDNL || newChain.Count + 1 > maxChainSize)
+                    if (isDNL || maxChainSize > 0 && newChain.Count + 1 > maxChainSize)
                     {
                         continue;
                     }
@@ -3686,7 +3838,7 @@ namespace SudokuSolver
                     }
 
                     // Add all chain continuations
-                    if (!bestChainCausesInvalidBoard)
+                    if (!bestChainCausesInvalidBoard && (maxChainSize == 0 || newChain.Count < maxChainSize))
                     {
                         foreach (int weakIndexEnd in weakLinks[strongIndexEnd])
                         {
