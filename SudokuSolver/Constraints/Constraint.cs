@@ -115,7 +115,10 @@ namespace SudokuSolver.Constraints
         {
             StringBuilder sb = logicalStepDescription != null ? new() : null;
             var res = StepLogic(sudokuSolver, sb, isBruteForcing);
-            logicalStepDescription?.Add(new(sb.ToString(), Enumerable.Empty<int>(), Enumerable.Empty<int>()));
+            if (res != LogicResult.None && (sb?.Length ?? 0) > 0)
+            {
+                logicalStepDescription?.Add(new(sb.ToString(), Enumerable.Empty<int>(), Enumerable.Empty<int>()));
+            }
             return res;
         }
 
