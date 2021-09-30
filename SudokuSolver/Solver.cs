@@ -1420,16 +1420,16 @@ namespace SudokuSolver
             using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, skipSolutions, cancellationToken);
             try
             {
+                Solver boardCopy = Clone();
+                boardCopy.isBruteForcing = true;
                 if (state.multiThread)
                 {
-                	Solver boardCopy = Clone();
-                	boardCopy.isBruteForcing = true;
                     CountSolutionsMultiThreaded(boardCopy, state);
                     state.Wait();
                 }
                 else
                 {
-                    CountSolutionsSingleThread(this, state);
+                    CountSolutionsSingleThread(boardCopy, state);
                 }
             }
             catch (OperationCanceledException) { }

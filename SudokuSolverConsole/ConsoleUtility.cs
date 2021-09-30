@@ -64,7 +64,7 @@ namespace SudokuSolverConsole
             int height = board.GetLength(0);
             int width = board.GetLength(1);
             int digitWidth = (height >= 10 || width >= 10) ? 2 : 1;
-            string nonGiven = new('?', digitWidth);
+            string nonGiven = new('0', digitWidth);
             for (int i = 0; i < height; i++)
             {
                 for (int j = 0; j < width; j++)
@@ -73,7 +73,7 @@ namespace SudokuSolverConsole
                     if (Solver.IsValueSet(mask))
                     {
                         int v = Solver.GetValue(mask);
-                        if (v <= 9)
+                        if (digitWidth > 1 && v <= 9)
                         {
                             textWriter.Write('0');
                         }
