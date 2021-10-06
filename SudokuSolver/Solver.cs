@@ -943,7 +943,7 @@ namespace SudokuSolver
                 }
             }
 
-            if (numCandidates > 2)
+            if (numCandidates > 3)
             {
                 var (bi, bj, bval) = FindBilocalValue();
                 if (bval > 0)
