@@ -255,7 +255,6 @@ namespace SudokuSolver.Constraints
 
         public override void InitLinks(Solver sudokuSolver)
         {
-            var weakLinks = sudokuSolver.WeakLinks;
             foreach (var maxCell in cells)
             {
                 int maxCellIndex = FlatIndex(maxCell);

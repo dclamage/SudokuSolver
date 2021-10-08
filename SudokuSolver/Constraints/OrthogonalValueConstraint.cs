@@ -562,7 +562,6 @@ namespace SudokuSolver.Constraints
         public override void InitLinks(Solver sudokuSolver)
         {
             var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
-            var weakLinks = sudokuSolver.WeakLinks;
 
             for (int i0 = 0; i0 < HEIGHT; i0++)
             {
