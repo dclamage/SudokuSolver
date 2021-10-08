@@ -18,17 +18,216 @@ namespace SudokuSolver.Constraints
             DownLeft,
         }
 
+        private class SumGroup
+        {
+            public SumGroup(LittleKillerConstraint constraint, List<(int, int)> cells)
+            {
+                this.constraint = constraint;
+                this.cells = cells;
+            }
+
+            public (int, int) MinMaxSum(Solver solver)
+            {
+                var board = solver.Board;
+
+                var unsetCells = cells;
+                int setSum = SetSum(solver);
+                if (setSum > 0)
+                {
+                    unsetCells = cells.Where(cell => !IsValueSet(board[cell.Item1, cell.Item2])).ToList();
+                }
+
+                if (unsetCells.Count == 0)
+                {
+                    return (setSum, setSum);
+                }
+
+                uint unsetMask = UnsetMask(solver);
+                if (unsetCells.Count == 1)
+                {
+                    return (setSum + MinValue(unsetMask), setSum + MaxValue(unsetMask));
+                }
+
+                int minValue = MinValue(unsetMask);
+                int maxValue = MaxValue(unsetMask);
+                List<int> possibleVals = Enumerable.Range(minValue, maxValue).Where(v => HasValue(unsetMask, v)).ToList();
+
+                int min = 0;
+                foreach (var combination in possibleVals.Combinations(unsetCells.Count))
+                {
+                    int curSum = setSum + combination.Sum();
+                    if (min == 0)
+                    {
+                        if (solver.CanPlaceDigitsAnyOrder(unsetCells, combination))
+                        {
+                            min = curSum;
+                        }
+                    }
+                    else if (min > curSum)
+                    {
+                        if (solver.CanPlaceDigitsAnyOrder(unsetCells, combination))
+                        {
+                            min = curSum;
+                        }
+                    }
+                }
+                if (min == 0)
+                {
+                    return (0, 0);
+                }
+
+                int max = min;
+                List<(List<int> combination, int sum)> potentialCombinations = new();
+                foreach (var combination in possibleVals.Combinations(unsetCells.Count))
+                {
+                    int curSum = setSum + combination.Sum();
+                    if (max < curSum)
+                    {
+                        potentialCombinations.Add((combination.ToList(), curSum));
+                    }
+                }
+                potentialCombinations.Sort((a, b) => b.sum - a.sum);
+                foreach (var (combination, curSum) in potentialCombinations)
+                {
+                    if (solver.CanPlaceDigitsAnyOrder(unsetCells, combination))
+                    {
+                        max = curSum;
+                        break;
+                    }
+                }
+
+                return (min, max);
+            }
+
+            public LogicResult RestrictSum(Solver solver, int minSum, int maxSum)
+            {
+                var board = solver.Board;
+
+                var unsetCells = cells;
+                int setSum = SetSum(solver);
+                if (setSum > 0)
+                {
+                    unsetCells = cells.Where(cell => !IsValueSet(board[cell.Item1, cell.Item2])).ToList();
+                }
+
+                int numUnsetCells = unsetCells.Count;
+                if (numUnsetCells == 0)
+                {
+                    return setSum >= minSum && setSum <= maxSum ? LogicResult.None : LogicResult.Invalid;
+                }
+
+                if (numUnsetCells == 1)
+                {
+                    var unsetCell = unsetCells[0];
+                    uint curMask = board[unsetCell.Item1, unsetCell.Item2];
+                    uint newMask = curMask & constraint.MaskBetweenInclusive(minSum - setSum, maxSum - setSum);
+                    if (curMask != newMask)
+                    {
+                        board[unsetCell.Item1, unsetCell.Item2] = newMask;
+                        return newMask != 0 ? LogicResult.Changed : LogicResult.Invalid;
+                    }
+                    return LogicResult.None;
+                }
+
+                uint unsetMask = UnsetMask(solver);
+                int minValue = MinValue(unsetMask);
+                int maxValue = MaxValue(unsetMask);
+                List<int> possibleVals = Enumerable.Range(minValue, maxValue).Where(v => HasValue(unsetMask, v)).ToList();
+
+                uint[] newMasks = new uint[numUnsetCells];
+                foreach (var combination in possibleVals.Combinations(unsetCells.Count))
+                {
+                    int curSum = setSum + combination.Sum();
+                    if (curSum >= minSum && curSum <= maxSum)
+                    {
+                        foreach (var perm in combination.Permuatations())
+                        {
+                            bool needCheck = false;
+                            for (int i = 0; i < numUnsetCells; i++)
+                            {
+                                uint valueMask = ValueMask(perm[i]);
+                                if ((newMasks[i] & valueMask) == 0)
+                                {
+                                    needCheck = true;
+                                    break;
+                                }
+                            }
+
+                            if (needCheck && solver.CanPlaceDigits(unsetCells, perm))
+                            {
+                                for (int i = 0; i < numUnsetCells; i++)
+                                {
+                                    uint valueMask = ValueMask(perm[i]);
+                                    newMasks[i] |= valueMask;
+                                }
+                            }
+                        }
+                    }
+                }
+
+                bool changed = false;
+                for (int i = 0; i < numUnsetCells; i++)
+                {
+                    var unsetCell = unsetCells[i];
+                    uint curMask = board[unsetCell.Item1, unsetCell.Item2];
+                    uint newMask = curMask & newMasks[i];
+                    if (curMask != newMask)
+                    {
+                        board[unsetCell.Item1, unsetCell.Item2] = newMask;
+                        if (newMask == 0)
+                        {
+                            return LogicResult.Invalid;
+                        }
+                        changed = true;
+                    }
+                }
+                return changed ? LogicResult.Changed : LogicResult.None;
+            }
+
+            public uint UnsetMask(Solver solver)
+            {
+                var board = solver.Board;
+                uint combMask = 0;
+                foreach (var cell in cells)
+                {
+                    uint mask = board[cell.Item1, cell.Item2];
+                    if (!IsValueSet(mask))
+                    {
+                        combMask |= mask;
+                    }
+                }
+                return combMask;
+            }
+
+            public int SetSum(Solver solver)
+            {
+                var board = solver.Board;
+                int sum = 0;
+                foreach (var cell in cells)
+                {
+                    uint mask = board[cell.Item1, cell.Item2];
+                    if (IsValueSet(mask))
+                    {
+                        sum += GetValue(mask);
+                    }
+                }
+                return sum;
+            }
+
+            private readonly LittleKillerConstraint constraint;
+            public readonly List<(int, int)> cells;
+        }
+
         public readonly (int, int) outerCell;
         public readonly Direction direction;
         public readonly int sum;
         private readonly (int, int) cellStart;
         private readonly HashSet<(int, int)> cells;
         private readonly List<(int, int)> cellsList;
+        private List<SumGroup> groups = null;
         private bool isGroup = false;
         private List<List<int>> sumCombinations = null;
         private HashSet<int> possibleValues = null;
-
-        public override List<(int, int)> Group => isGroup ? cellsList : null;
 
         private static readonly Regex optionsRegex = new(@"(\d+);[rR](\d+)[cC](\d+);([UD][LR])");
 
@@ -131,29 +330,23 @@ namespace SudokuSolver.Constraints
 
         public override LogicResult InitCandidates(Solver sudokuSolver)
         {
-            bool definitelyNotGroup = false;
-            for (int i0 = 0; i0 < cellsList.Count - 1; i0++)
+            if (cellsList.Count == 0)
             {
-                if (definitelyNotGroup)
-                {
-                    break;
-                }
-
-                var cell0 = cellsList[i0];
-                var seen = sudokuSolver.SeenCells(cell0);
-                for (int i1 = i0 + 1; i1 < cellsList.Count; i1++)
-                {
-                    var cell1 = cellsList[i1];
-                    if (!seen.Contains(cell1))
-                    {
-                        definitelyNotGroup = true;
-                        break;
-                    }
-                }
+                return LogicResult.None;
             }
-            if (!definitelyNotGroup)
+
+            if (groups == null)
+            {
+                groups = sudokuSolver.SplitIntoGroups(cellsList).Select(g => new SumGroup(this, g)).ToList();
+            }
+
+            if (groups.Count == 1)
             {
                 isGroup = true;
+            }
+
+            if (isGroup)
+            {
                 KillerCageConstraint.InitCombinations(MAX_VALUE, sum, cellsList.Count, out sumCombinations, out possibleValues);
             }
 
@@ -164,23 +357,54 @@ namespace SudokuSolver.Constraints
                 return KillerCageConstraint.InitCandidates(sudokuSolver, cellsList, possibleValues);
             }
 
-            bool changed = false;
-            int maxValue = sum - cells.Count + 1;
-            if (maxValue < MAX_VALUE)
+            int minSum = 0;
+            int maxSum = 0;
+            List<(SumGroup group, int min, int max)> groupMinMax = new(groups.Count);
+            foreach (var curGroup in groups)
             {
-                uint maxValueMask = (1u << maxValue) - 1;
-                foreach (var cell in cells)
+                var (curMin, curMax) = curGroup.MinMaxSum(sudokuSolver);
+                if (curMin == 0 || curMax == 0)
                 {
-                    uint cellMask = board[cell.Item1, cell.Item2];
-                    uint newCellMask = cellMask & maxValueMask;
-                    if (newCellMask == 0)
+                    return LogicResult.Invalid;
+                }
+
+                minSum += curMin;
+                maxSum += curMax;
+
+                groupMinMax.Add((curGroup, curMin, curMax));
+            }
+
+            if (minSum > sum || maxSum < sum)
+            {
+                return LogicResult.Invalid;
+            }
+
+            // Each group can increase from its min by the minDof
+            // and decrease from its max by the maxDof
+            bool changed = false;
+            int minDof = sum - minSum;
+            int maxDof = maxSum - sum;
+            
+            foreach (var (group, groupMin, groupMax) in groupMinMax)
+            {
+                if (groupMin == groupMax)
+                {
+                    continue;
+                }
+
+                int newGroupMin = Math.Max(groupMin, groupMax - maxDof);
+                int newGroupMax = Math.Min(groupMax, groupMin + minDof);
+
+                if (newGroupMin > groupMin || newGroupMax < groupMax)
+                {
+                    var logicResult = group.RestrictSum(sudokuSolver, newGroupMin, newGroupMax);
+                    if (logicResult == LogicResult.Invalid)
                     {
                         return LogicResult.Invalid;
                     }
 
-                    if (newCellMask != cellMask)
+                    if (logicResult == LogicResult.Changed)
                     {
-                        board[cell.Item1, cell.Item2] = newCellMask;
                         changed = true;
                     }
                 }
@@ -211,46 +435,168 @@ namespace SudokuSolver.Constraints
                 return KillerCageConstraint.StepLogic(sudokuSolver, sum, cellsList, sumCombinations, logicalStepDescription, isBruteForcing);
             }
 
-            var board = sudokuSolver.Board;
-            var cellMasks = cells.Select(cell => board[cell.Item1, cell.Item2]);
-
-            int setValueSum = cellMasks.Where(mask => IsValueSet(mask)).Select(mask => GetValue(mask)).Sum();
-            if (setValueSum > sum)
+            int incompleteSum = sum;
+            int numIncompleteGroups = 0;
+            int minSum = 0;
+            int maxSum = 0;
+            List<(SumGroup group, int min, int max)> groupMinMax = new(groups.Count);
+            foreach (var curGroup in groups)
             {
-                logicalStepDescription?.Append($"Sum of filled values is too large.");
+                var (curMin, curMax) = curGroup.MinMaxSum(sudokuSolver);
+                if (curMin == 0 || curMax == 0)
+                {
+                    logicalStepDescription?.Append($"{sudokuSolver.CompactName(curGroup.cells)} has no valid candidate combination.");
+                    return LogicResult.Invalid;
+                }
+
+                minSum += curMin;
+                maxSum += curMax;
+
+                if (curMin != curMax)
+                {
+                    numIncompleteGroups++;
+                }
+                else
+                {
+                    incompleteSum -= curMin;
+                }
+
+                groupMinMax.Add((curGroup, curMin, curMax));
+            }
+
+            if (minSum > sum || maxSum < sum)
+            {
+                logicalStepDescription?.Append($"Sum is no longer possible (Between {minSum} and {maxSum}).");
                 return LogicResult.Invalid;
             }
 
-            // Ensure the sum is still possible
-            var unsetMasks = cellMasks.Where(mask => !IsValueSet(mask)).ToArray();
-            if (unsetMasks.Length == 0)
+            if (numIncompleteGroups == 0)
             {
-                if (setValueSum != sum)
+                return LogicResult.None;
+            }
+
+            var board = sudokuSolver.Board;
+
+            if (numIncompleteGroups == 1)
+            {
+                // One group left means it must exactly sum to whatever sum is remaining
+                var incompleteGroup = groupMinMax.First(g => g.min != g.max).group;
+
+                int numCells = incompleteGroup.cells.Count;
+                uint[] oldMasks = null;
+                if (logicalStepDescription != null)
                 {
-                    logicalStepDescription?.Append($"Sum of values is incorrect.");
+                    oldMasks = new uint[numCells];
+                    for (int i = 0; i < numCells; i++)
+                    {
+                        var cell = incompleteGroup.cells[i];
+                        oldMasks[i] = board[cell.Item1, cell.Item2];
+                    }
+                }
+
+                var logicResult = incompleteGroup.RestrictSum(sudokuSolver, incompleteSum, incompleteSum);
+                if (logicResult == LogicResult.Invalid)
+                {
+                    logicalStepDescription?.Append($"{sudokuSolver.CompactName(incompleteGroup.cells)} cannot sum to exactly {incompleteSum}.");
                     return LogicResult.Invalid;
                 }
-            }
-            else if (unsetMasks.Length == 1)
-            {
-                int exactCellValue = sum - setValueSum;
-                if (exactCellValue <= 0 || exactCellValue > MAX_VALUE || !HasValue(unsetMasks[0], exactCellValue))
+
+                if (logicResult == LogicResult.Changed)
                 {
-                    logicalStepDescription?.Append($"The final cell cannot fulfill the sum.");
-                    return LogicResult.Invalid;
+                    if (logicalStepDescription != null)
+                    {
+                        List<int> elims = new();
+                        for (int i = 0; i < numCells; i++)
+                        {
+                            var cell = incompleteGroup.cells[i];
+                            uint removedMask = oldMasks[i] & ~board[cell.Item1, cell.Item2];
+                            if (removedMask != 0)
+                            {
+                                for (int v = 1; v <= MAX_VALUE; v++)
+                                {
+                                    if ((removedMask & ValueMask(v)) != 0)
+                                    {
+                                        elims.Add(sudokuSolver.CandidateIndex(cell, v));
+                                    }
+                                }
+                            }
+                        }
+
+                        logicalStepDescription.Append($"{sudokuSolver.CompactName(incompleteGroup.cells)} restricted to sum {incompleteSum}: {sudokuSolver.DescribeElims(elims)}");
+                    }
+                    return LogicResult.Changed;
                 }
             }
             else
             {
-                int minSum = setValueSum + unsetMasks.Select(mask => MinValue(mask)).Sum();
-                int maxSum = setValueSum + unsetMasks.Select(mask => MaxValue(mask)).Sum();
-                if (minSum > sum || maxSum < sum)
+                // Each group can increase from its min by the minDof
+                // and decrease from its max by the maxDof
+                bool changed = false;
+                int minDof = sum - minSum;
+                int maxDof = maxSum - sum;
+
+                List<int> elims = logicalStepDescription != null ? new() : null;
+                foreach (var (group, groupMin, groupMax) in groupMinMax)
                 {
-                    logicalStepDescription?.Append($"The sum is no longer possible.");
-                    return LogicResult.Invalid;
+                    if (groupMin == groupMax)
+                    {
+                        continue;
+                    }
+
+                    int newGroupMin = Math.Max(groupMin, groupMax - maxDof);
+                    int newGroupMax = Math.Min(groupMax, groupMin + minDof);
+
+                    if (newGroupMin > groupMin || newGroupMax < groupMax)
+                    {
+                        int numCells = group.cells.Count;
+                        uint[] oldMasks = null;
+                        if (logicalStepDescription != null)
+                        {
+                            oldMasks = new uint[numCells];
+                            for (int i = 0; i < numCells; i++)
+                            {
+                                var cell = group.cells[i];
+                                oldMasks[i] = board[cell.Item1, cell.Item2];
+                            }
+                        }
+
+                        var logicResult = group.RestrictSum(sudokuSolver, newGroupMin, newGroupMax);
+                        if (logicResult == LogicResult.Invalid)
+                        {
+                            logicalStepDescription?.Append($"{sudokuSolver.CompactName(group.cells)} cannot be restricted between {newGroupMin} and {newGroupMax}.");
+                            return LogicResult.Invalid;
+                        }
+
+                        if (logicResult == LogicResult.Changed)
+                        {
+                            if (logicalStepDescription != null)
+                            {
+                                for (int i = 0; i < numCells; i++)
+                                {
+                                    var cell = group.cells[i];
+                                    uint removedMask = oldMasks[i] & ~board[cell.Item1, cell.Item2];
+                                    if (removedMask != 0)
+                                    {
+                                        for (int v = 1; v <= MAX_VALUE; v++)
+                                        {
+                                            if ((removedMask & ValueMask(v)) != 0)
+                                            {
+                                                elims.Add(sudokuSolver.CandidateIndex(cell, v));
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            changed = true;
+                        }
+                    }
+                }
+                if (changed)
+                {
+                    logicalStepDescription?.Append($"Sum re-evaluated: {sudokuSolver.DescribeElims(elims)}");
+                    return LogicResult.Changed;
                 }
             }
-
             return LogicResult.None;
         }
     }
