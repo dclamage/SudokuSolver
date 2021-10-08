@@ -470,6 +470,29 @@ namespace SudokuSolver
             }
         }
 
+        private void InitSeenMap()
+        {
+            seenMap = new bool[HEIGHT, WIDTH, HEIGHT, WIDTH, MAX_VALUE + 1];
+            for (int i0 = 0; i0 < HEIGHT; i0++)
+            {
+                for (int j0 = 0; j0 < WIDTH; j0++)
+                {
+                    foreach (var (i1, j1) in SeenCells((i0, j0)))
+                    {
+                        seenMap[i0, j0, i1, j1, 0] = true;
+                    }
+                    for (int v = 1; v <= MAX_VALUE; v++)
+                    {
+                        uint mask = ValueMask(v);
+                        foreach (var (i1, j1) in SeenCellsByValueMask(mask, (i0, j0)))
+                        {
+                            seenMap[i0, j0, i1, j1, v] = true;
+                        }
+                    }
+                }
+            }
+        }
+
         /// <summary>
         /// Call this once after all constraints are set, and before setting any values.
         /// </summary>
@@ -500,6 +523,40 @@ namespace SudokuSolver
 
             InitStandardGroups();
 
+            // Create an initial seen map based on the standard groups only
+            InitSeenMap();
+
+            // Do a single pass on intializing constraints.
+            foreach (var constraint in constraints)
+            {
+                LogicResult result = constraint.InitCandidates(this);
+                if (result == LogicResult.Invalid)
+                {
+                    return false;
+                }
+            }
+
+            // Get the groups from the constraints
+            bool addedGroup = false;
+            foreach (var constraint in constraints)
+            {
+                var cells = constraint.Group;
+                if (cells != null)
+                {
+                    SudokuGroup group = new(constraint.SpecificName, cells.ToList(), constraint);
+                    Groups.Add(group);
+                    InitMapForGroup(group);
+                    addedGroup = true;
+                }
+            }
+
+            // Re-create the seen map if any new groups were added
+            if (addedGroup)
+            {
+                InitSeenMap();
+            }
+
+            // Initialize the constraints in a loop until there are no more changes
             bool haveChange = true;
             while (haveChange)
             {
@@ -519,41 +576,10 @@ namespace SudokuSolver
                 }
             }
 
-            foreach (var constraint in constraints)
-            {
-                var cells = constraint.Group;
-                if (cells != null)
-                {
-                    SudokuGroup group = new(constraint.SpecificName, cells.ToList(), constraint);
-                    Groups.Add(group);
-                    InitMapForGroup(group);
-                }
-            }
-
             smallGroupsBySize = Groups.Where(g => g.Cells.Count < MAX_VALUE).OrderBy(g => g.Cells.Count).ToList();
             if (smallGroupsBySize.Count == 0)
             {
                 smallGroupsBySize = null;
-            }
-
-            seenMap = new bool[HEIGHT, WIDTH, HEIGHT, WIDTH, MAX_VALUE + 1];
-            for (int i0 = 0; i0 < HEIGHT; i0++)
-            {
-                for (int j0 = 0; j0 < WIDTH; j0++)
-                {
-                    foreach (var (i1, j1) in SeenCells((i0, j0)))
-                    {
-                        seenMap[i0, j0, i1, j1, 0] = true;
-                    }
-                    for (int v = 1; v <= MAX_VALUE; v++)
-                    {
-                        uint mask = ValueMask(v);
-                        foreach (var (i1, j1) in SeenCellsByValueMask(mask, (i0, j0)))
-                        {
-                            seenMap[i0, j0, i1, j1, v] = true;
-                        }
-                    }
-                }
             }
 
             for (int i0 = 0; i0 < HEIGHT; i0++)
@@ -810,6 +836,46 @@ namespace SudokuSolver
             return true;
         }
 
+        public List<List<(int, int)>> SplitIntoGroups(IEnumerable<(int, int)> cellsEnumerable)
+        {
+            List<List<(int, int)>> groups = new();
+
+            var cells = cellsEnumerable.ToList();
+            if (cells.Count == 0)
+            {
+                return groups;
+            }
+            if (cells.Count == 1)
+            {
+                groups.Add(cells);
+                return groups;
+            }
+
+            // Find the largest group and remove it from the cells
+            int numCells = cells.Count;
+            for (int groupSize = numCells; groupSize >= 2; groupSize--)
+            {
+                foreach (var subCells in cells.Combinations(groupSize))
+                {
+                    if (IsGroup(subCells))
+                    {
+                        groups.Add(subCells.ToList());
+                        if (groupSize != numCells)
+                        {
+                            groups.AddRange(SplitIntoGroups(cells.Where(cell => !subCells.Contains(cell))));
+                        }
+                        return groups;
+                    }
+                }
+            }
+
+            foreach (var cell in cells)
+            {
+                groups.Add(new List<(int, int)>() { cell });
+            }
+            return groups;
+        }
+
         public bool CanPlaceDigits(List<(int, int)> cells, List<int> values)
         {
             int numCells = cells.Count;
@@ -847,6 +913,42 @@ namespace SudokuSolver
                 }
             }
             return true;
+        }
+
+        public bool CanPlaceDigitsAnyOrder(List<(int, int)> cells, List<int> values)
+        {
+            int numCells = cells.Count;
+            if (numCells != values.Count)
+            {
+                throw new ArgumentException($"CanPlaceDigits: Number of cells ({cells.Count}) must match number of values ({values.Count})");
+            }
+
+            uint combMask = 0;
+            foreach (var cell in cells)
+            {
+                combMask |= board[cell.Item1, cell.Item2];
+            }
+
+            uint needMask = 0;
+            foreach (int v in values)
+            {
+                needMask |= ValueMask(v);
+            }
+
+            if ((needMask & combMask) != needMask)
+            {
+                return false;
+            }
+
+            foreach (var perm in values.Permuatations())
+            {
+                if (CanPlaceDigits(cells, perm))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
