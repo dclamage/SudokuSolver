@@ -393,7 +393,6 @@ namespace SudokuSolver.Constraints
 
         public override void InitLinks(Solver sudokuSolver)
         {
-            var weakLinks = sudokuSolver.WeakLinks;
             for (int i0 = 0; i0 < HEIGHT; i0++)
             {
                 for (int j0 = 0; j0 < WIDTH; j0++)

@@ -267,8 +267,6 @@ namespace SudokuSolver.Constraints
 
         public override void InitLinks(Solver sudokuSolver)
         {
-            var weakLinks = sudokuSolver.WeakLinks;
-
             for (int lineIndex = 0; lineIndex < cells.Count; lineIndex++)
             {
                 var cell0 = cells[lineIndex];

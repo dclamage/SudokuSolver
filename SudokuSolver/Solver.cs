@@ -97,11 +97,11 @@ namespace SudokuSolver
 
         private uint[,] board;
         private int[,] regions = null;
-        private readonly HashSet<int>[] weakLinks;
-        private HashSet<int>[] CloneWeakLinks()
+        private readonly SortedSet<int>[] weakLinks;
+        private SortedSet<int>[] CloneWeakLinks()
         {
             int numCandidates = HEIGHT * WIDTH * MAX_VALUE;
-            HashSet<int>[] newWeakLinks = new HashSet<int>[numCandidates];
+            SortedSet<int>[] newWeakLinks = new SortedSet<int>[numCandidates];
             for (int ci = 0; ci < numCandidates; ci++)
             {
                 newWeakLinks[ci] = new(weakLinks[ci]);
@@ -111,7 +111,7 @@ namespace SudokuSolver
 
         public uint[,] Board => board;
         public int[,] Regions => regions;
-        public HashSet<int>[] WeakLinks => weakLinks;
+        public SortedSet<int>[] WeakLinks => weakLinks;
         public Dictionary<string, object> customInfo = new();
         // Returns whether two cells cannot be the same value for a specific value
         // i0, j0, i1, j0, value or 0 for any value
@@ -306,7 +306,7 @@ namespace SudokuSolver
             CellToGroupMap = new();
 
             int numCandidates = HEIGHT * WIDTH * MAX_VALUE;
-            weakLinks = new HashSet<int>[numCandidates];
+            weakLinks = new SortedSet<int>[numCandidates];
             for (int ci = 0; ci < numCandidates; ci++)
             {
                 weakLinks[ci] = new();
@@ -483,6 +483,7 @@ namespace SudokuSolver
 
                 timers["FindNakedSingles"] = new();
                 timers["FindHiddenSingle"] = new();
+                timers["FindDirectCellForcing"] = new();
                 timers["FindNakedTuples"] = new();
                 timers["FindPointingTuples"] = new();
                 timers["FindUnorthodoxTuples"] = new();
@@ -2116,6 +2117,18 @@ namespace SudokuSolver
                 return result;
             }
 
+#if PROFILING
+            timers["FindDirectCellForcing"].Start();
+#endif
+            result = FindDirectCellForcing(logicalStepDescs);
+#if PROFILING
+            timers["FindDirectCellForcing"].Stop();
+#endif
+            if (result != LogicResult.None)
+            {
+                return result;
+            }
+
             foreach (var constraint in constraints)
             {
 #if PROFILING
@@ -2128,7 +2141,7 @@ namespace SudokuSolver
 #endif
                 if (result != LogicResult.None)
                 {
-                    if (logicalStepDescs.Count > 0)
+                    if (logicalStepDescs != null && logicalStepDescs.Count > 0)
                     {
                         logicalStepDescs[^1] = logicalStepDescs[^1].WithPrefix($"[{constraint.SpecificName}] ");
                     }
@@ -2478,11 +2491,79 @@ namespace SudokuSolver
                     {
                         if (!SetValue(vali, valj, val))
                         {
-                        	logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(vali, valj)} cannot be set to {val}.", (vali, valj)));
+                            logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(vali, valj)} cannot be set to {val}.", (vali, valj)));
                             return LogicResult.Invalid;
                         }
                         logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(vali, valj)}={val}", CandidateIndex((vali, valj), val).ToEnumerable(), null, isSingle: true));
                         return LogicResult.Changed;
+                    }
+                }
+            }
+            return LogicResult.None;
+        }
+
+        private LogicResult FindDirectCellForcing(List<LogicalStepDesc> logicalStepDescs)
+        {
+            if (isBruteForcing)
+            {
+                return LogicResult.None;
+            }
+
+            SortedSet<int> elimSet = new();
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    uint mask = board[i, j];
+                    if (IsValueSet(mask))
+                    {
+                        continue;
+                    }
+
+                    bool isFirstElimArray = true;
+                    elimSet.Clear();
+                    int candBase = (i * HEIGHT + j) * MAX_VALUE;
+                    int minVal = MinValue(mask);
+                    int maxVal = MaxValue(mask);
+                    for (int v = minVal; v <= maxVal; v++)
+                    {
+                        if (HasValue(mask, v))
+                        {
+                            int candIndex = candBase + v - 1;
+                            if (isFirstElimArray)
+                            {
+                                elimSet.UnionWith(weakLinks[candIndex]);
+                                isFirstElimArray = false;
+                            }
+                            else
+                            {
+                                elimSet.IntersectWith(weakLinks[candIndex]);
+                            }
+
+                            if (elimSet.Count == 0)
+                            {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (elimSet.Count > 0)
+                    {
+                        List<int> elims = elimSet.Where(IsCandIndexValid).ToList();
+                        if (elims.Count > 0)
+                        {
+                            List<(int, int)> sourceCell = new() { (i, j) };
+                            logicalStepDescs?.Add(new(
+                                desc: $"Direct Cell Forcing: {CompactName(mask, sourceCell)} => {DescribeElims(elims)}",
+                                sourceCandidates: CandidateIndexes(mask, sourceCell),
+                                elimCandidates: elims
+                            ));
+                            if (!ClearCandidates(elims))
+                            {
+                                return LogicResult.Invalid;
+                            }
+                            return LogicResult.Changed;
+                        }
                     }
                 }
             }
@@ -2536,7 +2617,7 @@ namespace SudokuSolver
             {
                 foreach (var group in Groups)
                 {
-                    if (group.Cells.Count <= tupleSize)
+                    if (group.Cells.Count < tupleSize)
                     {
                         continue;
                     }
@@ -2627,7 +2708,7 @@ namespace SudokuSolver
                     }
 
                     logicalStepDescs?.Add(new(
-                                    desc: $"Pointing: {v} locked to {CompactName(cellsMustContain)} in {group} => {DescribeElims(elims)}",
+                                    desc: $"Pointing: {v}{CompactName(cellsMustContain)} in {group} => {DescribeElims(elims)}",
                                     sourceCandidates: CandidateIndexes(valueMask, cellsMustContain),
                                     elimCandidates: elims
                                 ));
@@ -2647,7 +2728,7 @@ namespace SudokuSolver
             {
                 return LogicResult.None;
             }
-            
+
             for (int tupleSize = 2; tupleSize < MAX_VALUE / 2; tupleSize++)
             {
                 // Go through every value combination for this tuple size

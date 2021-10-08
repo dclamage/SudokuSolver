@@ -253,7 +253,6 @@ namespace SudokuSolver.Constraints
 
         public override void InitLinks(Solver sudokuSolver)
         {
-            var weakLinks = sudokuSolver.WeakLinks;
             foreach (var minCell in cells)
             {
                 int minCellIndex = FlatIndex(minCell);

@@ -380,7 +380,6 @@ namespace SudokuSolver.Constraints
                 return;
             }
 
-            var weakLinks = sudokuSolver.WeakLinks;
             int numCells = cells.Count;
             foreach (var cell0 in cells)
             {
