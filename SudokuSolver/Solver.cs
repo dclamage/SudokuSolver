@@ -109,6 +109,31 @@ namespace SudokuSolver
             return newWeakLinks;
         }
 
+        // Store "memos" (for memoization)
+        // This is useful for remembering things that are specific to board state which won't
+        // change as the puzzle is solved.
+        // The memos are shallow copied when the solver is cloned, so keys should be descriptive enough
+        // about the board state such that the input guarantees a specific output.
+        private readonly Dictionary<string, object> memos;
+        private readonly object memosLock;
+
+        // Interface for storing/retrieving memos
+        public T GetMemo<T>(string key) where T : class
+        {
+            lock (memosLock)
+            {
+                return memos.TryGetValue(key, out var val) ? val as T : null;
+            }
+        }
+
+        public void StoreMemo(string key, object val)
+        {
+            lock (memosLock)
+            {
+                memos[key] = val;
+            }
+        }
+
         public uint[,] Board => board;
         public int[,] Regions => regions;
         public SortedSet<int>[] WeakLinks => weakLinks;
@@ -290,6 +315,8 @@ namespace SudokuSolver
             ALL_VALUES_MASK = (1u << MAX_VALUE) - 1;
             NUM_CELLS = width * height;
             combinations = new int[MAX_VALUE][][];
+            memos = new();
+            memosLock = new();
             InitCombinations();
 
             board = new uint[HEIGHT, WIDTH];
@@ -346,6 +373,14 @@ namespace SudokuSolver
             // but for now they will not.
             weakLinks = other.weakLinks;
             //weakLinks = other.CloneWeakLinks();
+
+            // Memos are also shallow copies.
+            // The "key" for memos need to be descriptive enough such that their input has a guaranteed output.
+            // Key/data in memos should never be dependent on the current board state.
+            // If board state is an input, it should be encoded into the key.
+            // It is ok for memos to assume that the board size and all constraints are the same.
+            memos = other.memos;
+            memosLock = other.memosLock;
         }
 
         private void InitCombinations()
@@ -472,6 +507,7 @@ namespace SudokuSolver
 
         private void InitSeenMap()
         {
+            // Create the seen map
             seenMap = new bool[HEIGHT, WIDTH, HEIGHT, WIDTH, MAX_VALUE + 1];
             for (int i0 = 0; i0 < HEIGHT; i0++)
             {
@@ -487,6 +523,37 @@ namespace SudokuSolver
                         foreach (var (i1, j1) in SeenCellsByValueMask(mask, (i0, j0)))
                         {
                             seenMap[i0, j0, i1, j1, v] = true;
+                        }
+                    }
+                }
+            }
+
+            // Add the weak links
+            for (int i0 = 0; i0 < HEIGHT; i0++)
+            {
+                for (int j0 = 0; j0 < WIDTH; j0++)
+                {
+                    int cellIndex = i0 * WIDTH + j0;
+                    for (int v = 1; v <= MAX_VALUE; v++)
+                    {
+                        uint mask = ValueMask(v);
+                        int candIndex0 = cellIndex * MAX_VALUE + v - 1;
+
+                        // Add weak links to all seen cells
+                        foreach (var (i1, j1) in SeenCellsByValueMask(mask, (i0, j0)))
+                        {
+                            int candIndex1 = CandidateIndex((i1, j1), v);
+                            AddWeakLink(candIndex0, candIndex1);
+                        }
+
+                        // Add weak links to all other candidates within the same cell
+                        for (int v1 = 1; v1 <= MAX_VALUE; v1++)
+                        {
+                            if (v != v1)
+                            {
+                                int candIndex1 = CandidateIndex((i0, j0), v1);
+                                AddWeakLink(candIndex0, candIndex1);
+                            }
                         }
                     }
                 }
@@ -556,7 +623,13 @@ namespace SudokuSolver
                 InitSeenMap();
             }
 
-            // Initialize the constraints in a loop until there are no more changes
+            // Add any weak links from constraints
+            foreach (var constraint in constraints)
+            {
+                constraint.InitLinks(this);
+            }
+
+            // Initialize the constraints again in a loop until there are no more changes
             bool haveChange = true;
             while (haveChange)
             {
@@ -580,41 +653,6 @@ namespace SudokuSolver
             if (smallGroupsBySize.Count == 0)
             {
                 smallGroupsBySize = null;
-            }
-
-            for (int i0 = 0; i0 < HEIGHT; i0++)
-            {
-                for (int j0 = 0; j0 < WIDTH; j0++)
-                {
-                    int cellIndex = i0 * WIDTH + j0;
-                    for (int v = 1; v <= MAX_VALUE; v++)
-                    {
-                        uint mask = ValueMask(v);
-                        int candIndex0 = cellIndex * MAX_VALUE + v - 1;
-
-                        // Add weak links to all seen cells
-                        foreach (var (i1, j1) in SeenCellsByValueMask(mask, (i0, j0)))
-                        {
-                            int candIndex1 = CandidateIndex((i1, j1), v);
-                            AddWeakLink(candIndex0, candIndex1);
-                        }
-
-                        // Add weak links to all other candidates within the same cell
-                        for (int v1 = 1; v1 <= MAX_VALUE; v1++)
-                        {
-                            if (v != v1)
-                            {
-                                int candIndex1 = CandidateIndex((i0, j0), v1);
-                                AddWeakLink(candIndex0, candIndex1);
-                            }
-                        }
-                    }
-                }
-            }
-
-            foreach (var constraint in constraints)
-            {
-                constraint.InitLinks(this);
             }
 
             SetCanHaveUnorthodoxTuples();
@@ -671,6 +709,18 @@ namespace SudokuSolver
         {
             return SolverUtility.IsValueSet(mask);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public uint MaskStrictlyHigher(int v) => ALL_VALUES_MASK & ~((1u << v) - 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public uint MaskValAndHigher(int v) => ALL_VALUES_MASK & ~((1u << (v - 1)) - 1);
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public uint MaskBetweenInclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskStrictlyLower(v0) | MaskStrictlyHigher(v1));
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public uint MaskBetweenExclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskValAndLower(v0) | MaskValAndHigher(v1));
 
         /// <summary>
         /// Returns which cells must be distinct from the all the inputted cells.
@@ -884,31 +934,35 @@ namespace SudokuSolver
                 throw new ArgumentException($"CanPlaceDigits: Number of cells ({cells.Count}) must match number of values ({values.Count})");
             }
 
-            Span<uint> cellMasks = stackalloc uint[numCells];
+            // Ensure these values fit into the cell masks at all
             for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
             {
                 var (i, j) = cells[cellIndex];
-                cellMasks[cellIndex] = board[i, j];
-            }
-
-            for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
-            {
                 int v = values[cellIndex];
-                uint valueMask = ValueMask(v);
-                uint mask = cellMasks[cellIndex];
-                if ((mask & valueMask) == 0)
+                if (!HasValue(board[i, j], v))
                 {
                     return false;
                 }
+            }
 
-                var cell0 = cells[cellIndex];
-                uint clearMask = ALL_VALUES_MASK & ~valueMask;
-                for (int cellIndex1 = cellIndex + 1; cellIndex1 < numCells; cellIndex1++)
+            // Convert the cell + values to candidate indexes
+            List<int> candidates = new(numCells);
+            for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
+            {
+                var cell = cells[cellIndex];
+                int v = values[cellIndex];
+                candidates.Add(CandidateIndex(cell, v));
+            }
+
+            // Check if there are any weak links between candidates. If so, this isn't placeable.
+            for (int c0 = 0; c0 < numCells - 1; c0++)
+            {
+                var weakLinks0 = weakLinks[candidates[c0]];
+                for (int c1 = c0 + 1; c1 < numCells; c1++)
                 {
-                    var cell1 = cells[cellIndex1];
-                    if (IsSeenByValue(cell0, cell1, v))
+                    if (weakLinks0.Contains(candidates[c1]))
                     {
-                        cellMasks[cellIndex1] &= clearMask;
+                        return false;
                     }
                 }
             }
@@ -1003,7 +1057,7 @@ namespace SudokuSolver
             board[i, j] = valueSetMask | valMask;
 
             // Apply all weak links
-            int setCandidateIndex = CandidateIndex((i, j), val);
+            int setCandidateIndex = CandidateIndex(i, j, val);
             foreach (int elimCandIndex in weakLinks[setCandidateIndex])
             {
                 var (i1, j1, v1) = CandIndexToCoord(elimCandIndex);
@@ -1021,6 +1075,7 @@ namespace SudokuSolver
                     return false;
                 }
             }
+
             isInSetValue = false;
 
             return true;
@@ -2219,16 +2274,19 @@ namespace SudokuSolver
                 return result;
             }
 
-#if PROFILING
-            timers["FindDirectCellForcing"].Start();
-#endif
-            result = FindDirectCellForcing(logicalStepDescs);
-#if PROFILING
-            timers["FindDirectCellForcing"].Stop();
-#endif
-            if (result != LogicResult.None)
+            if (!isBruteForcing)
             {
-                return result;
+#if PROFILING
+                timers["FindDirectCellForcing"].Start();
+#endif
+                result = FindDirectCellForcing(logicalStepDescs);
+#if PROFILING
+                timers["FindDirectCellForcing"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
             }
 
             foreach (var constraint in constraints)
@@ -2606,11 +2664,6 @@ namespace SudokuSolver
 
         private LogicResult FindDirectCellForcing(List<LogicalStepDesc> logicalStepDescs)
         {
-            if (isBruteForcing)
-            {
-                return LogicResult.None;
-            }
-
             SortedSet<int> elimSet = new();
             for (int i = 0; i < HEIGHT; i++)
             {
@@ -3597,6 +3650,10 @@ namespace SudokuSolver
             return mask & ~valueSetMask;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        internal int CandidateIndex(int i, int j, int v) => (i * WIDTH + j) * MAX_VALUE + v - 1;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal int CandidateIndex((int, int) cell, int v) => (cell.Item1 * WIDTH + cell.Item2) * MAX_VALUE + v - 1;
 
         internal List<int> CandidateIndexes(uint valueMask, IEnumerable<(int, int)> cells)
@@ -3621,6 +3678,7 @@ namespace SudokuSolver
             return result;
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         internal (int, int, int) CandIndexToCoord(int candIndex)
         {
             int v = (candIndex % MAX_VALUE) + 1;

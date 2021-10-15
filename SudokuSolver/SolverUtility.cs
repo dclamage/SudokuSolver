@@ -4,6 +4,7 @@ using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Linq;
+using System.Diagnostics;
 
 namespace SudokuSolver
 {
@@ -58,6 +59,12 @@ namespace SudokuSolver
         {
             return 32 - BitOperations.LeadingZeroCount(mask);
         }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint MaskStrictlyLower(int v) => (1u << (v - 1)) - 1;
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static uint MaskValAndLower(int v) => (1u << v) - 1;
 
         public static string MaskToString(uint mask)
         {
@@ -306,5 +313,59 @@ namespace SudokuSolver
             }
             return val;
         }
+
+        // Helpers for memo keys
+        public static string CellsKey(string prefix, IEnumerable<(int, int)> cells)
+        {
+            return new StringBuilder()
+                .Append(prefix)
+                .AppendCellNames(cells)
+                .ToString();
+        }
+
+        public static StringBuilder AppendInts(this StringBuilder builder, IEnumerable<int> ints)
+        {
+            foreach (int cur in ints)
+            {
+                builder.Append('|').Append(cur);
+            }
+            return builder;
+        }
+
+        public static StringBuilder AppendCellNames(this StringBuilder builder, IEnumerable<(int, int)> cells)
+        {
+            foreach (var cell in cells)
+            {
+                builder.Append('|').Append(CellName(cell));
+            }
+            return builder;
+        }
+
+        public static StringBuilder AppendCellValueKey(this StringBuilder builder, Solver solver, IEnumerable<(int, int)> cells)
+        {
+            var board = solver.Board;
+            foreach (var (i, j) in cells)
+            {
+                uint mask = board[i, j];
+                builder.Append(IsValueSet(mask) ? "|s" : "|").Append(mask & ~valueSetMask);
+            }
+            return builder;
+        }
+    }
+
+    public class ScopedStopwatch : IDisposable
+    {
+        public ScopedStopwatch(Stopwatch stopwatch)
+        {
+            this.stopwatch = stopwatch;
+            stopwatch.Start();
+        }
+
+        public void Dispose()
+        {
+            stopwatch.Stop();
+        }
+
+        public readonly Stopwatch stopwatch;
     }
 }
