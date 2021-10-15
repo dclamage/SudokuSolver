@@ -19,8 +19,8 @@ namespace SudokuSolverConsole
 #if false
             args = new string[]
             {
-                "-g=........1.....2.3...4.5.6.....2...7..7...4..28...9.5....5..69...1.3.....6.8.4....",
-                //@"-f=N4IgzglgXgpiBcBOANCALhNAbO8QHEAnAe2LQAIAxYwgYzlQEMBXNACxoRAAU2IsIAB3IA5GAHcAtowB2IVIWY4wMNFxE1pWcmGYATYgGtm5RcvKNBgrAE8AdOQCCMveXaM0AcjDlMAQnkQAHNCCD0EAG0I4ABfZFj4kAA3RixmXABWVCCIJJg5eDRFGDiEstKKxJS03BRg3PyEIvSYgF1kaNLk1PSEAA5shoLmkvjK0Gre+AB2Qbzh4vGuydwANjnGwsWx9ujumoQAFg2FlrHziZ7cAGYTpu3yi4rdsv2p9fr5+7PH15WEABMdy2PzeuAAjMCRksXksnvDLgd4ANPptoTsOoippDUadRr8wUcoQ84X8rghbrjviVYVVyfAcTkviD8eNCcjiT82f94ECqSznpjSdz6YyhtTlvTZvz0eVaWSkXUmWiHuysjKSQjnq0YkA",
+                //"-g=........1.....2.3...4.5.6.....2...7..7...4..28...9.5....5..69...1.3.....6.8.4....",
+                @"-f=N4IgzglgXgpiBcBOANCALhNAbO8QHkAnAI0xFQEMBXNACwHtCEQBFegExgGNyRCqcYGGmYARCAHNMYAAQUs9AHYS5iuYUL0A7jIhq6MGRMIR2MgLZUwaGWCrmZaeo9qH2kzLrXSZXCIS4cADoZcSk0WXMKAE8ZQhgABxgKG3klFQo1Cg1tIIAdRQKwnzTlGXcKCSV5WT13LhSYM2JY7M0tWXoaSE4XQ2NTCysbOwcnPqMIADcYNUV7YhhCORs6FPV2kOKIixi4xOTUhTKKcohK6qx8wsUAYRgsLFktTFo5I3jYvwCcIesZRYyDjsEL3R7PV7vYwwWJgACOVGyhks/0BMBmiiCvAG7AQAG08aAEtlMNFmABRDEgAC+yGAtPpdIZzKZrKJJLQZLw+HYuOpAF1kISWYzRSLxYLhWzxdLpZKxbKFUqBULlYqZfT5RrtXLVTq1WKterjYbVSBiSZOcweXyTfrzRyuSBKbMafzBSAsJhsDAANYQR5LUb40BcB5YZgAJQAjAAGW4Adl4YfB+JAkcQtwAHLxI1nbogQB73PEuBglMwAKqR3hTeRUXAgHMMkApiN4SMAZluceT4bAacjACYC7no9mi6gS9xy4oqwAZWv1xtJlttqPxzt91PwPHp8dD3Mj6OTkDTssQCt4USL1B1rAN5gANhpdNb4ajCduse3T0H+ZPVAM1uQ9i38GdLzna8azvZdmELNcPw7eMk1QNsB13fdbhfICRwAVlzbsABZcyI24tyAvCQNzJ8e1Pc9ZzEW8QHvR88E7Zs33XDsv17ND+0HWjC0oicgLI1D027HD03wsdbhIsDS0YvBK2Y1jGyI1cuKQ/dN1/DC92AkigPzAigK/aTI1oiTIyonMxNHRSIKvEBqyXB8NMPRDHijbsf34ndDLIwD0yow8gNoij0y/Yz01M3NMxfJyLxc0QYJYuC8CIrcVRANptBDT09BgAzDO7GyR0s8czJk+Siw9dDB3KosWy9RQSvxMryNI6iRJCqzqPdAK/0wrtuv5VritK6LupMuqgMzGq82w+rhoMmatwmt82o63dDK/GzaPs0LRwcnMhvfQKZqTLbQB26bbMTHqkoagTRqom7Jvah7uyWsiFNeq6xoI26iu+zqTqigaAbWwcqM2r7doJGaltol7YdGr8QYFakgA",
                 //"-b=9",
                 //"-c=renban:r1-6c1",
                 //"-c=chess:v1,2,3,4,5,6,7;1,1;2,2;3,3;4,4;5,5;6,6;7,7;8,8",
@@ -29,7 +29,7 @@ namespace SudokuSolverConsole
                 //"-c=taxi:4",
                 //"-o=candidates.txt",
                 //"-uv",
-                "-s",
+                "-n",
                 //"-pl",
             };
 #endif

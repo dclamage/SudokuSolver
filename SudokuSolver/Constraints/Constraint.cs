@@ -413,12 +413,6 @@ namespace SudokuSolver.Constraints
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected uint MaskStrictlyLower(int v) => (1u << (v - 1)) - 1;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        protected uint MaskValAndLower(int v) => (1u << v) - 1;
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         protected uint MaskStrictlyHigher(int v) => ALL_VALUES_MASK & ~((1u << v) - 1);
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
