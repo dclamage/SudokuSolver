@@ -141,7 +141,6 @@ namespace SudokuSolver
         // Returns whether two cells cannot be the same value for a specific value
         // i0, j0, i1, j0, value or 0 for any value
         private bool[,,,,] seenMap;
-        private bool canHaveUnorthodoxTuples = false;
         private bool isInSetValue = false;
         public uint[] FlatBoard
         {
@@ -361,7 +360,6 @@ namespace SudokuSolver
             board = (uint[,])other.board.Clone();
             regions = other.regions;
             seenMap = other.seenMap;
-            canHaveUnorthodoxTuples = other.canHaveUnorthodoxTuples;
             constraints = other.constraints;
             Groups = other.Groups;
             smallGroupsBySize = other.smallGroupsBySize;
@@ -576,7 +574,6 @@ namespace SudokuSolver
                 timers["FindDirectCellForcing"] = new();
                 timers["FindNakedTuples"] = new();
                 timers["FindPointingTuples"] = new();
-                timers["FindUnorthodoxTuples"] = new();
                 timers["FindFishes"] = new();
                 timers["FindWings"] = new();
                 timers["FindAIC"] = new();
@@ -654,30 +651,8 @@ namespace SudokuSolver
             {
                 smallGroupsBySize = null;
             }
-
-            SetCanHaveUnorthodoxTuples();
+            
             return true;
-        }
-
-        private void SetCanHaveUnorthodoxTuples()
-        {
-            foreach (var constraint in constraints)
-            {
-                for (int i = 0; i < HEIGHT; i++)
-                {
-                    for (int j = 0; j < WIDTH; j++)
-                    {
-                        for (int v = 1; v <= MAX_VALUE; v++)
-                        {
-                            if (constraint.SeenCellsByValueMask((i, j), ValueMask(v)).Any())
-                            {
-                                canHaveUnorthodoxTuples = true;
-                                return;
-                            }
-                        }
-                    }
-                }
-            }
         }
 
         /// <summary>
@@ -2344,21 +2319,6 @@ namespace SudokuSolver
                 }
             }
 
-            if (!DisableTuples)
-            {
-#if PROFILING
-                timers["FindUnorthodoxTuples"].Start();
-#endif
-                result = FindUnorthodoxTuples(logicalStepDescs);
-#if PROFILING
-                timers["FindUnorthodoxTuples"].Stop();
-#endif
-                if (result != LogicResult.None)
-                {
-                    return result;
-                }
-            }
-
             if (!DisableFishes)
             {
 #if PROFILING
@@ -2877,57 +2837,111 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
-        private LogicResult FindUnorthodoxTuples(List<LogicalStepDesc> logicalStepDescs)
+        private LogicResult FindUnorthodoxTuple(List<LogicalStepDesc> logicalStepDescs, int tupleSize)
         {
-            if (!canHaveUnorthodoxTuples)
+            List<(int, int)> candidateCells = new();
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    uint mask = board[i, j];
+                    int valueCount = ValueCount(mask);
+                    if (!IsValueSet(mask) && valueCount > 1 && valueCount <= tupleSize)
+                    {
+                        candidateCells.Add((i, j));
+                    }
+                }
+            }
+
+            int numCandidateCells = candidateCells.Count;
+            if (numCandidateCells < tupleSize)
             {
                 return LogicResult.None;
             }
 
-            for (int tupleSize = 2; tupleSize < MAX_VALUE / 2; tupleSize++)
+            bool IsPotentiallyValidTuple(uint valuesMask, List<(int, int)> tupleCells)
             {
-                // Go through every value combination for this tuple size
-                foreach (var tupleValues in Enumerable.Range(1, MAX_VALUE).Combinations(tupleSize))
+                int valuesMaskCount = ValueCount(valuesMask);
+                if (valuesMaskCount > tupleSize)
                 {
-                    uint tupleValuesMask = 0;
-                    foreach (int v in tupleValues)
-                    {
-                        tupleValuesMask |= ValueMask(v);
-                    }
-                    uint invTupleValuesMask = ~tupleValuesMask;
+                    return false;
+                }
 
-                    List<(int, int)> possibleTupleCells = new();
-                    for (int i = 0; i < HEIGHT; i++)
+                if (tupleCells.Count <= 1)
+                {
+                    return true;
+                }
+
+                if (tupleCells.Count == tupleSize && valuesMaskCount != tupleSize)
+                {
+                    return false;
+                }
+
+                int minValue = MinValue(valuesMask);
+                int maxValue = MaxValue(valuesMask);
+                for (int v = minValue; v <= maxValue; v++)
+                {
+                    uint valueMask = ValueMask(v);
+                    if ((valuesMask & valueMask) != 0)
                     {
-                        for (int j = 0; j < WIDTH; j++)
+                        int numWithCandidate = 0;
+                        for (int k = 0; k < tupleCells.Count; k++)
                         {
-                            uint mask = board[i, j];
-                            if ((mask & invTupleValuesMask) == 0)
+                            var (i, j) = tupleCells[k];
+                            if ((board[i, j] & valueMask) != 0)
                             {
-                                possibleTupleCells.Add((i, j));
+                                numWithCandidate++;
                             }
                         }
+
+                        if (numWithCandidate > 1 && !IsGroup(tupleCells, v))
+                        {
+                            return false;
+                        }
                     }
+                }
+                return true;
+            }
 
-                    // Look for sets of cells which form a tuple of this size
-                    foreach (var possibleCells in possibleTupleCells.Combinations(tupleSize))
+            List<(int, int)> tupleCells = new(tupleSize);
+            (int index, (int i, int j) coord, uint accumMask, bool isValid)[] tupleInfoArray = new (int, (int, int), uint, bool)[tupleSize];
+
+            // Initialize the wing info array with the first combination even if it's invalid
+            {
+                uint accumMask = 0;
+                for (int k = 0; k < tupleSize; k++)
+                {
+                    var coord = candidateCells[k];
+                    accumMask |= board[coord.Item1, coord.Item2];
+                    tupleCells.Add(coord);
+                    bool isValid = IsPotentiallyValidTuple(accumMask, tupleCells);
+                    tupleInfoArray[k] = (k, coord, accumMask, isValid);
+                }
+            }
+
+            while (true)
+            {
+                // Check if this wing info is valid and performs eliminations
+                var (_, _, accumMask, isValid) = tupleInfoArray[tupleSize - 1];
+                if (isValid && ValueCount(accumMask) == tupleSize)
+                {
+                    // All candidates in this tuple must be present, so we can eliminate based on each value
+                    var elims = CalcElims(accumMask, tupleCells);
+                    if (elims != null && elims.Count > 0)
                     {
-                        if (!IsGroup(possibleCells))
+                        if (logicalStepDescs != null)
                         {
-                            continue;
-                        }
-
-                        var elims = CalcElims(tupleValuesMask, possibleCells);
-                        if (elims == null || elims.Count == 0)
-                        {
-                            continue;
-                        }
-
-                        logicalStepDescs?.Add(new(
-                                    desc: $"Unorthodox Tuple: {CompactName(tupleValuesMask, possibleCells)} => {DescribeElims(elims)}",
-                                    sourceCandidates: CandidateIndexes(tupleValuesMask, possibleCells),
+                            StringBuilder wingName = new();
+                            for (int k = tupleSize - 1; k >= 0; k--)
+                            {
+                                wingName.Append((char)('Z' - k));
+                            }
+                            logicalStepDescs?.Add(new(
+                                    desc: $"Unorthodox Tuple ({tupleSize}): {MaskToString(accumMask)} in {CompactName(tupleCells)} => {DescribeElims(elims)}",
+                                    sourceCandidates: CandidateIndexes(accumMask, tupleCells),
                                     elimCandidates: elims
                                 ));
+                        }
                         if (!ClearCandidates(elims))
                         {
                             return LogicResult.Invalid;
@@ -2935,7 +2949,67 @@ namespace SudokuSolver
                         return LogicResult.Changed;
                     }
                 }
+
+                // Find the first invalid index. This is the minimum index to increment.
+                int firstInvalid = tupleSize;
+                for (int k = 0; k < tupleSize; k++)
+                {
+                    var tupleinfo = tupleInfoArray[k];
+                    if (!tupleinfo.isValid)
+                    {
+                        firstInvalid = k;
+                        break;
+                    }
+                }
+
+                // Find the last index which can be incremented
+                int lastCanIncrement = -1;
+                for (int k = tupleSize - 1; k >= 0; k--)
+                {
+                    var tupleInfo = tupleInfoArray[k];
+                    if (tupleInfo.index + 1 < numCandidateCells - (tupleSize - k))
+                    {
+                        lastCanIncrement = k;
+                        break;
+                    }
+                }
+
+                // Check if done
+                if (lastCanIncrement == -1)
+                {
+                    break;
+                }
+
+                // Increment the smaller of the first invalid one or the last that can increment.
+                int k0 = Math.Min(lastCanIncrement, firstInvalid);
+
+                tupleCells.Clear();
+                for (int k = 0; k < k0; k++)
+                {
+                    tupleCells.Add(tupleInfoArray[k].coord);
+                }
+
+                // Increment to the next combination
+                int nextIndex = tupleInfoArray[k0].index + 1;
+                var nextCoord = candidateCells[nextIndex];
+                uint nextAccumMask = board[nextCoord.Item1, nextCoord.Item2];
+                if (k0 > 0)
+                {
+                    nextAccumMask |= tupleInfoArray[k0 - 1].accumMask;
+                }
+                tupleCells.Add(nextCoord);
+                tupleInfoArray[k0] = (nextIndex, nextCoord, nextAccumMask, IsPotentiallyValidTuple(nextAccumMask, tupleCells));
+
+                for (int k1 = k0 + 1; k1 < tupleSize; k1++)
+                {
+                    nextIndex = tupleInfoArray[k1 - 1].index + 1;
+                    nextCoord = candidateCells[nextIndex];
+                    nextAccumMask |= board[nextCoord.Item1, nextCoord.Item2];
+                    tupleCells.Add(nextCoord);
+                    tupleInfoArray[k1] = (nextIndex, nextCoord, nextAccumMask, IsPotentiallyValidTuple(nextAccumMask, tupleCells));
+                }
             }
+
             return LogicResult.None;
         }
 
@@ -2969,6 +3043,7 @@ namespace SudokuSolver
                 }
             }
 
+            // Look for standard fishes
             List<int> unsetRowOrCols = new(MAX_VALUE);
             for (int tupleSize = 2; tupleSize <= MAX_VALUE / 2; tupleSize++)
             {
@@ -3003,6 +3078,7 @@ namespace SudokuSolver
                             {
                                 tupleMask |= indexByValue[valueIndex, j];
                             }
+
                             if (ValueCount(tupleMask) == tupleSize)
                             {
                                 List<int> elims = null;
@@ -3061,6 +3137,154 @@ namespace SudokuSolver
                                         return LogicResult.Invalid;
                                     }
                                     return LogicResult.Changed;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Look for finned fishes
+            for (int tupleSize = 2; tupleSize <= MAX_VALUE / 2; tupleSize++)
+            {
+                for (int rowOrCol = 0; rowOrCol < 2; rowOrCol++)
+                {
+                    uint[,] indexByValue = rowcolIndexByValue[rowOrCol];
+
+                    for (int valueIndex = 0; valueIndex < MAX_VALUE; valueIndex++)
+                    {
+                        int value = valueIndex + 1;
+
+                        // Make a list of pairs for the row/col which aren't already filled
+                        unsetRowOrCols.Clear();
+                        for (int j = 0; j < MAX_VALUE; j++)
+                        {
+                            uint cellMask = indexByValue[valueIndex, j];
+                            int valueCount = ValueCount(cellMask);
+                            if (valueCount > 1)
+                            {
+                                unsetRowOrCols.Add(j);
+                            }
+                        }
+                        if (unsetRowOrCols.Count < tupleSize)
+                        {
+                            continue;
+                        }
+
+                        foreach (var tupleRowOrCols in unsetRowOrCols.Combinations(tupleSize))
+                        {
+                            uint tupleMask = 0;
+                            foreach (int j in tupleRowOrCols)
+                            {
+                                tupleMask |= indexByValue[valueIndex, j];
+                            }
+
+                            List<int> nonTupleRowOrCols = new();
+                            for (int j = 0; j < MAX_VALUE; j++)
+                            {
+                                if (!tupleRowOrCols.Contains(j))
+                                {
+                                    nonTupleRowOrCols.Add(j);
+                                }
+                            }
+
+                            int numPositions = ValueCount(tupleMask);
+                            if (numPositions > tupleSize)
+                            {
+                                List<int> positions = new(numPositions);
+                                for (int j = 0; j < MAX_VALUE; j++)
+                                {
+                                    if ((tupleMask & (1u << j)) != 0)
+                                    {
+                                        positions.Add(j);
+                                    }
+                                }
+                                foreach (var positionCombo in positions.Combinations(tupleSize))
+                                {
+                                    uint positionMask = 0;
+                                    foreach (int j in positionCombo)
+                                    {
+                                        positionMask |= (1u << j);
+                                    }
+
+                                    // Calculate the eliminations from the fish formed by these positions
+                                    SortedSet<int> elims = null;
+                                    foreach (int j in nonTupleRowOrCols)
+                                    {
+                                        uint mask = indexByValue[valueIndex, j];
+                                        uint elimMask = mask & positionMask;
+                                        if (elimMask != 0)
+                                        {
+                                            for (int i = 0; i < MAX_VALUE; i++)
+                                            {
+                                                if ((elimMask & (1u << i)) != 0)
+                                                {
+                                                    elims ??= new();
+                                                    elims.Add(CandidateIndex(rowOrCol == 0 ? (i, j) : (j, i), value));
+                                                }
+                                            }
+                                        }
+                                    }
+
+                                    if (elims != null)
+                                    {
+                                        // Calcuate the eliminations from individual candidates not in the fish
+                                        uint notPostionMask = tupleMask & ~positionMask;
+                                        foreach (int j in tupleRowOrCols)
+                                        {
+                                            uint mask = indexByValue[valueIndex, j] & notPostionMask;
+                                            if (mask != 0)
+                                            {
+                                                for (int i = 0; i < MAX_VALUE; i++)
+                                                {
+                                                    if ((mask & (1u << i)) != 0)
+                                                    {
+                                                        var finCell = rowOrCol == 0 ? (i, j) : (j, i);
+                                                        elims.IntersectWith(weakLinks[CandidateIndex(finCell, value)]);
+                                                    }
+                                                }
+                                            }
+                                            if (elims.Count == 0)
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if (elims != null && elims.Count > 0)
+                                    {
+                                        string techniqueName = tupleSize switch
+                                        {
+                                            2 => "X-Wing",
+                                            3 => "Swordfish",
+                                            4 => "Jellyfish",
+                                            _ => $"{tupleSize}-Fish",
+                                        };
+
+                                        List<(int, int)> fishCells = new();
+                                        foreach (int j in tupleRowOrCols)
+                                        {
+                                            uint mask = indexByValue[valueIndex, j];
+                                            for (int i = 0; i < MAX_VALUE; i++)
+                                            {
+                                                if ((mask & (1u << i)) != 0)
+                                                {
+                                                    fishCells.Add(rowOrCol == 0 ? (i, j) : (j, i));
+                                                }
+                                            }
+                                        }
+
+                                        logicalStepDescs?.Add(new(
+                                            desc: $"Finned {techniqueName}: {value} {CompactName(fishCells)} => {DescribeElims(elims)}",
+                                            sourceCandidates: CandidateIndexes(ValueMask(value), fishCells),
+                                            elimCandidates: elims
+                                        ));
+                                        if (!ClearCandidates(elims))
+                                        {
+                                            return LogicResult.Invalid;
+                                        }
+                                        return LogicResult.Changed;
+                                    }
                                 }
                             }
                         }
@@ -3173,13 +3397,49 @@ namespace SudokuSolver
                 }
             }
 
-            // Look for (N)-Wings [XYZ-Wings, WXYZ-Wings, VWXYZ-Wings, etc]
+            // Look for XYZ-wings
+            // Look for unorthodox tuples of this size before looking for wings
+            LogicResult logicResult = FindUnorthodoxTuple(logicalStepDescs, 3);
+            if (logicResult != LogicResult.None)
+            {
+                return logicResult;
+            }
+
+            logicResult = FindNWing(logicalStepDescs, 3);
+            if (logicResult != LogicResult.None)
+            {
+                return logicResult;
+            }
+
+            // TODO: W-Wing
+
+            // Look for WXYZ-Wings
+            logicResult = FindUnorthodoxTuple(logicalStepDescs, 4);
+            if (logicResult != LogicResult.None)
+            {
+                return logicResult;
+            }
+
+            logicResult = FindNWing(logicalStepDescs, 4);
+            if (logicResult != LogicResult.None)
+            {
+                return logicResult;
+            }
+
+            // Look for (N)-Wings [Extension of XYZ-Wings and WXYZ-Wings for sizes 5+]
             // An (N)-Wing is N candidates limited to N cells.
             // Looking at each candidate, all but one of them cannot repeat within those cells.
             // This implies that any cell seen by the instances of that last candidate can be eliminated.
-            for (int wingSize = 3; wingSize <= MAX_VALUE; wingSize++)
+            for (int wingSize = 5; wingSize <= MAX_VALUE; wingSize++)
             {
-                var logicResult = FindNWing(logicalStepDescs, wingSize);
+                // Look for unorthodox tuples of this size before looking for wings
+                logicResult = FindUnorthodoxTuple(logicalStepDescs, wingSize);
+                if (logicResult != LogicResult.None)
+                {
+                    return logicResult;
+                }
+
+                logicResult = FindNWing(logicalStepDescs, wingSize);
                 if (logicResult != LogicResult.None)
                 {
                     return logicResult;
@@ -4244,7 +4504,7 @@ namespace SudokuSolver
                                         }
 
                                         // Trivial contradictions will always be as "easy" or "easier" than any other contradiction.
-                                        if (isTrivial || DisableFindShortestContradiction || contradictionSteps == null)
+                                        if (isTrivial || DisableFindShortestContradiction || !DisableContradictions && contradictionSteps == null)
                                         {
                                             logicalStepDescs?.Add(new(
                                                 desc: $"Setting {CellName(i, j)} to {v} causes a contradiction:",
