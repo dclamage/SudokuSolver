@@ -120,7 +120,7 @@ namespace SudokuSolver.Constraints
             else if (circleCells.Count == 2)
             {
                 int maxSum = arrowCells.Count * MAX_VALUE;
-                if (maxSum <= MAX_VALUE)
+                if (maxSum.ToString().Length < circleCells.Count)
                 {
                     return LogicResult.Invalid;
                 }
@@ -240,9 +240,15 @@ namespace SudokuSolver.Constraints
 
             if (arrowCellsFilled)
             {
-                // The arrow sum is known, so the sum cells are forced.
+                // Even though we know the sum of the arrow, there could be more than one arrangement of the digits in the circle. 
+
                 int arrowSum = ArrowValue(sudokuSolver);
-                return FillCircleWithKnownSum(sudokuSolver, arrowSum, logicalStepDescription);
+                var res = FillCircleWithKnownSum(sudokuSolver, arrowSum, logicalStepDescription);
+
+                if(res != LogicResult.None)
+                {
+                    return res;
+                }
             }
 
             if (circleCellsFilled)
@@ -263,67 +269,22 @@ namespace SudokuSolver.Constraints
             if (possibleArrowSums.Count == 1)
             {
                 // Only one circle sum is possible, so fill it
-                return FillCircleWithKnownSum(sudokuSolver, possibleArrowSums.First(), logicalStepDescription);
+                var res =  FillCircleWithKnownSum(sudokuSolver, possibleArrowSums.First(), logicalStepDescription);
+
+                if (res != LogicResult.None)
+                {
+                    return res;
+                }
             }
 
-            // Adjust the circle candidates based on the possible sums
+            var result = AdjustCircleCandidatesFromPossibleSums(sudokuSolver, possibleArrowSums, logicalStepDescription);
+
+            if(result != LogicResult.None)
+            {
+                return result;
+            }
+
             List<int> elims = null;
-            int numCircleCells = circleCells.Count;
-            if (numCircleCells == 1)
-            {
-                uint keepMask = 0;
-                foreach (int sum in possibleArrowSums)
-                {
-                    keepMask |= ValueMask(sum);
-                }
-                var circleCell = circleCells[0];
-                uint circleMask = board[circleCell.Item1, circleCell.Item2] & ~valueSetMask;
-                uint clearMask = circleMask & ~keepMask;
-                if (clearMask != 0)
-                {
-                    elims = sudokuSolver.CandidateIndexes(clearMask, circleCell.ToEnumerable());
-                }
-            }
-            else
-            {
-                uint[] keepMasks = new uint[numCircleCells];
-                foreach (int sum in possibleArrowSums)
-                {
-                    int remainingSum = sum;
-                    for (int digitIndex = 0; digitIndex < numCircleCells; digitIndex++)
-                    {
-                        int val = remainingSum % 10;
-                        keepMasks[numCircleCells - digitIndex - 1] |= ValueMask(val);
-                        remainingSum /= 10;
-                    }
-                }
-                for (int digitIndex = 0; digitIndex < numCircleCells; digitIndex++)
-                {
-                    var circleCell = circleCells[digitIndex];
-                    uint circleMask = board[circleCell.Item1, circleCell.Item2] & ~valueSetMask;
-                    uint clearMask = circleMask & ~keepMasks[digitIndex];
-                    if (clearMask != 0)
-                    {
-                        var curElims = sudokuSolver.CandidateIndexes(clearMask, circleCell.ToEnumerable());
-                        if (curElims.Count != 0)
-                        {
-                            elims ??= new();
-                            elims.AddRange(curElims);
-                        }
-                    }
-                }
-            }
-
-            if (elims != null && elims.Count > 0)
-            {
-                bool invalid = !sudokuSolver.ClearCandidates(elims);
-                logicalStepDescription?.Add(new(
-                    desc: $"Impossible sum{(elims.Count > 1 ? "s" : "")} => {sudokuSolver.DescribeElims(elims)}",
-                    sourceCandidates: Enumerable.Empty<int>(),
-                    elimCandidates: elims
-                ));
-                return invalid ? LogicResult.Invalid : LogicResult.Changed;
-            }
 
             // Adjust the arrow candidates based on the possible sums
             int numArrowCells = arrowCells.Count;
@@ -359,6 +320,60 @@ namespace SudokuSolver.Constraints
                 bool invalid = !sudokuSolver.ClearCandidates(elims);
                 logicalStepDescription?.Add(new(
                     desc: $"Impossible arrow cell value{(elims.Count > 1 ? "s" : "")} => {sudokuSolver.DescribeElims(elims)}",
+                    sourceCandidates: Enumerable.Empty<int>(),
+                    elimCandidates: elims
+                ));
+                return invalid ? LogicResult.Invalid : LogicResult.Changed;
+            }
+
+            return LogicResult.None;
+        }
+
+        private LogicResult AdjustCircleCandidatesFromPossibleSums(Solver sudokuSolver, HashSet<int> possibleArrowSums, List<LogicalStepDesc> logicalStepDescription = null)
+        {
+            var board = sudokuSolver.Board;
+
+            // We're going to store all possible values for each cell so we can remove anything that's not been captured.
+            var keepMasks = new uint[circleCells.Count];
+
+            foreach(var sum in possibleArrowSums)
+            {
+                // Valid circle arrangement works for all circle cell counts.
+                foreach (var arrangement in ValidCircleArrangements(sudokuSolver, sum))
+                {
+                    // arrangement is now set to a plausable arrangement of cell values for this sum
+
+                    for(var cellIndex = 0; cellIndex < circleCells.Count; cellIndex++)
+                    {
+                        keepMasks[cellIndex] |= ValueMask(arrangement[cellIndex]);
+                    }
+                }
+            }
+
+            // Now we've recorded all the possible values for each circle cell, remove every other candidate.
+            var elims = new List<int>();
+
+            for(var cellIndex = 0; cellIndex < circleCells.Count; cellIndex++)
+            {
+                var circleCell = circleCells[cellIndex];
+                uint circleMask = board[circleCell.Item1, circleCell.Item2] & ~valueSetMask;
+                uint clearMask = circleMask & ~keepMasks[cellIndex];
+                if (clearMask != 0)
+                {
+                    var curElims = sudokuSolver.CandidateIndexes(clearMask, circleCell.ToEnumerable());
+                    if (curElims.Count != 0)
+                    {
+                        elims ??= new();
+                        elims.AddRange(curElims);
+                    }
+                }
+            }    
+
+            if (elims != null && elims.Count > 0)
+            {
+                bool invalid = !sudokuSolver.ClearCandidates(elims);
+                logicalStepDescription?.Add(new(
+                    desc: $"Impossible sum{(elims.Count > 1 ? "s" : "")} => {sudokuSolver.DescribeElims(elims)}",
                     sourceCandidates: Enumerable.Empty<int>(),
                     elimCandidates: elims
                 ));
@@ -450,22 +465,36 @@ namespace SudokuSolver.Constraints
                             }
 
                             bool canUseCombination = true;
+
                             if (isAllGrouped)
                             {
-                                int remainingComboSum = valueComboSum;
-                                int digitIndex = circleCells.Count - 1;
-                                while (remainingComboSum > 0)
-                                {
-                                    int curDigit = remainingComboSum % 10;
-                                    remainingComboSum /= 10;
+                                // Only allow this combination if we can find a valid arrangement for the circle cells.
+                                canUseCombination = false;
 
-                                    if (!arrowCells.Contains(circleCells[digitIndex]) && valueCombination.Contains(curDigit))
+                                // We need to find at least one possible combination
+                                foreach(var possibleArrangement in PossibleCircleArrangements(valueComboSum, circleCells.Count, MAX_VALUE))
+                                {
+                                    bool arrangementValid = true;
+
+                                    for (var i = 0; i < circleCells.Count; i++)
                                     {
-                                        canUseCombination = false;
+                                        if(!arrowCells.Contains(circleCells[i]) && valueCombination.Contains(possibleArrangement[i]))
+                                        {
+                                            // This combination of circle digits is not valid since one of the values repeats on the arrow :(
+                                            arrangementValid = false;
+                                            break;
+                                        }
+                                    }
+
+                                    if(arrangementValid)
+                                    {
+                                        canUseCombination = true;
+
+                                        // We've found at least one working combination
                                         break;
                                     }
-                                    digitIndex--;
                                 }
+                                
                             }
                             if (!canUseCombination)
                             {
@@ -505,224 +534,141 @@ namespace SudokuSolver.Constraints
             return possibleArrowSums;
         }
 
+        public static IEnumerable<int[]> PossibleCircleArrangements(int total, int cells, int maxValue)
+        {
+            if (total == 0)
+            {
+                yield break;
+            }
+
+            if(cells == 1 && total <= maxValue)
+            {
+                yield return new int[] { total };
+                yield break;
+            }
+
+            if(cells > 1)
+            {
+                var totalString = total.ToString();
+
+                // Max digits per cell is TotalDigits - (CircleCells - 1)
+                for (var take = 1; take <= totalString.Length - (cells - 1); take++)
+                {
+                    var first = Convert.ToInt32(totalString[..take]);
+
+                    // We can't continue if first is now > max
+                    if (first > maxValue) yield break;
+
+                    var remaining = Convert.ToInt32(totalString[take..]);
+
+                    foreach(var remainingCombination in PossibleCircleArrangements(remaining, cells - 1, maxValue))
+                    {
+                        var combination = new int[remainingCombination.Length + 1];
+
+                        combination[0] = first;
+                        remainingCombination.CopyTo(combination, 1);
+
+                        yield return combination;
+                    }
+                }
+
+            }
+        }
+
+        private IEnumerable<int[]> ValidCircleArrangements(Solver sudokuSolver, int circleValue)
+        {
+            // We need to...
+            // 1 - See if this arrangement actually fits in the circle cells
+            // 2 - Make sure we're not violating any group constraints
+
+            var board = sudokuSolver.Board;
+
+            foreach (var possible in PossibleCircleArrangements(circleValue, circleCells.Count, MAX_VALUE))
+            {
+                bool isValid = true;
+
+                // Make sure every location can house the associated value
+                for (var cellIndex = 0; cellIndex < circleCells.Count; cellIndex++)
+                {
+                    uint circleCellMask = board[circleCells[cellIndex].Item1, circleCells[cellIndex].Item2];
+
+                    if ((circleCellMask & ValueMask(possible[cellIndex])) == 0)
+                    {
+                        isValid = false;
+                        break;
+                    }
+                }
+
+                if (isValid)
+                {
+                    // We need to make sure the circle cells are unique if in a group.
+                    if (circleCells.Count > 1 && isCircleGroup)
+                    {
+                        if (possible.Distinct().ToArray().Length != possible.Length)
+                        {
+                            // Oh well, let's try another combination
+                            continue;
+                        }
+                    }
+
+                    yield return possible;
+                }
+            }
+
+            // Try as we might, we can't find an arrangement that works :(
+            yield break;
+        }
+
         private bool IsPossibleCircleValue(Solver sudokuSolver, int circleValue)
         {
-            var board = sudokuSolver.Board;
-            if (circleCells.Count == 1)
-            {
-                if (circleValue < 1 || circleValue > MAX_VALUE)
-                {
-                    return false;
-                }
-
-                uint circleCellMask = board[circleCells[0].Item1, circleCells[0].Item2];
-                return (circleCellMask & ValueMask(circleValue)) != 0;
-            }
-            else if (circleCells.Count == 2)
-            {
-                if (circleValue <= 10 || circleValue >= 100)
-                {
-                    return false;
-                }
-
-                uint circleCellMask0 = board[circleCells[0].Item1, circleCells[0].Item2];
-                uint circleCellMask1 = board[circleCells[1].Item1, circleCells[1].Item2];
-
-                int circleValue0 = circleValue / 10;
-                int circleValue1 = circleValue % 10;
-                if (circleValue0 == 0 || circleValue1 == 0 || circleValue0 == circleValue1 && isCircleGroup)
-                {
-                    return false;
-                }
-                return (circleCellMask0 & ValueMask(circleValue0)) != 0 && (circleCellMask1 & ValueMask(circleValue1)) != 0;
-            }
-            else if (circleCells.Count == 3)
-            {
-                if (circleValue <= 100 || circleValue >= 1000)
-                {
-                    return false;
-                }
-
-                uint circleCellMask0 = board[circleCells[0].Item1, circleCells[0].Item2];
-                uint circleCellMask1 = board[circleCells[1].Item1, circleCells[1].Item2];
-                uint circleCellMask2 = board[circleCells[2].Item1, circleCells[2].Item2];
-
-                int circleValue0 = circleValue / 100;
-                int circleValue1 = (circleValue / 10) % 10;
-                int circleValue2 = circleValue % 10;
-                if (circleValue0 == 0 || circleValue1 == 0 || circleValue2 == 0)
-                {
-                    return false;
-                }
-                if (isCircleGroup && (circleValue0 == circleValue1 || circleValue0 == circleValue2 || circleValue1 == circleValue2))
-                {
-                    return false;
-                }
-                return (circleCellMask0 & ValueMask(circleValue0)) != 0 && (circleCellMask1 & ValueMask(circleValue1)) != 0 && (circleCellMask2 & ValueMask(circleValue2)) != 0;
-            }
-
-            return true;
+            // If there are any valid arrangements, then it's a possible value.
+            return ValidCircleArrangements(sudokuSolver, circleValue).Any();
         }
 
         private LogicResult FillCircleWithKnownSum(Solver sudokuSolver, int arrowSum, List<LogicalStepDesc> logicalStepDescription = null)
         {
-            bool changed = false;
+            var validArrangements = ValidCircleArrangements(sudokuSolver, arrowSum).ToList();
+            
+            if (validArrangements.Count == 0)
+            {
+                logicalStepDescription?.Add(new($"Sum of arrow ({arrowSum}) is impossible to fill into {(circleCells.Count > 1 ? "pill" : "circle")}.", circleCells));
+                return LogicResult.Invalid;
+            }
+            else if (validArrangements.Count > 1)
+            {
+                return AdjustCircleCandidatesFromPossibleSums(sudokuSolver, new HashSet<int>() { arrowSum }, logicalStepDescription);
+            }
+
+            // Now we know there is exactly 1 valid arrangement of values in the circle cells.
+            var finalArrangement = validArrangements[0];
+
+            var setCandidates = new List<int>();
+            var changed = false;
             var board = sudokuSolver.Board;
-            if (circleCells.Count == 1)
+
+            for (var circleIndex = 0; circleIndex < circleCells.Count; circleIndex++)
             {
-                var sumCell = circleCells[0];
-                if (arrowSum <= 0 || arrowSum > MAX_VALUE)
+                var cell = circleCells[circleIndex];
+                var mask = board[cell.Item1, cell.Item2];
+
+                if(IsValueSet(mask))
                 {
-                    logicalStepDescription?.Add(new($"Sum of arrow ({arrowSum}) is impossible to fill into circle.", sumCell));
-                    return LogicResult.Invalid;
+                    // This digit is already set
+                    continue;
                 }
-                uint arrowSumMask = ValueMask(arrowSum);
-                uint sumCellMask = board[sumCell.Item1, sumCell.Item2];
-                if ((sumCellMask & arrowSumMask) == 0)
+
+                if (!sudokuSolver.SetValue(cell.Item1, cell.Item2, finalArrangement[circleIndex]))
                 {
-                    logicalStepDescription?.Add(new($"Sum of arrow ({arrowSum}) is impossible to fill into circle.", sumCell));
+                    logicalStepDescription?.Add(new($"Cannot fill {finalArrangement[circleIndex]} into {CellName(cell)}", cell));
                     return LogicResult.Invalid;
                 }
 
-                if (!sudokuSolver.SetValue(sumCell.Item1, sumCell.Item2, arrowSum))
-                {
-                    logicalStepDescription?.Add(new($"Cannot fill {arrowSum} into {CellName(sumCell)}", sumCell));
-                    return LogicResult.Invalid;
-                }
-                logicalStepDescription?.Add(new($"Circle Sum: {CellName(sumCell)}={arrowSum}", sudokuSolver.CandidateIndex((sumCell), arrowSum).ToEnumerable(), null, isSingle: true));
+                setCandidates.Add(sudokuSolver.CandidateIndex(cell, finalArrangement[circleIndex]));
                 changed = true;
             }
-            else if (circleCells.Count == 2)
-            {
-                if (arrowSum <= 9 || arrowSum >= 100)
-                {
-                    logicalStepDescription?.Add(new($"Sum of arrow ({arrowSum}) is impossible to fill into pill.", circleCells));
-                    return LogicResult.Invalid;
-                }
 
-                int arrowSumTens = arrowSum / 10;
-                int arrowSumOnes = arrowSum % 10;
-                if (arrowSumOnes == 0)
-                {
-                    logicalStepDescription?.Add(new($"Sum of arrow ({arrowSum}) is impossible to fill into pill.", circleCells));
-                    return LogicResult.Invalid;
-                }
+            logicalStepDescription?.Add(new($"Circle Sum: {sudokuSolver.CompactName(circleCells)}={arrowSum}", setCandidates, null, isSingle: true));
 
-                uint arrowSumTensMask = ValueMask(arrowSumTens);
-                uint arrowSumOnesMask = ValueMask(arrowSumOnes);
-
-                var sumCellTens = circleCells[0];
-                var sumCellOnes = circleCells[1];
-                uint sumCellTensMask = board[sumCellTens.Item1, sumCellTens.Item2];
-                uint sumCellOnesMask = board[sumCellOnes.Item1, sumCellOnes.Item2];
-                if ((sumCellTensMask & arrowSumTensMask) == 0)
-                {
-                    logicalStepDescription?.Add(new($"Cannot fill {arrowSumTens} into {CellName(circleCells[0])}", circleCells[0]));
-                    return LogicResult.Invalid;
-                }
-                if ((sumCellOnesMask & arrowSumOnesMask) == 0)
-                {
-                    logicalStepDescription?.Add(new($"Cannot fill {arrowSumOnes} into {CellName(circleCells[1])}", circleCells[1]));
-                    return LogicResult.Invalid;
-                }
-
-                List<int> setCandidates = new();
-                if (!IsValueSet(sumCellTensMask))
-                {
-                    if (!sudokuSolver.SetValue(sumCellTens.Item1, sumCellTens.Item2, arrowSumTens))
-                    {
-                        logicalStepDescription?.Add(new($"Cannot fill {arrowSumTens} into {CellName(sumCellTens)}", sumCellTens));
-                        return LogicResult.Invalid;
-                    }
-                    setCandidates.Add(sudokuSolver.CandidateIndex(sumCellTens, arrowSumTens));
-                }
-                if (!IsValueSet(sumCellOnesMask))
-                {
-                    if (!sudokuSolver.SetValue(sumCellOnes.Item1, sumCellOnes.Item2, arrowSumOnes))
-                    {
-                        logicalStepDescription?.Add(new($"Cannot fill {arrowSumOnes} into {CellName(sumCellOnes)}", sumCellOnes));
-                        return LogicResult.Invalid;
-                    }
-                    setCandidates.Add(sudokuSolver.CandidateIndex(sumCellOnes, arrowSumOnes));
-                }
-                logicalStepDescription?.Add(new($"Circle Sum: {sudokuSolver.CompactName(circleCells)}={arrowSum}", setCandidates, null, isSingle: true));
-                changed = true;
-            }
-            else if (circleCells.Count == 3)
-            {
-                if (arrowSum <= 99 || arrowSum >= 1000)
-                {
-                    logicalStepDescription?.Add(new($"Sum of arrow ({arrowSum}) is impossible to fill into pill.", circleCells));
-                    return LogicResult.Invalid;
-                }
-
-                int arrowSumHund = arrowSum / 100;
-                int arrowSumTens = (arrowSum / 10) % 10;
-                int arrowSumOnes = arrowSum % 10;
-                if (arrowSumTens == 0 || arrowSumOnes == 0)
-                {
-                    logicalStepDescription?.Add(new($"Sum of arrow ({arrowSum}) is impossible to fill into pill.", circleCells));
-                    return LogicResult.Invalid;
-                }
-
-                uint arrowSumHundMask = ValueMask(arrowSumHund);
-                uint arrowSumTensMask = ValueMask(arrowSumTens);
-                uint arrowSumOnesMask = ValueMask(arrowSumOnes);
-
-                var sumCellHund = circleCells[0];
-                var sumCellTens = circleCells[1];
-                var sumCellOnes = circleCells[2];
-                uint sumCellHundMask = board[sumCellHund.Item1, sumCellHund.Item2];
-                uint sumCellTensMask = board[sumCellTens.Item1, sumCellTens.Item2];
-                uint sumCellOnesMask = board[sumCellOnes.Item1, sumCellOnes.Item2];
-                if ((sumCellHundMask & arrowSumHundMask) == 0)
-                {
-                    logicalStepDescription?.Add(new($"Cannot fill {arrowSumHund} into {CellName(circleCells[0])}", circleCells[0]));
-                    return LogicResult.Invalid;
-                }
-                if ((sumCellTensMask & arrowSumTensMask) == 0)
-                {
-                    logicalStepDescription?.Add(new($"Cannot fill {arrowSumTens} into {CellName(circleCells[1])}", circleCells[1]));
-                    return LogicResult.Invalid;
-                }
-                if ((sumCellOnesMask & arrowSumOnesMask) == 0)
-                {
-                    logicalStepDescription?.Add(new($"Cannot fill {arrowSumOnes} into {CellName(circleCells[2])}", circleCells[2]));
-                    return LogicResult.Invalid;
-                }
-
-                // Let SetValue run again on these as a "naked single" instead of calling SetValue recursively
-                List<int> setCandidates = new();
-                if (!IsValueSet(sumCellHundMask))
-                {
-                    if (!sudokuSolver.SetValue(sumCellHund.Item1, sumCellHund.Item2, arrowSumHund))
-                    {
-                        logicalStepDescription?.Add(new($"Cannot fill {arrowSumHund} into {CellName(sumCellHund)}", sumCellHund));
-                        return LogicResult.Invalid;
-                    }
-                    setCandidates.Add(sudokuSolver.CandidateIndex(sumCellHund, arrowSumHund));
-                }
-                if (!IsValueSet(sumCellTensMask))
-                {
-                    if (!sudokuSolver.SetValue(sumCellTens.Item1, sumCellTens.Item2, arrowSumTens))
-                    {
-                        logicalStepDescription?.Add(new($"Cannot fill {arrowSumTens} into {CellName(sumCellTens)}", sumCellTens));
-                        return LogicResult.Invalid;
-                    }
-                    setCandidates.Add(sudokuSolver.CandidateIndex(sumCellTens, arrowSumTens));
-                }
-                if (!IsValueSet(sumCellOnesMask))
-                {
-                    if (!sudokuSolver.SetValue(sumCellOnes.Item1, sumCellOnes.Item2, arrowSumOnes))
-                    {
-                        logicalStepDescription?.Add(new($"Cannot fill {arrowSumOnes} into {CellName(sumCellOnes)}", sumCellOnes));
-                        return LogicResult.Invalid;
-                    }
-                    setCandidates.Add(sudokuSolver.CandidateIndex(sumCellOnes, arrowSumOnes));
-                }
-                logicalStepDescription?.Add(new($"Circle Sum: {sudokuSolver.CompactName(circleCells)}={arrowSum}", setCandidates, null, isSingle: true));
-                changed = true;
-            }
             return changed ? LogicResult.Changed : LogicResult.None;
         }
 
