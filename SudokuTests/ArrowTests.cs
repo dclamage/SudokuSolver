@@ -82,6 +82,19 @@ namespace SudokuTests
         }
 
         [TestMethod]
+        public void MaxFirstDigitWorksWhen16by16()
+        {
+            var solver = SolverFactory.CreateBlank(16);
+
+            // Arrow 7 cells long
+            var arrow = WithOptions("r1c1r1c2; r1c3r1c4r1c5r1c6r1c7r1c8r1c9", solver);
+
+            arrow.InitCandidates(solver);
+
+            Assert.AreEqual(11, MaxValue(solver.Board[0, 0]), "7 * 16 = 112 so first digit should be <= 11");
+        }
+
+        [TestMethod]
         public void ArrowSumMustMatchCircle()
         {
             TestLogic(
