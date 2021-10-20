@@ -117,60 +117,29 @@ namespace SudokuSolver.Constraints
                     }
                 }
             }
-            else if (circleCells.Count == 2)
+            else if (circleCells.Count > 1)
             {
                 int maxSum = arrowCells.Count * MAX_VALUE;
                 if (maxSum.ToString().Length < circleCells.Count)
                 {
                     return LogicResult.Invalid;
                 }
-                if (maxSum <= 99)
+
+                int maxSumPrefix = maxSum / (int)Math.Pow(10, circleCells.Count - 1);
+
+                if (maxSumPrefix < MAX_VALUE)
                 {
-                    int maxSumPrefix = maxSum / 10;
-                    if (maxSumPrefix < MAX_VALUE)
+                    var sumCell = circleCells[0];
+                    uint maxValueMask = (1u << maxSumPrefix) - 1;
+                    uint cellMask = board[sumCell.Item1, sumCell.Item2];
+                    if (!IsValueSet(cellMask))
                     {
-                        var sumCell = circleCells[0];
-                        uint maxValueMask = (1u << maxSumPrefix) - 1;
-                        uint cellMask = board[sumCell.Item1, sumCell.Item2];
-                        if (!IsValueSet(cellMask))
+                        if ((cellMask & maxValueMask) != cellMask)
                         {
-                            if ((cellMask & maxValueMask) != cellMask)
-                            {
-                                board[sumCell.Item1, sumCell.Item2] &= maxValueMask;
-                                changed = true;
-                            }
+                            board[sumCell.Item1, sumCell.Item2] &= maxValueMask;
+                            changed = true;
                         }
                     }
-                }
-            }
-            else if (circleCells.Count == 3)
-            {
-                int maxSum = arrowCells.Count * MAX_VALUE;
-                if (maxSum <= 99)
-                {
-                    return LogicResult.Invalid;
-                }
-                if (maxSum <= 999)
-                {
-                    int maxSumPrefix = maxSum / 100;
-                    if (maxSumPrefix < MAX_VALUE)
-                    {
-                        var sumCell = circleCells[0];
-                        uint maxValueMask = (1u << maxSumPrefix) - 1;
-                        uint cellMask = board[sumCell.Item1, sumCell.Item2];
-                        if (!IsValueSet(cellMask))
-                        {
-                            if ((cellMask & maxValueMask) != cellMask)
-                            {
-                                board[sumCell.Item1, sumCell.Item2] &= maxValueMask;
-                                changed = true;
-                            }
-                        }
-                    }
-                }
-                else
-                {
-                    return LogicResult.Invalid;
                 }
             }
             else
