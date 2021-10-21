@@ -120,7 +120,7 @@ namespace SudokuSolver.Constraints
             else if (circleCells.Count > 1)
             {
                 int maxSum = arrowCells.Count * MAX_VALUE;
-                if (maxSum.ToString().Length < circleCells.Count)
+                if (maxSum.Length() < circleCells.Count)
                 {
                     return LogicResult.Invalid;
                 }
@@ -518,17 +518,15 @@ namespace SudokuSolver.Constraints
 
             if(cells > 1)
             {
-                var totalString = total.ToString();
-
                 // Max digits per cell is TotalDigits - (CircleCells - 1)
-                for (var take = 1; take <= totalString.Length - (cells - 1); take++)
+                for (var take = 1; take <= total.Length() - (cells - 1); take++)
                 {
-                    var first = Convert.ToInt32(totalString[..take]);
+                    var first = total.SubInt(0, take);
 
                     // We can't continue if first is now > max
                     if (first > maxValue) yield break;
 
-                    var remaining = Convert.ToInt32(totalString[take..]);
+                    var remaining = total.SubInt(take, total.Length() - take);
 
                     foreach(var remainingCombination in PossibleCircleArrangements(remaining, cells - 1, maxValue))
                     {
