@@ -4,7 +4,7 @@ using System.Linq;
 
 namespace SudokuSolver
 {
-    static class Extensions
+    public static class Extensions
     {
         private static void SetIndexes(int[] indexes, int lastIndex, int count)
         {
@@ -99,6 +99,41 @@ namespace SudokuSolver
             var list = c.ToList();
             list.Sort();
             return list;
+        }
+
+        public static int SubInt(this int target, int startIndex, int length)
+        {
+            var targetLength = target.Length();
+
+            // Constrain length += startIndex to be <= target.Length()
+            if(startIndex + length > targetLength)
+            {
+                length += (targetLength - startIndex - length);
+            }
+
+            // Obviously slower... Figure out the skipped digits and subtract from target
+            if(startIndex > 0)
+            {
+                target -= target.SubInt(0, startIndex) * (int)Math.Pow(10, targetLength - startIndex);
+            }
+
+            return target / (int)Math.Pow(10, target.Length() - length);
+        }
+
+        public static int Length(this int target)
+        {
+            if (target < 10)
+                return 1;
+            else if (target < 100)
+                return 2;
+            else if (target < 1000)
+                return 3;
+            else if (target < 10000)
+                return 4;
+            else if (target < 100000)
+                return 5;
+            else
+                throw new ApplicationException(String.Format("I never imagined there were numbers as large as {0}!", target));
         }
     }
 }
