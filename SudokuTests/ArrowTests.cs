@@ -364,50 +364,7 @@ namespace SudokuTests
 
         #endregion
 
-        [TestMethod]
-        public void IntLengthIsNumberOfCharacters()
-        {
-            var skip = 1;
-
-            for(var i = 0; i < 100000; i += skip)
-            {
-                Assert.AreEqual(i.ToString().Length, i.Length());
-
-                skip *= 10;
-            }
-        }
-
-        [TestMethod]
-        [ExpectedException(typeof(ApplicationException))]
-        public void ThereAreLimits()
-        {
-            100000.Length();
-        }
-
-        [TestMethod]
-        public void FirstXDigits()
-        {
-            Assert.AreEqual(123, 1234.SubInt(0, 3));
-        }
-
-        [TestMethod]
-        public void LastXDigits()
-        {
-            Assert.AreEqual(234, 1234.SubInt(1, 3));
-        }
-
-        [TestMethod]
-        public void LengthGreaterThanDigitsReturnsRest()
-        {
-            Assert.AreEqual(2345, 12345.SubInt(1, 10));
-            Assert.AreEqual(12345, 12345.SubInt(0, 100));
-        }
-
-        [TestMethod]
-        public void RealCase()
-        {
-            Assert.AreEqual(5, 115.SubInt(2, 1));
-        }
+        
 
         private void TestLogic(String options, int gridSize, LogicResult expectedResult, String messageContains, Action<Solver> setup, Action<Solver> after = null)
         {

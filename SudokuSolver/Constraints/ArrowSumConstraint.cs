@@ -519,14 +519,20 @@ namespace SudokuSolver.Constraints
             if(cells > 1)
             {
                 // Max digits per cell is TotalDigits - (CircleCells - 1)
-                for (var take = 1; take <= total.Length() - (cells - 1); take++)
+                for (var numberDigits = 1; numberDigits <= total.Length() - (cells - 1); numberDigits++)
                 {
-                    var first = total.SubInt(0, take);
+                    var first = total.Take(numberDigits);
 
                     // We can't continue if first is now > max
                     if (first > maxValue) yield break;
 
-                    var remaining = total.SubInt(take, total.Length() - take);
+                    var remaining = total.Skip(numberDigits, out int leadingZeros);
+
+                    if(leadingZeros > 0)
+                    {
+                        // If we took these digits, the remaining digits would have a leading 0!
+                        continue;
+                    }
 
                     foreach(var remainingCombination in PossibleCircleArrangements(remaining, cells - 1, maxValue))
                     {
