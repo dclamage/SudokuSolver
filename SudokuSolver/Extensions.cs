@@ -101,39 +101,63 @@ namespace SudokuSolver
             return list;
         }
 
-        public static int SubInt(this int target, int startIndex, int length)
+        private static readonly int[] POWERS_OF_10 = { 1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000 };
+
+        public static int SubInt(this int subject, int startIndex, int length, out int leadingZeros)
         {
-            var targetLength = target.Length();
+            var subjectLength = subject.Length();
+            var final = subject;
 
             // Constrain length += startIndex to be <= target.Length()
-            if(startIndex + length > targetLength)
+            if (startIndex + length > subjectLength)
             {
-                length += (targetLength - startIndex - length);
+                length += (subjectLength - startIndex - length);
             }
 
-            // Obviously slower... Figure out the skipped digits and subtract from target
-            if(startIndex > 0)
+            var zeros = 0;
+
+            if (startIndex > 0)
             {
-                target -= target.SubInt(0, startIndex) * (int)Math.Pow(10, targetLength - startIndex);
+                final -= (subject / POWERS_OF_10[subjectLength - startIndex]) * POWERS_OF_10[subjectLength - startIndex];
+
+                // We might have exposed 1 or more leading 0s.
+                zeros = (subjectLength - startIndex) - final.Length();
             }
 
-            return target / (int)Math.Pow(10, target.Length() - length);
+            // Let the called know if any "characters" have been dropped due to leading zeros.
+            leadingZeros = zeros;
+
+            // If our final number is 0 then return now to avoid / 0 error
+            return final == 0 ? 0 : final / POWERS_OF_10[final.Length() - (length - zeros)];
+        }
+
+        public static int Take(this int subject, int numberDigits)
+        {
+            return subject.SubInt(0, numberDigits, out int ignore);
+        }
+
+        public static int Skip(this int subject, int numberToSkip, out int leadingZeros)
+        {
+            return subject.SubInt(numberToSkip, subject.Length() - numberToSkip, out leadingZeros);
         }
 
         public static int Length(this int target)
         {
-            if (target < 10)
-                return 1;
-            else if (target < 100)
-                return 2;
-            else if (target < 1000)
-                return 3;
-            else if (target < 10000)
-                return 4;
-            else if (target < 100000)
-                return 5;
-            else
-                throw new ApplicationException(String.Format("I never imagined there were numbers as large as {0}!", target));
+            if(target < 0) 
+            {
+                target = Math.Abs(target);
+            }
+
+            if (target < 10)                { return 1; }
+            else if (target < 100)          { return 2; }
+            else if (target < 1000)         { return 3; }
+            else if (target < 10000)        { return 4; }
+            else if (target < 100000)       { return 5; }
+            else if (target < 1000000)      { return 6; }
+            else if (target < 10000000)     { return 7; }
+            else if (target < 100000000)    { return 8; }
+            else if (target < 1000000000)   { return 9; }
+            else                            { return 10; }  // Int32.Max = 10
         }
     }
 }
