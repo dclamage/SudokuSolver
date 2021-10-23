@@ -58,6 +58,7 @@ namespace SudokuSolverConsole
             bool listen = false;
             string portStr = null;
             ulong maxSolutionCount = 0;
+            double preferEffectivenessMetric = -1.0;
 
             var options = new OptionSet {
                 // Non-solve options
@@ -82,6 +83,18 @@ namespace SudokuSolverConsole
                 { "n|solutioncount", "Provide an exact solution count.", n => solutionCount = n != null },
                 { "x|maxcount=", "Specify an maximum solution count.", x => maxSolutionCount = x != null ? ulong.Parse(x) : 0 },
                 { "t|multithread", "Use multithreading.", t => multiThread = t != null },
+                { "e|effectiveness=", "Specify a value (0.0 - 1.0) which affects the balance between easier (0.0) and effective (1.0) logical steps",
+                    e =>
+                    {
+                        if (e != null)
+                        {
+                            if (!double.TryParse(e, out preferEffectivenessMetric) || preferEffectivenessMetric < 0.0 || preferEffectivenessMetric > 1.0)
+                            {
+                                throw new ArgumentException($"Effectiveness parameter must be between 0 and 1 (got {e}).");
+                            }
+                        }
+                    }
+                },
 
                 // Post-solve options
                 { "o|out=", "Output solution(s) to file.", o => outputPath = o },
@@ -191,7 +204,7 @@ namespace SudokuSolverConsole
                 {
                     if (int.TryParse(blankGridSizeString, out int blankGridSize) && blankGridSize > 0 && blankGridSize < 32)
                     {
-                        solver = SolverFactory.CreateBlank(blankGridSize, constraints);
+                        solver = SolverFactory.CreateBlank(blankGridSize, constraints, preferEffectivenessMetric: preferEffectivenessMetric);
                     }
                     else
                     {
@@ -202,16 +215,16 @@ namespace SudokuSolverConsole
                 }
                 else if (haveGivens)
                 {
-                    solver = SolverFactory.CreateFromGivens(givens, constraints);
+                    solver = SolverFactory.CreateFromGivens(givens, constraints, preferEffectivenessMetric: preferEffectivenessMetric);
                 }
                 else if (haveFPuzzlesURL)
                 {
-                    solver = SolverFactory.CreateFromFPuzzles(fpuzzlesURL, constraints);
+                    solver = SolverFactory.CreateFromFPuzzles(fpuzzlesURL, constraints, preferEffectivenessMetric: preferEffectivenessMetric);
                     Console.WriteLine($"Imported \"{solver.Title ?? "Untitled"}\" by {solver.Author ?? "Unknown"}");
                 }
                 else // if (haveCandidates)
                 {
-                    solver = SolverFactory.CreateFromCandidates(candidates, constraints);
+                    solver = SolverFactory.CreateFromCandidates(candidates, constraints, preferEffectivenessMetric: preferEffectivenessMetric);
                 }
             }
             catch (Exception e)

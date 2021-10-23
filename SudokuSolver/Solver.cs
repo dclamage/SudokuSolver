@@ -2,6 +2,7 @@
 //#define INFINITE_LOOP_CHECK
 
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
@@ -49,7 +50,7 @@ namespace SudokuSolver
                 return FromConstraint.CellsMustContain(solver, val);
             }
             return null;
-        }
+}
 
         int IComparable<SudokuGroup>.CompareTo(SudokuGroup other)
         {
@@ -120,6 +121,7 @@ namespace SudokuSolver
         public string Title { get; init; }
         public string Author { get; init; }
         public string Rules { get; init; }
+        public double PreferEffectivenessMetric { get; init; } = 1.0;
         public bool DisableTuples { get; set; } = false;
         public bool DisablePointing { get; set; } = false;
         public bool DisableFishes { get; set; } = false;
@@ -302,6 +304,19 @@ namespace SudokuSolver
         }
 
         public string OutputString => IsComplete ? GivenString : CandidateString;
+
+        public int GetNumCandidatesRemaining()
+        {
+            int numCandidates = 0;
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    numCandidates += ValueCount(board[i, j]);
+                }
+            }
+            return numCandidates;
+        }
 
         private readonly List<Constraint> constraints;
 
@@ -611,8 +626,10 @@ namespace SudokuSolver
             {
                 timers["Global"] = Stopwatch.StartNew();
 
+                timers["FindFullHouse"] = new();
                 timers["FindNakedSingles"] = new();
                 timers["FindHiddenSingle"] = new();
+                timers["FindTrivialContradictions"] = new();
                 timers["FindDirectCellForcing"] = new();
                 timers["FindNakedTuples"] = new();
                 timers["FindPointingTuples"] = new();
@@ -693,7 +710,7 @@ namespace SudokuSolver
             {
                 smallGroupsBySize = null;
             }
-            
+
             return true;
         }
 
@@ -2220,13 +2237,20 @@ namespace SudokuSolver
 #if INFINITE_LOOP_CHECK
                 Solver clone = Clone();
 #endif
-                if (!IsBoardValid(logicalStepDescs))
+                if (logicalStepDescs != null)
                 {
-                    result = LogicResult.Invalid;
+                    if (!IsBoardValid(logicalStepDescs))
+                    {
+                        result = LogicResult.Invalid;
+                    }
+                    else
+                    {
+                        result = StepLogic(logicalStepDescs);
+                    }
                 }
                 else
                 {
-                    result = StepLogic(logicalStepDescs);
+                    result = StepLogic(null);
                 }
 #if INFINITE_LOOP_CHECK
                 if (result == LogicResult.Changed && IsSame(clone))
@@ -2309,21 +2333,36 @@ namespace SudokuSolver
             {
                 throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
             }
-
             LogicResult result = LogicResult.None;
 
+            // When brute forcing, only singles and constraint logic is performed.
+            if (isBruteForcing)
+            {
+                return StepLogicBruteForce();
+            }
+
+            // If there is no human-readable stepping desired, then there's no need to evaluate the best step to take
+            if (logicalStepDescs == null)
+            {
+                return StepLogicNoDesc();
+            }
+
+            // Find the best human-oriented step
+
+            // Find "full houses" first.
 #if PROFILING
-            timers["FindNakedSingles"].Start();
+            timers["FindFullHouse"].Start();
 #endif
-            result = FindNakedSingles(logicalStepDescs);
+            result = FindFullHouse(logicalStepDescs);
 #if PROFILING
-            timers["FindNakedSingles"].Stop();
+            timers["FindFullHouse"].Stop();
 #endif
             if (result != LogicResult.None)
             {
                 return result;
             }
 
+            // Hidden singles are generally considered easier for humans to find than naked singles.
 #if PROFILING
             timers["FindHiddenSingle"].Start();
 #endif
@@ -2336,12 +2375,27 @@ namespace SudokuSolver
                 return result;
             }
 
-            if (!isBruteForcing)
+            // Find naked singles before anything more advanced
+#if PROFILING
+            timers["FindNakedSingles"].Start();
+#endif
+            result = FindNakedSingles(logicalStepDescs);
+#if PROFILING
+            timers["FindNakedSingles"].Stop();
+#endif
+            if (result != LogicResult.None)
             {
+                return result;
+            }
+
+            // Group 1: "The Basics" - Direct Cell Forcing, Tuples, and Pointing.
+            {
+                LogicalStepEvaluator evaluator = new(this, PreferEffectivenessMetric, false, MAX_VALUE * 10.0);
+
 #if PROFILING
                 timers["FindDirectCellForcing"].Start();
 #endif
-                result = FindDirectCellForcing(logicalStepDescs);
+                result = FindDirectCellForcing(evaluator);
 #if PROFILING
                 timers["FindDirectCellForcing"].Stop();
 #endif
@@ -2349,8 +2403,45 @@ namespace SudokuSolver
                 {
                     return result;
                 }
+
+                if (!DisableTuples)
+                {
+#if PROFILING
+                    timers["FindNakedTuples"].Start();
+#endif
+                    result = FindNakedTuples(evaluator);
+#if PROFILING
+                    timers["FindNakedTuples"].Stop();
+#endif
+                    if (result == LogicResult.Invalid)
+                    {
+                        return result;
+                    }
+                }
+
+                if (!DisablePointing)
+                {
+#if PROFILING
+                    timers["FindPointingTuples"].Start();
+#endif
+                    result = FindPointingTuples(evaluator);
+#if PROFILING
+                    timers["FindPointingTuples"].Stop();
+#endif
+                    if (result == LogicResult.Invalid)
+                    {
+                        return result;
+                    }
+                }
+
+                result = evaluator.ApplyBest(this, logicalStepDescs);
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
             }
 
+            // Do "direct" constraint logic
             foreach (var constraint in constraints)
             {
 #if PROFILING
@@ -2379,40 +2470,18 @@ namespace SudokuSolver
                 }
             }
 
-            if (isBruteForcing)
+            // Do "indirect" constraint logic by checking if setting a value fails an EnforceConstraint call.
+#if PROFILING
+            timers["FindTrivialContradictions"].Start();
+#endif
+            result = FindTrivialContradictions(logicalStepDescs);
+            if (result != LogicResult.None)
             {
-                return LogicResult.None;
+                return result;
             }
-
-            if (!DisableTuples)
-            {
 #if PROFILING
-                timers["FindNakedTuples"].Start();
+            timers["FindTrivialContradictions"].Stop();
 #endif
-                result = FindNakedTuples(logicalStepDescs);
-#if PROFILING
-                timers["FindNakedTuples"].Stop();
-#endif
-                if (result != LogicResult.None)
-                {
-                    return result;
-                }
-            }
-
-            if (!DisablePointing)
-            {
-#if PROFILING
-                timers["FindPointingTuples"].Start();
-#endif
-                result = FindPointingTuples(logicalStepDescs);
-#if PROFILING
-                timers["FindPointingTuples"].Stop();
-#endif
-                if (result != LogicResult.None)
-                {
-                    return result;
-                }
-            }
 
             if (!DisableFishes)
             {
@@ -2459,10 +2528,219 @@ namespace SudokuSolver
                 }
             }
 
+            if (!DisableContradictions)
+            {
+#if PROFILING
+                timers["FindSimpleContradictions"].Start();
+#endif
+                result = FindSimpleContradictions(logicalStepDescs);
+#if PROFILING
+                timers["FindSimpleContradictions"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
+            }
+
+            return LogicResult.None;
+        }
+
+
+        private LogicResult StepLogicBruteForce()
+        {
+            LogicResult result;
+
+#if PROFILING
+            timers["FindNakedSingles"].Start();
+#endif
+            result = FindNakedSingles(null);
+#if PROFILING
+            timers["FindNakedSingles"].Stop();
+#endif
+            if (result != LogicResult.None)
+            {
+                return result;
+            }
+
+#if PROFILING
+            timers["FindHiddenSingle"].Start();
+#endif
+            result = FindHiddenSingle(null);
+#if PROFILING
+            timers["FindHiddenSingle"].Stop();
+#endif
+            if (result != LogicResult.None)
+            {
+                return result;
+            }
+
+            foreach (var constraint in constraints)
+            {
+#if PROFILING
+                string constraintName = constraint.GetType().FullName;
+                timers[constraintName].Start();
+#endif
+                result = constraint.StepLogic(this, (List<LogicalStepDesc>)null, isBruteForcing);
+#if PROFILING
+                timers[constraintName].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
+            }
+
+            return LogicResult.None;
+        }
+
+        private LogicResult StepLogicNoDesc()
+        {
+            LogicResult result;
+
+#if PROFILING
+            timers["FindNakedSingles"].Start();
+#endif
+            result = FindNakedSingles(null);
+#if PROFILING
+            timers["FindNakedSingles"].Stop();
+#endif
+            if (result != LogicResult.None)
+            {
+                return result;
+            }
+
+#if PROFILING
+            timers["FindHiddenSingle"].Start();
+#endif
+            result = FindHiddenSingle(null);
+#if PROFILING
+            timers["FindHiddenSingle"].Stop();
+#endif
+            if (result != LogicResult.None)
+            {
+                return result;
+            }
+
+#if PROFILING
+            timers["FindDirectCellForcing"].Start();
+#endif
+            result = FindDirectCellForcing(null);
+#if PROFILING
+            timers["FindDirectCellForcing"].Stop();
+#endif
+            if (result != LogicResult.None)
+            {
+                return result;
+            }
+
+            foreach (var constraint in constraints)
+            {
+#if PROFILING
+                string constraintName = constraint.GetType().FullName;
+                timers[constraintName].Start();
+#endif
+                result = constraint.StepLogic(this, (List<LogicalStepDesc>)null, false);
+#if PROFILING
+                timers[constraintName].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
+            }
+
+#if PROFILING
+            timers["FindTrivialContradictions"].Start();
+#endif
+            result = FindTrivialContradictions(null);
+            if (result != LogicResult.None)
+            {
+                return result;
+            }
+#if PROFILING
+            timers["FindTrivialContradictions"].Stop();
+#endif
+
+            if (!DisableTuples)
+            {
+#if PROFILING
+                timers["FindNakedTuples"].Start();
+#endif
+                result = FindNakedTuples(null);
+#if PROFILING
+                timers["FindNakedTuples"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
+            }
+
+            if (!DisablePointing)
+            {
+#if PROFILING
+                timers["FindPointingTuples"].Start();
+#endif
+                result = FindPointingTuples(null);
+#if PROFILING
+                timers["FindPointingTuples"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
+            }
+
+            if (!DisableFishes)
+            {
+#if PROFILING
+                timers["FindFishes"].Start();
+#endif
+                result = FindFishes(null);
+#if PROFILING
+                timers["FindFishes"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
+            }
+
+            if (!DisableWings)
+            {
+#if PROFILING
+                timers["FindWings"].Start();
+#endif
+                result = FindWings(null);
+#if PROFILING
+                timers["FindWings"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
+            }
+
+            if (!DisableAIC)
+            {
+#if PROFILING
+                timers["FindAIC"].Start();
+#endif
+                result = FindAIC(null);
+#if PROFILING
+                timers["FindAIC"].Stop();
+#endif
+                if (result != LogicResult.None)
+                {
+                    return result;
+                }
+            }
+
 #if PROFILING
             timers["FindSimpleContradictions"].Start();
 #endif
-            result = FindSimpleContradictions(logicalStepDescs);
+            result = FindSimpleContradictions(null);
 #if PROFILING
             timers["FindSimpleContradictions"].Stop();
 #endif
@@ -2474,7 +2752,7 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
-        private bool IsBoardValid(List<LogicalStepDesc> logicalStepDescs)
+        public bool IsBoardValid(List<LogicalStepDesc> logicalStepDescs)
         {
             // Check for empty cells
             for (int i = 0; i < HEIGHT; i++)
@@ -2553,6 +2831,65 @@ namespace SudokuSolver
             }
 
             return true;
+        }
+
+        private LogicResult FindFullHouse(List<LogicalStepDesc> logicalStepDescs)
+        {
+            if (logicalStepDescs == null)
+            {
+                return LogicResult.None;
+            }
+
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    uint mask = board[i, j];
+                    if ((mask & ~valueSetMask) == 0)
+                    {
+                        logicalStepDescs.Add(new($"{CellName(i, j)} has no possible values.", (i, j)));
+                        return LogicResult.Invalid;
+                    }
+
+                    if (IsValueSet(mask))
+                    {
+                        continue;
+                    }
+
+                    if (ValueCount(mask) == 1)
+                    {
+                        if (!CellToGroupMap.TryGetValue((i, j), out var groupList))
+                        {
+                            continue;
+                        }
+
+                        foreach (var group in groupList)
+                        {
+                            if (group.Cells.Count != MAX_VALUE)
+                            {
+                                continue;
+                            }
+
+                            int numUnsetCells = 0;
+                            foreach (var cell in group.Cells)
+                            {
+                                uint curMask = board[cell.Item1, cell.Item2];
+                                if (!IsValueSet(curMask))
+                                {
+                                    numUnsetCells++;
+                                }
+                            }
+                            if (numUnsetCells == 1)
+                            {
+                                int value = GetValue(mask);
+                                logicalStepDescs.Add(new($"Full House in {group}: {CellName(i, j)} set to {value}.", (i, j)));
+                                return SetValue(i, j, value) ? LogicResult.Changed : LogicResult.Invalid;
+                            }
+                        }
+                    }
+                }
+            }
+            return LogicResult.None;
         }
 
         private LogicResult FindNakedSingles(List<LogicalStepDesc> logicalStepDescs)
@@ -2717,7 +3054,7 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
-        private LogicResult FindDirectCellForcing(List<LogicalStepDesc> logicalStepDescs)
+        private LogicResult FindDirectCellForcing(LogicalStepEvaluator evaluator)
         {
             SortedSet<int> elimSet = new();
             for (int i = 0; i < HEIGHT; i++)
@@ -2762,17 +3099,33 @@ namespace SudokuSolver
                         List<int> elims = elimSet.Where(IsCandIndexValid).ToList();
                         if (elims.Count > 0)
                         {
+                            if (evaluator == null)
+                            {
+                                if (!ClearCandidates(elims))
+                                {
+                                    return LogicResult.Invalid;
+                                }
+                                return LogicResult.Changed;
+                            }
+
                             List<(int, int)> sourceCell = new() { (i, j) };
-                            logicalStepDescs?.Add(new(
+                            LogicalStepDesc desc = new(
                                 desc: $"Direct Cell Forcing: {CompactName(mask, sourceCell)} => {DescribeElims(elims)}",
                                 sourceCandidates: CandidateIndexes(mask, sourceCell),
                                 elimCandidates: elims
-                            ));
-                            if (!ClearCandidates(elims))
+                            );
+                            int difficulty = ValueCount(mask) * 10;
+
+                            Solver newSolver = Clone();
+                            if (!newSolver.ClearCandidates(elims))
                             {
+                                evaluator.ReportInvalid(newSolver, desc);
                                 return LogicResult.Invalid;
                             }
-                            return LogicResult.Changed;
+                            else
+                            {
+                                evaluator.Evaluate(newSolver, desc, difficulty);
+                            }
                         }
                     }
                 }
@@ -2820,7 +3173,29 @@ namespace SudokuSolver
             return (-1, -1, 0);
         }
 
-        private LogicResult FindNakedTuples(List<LogicalStepDesc> logicalStepDescs)
+        static readonly string[] tupleNames = new string[]
+        {
+            "Single",
+            "Pair",
+            "Triple",
+            "Quadruple",
+            "Quintuple",
+            "Sextuple",
+            "Septuple",
+            "Octuple",
+            "Nonuple",
+            "Decuple",
+            "Undecuple",
+            "Duodecuple",
+            "Tredecuple",
+            "Quattuordecuple",
+            "Quindecuple",
+            "Sexdecuple",
+        };
+
+        static string TupleName(int size) => (size >= 1 && size <= tupleNames.Length) ? tupleNames[size - 1] : $"Tuple ({size})";
+
+        private LogicResult FindNakedTuples(LogicalStepEvaluator evaluator)
         {
             List<(int, int)> unsetCells = new(MAX_VALUE);
             for (int tupleSize = 2; tupleSize < MAX_VALUE; tupleSize++)
@@ -2855,25 +3230,139 @@ namespace SudokuSolver
                             var elims = CalcElims(tupleMask, tupleCells);
                             if (elims.Count > 0)
                             {
-                                logicalStepDescs?.Add(new(
-                                    desc: $"Tuple: {CompactName(tupleMask, tupleCells)} in {group} => {DescribeElims(elims)}",
-                                    sourceCandidates: CandidateIndexes(tupleMask, tupleCells),
-                                    elimCandidates: elims
-                                ));
-                                if (!ClearCandidates(elims))
+                                if (evaluator != null)
                                 {
-                                    return LogicResult.Invalid;
+                                    // Determine if this is a hidden tuple
+                                    // A hidden tuples removes candidates only from cells that share a group with the naked version
+                                    // It's considered hidden if the unfilled cells in the group that aren't part of the tuple
+                                    // are fewer than the number of cells in the tuple
+                                    SortedSet<(int, int)> cellsAffected = new();
+                                    foreach (var elim in elims)
+                                    {
+                                        var (ei, ej, ev) = CandIndexToCoord(elim);
+                                        cellsAffected.Add((ei, ej));
+                                    }
+
+                                    int difficulty = 0;
+                                    LogicalStepDesc desc = null;
+                                    if (cellsAffected.Count + tupleSize <= MAX_VALUE)
+                                    {
+                                        SortedSet<SudokuGroup> tupleGroups = null;
+                                        foreach (var (i, j) in tupleCells)
+                                        {
+                                            if (!CellToGroupMap.TryGetValue((i, j), out var groupList))
+                                            {
+                                                tupleGroups = null;
+                                                break;
+                                            }
+
+                                            var filteredGroupList = groupList.Where(g => g.Cells.Count == MAX_VALUE && g.GroupType != GroupType.Constraint);
+                                            if (tupleGroups == null)
+                                            {
+                                                tupleGroups = new(filteredGroupList);
+                                            }
+                                            else
+                                            {
+                                                tupleGroups.IntersectWith(filteredGroupList);
+                                                if (tupleGroups.Count == 0)
+                                                {
+                                                    tupleGroups = null;
+                                                    break;
+                                                }
+                                            }
+                                        }
+
+                                        if (tupleGroups != null)
+                                        {
+                                            int bestHiddenSize = 0;
+                                            SudokuGroup bestGroup = null;
+                                            foreach (var group2 in tupleGroups)
+                                            {
+                                                // Ensure all cells affected are in this group
+                                                if (!cellsAffected.IsProperSubsetOf(group2.Cells))
+                                                {
+                                                    continue;
+                                                }
+
+                                                // This tuple is definitely has a hidden equivalent within the group
+                                                int hiddenSize = group2.Cells.Count(c => !IsValueSet(board[c.Item1, c.Item2])) - tupleSize;
+                                                if (hiddenSize > 0 &&
+                                                    hiddenSize < tupleSize &&
+                                                    (bestHiddenSize == 0 || hiddenSize < bestHiddenSize || hiddenSize == bestHiddenSize && group2.GroupType == GroupType.Region))
+                                                {
+                                                    bestHiddenSize = hiddenSize;
+                                                    bestGroup = group2;
+                                                }
+                                            }
+
+                                            if (bestGroup != null)
+                                            {
+                                                // The hidden tuple cells are any cells in the group which aren't part of the original tuple
+                                                List<(int, int)> hiddenTupleCells = new(bestHiddenSize);
+                                                uint hiddenTupleMask = ALL_VALUES_MASK & ~tupleMask;
+                                                foreach (var (hi, hj) in bestGroup.Cells)
+                                                {
+                                                    uint hmask = board[hi, hj];
+                                                    if (IsValueSet(hmask))
+                                                    {
+                                                        hiddenTupleMask &= ~hmask;
+                                                    }
+                                                    else if (!tupleCells.Contains((hi, hj)))
+                                                    {
+                                                        hiddenTupleCells.Add((hi, hj));
+                                                    }
+                                                }
+
+                                                // Report this as a hidden single
+                                                desc = new(
+                                                    desc: $"Hidden {TupleName(bestHiddenSize)} in {bestGroup}: {CompactName(hiddenTupleMask, hiddenTupleCells)} => {DescribeElims(elims)}",
+                                                    sourceCandidates: CandidateIndexes(hiddenTupleMask, hiddenTupleCells),
+                                                    elimCandidates: elims
+                                                );
+                                                difficulty = bestGroup.GroupType == GroupType.Region ? bestHiddenSize * 8 : bestHiddenSize * 10;
+                                            }
+                                        }
+                                    }
+
+                                    if (desc == null)
+                                    {
+                                        desc = new(
+                                            desc: $"Naked {TupleName(tupleSize)} in {group}: {CompactName(tupleMask, tupleCells)} => {DescribeElims(elims)}",
+                                            sourceCandidates: CandidateIndexes(tupleMask, tupleCells),
+                                            elimCandidates: elims
+                                        );
+                                        difficulty = tupleSize * 10;
+                                    }
+
+                                    Solver newSolver = Clone();
+                                    if (!newSolver.ClearCandidates(elims))
+                                    {
+                                        evaluator.ReportInvalid(newSolver, desc);
+                                        return LogicResult.Invalid;
+                                    }
+                                    else
+                                    {
+                                        evaluator.Evaluate(newSolver, desc, difficulty);
+                                    }
                                 }
-                                return LogicResult.Changed;
+                                else
+                                {
+                                    if (!ClearCandidates(elims))
+                                    {
+                                        return LogicResult.Invalid;
+                                    }
+                                    return LogicResult.Changed;
+                                }
                             }
                         }
                     }
                 }
             }
+
             return LogicResult.None;
         }
 
-        private LogicResult FindPointingTuples(List<LogicalStepDesc> logicalStepDescs)
+        private LogicResult FindPointingTuples(LogicalStepEvaluator evaluator)
         {
             foreach (var group in Groups)
             {
@@ -2917,16 +3406,30 @@ namespace SudokuSolver
                         continue;
                     }
 
-                    logicalStepDescs?.Add(new(
-                                    desc: $"Pointing: {v}{CompactName(cellsMustContain)} in {group} => {DescribeElims(elims)}",
-                                    sourceCandidates: CandidateIndexes(valueMask, cellsMustContain),
-                                    elimCandidates: elims
-                                ));
-                    if (!ClearCandidates(elims))
+                    if (evaluator == null)
                     {
+                        if (!ClearCandidates(elims))
+                        {
+                            return LogicResult.Invalid;
+                        }
+                        return LogicResult.Changed;
+                    }
+
+                    int baseGroupDifficulty = group.GroupType == GroupType.Region ? 5 : group.GroupType != GroupType.Constraint ? 6 : 10;
+                    int difficulty = baseGroupDifficulty * cellsMustContain.Count;
+                    LogicalStepDesc desc = new(
+                        desc: $"Pointing: {v}{CompactName(cellsMustContain)} in {group} => {DescribeElims(elims)}",
+                        sourceCandidates: CandidateIndexes(valueMask, cellsMustContain),
+                        elimCandidates: elims
+                    );
+
+                    Solver newSolver = Clone();
+                    if (!newSolver.ClearCandidates(elims))
+                    {
+                        evaluator.ReportInvalid(newSolver, desc);
                         return LogicResult.Invalid;
                     }
-                    return LogicResult.Changed;
+                    evaluator.Evaluate(newSolver, desc, difficulty);
                 }
             }
             return LogicResult.None;
@@ -3735,12 +4238,14 @@ namespace SudokuSolver
             return LogicResult.None;
         }
 
+        internal string CandSep => MAX_VALUE <= 9 ? string.Empty : ",";
+
         internal string CompactName(uint mask, List<(int, int)> cells) =>
-            string.Join(MAX_VALUE <= 9 ? "" : ",", Enumerable.Range(1, MAX_VALUE).Where(v => HasValue(mask, v))) + CompactName(cells);
+            string.Join(CandSep, Enumerable.Range(1, MAX_VALUE).Where(v => HasValue(mask, v))) + CompactName(cells);
 
         internal string CompactName(List<(int, int)> cells)
         {
-            string cellSep = MAX_VALUE <= 9 ? string.Empty : ",";
+            string cellSep = CandSep;
             char groupSep = ',';
 
             if (cells.Count == 0)
@@ -3978,7 +4483,6 @@ namespace SudokuSolver
                                 int cand0 = candIndices[0];
                                 int cand1 = candIndices[1];
 
-                                string valSep = MAX_VALUE <= 9 ? string.Empty : ",";
                                 StringBuilder alsDesc = new();
                                 alsDesc.Append("ALS:");
                                 alsDesc.Append(CompactName(totalMask, combination));
@@ -4175,17 +4679,41 @@ namespace SudokuSolver
                 elimsByVal[v - 1].Add((i, j));
             }
 
-            List<string> elimDescs = new();
+            Dictionary<string, List<int>> groupedElims = new();
             for (int v = 1; v <= MAX_VALUE; v++)
             {
                 var elimCells = elimsByVal[v - 1];
                 if (elimCells != null && elimCells.Count > 0)
                 {
                     elimCells.Sort();
-                    elimDescs.Add($"-{v}{CompactName(elimCells)}");
+                    string cellsName = CompactName(elimCells);
+                    if (groupedElims.ContainsKey(cellsName))
+                    {
+                        groupedElims[cellsName].Add(v);
+                    }
+                    else
+                    {
+                        groupedElims[cellsName] = new() { v };
+                    }
                 }
             }
-            return string.Join(';', elimDescs);
+
+            List<(string, List<int>)> sortedGroupedElims = groupedElims.Select(p => (p.Key, p.Value)).ToList();
+            sortedGroupedElims.Sort((a, b) => a.Item2[0] - b.Item2[0]);
+
+            StringBuilder elimsString = new();
+            foreach (var (cellsName, values) in sortedGroupedElims)
+            {
+                if (elimsString.Length > 0)
+                {
+                    elimsString.Append(';');
+                }
+                elimsString
+                    .Append('-')
+                    .Append(string.Join(CandSep, values))
+                    .Append(cellsName);
+            }
+            return elimsString.ToString();
         }
 
         // 0 = 1 - 2 = 3 - 4 = 5 - 6 = 7 - 8 = 9
@@ -4563,6 +5091,54 @@ namespace SudokuSolver
 
                 return LogicResult.Changed;
             }
+            return LogicResult.None;
+        }
+
+        private LogicResult FindTrivialContradictions(List<LogicalStepDesc> logicalStepDescs)
+        {
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    uint cellMask = board[i, j];
+                    if (!IsValueSet(cellMask))
+                    {
+                        int minVal = MinValue(cellMask);
+                        int maxVal = MaxValue(cellMask);
+                        for (int v = minVal; v <= maxVal; v++)
+                        {
+                            uint valueMask = ValueMask(v);
+                            if ((cellMask & valueMask) != 0)
+                            {
+                                Solver boardCopy = Clone();
+                                if (logicalStepDescs != null)
+                                {
+                                    string violationString = null;
+                                    if (boardCopy.EvaluateSetValue(i, j, v, ref violationString) == LogicResult.Invalid)
+                                    {
+                                        logicalStepDescs?.Add(new(
+                                            desc: $"If {CellName(i, j)} is set to {v} then {violationString} => -{v}{CellName(i, j)}",
+                                            sourceCandidates: Enumerable.Empty<int>(),
+                                            elimCandidates: CandidateIndex((i, j), v).ToEnumerable(),
+                                            subSteps: null
+                                        ));
+
+                                        return ClearValue(i, j, v) ? LogicResult.Changed : LogicResult.Invalid;
+                                    }
+                                }
+                                else
+                                {
+                                    if (!boardCopy.SetValue(i, j, v))
+                                    {
+                                        return ClearValue(i, j, v) ? LogicResult.Changed : LogicResult.Invalid;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             return LogicResult.None;
         }
 

@@ -14,9 +14,12 @@ namespace SudokuSolver
 {
     public static class SolverFactory
     {
-        public static Solver CreateBlank(int size, IEnumerable<string> constraints = null)
+        public static Solver CreateBlank(int size, IEnumerable<string> constraints = null, double preferEffectivenessMetric = -1.0)
         {
-            Solver solver = new(size, size, size);
+            Solver solver = new(size, size, size)
+            {
+                PreferEffectivenessMetric = FixEffectiveness(preferEffectivenessMetric)
+            };
             solver.SetRegions(DefaultRegions(size));
             if (constraints != null)
             {
@@ -30,7 +33,7 @@ namespace SudokuSolver
             return solver;
         }
 
-        public static Solver CreateFromCandidates(string candidates, IEnumerable<string> constraints = null)
+        public static Solver CreateFromCandidates(string candidates, IEnumerable<string> constraints = null, double preferEffectivenessMetric = -1.0)
         {
             candidates = candidates.Trim();
 
@@ -52,7 +55,10 @@ namespace SudokuSolver
                 }
             }
 
-            Solver solver = new(size, size, size);
+            Solver solver = new(size, size, size)
+            {
+                PreferEffectivenessMetric = FixEffectiveness(preferEffectivenessMetric)
+            };
             solver.SetRegions(DefaultRegions(size));
             if (constraints != null)
             {
@@ -118,7 +124,7 @@ namespace SudokuSolver
             return solver;
         }
 
-        public static Solver CreateFromGivens(string givens, IEnumerable<string> constraints = null)
+        public static Solver CreateFromGivens(string givens, IEnumerable<string> constraints = null, double preferEffectivenessMetric = -1.0)
         {
             givens = givens.Trim();
 
@@ -140,7 +146,10 @@ namespace SudokuSolver
                 }
             }
 
-            Solver solver = new(size, size, size);
+            Solver solver = new(size, size, size)
+            {
+                PreferEffectivenessMetric = FixEffectiveness(preferEffectivenessMetric)
+            };
             solver.SetRegions(DefaultRegions(size));
             if (constraints != null)
             {
@@ -219,7 +228,7 @@ namespace SudokuSolver
             
             return givens;
         }
-        public static Solver CreateFromFPuzzles(string fpuzzlesURL, IEnumerable<string> additionalConstraints = null, bool onlyGivens = false)
+        public static Solver CreateFromFPuzzles(string fpuzzlesURL, IEnumerable<string> additionalConstraints = null, bool onlyGivens = false, double preferEffectivenessMetric = -1.0)
         {
             using MemoryStream comparableDataStream = new();
             using BinaryWriter comparableData = new(comparableDataStream);
@@ -283,11 +292,23 @@ namespace SudokuSolver
                 }
             }
 
+            double finalEffectiveness = 1.0;
+            if (preferEffectivenessMetric >= 0.0 && preferEffectivenessMetric <= 1.0)
+            {
+                finalEffectiveness = preferEffectivenessMetric;
+            }
+            else if (fpuzzlesData.preferEffectivenessMetric >= 0.0 && fpuzzlesData.preferEffectivenessMetric <= 1.0)
+            {
+                finalEffectiveness = fpuzzlesData.preferEffectivenessMetric;
+            }
+            comparableData.Write((int)(finalEffectiveness * 1000.0));
+
             Solver solver = new(width, width, width)
             {
                 Title = fpuzzlesData.title,
                 Author = fpuzzlesData.author,
-                Rules = fpuzzlesData.ruleset
+                Rules = fpuzzlesData.ruleset,
+                PreferEffectivenessMetric = finalEffectiveness,
             };
             uint disabledLogicFlags = 0;
             if (fpuzzlesData.disabledlogic != null)
@@ -1176,5 +1197,9 @@ namespace SudokuSolver
             string fpuzzlesBase64 = LZString.CompressToBase64(fpuzzlesJson);
             return justBase64 ? fpuzzlesBase64 : $"https://www.f-puzzles.com/?load={fpuzzlesBase64}";
         }
+
+        private const double DEFAULT_EFFECTIVENESS = 1.0;
+
+        private static double FixEffectiveness(double effectiveness) => effectiveness >= 0.0 && effectiveness <= 1.0 ? effectiveness : DEFAULT_EFFECTIVENESS;
     }
 }

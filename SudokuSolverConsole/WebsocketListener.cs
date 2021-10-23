@@ -285,7 +285,16 @@ namespace SudokuSolverConsole
         void SendStep(string ipPort, int nonce, Solver solver)
         {
             List<LogicalStepDesc> logicalStepDescs = new();
-            var logicResult = solver.StepLogic(logicalStepDescs);
+
+            LogicResult logicResult;
+            if (solver.IsBoardValid(logicalStepDescs))
+            {
+                logicResult = solver.StepLogic(logicalStepDescs);
+            }
+            else
+            {
+                logicResult = LogicResult.Invalid;
+            }
             SendLogicResponse(ipPort, nonce, solver, logicResult, StepsDescription(logicalStepDescs));
         }
 
