@@ -14,7 +14,15 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver
 {
-    public record SudokuGroup(string Name, List<(int, int)> Cells, Constraint FromConstraint)
+    public enum GroupType
+    {
+        Row,
+        Column,
+        Region,
+        Constraint
+    }
+
+    public sealed record SudokuGroup(GroupType GroupType, string Name, List<(int, int)> Cells, Constraint FromConstraint) : IComparable<SudokuGroup>
     {
         public override string ToString() => Name;
 
@@ -41,6 +49,40 @@ namespace SudokuSolver
                 return FromConstraint.CellsMustContain(solver, val);
             }
             return null;
+        }
+
+        int IComparable<SudokuGroup>.CompareTo(SudokuGroup other)
+        {
+            if (ReferenceEquals(this, other))
+            {
+                return 0;
+            }
+
+            if (GroupType != other.GroupType)
+            {
+                return (int)GroupType - (int)other.GroupType;
+            }
+
+            if (Name != other.Name)
+            {
+                return Name.CompareTo(other.Name);
+            }
+
+            if (Cells.Count != other.Cells.Count)
+            {
+                return Cells.Count - other.Cells.Count;
+            }
+
+            for (int i = 0; i < Cells.Count; i++)
+            {
+                int compare = Cells[i].CompareTo(other.Cells[i]);
+                if (compare != 0)
+                {
+                    return compare;
+                }
+            }
+
+            return 0;
         }
     }
 
@@ -404,7 +446,7 @@ namespace SudokuSolver
                 {
                     cells.Add((i, j));
                 }
-                SudokuGroup group = new($"Row {i + 1}", cells, null);
+                SudokuGroup group = new(GroupType.Row, $"Row {i + 1}", cells, null);
                 Groups.Add(group);
                 InitMapForGroup(group);
             }
@@ -417,7 +459,7 @@ namespace SudokuSolver
                 {
                     cells.Add((i, j));
                 }
-                SudokuGroup group = new($"Column {j + 1}", cells, null);
+                SudokuGroup group = new(GroupType.Column, $"Column {j + 1}", cells, null);
                 Groups.Add(group);
                 InitMapForGroup(group);
             }
@@ -436,7 +478,7 @@ namespace SudokuSolver
                         }
                     }
                 }
-                SudokuGroup group = new($"Region {region + 1}", cells, null);
+                SudokuGroup group = new(GroupType.Region, $"Region {region + 1}", cells, null);
                 Groups.Add(group);
                 InitMapForGroup(group);
             }
@@ -607,7 +649,7 @@ namespace SudokuSolver
                 var cells = constraint.Group;
                 if (cells != null)
                 {
-                    SudokuGroup group = new(constraint.SpecificName, cells.ToList(), constraint);
+                    SudokuGroup group = new(GroupType.Constraint, constraint.SpecificName, cells.ToList(), constraint);
                     Groups.Add(group);
                     InitMapForGroup(group);
                     addedGroup = true;
@@ -1054,6 +1096,57 @@ namespace SudokuSolver
             isInSetValue = false;
 
             return true;
+        }
+
+        public LogicResult EvaluateSetValue(int i, int j, int val, ref string violationString)
+        {
+            uint valMask = ValueMask(val);
+            if ((board[i, j] & valMask) == 0)
+            {
+                return LogicResult.None;
+            }
+
+            // Check if already set
+            if ((board[i, j] & valueSetMask) != 0)
+            {
+                return LogicResult.None;
+            }
+
+            if (isInSetValue)
+            {
+                board[i, j] = valMask;
+                return LogicResult.Changed;
+            }
+
+            isInSetValue = true;
+
+            board[i, j] = valueSetMask | valMask;
+
+            // Apply all weak links
+            int setCandidateIndex = CandidateIndex(i, j, val);
+            foreach (int elimCandIndex in weakLinks[setCandidateIndex])
+            {
+                var (i1, j1, v1) = CandIndexToCoord(elimCandIndex);
+                if (!ClearValue(i1, j1, v1))
+                {
+                    violationString = $"{CellName(i1, j1)} has no value";
+                    return LogicResult.Invalid;
+                }
+            }
+
+            // Enforce all constraints
+            foreach (var constraint in constraints)
+            {
+                if (!constraint.EnforceConstraint(this, i, j, val))
+                {
+                    violationString = $"{constraint.SpecificName} is violated";
+                    return LogicResult.Invalid;
+                }
+            }
+
+            isInSetValue = false;
+
+            return LogicResult.Changed;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -2154,13 +2247,7 @@ namespace SudokuSolver
                 throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
             }
 
-            DisableTuples = false;
-            DisablePointing = false;
-            DisableFishes = false;
-            DisableWings = true;
-            DisableAIC = true;
-            DisableContradictions = false;
-            DisableFindShortestContradiction = true;
+            SetToBasicsOnly();
 
             bool changed = false;
             LogicResult result;
@@ -2279,6 +2366,14 @@ namespace SudokuSolver
                     if (logicalStepDescs != null && logicalStepDescs.Count > 0)
                     {
                         logicalStepDescs[^1] = logicalStepDescs[^1].WithPrefix($"[{constraint.SpecificName}] ");
+                    }
+                    else if (logicalStepDescs != null && logicalStepDescs.Count == 0)
+                    {
+                        logicalStepDescs.Add(new(
+                            $"{constraint.SpecificName} reported the board was invalid without specifying why. This is a bug: please report it!",
+                            Enumerable.Empty<int>(),
+                            Enumerable.Empty<int>()
+                        ));
                     }
                     return result;
                 }
@@ -4492,13 +4587,30 @@ namespace SudokuSolver
                                     boardCopy.isBruteForcing = true;
 
                                     List<LogicalStepDesc> contradictionSteps = logicalStepDescs != null ? new() : null;
-                                    if (!boardCopy.SetValue(i, j, v) || boardCopy.ConsolidateBoard(contradictionSteps) == LogicResult.Invalid)
+
+                                    string violationString = null;
+                                    if (boardCopy.EvaluateSetValue(i, j, v, ref violationString) == LogicResult.Invalid)
+                                    {
+                                        logicalStepDescs?.Add(new(
+                                            desc: $"If {CellName(i, j)} is set to {v} then {violationString} => -{v}{CellName(i, j)}",
+                                            sourceCandidates: Enumerable.Empty<int>(),
+                                            elimCandidates: CandidateIndex((i, j), v).ToEnumerable(),
+                                            subSteps: null
+                                        ));
+                                        if (!ClearValue(i, j, v))
+                                        {
+                                            return LogicResult.Invalid;
+                                        }
+                                        return LogicResult.Changed;
+                                    }
+
+                                    if (boardCopy.ConsolidateBoard(contradictionSteps) == LogicResult.Invalid)
                                     {
                                         bool isTrivial = contradictionSteps != null && contradictionSteps.Count == 0;
                                         if (isTrivial)
                                         {
                                             contradictionSteps.Add(new LogicalStepDesc(
-                                                desc: "Immediately violates a constraint.",
+                                                desc: "For unknown reasons. This is a bug: please report this!",
                                                 sourceCandidates: Enumerable.Empty<int>(),
                                                 elimCandidates: Enumerable.Empty<int>()));
                                         }
