@@ -562,6 +562,25 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.regionsumline != null)
+            {
+                foreach (var regionSumLine in fpuzzlesData.regionsumline)
+                {
+                    foreach (var line in regionSumLine.lines)
+                    {
+                        StringBuilder cells = new();
+                        foreach (var cell in line)
+                        {
+                            if (!string.IsNullOrWhiteSpace(cell))
+                            {
+                                cells.Append(cell);
+                            }
+                        }
+                        solver.AddConstraint(typeof(RegionSumLinesConstraint), cells.ToString());
+                    }
+                }
+            }
+
             if (fpuzzlesData.betweenline != null)
             {
                 foreach (var betweenline in fpuzzlesData.betweenline)
@@ -1031,6 +1050,13 @@ namespace SudokuSolver
                 whispers.Add(new(new string[][] { cells }));
             }
 
+            List<FPuzzlesLines> regionSumLines = new();
+            foreach (var c in solver.Constraints<RegionSumLinesConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                regionSumLines.Add(new(new string[][] { cells }));
+            }
+
             List<FPuzzlesCells> difference = new();
             foreach (var marker in solver.Constraints<DifferenceConstraint>().SelectMany(c => c.markers))
             {
@@ -1136,6 +1162,7 @@ namespace SudokuSolver
                 palindrome: palindrome.ToArray(),
                 renban: renban.ToArray(),
                 whispers: whispers.ToArray(),
+                regionsumline: regionSumLines.ToArray(),
                 difference: difference.ToArray(),
                 xv: xv.ToArray(),
                 ratio: ratio.ToArray(),
