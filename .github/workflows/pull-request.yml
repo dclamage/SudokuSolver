@@ -1,0 +1,32 @@
+name: Test PR
+
+on:
+  pull_request:
+    branches: [ master, dev ]
+
+jobs:
+  test:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v1
+      with:
+        dotnet-version: 5.0.x
+    - name: Set variables
+      run: |
+        VER=$(cat VERSION)
+        echo "VERSION=$VER" >> $GITHUB_ENV
+    - name: Update version
+      run: |
+        sed -i 's/version = .*;/version = \"${{ env.VERSION }}\";/' ./SudokuSolver/Version.cs
+        find . -type f -name '*.user.js' | xargs sed -i -E 's/(@version[ \t]*).*/\1${{ env.VERSION }}/'
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --nologo --configuration Release --no-restore
+    - name: Test
+      run: dotnet test --nologo --configuration Release --no-build --verbosity normal
+ 
