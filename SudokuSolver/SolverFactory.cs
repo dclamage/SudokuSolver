@@ -470,6 +470,54 @@ namespace SudokuSolver
                 solver.AddConstraint(typeof(MaximumConstraint), cells.ToString());
             }
 
+            if (fpuzzlesData.rowindexer != null && fpuzzlesData.rowindexer.Length > 0)
+            {
+                StringBuilder cells = new();
+                foreach (var rowindexer in fpuzzlesData.rowindexer)
+                {
+                    foreach (var cell in rowindexer.cells)
+                    {
+                        if (!string.IsNullOrWhiteSpace(cell))
+                        {
+                            cells.Append(cell);
+                        }
+                    }
+                }
+                solver.AddConstraint(typeof(RowIndexerConstraint), cells.ToString());
+            }
+
+            if (fpuzzlesData.columnindexer != null && fpuzzlesData.columnindexer.Length > 0)
+            {
+                StringBuilder cells = new();
+                foreach (var colindexer in fpuzzlesData.columnindexer)
+                {
+                    foreach (var cell in colindexer.cells)
+                    {
+                        if (!string.IsNullOrWhiteSpace(cell))
+                        {
+                            cells.Append(cell);
+                        }
+                    }
+                }
+                solver.AddConstraint(typeof(ColIndexerConstraint), cells.ToString());
+            }
+
+            if (fpuzzlesData.boxindexer != null && fpuzzlesData.boxindexer.Length > 0)
+            {
+                StringBuilder cells = new();
+                foreach (var boxindexer in fpuzzlesData.boxindexer)
+                {
+                    foreach (var cell in boxindexer.cells)
+                    {
+                        if (!string.IsNullOrWhiteSpace(cell))
+                        {
+                            cells.Append(cell);
+                        }
+                    }
+                }
+                solver.AddConstraint(typeof(BoxIndexerConstraint), cells.ToString());
+            }
+
             if (fpuzzlesData.extraregion != null)
             {
                 foreach (var extraRegion in fpuzzlesData.extraregion)
@@ -1015,6 +1063,27 @@ namespace SudokuSolver
                 maximum.Add(new(CN(cell), null));
             }
 
+            List<FPuzzlesCells> rowindexer = new();
+            foreach (var c in solver.Constraints<RowIndexerConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                rowindexer.Add(new(cells, null));
+            }
+
+            List<FPuzzlesCells> columnindexer = new();
+            foreach (var c in solver.Constraints<ColIndexerConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                columnindexer.Add(new(cells, null));
+            }
+
+            List<FPuzzlesCells> boxindexer = new();
+            foreach (var c in solver.Constraints<BoxIndexerConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                boxindexer.Add(new(cells, null));
+            }
+
             List<FPuzzlesCells> extraregion = new();
             foreach (var c in solver.Constraints<ExtraRegionConstraint>())
             {
@@ -1157,6 +1226,9 @@ namespace SudokuSolver
                 even: even.ToArray(),
                 minimum: minimum.ToArray(),
                 maximum: maximum.ToArray(),
+                rowindexer: rowindexer.ToArray(),
+                columnindexer: columnindexer.ToArray(),
+                boxindexer: boxindexer.ToArray(),
                 extraregion: extraregion.ToArray(),
                 thermometer: thermometer.ToArray(),
                 palindrome: palindrome.ToArray(),

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.4
+// @version      1.5
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -13,9 +13,6 @@
 
 (function() {
     'use strict';
-
-    // Update this version number when new constraints are added
-    const newConstraintsVersion = 1.4;
 
     // Adding a new constraint:
     // 1. Add a new entry to the newConstraintInfo array
@@ -70,7 +67,198 @@
                 'Shift click and drag to draw overlapping region sum lines.',
             ]
         },
+        {
+            name: 'Row Indexer',
+            type: 'cage',
+            color: '#7CC77C',
+            colorDark: '#307130',
+            tooltip: [
+                'If this cell (R, C) has value V then cell (V, C) has value R',
+                '',
+                'Click on a cell to add a row indexer.',
+                'Click on a row indexer to remove it.'
+            ]
+        },
+        {
+            name: 'Column Indexer',
+            type: 'cage',
+            color: '#C77C7C',
+            colorDark: '#713030',
+            tooltip: [
+                'If this cell (R, C) has value V then cell (R, V) has value C',
+                '(This one is used by the standard 159 constraint)',
+                '',
+                'Click on a cell to add a column indexer.',
+                'Click on a column indexer to remove it.'
+            ]
+        },
+        {
+            name: 'Box Indexer',
+            type: 'cage',
+            color: '#7C7CC7',
+            colorDark: '#303071',
+            tooltip: [
+                'If this cell at box position I has value V then',
+                'the cell in the same box at box position V has value I',
+                '',
+                'Click on a cell to add a box indexer.',
+                'Click on a box indexer to remove it.'
+            ]
+        }
     ]
+
+    // Drawing helpers
+    // Outline code provided by Sven Neumann
+    const getOutline = function(cells, os) {
+        let edgePoints = [],
+            grid = [],
+            segs = [],
+            shapes = [];
+        const checkRC = (r, c) => ((grid[r] !== undefined) && (grid[r][c] !== undefined)) || false;
+        const pointOS = {
+            tl: [os, os],
+            tr: [os, 1 - os],
+            bl: [1 - os, os],
+            br: [1 - os, 1 - os],
+            tc: [os, 0.5],
+            rc: [0.5, 1 - os],
+            bc: [1 - os, 0.5],
+            lc: [0.5, os],
+        };
+        const dirRC = { t: [-1, 0], r: [0, 1], b: [1, 0], l: [0, -1] };
+        const flipDir = { t: 'b', r: 'l', b: 't', l: 'r' };
+        const patterns = [
+            { name: 'otl', bits: '_0_011_1_', enter: 'bl', exit: 'rt', points: 'tl' },
+            { name: 'otr', bits: '_0_110_1_', enter: 'lt', exit: 'br', points: 'tr' },
+            { name: 'obr', bits: '_1_110_0_', enter: 'tr', exit: 'lb', points: 'br' },
+            { name: 'obl', bits: '_1_011_0_', enter: 'rb', exit: 'tl', points: 'bl' },
+            { name: 'itl', bits: '01_11____', enter: 'lt', exit: 'tl', points: 'tl' },
+            { name: 'itr', bits: '_10_11___', enter: 'tr', exit: 'rt', points: 'tr' },
+            { name: 'ibr', bits: '____11_10', enter: 'rb', exit: 'br', points: 'br' },
+            { name: 'ibl', bits: '___11_01_', enter: 'bl', exit: 'lb', points: 'bl' },
+            { name: 'et', bits: '_0_111___', enter: 'lt', exit: 'rt', points: 'tc' },
+            { name: 'er', bits: '_1__10_1_', enter: 'tr', exit: 'br', points: 'rc' },
+            { name: 'eb', bits: '___111_0_', enter: 'rb', exit: 'lb', points: 'bc' },
+            { name: 'el', bits: '_1_01__1_', enter: 'bl', exit: 'tl', points: 'lc' },
+            { name: 'out', bits: '_0_010_1_', enter: 'bl', exit: 'br', points: 'tl,tr' },
+            { name: 'our', bits: '_0_110_0_', enter: 'lt', exit: 'lb', points: 'tr,br' },
+            { name: 'oub', bits: '_1_010_0_', enter: 'tr', exit: 'tl', points: 'br,bl' },
+            { name: 'oul', bits: '_0_011_0_', enter: 'rb', exit: 'rt', points: 'bl,tl' },
+            { name: 'solo', bits: '_0_010_0_', enter: '', exit: '', points: 'tl,tr,br,bl' },
+        ];
+        const checkPatterns = (row, col) => patterns
+            .filter(({ name, bits }) => {
+                let matches = true;
+                bits.split('').forEach((b, i) => {
+                    let r = row + Math.floor(i / 3) - 1,
+                        c = col + i % 3 - 1,
+                        check = checkRC(r, c);
+                    matches = matches && ((b === '_') || (b === '1' && check) || (b === '0' && !check));
+                });
+                return matches;
+            });
+        const getSeg = (segs, rc, enter) => segs.find(([r, c, _, pat]) => r === rc[0] && c === rc[1] && pat.enter === enter);
+        const followShape = segs => {
+            let shape = [],
+                seg = segs[0];
+            const getNext = ([r, c, cell, pat]) => {
+                if (pat.exit === '') return;
+                let [exitDir, exitSide] = pat.exit.split('');
+                let nextRC = [r + dirRC[exitDir][0], c + dirRC[exitDir][1]];
+                let nextEnter = flipDir[exitDir] + exitSide;
+                return getSeg(segs, nextRC, nextEnter);
+            };
+            do {
+                shape.push(seg);
+                segs.splice(segs.indexOf(seg), 1);
+                seg = getNext(seg);
+            } while (seg !== undefined && shape.indexOf(seg) === -1);
+            return shape;
+        };
+        const shapeToPoints = shape => {
+            let points = [];
+            shape.forEach(([r, c, cell, pat]) => pat.points
+                .split(',')
+                .map(point => pointOS[point])
+                .map(([ros, cos]) => [r + ros, c + cos])
+                .forEach(rc => points.push(rc))
+            );
+            return points;
+        };
+        cells.forEach(cell => {
+            const { i: col, j: row } = cell;
+            grid[row] = grid[row] || [];
+            grid[row][col] = { cell };
+        });
+        cells.forEach(cell => {
+            const { i: col, j: row } = cell, matchedPatterns = checkPatterns(row, col);
+            matchedPatterns.forEach(pat => segs.push([row, col, cell, pat]));
+        });
+        while (segs.length > 0) {
+            const shape = followShape(segs);
+            if (shape.length > 0) shapes.push(shape);
+        }
+        shapes.forEach(shape => {
+            edgePoints = edgePoints.concat(shapeToPoints(shape).map(([r, c], idx) => [idx === 0 ? 'M' : 'L', r, c]));
+            edgePoints.push(['Z']);
+        });
+        return edgePoints;
+    };
+
+    const drawLine = function(line, color, colorDark, lineWidth) {
+        ctx.lineWidth = cellSL * lineWidth * 0.5;
+        ctx.fillStyle = boolSettings['Dark Mode'] ? colorDark : color;
+        ctx.strokeStyle = boolSettings['Dark Mode'] ? colorDark : color;
+        ctx.beginPath();
+        ctx.arc(line[0].x + cellSL / 2, line[0].y + cellSL / 2, ctx.lineWidth / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(line[0].x + cellSL / 2, line[0].y + cellSL / 2);
+        for (var b = 1; b < line.length; b++) {
+            ctx.lineTo(line[b].x + cellSL / 2, line[b].y + cellSL / 2);
+        }
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(line[line.length - 1].x + cellSL / 2, line[line.length - 1].y + cellSL / 2, ctx.lineWidth / 2, 0, Math.PI * 2);
+        ctx.fill();
+    }
+
+    const drawSolidCage = function(cells, colorLight, colorDark) {
+        const color = boolSettings['Dark Mode'] ? colorDark : colorLight;
+        const lineOffset = 1.0 / 32.0;
+        const lineWidth = cellSL * lineOffset * 2.0;
+        const outline = getOutline(cells, lineOffset);
+        const prevStrokeStyle = ctx.strokeStyle;
+        const prevLineWidth = ctx.lineWidth;
+        const prevLineCap = ctx.lineCap;
+
+        ctx.beginPath();
+        for (let i = 0; i < outline.length; i++) {
+            const point = outline[i];
+            if (point[0] === 'Z') {
+                ctx.closePath();
+            } else if (point[0] == 'M') {
+                ctx.moveTo(gridX + point[1] * cellSL, gridY + point[2] * cellSL);
+            } else {
+                ctx.lineTo(gridX + point[1] * cellSL, gridY + point[2] * cellSL);
+            }
+        }
+
+        ctx.fillStyle = color;
+        ctx.globalAlpha = 0.1;
+        ctx.fill();
+
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.lineCap = 'round';
+        ctx.globalAlpha = 1.00;
+        ctx.stroke();
+
+        ctx.globalAlpha = 1.00;
+        ctx.strokeStyle = prevStrokeStyle;
+        ctx.lineWidth = prevLineWidth;
+        ctx.lineCap = prevLineCap;
+    }
 
     const doShim = function() {
         // Additional import/export data
@@ -96,6 +284,17 @@
                                 fromConstraint: constraintInfo.name
                             });
                         }
+                    } else if (constraintInfo.type === 'cage') {
+                        if (!puzzle.cage) {
+                            puzzle.cage = [];
+                        }
+
+                        puzzle.cage.push({
+                            cells: puzzleEntry.flatMap(inst => inst.cells),
+                            outlineC: constraintInfo.color,
+                            fontC: "#000000",
+                            fromConstraint: constraintInfo.name
+                        });
                     }
                 }
             }
@@ -106,11 +305,8 @@
         importPuzzle = function(string, clearHistory) {
             // Remove any generated cosmetics
             const puzzle = JSON.parse(compressor.decompressFromBase64(string));
+            let constraintNames = newConstraintInfo.map(c => c.name);
             if (puzzle.line) {
-                let constraintNames = [];
-                for (let constraintInfo of newConstraintInfo) {
-                    constraintNames.push(constraintInfo.name);
-                }
                 let filteredLines = [];
                 for (let line of puzzle.line) {
                     // Upgrade from old boolean
@@ -130,6 +326,20 @@
                 }
             }
 
+            if (puzzle.cage) {
+                let filteredCages = [];
+                for (let cage of puzzle.cage) {
+                    if (!cage.fromConstraint || !constraintNames.includes(cage.fromConstraint)) {
+                        filteredCages.push(cage);
+                    }
+                }
+                if (filteredCages.length > 0) {
+                    puzzle.cage = filteredCages;
+                } else {
+                    delete puzzle.cage;
+                }
+            }
+
             string = compressor.compressToBase64(JSON.stringify(puzzle));
             origImportPuzzle(string, clearHistory);
         }
@@ -142,8 +352,13 @@
                     const id = cID(info.name);
                     const constraint = constraints[id];
                     if (constraint) {
-                        for (let a = 0; a < constraint.length; a++) {
-                            constraint[a].show();
+                        if (info.type !== 'cage') {
+                            for (let a = 0; a < constraint.length; a++) {
+                                constraint[a].show();
+                            }
+                        } else {
+                            let cells = constraint.flatMap(inst => inst.cells).filter(cell => cell);
+                            drawSolidCage(cells, info.color, info.colorDark);
                         }
                     }
                 }
@@ -271,26 +486,54 @@
                 }
             }
 
-            return true;
-        }
-
-        // Drawing helpers
-        const drawLine = function(line, color, colorDark, lineWidth) {
-            ctx.lineWidth = cellSL * lineWidth * 0.5;
-            ctx.fillStyle = boolSettings['Dark Mode'] ? colorDark : color;
-            ctx.strokeStyle = boolSettings['Dark Mode'] ? colorDark : color;
-            ctx.beginPath();
-            ctx.arc(line[0].x + cellSL / 2, line[0].y + cellSL / 2, ctx.lineWidth / 2, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.beginPath();
-            ctx.moveTo(line[0].x + cellSL / 2, line[0].y + cellSL / 2);
-            for (var b = 1; b < line.length; b++) {
-                ctx.lineTo(line[b].x + cellSL / 2, line[b].y + cellSL / 2);
+            // Row Indexer
+            const constraintsRowIndexer = constraints[cID('Row Indexer')];
+            if (constraintsRowIndexer && constraintsRowIndexer.some(rowIndexer => rowIndexer.cells.indexOf(cell) > -1)) {
+                let targetCell = grid[n - 1][cell.j];
+                if (targetCell !== cell && targetCell.value) {
+                    if (targetCell.value > 0 && targetCell.value !== cell.i + 1) {
+                        return false;
+                    }
+                }
             }
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(line[line.length - 1].x + cellSL / 2, line[line.length - 1].y + cellSL / 2, ctx.lineWidth / 2, 0, Math.PI * 2);
-            ctx.fill();
+
+            // Column Indexer
+            const constraintsColumnIndexer = constraints[cID('Column Indexer')];
+            if (constraintsColumnIndexer && constraintsColumnIndexer.some(columnIndexer => columnIndexer.cells.indexOf(cell) > -1)) {
+                let targetCell = grid[cell.i][n - 1];
+                if (targetCell !== cell && targetCell.value) {
+                    if (targetCell.value > 0 && targetCell.value !== cell.j + 1) {
+                        return false;
+                    }
+                }
+            }
+
+            // Box Indexer
+            const constraintsBoxIndexer = constraints[cID('Box Indexer')];
+            if (constraintsBoxIndexer && constraintsBoxIndexer.some(boxIndexer => boxIndexer.cells.indexOf(cell) > -1)) {
+                let region = cell.region;
+                if (region >= 0) {
+                    let regionCells = [];
+                    for (let i = 0; i < size; i++) {
+                        for (let j = 0; j < size; j++) {
+                            if (grid[i][j].region === region) {
+                                regionCells.push(grid[i][j]);
+                            }
+                        }
+                    }
+                    if (regionCells.length == size) {
+                        let cellRegionIndex = regionCells.indexOf(cell);
+                        let targetCell = regionCells[n - 1];
+                        if (targetCell !== cell && targetCell.value) {
+                            if (targetCell.value > 0 && targetCell.value !== cellRegionIndex + 1) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return true;
         }
 
         // Constraint classes
@@ -351,15 +594,39 @@
             }
         }
 
+        // Row Indexer
+        window.rowindexer = function(cell) {
+            this.cells = [cell];
+
+            this.addCellToRegion = function(cell) {
+                this.cells.push(cell);
+                this.sortCells();
+            }
+
+            this.sortCells = function() {
+                this.cells.sort((a, b) => (a.i * size + a.j) - (b.i * size + b.j));
+            }
+        }
+
+        // Column Indexer
+        window.columnindexer = window.rowindexer;
+
+        // Box Indexer
+        window.boxindexer = window.rowindexer;
+
         const origCategorizeTools = categorizeTools;
         categorizeTools = function() {
             origCategorizeTools();
 
             let toolLineIndex = toolConstraints.indexOf('Palindrome');
+            let toolPerCellIndex = toolConstraints.indexOf('Maximum');
             for (let info of newConstraintInfo) {
                 if (info.type === 'line') {
                     toolConstraints.splice(++toolLineIndex, 0, info.name);
                     lineConstraints.push(info.name);
+                } else if (info.type === 'cage') {
+                    toolConstraints.splice(++toolPerCellIndex, 0, info.name);
+                    regionConstraints.push(info.name);
                 }
             }
 
@@ -471,6 +738,45 @@
             buttons[buttons.findIndex(a => a.id === 'EditInfo')].x = canvas.width / 2 + ctx.measureText(title).width / 2 + 40;
 
             return title;
+        }
+
+        // Make all the constraint buttons smaller
+        const constraintHeight = 25;
+        const prevCreateSidebarConstraints = createSidebarConstraints;
+        createSidebarConstraints = function() {
+            prevCreateSidebarConstraints();
+
+            let constraintIndex = 0;
+            let constraintButtons = sidebars[0].buttons;
+            for (let i = 0; i < constraintButtons.length; i++) {
+                let b = sidebars[0].buttons[i];
+                if (b.modes.indexOf("Constraint Tools") > -1 && b.title !== '-') {
+                    b.h = constraintHeight;
+                    b.y = gridY + gridSL - (constraintHeight * toolConstraints.length + (buttonGap * (toolConstraints.length - 1)) + buttonMargin) + ((constraintHeight + buttonGap) * constraintIndex);
+
+                    if (i + 1 < constraintButtons.length) {
+                        let bm = constraintButtons[i + 1];
+                        if (bm.title === '-') {
+                            bm.h = b.h;
+                            bm.y = b.y;
+                        }
+                    }
+                    constraintIndex++;
+                }
+            }
+        }
+
+        const origDrawPopups = window.drawPopups;
+        window.drawPopups = function(overlapSidebars) {
+            if (!overlapSidebars && popup === "Constraint Tools") {
+                ctx.lineWidth = lineWW;
+                ctx.fillStyle = boolSettings['Dark Mode'] ? '#404040' : '#D0D0D0';
+                ctx.strokeStyle = boolSettings['Dark Mode'] ? '#202020' : '#808080';
+                ctx.fillRect(gridX - sidebarDist, gridY + gridSL, sidebarW + (buttonGap + constraintHeight) * 2, -((constraintHeight * toolConstraints.length) + (buttonGap * (toolConstraints.length - 1)) + (buttonMargin * 2)));
+                ctx.strokeRect(gridX - sidebarDist, gridY + gridSL, sidebarW + (buttonGap + constraintHeight) * 2, -((constraintHeight * toolConstraints.length) + (buttonGap * (toolConstraints.length - 1)) + (buttonMargin * 2)));
+            } else {
+                origDrawPopups(overlapSidebars);
+            }
         }
     }
 

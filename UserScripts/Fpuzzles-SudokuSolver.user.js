@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-SudokuSolver
 // @namespace    http://tampermonkey.net/
-// @version      0.3.2-alpha
+// @version      0.4.0-alpha
 // @description  Connect f-puzzles to SudokuSolver
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -37,6 +37,29 @@
         let solverSocket = null;
         let commandIsComplete = false;
 
+        const exportPuzzleForSolving = function(includeCandidates) {
+            const compressed = exportPuzzle(includeCandidates);
+            const puzzle = JSON.parse(compressor.decompressFromBase64(compressed));
+
+            puzzle.disabledlogic = [];
+            for (let settingName of boolSettings) {
+                const settingNameLower = settingName.toLowerCase();
+                if (settingNameLower.startsWith(enableLogicPrefix) && !boolSettings[settingName]) {
+                    puzzle.disabledlogic.push(settingNameLower.substr(enableLogicPrefix.length));
+                }
+            }
+
+            puzzle.truecandidatesoptions = [];
+            if (boolSettings['ColoredCandidates']) {
+                puzzle.truecandidatesoptions.push('colored');
+            }
+            if (boolSettings['LogicalCandidates']) {
+                puzzle.truecandidatesoptions.push('logical');
+            }
+
+            return compressor.compressToBase64(JSON.stringify(puzzle));
+        }
+
         const sendPuzzleDelayed = function(message) {
             if (nonce === message.nonce) {
                 solverSocket.send(JSON.stringify(message));
@@ -58,7 +81,7 @@
                 return;
             }
 
-            var puzzle = exportPuzzle();
+            var puzzle = exportPuzzleForSolving();
             const message = {
                 nonce: nonce,
                 command: command,
@@ -944,26 +967,13 @@
             for (let i = 0; i < size; i++) {
                 for (let j = 0; j < size; j++) {
                     const cell = window.grid[i][j];
-                    puzzle.grid[i][j].givenPencilMarks = cell.givenPencilMarks && cell.givenPencilMarks.length > 0 ? cell.givenPencilMarks : null;
+                    if (cell.givenPencilMarks && cell.givenPencilMarks.length > 0) {
+                        puzzle.grid[i][j].givenPencilMarks = cell.givenPencilMarks;
+                    } else {
+                        delete puzzle.grid[i][j].givenPencilMarks;
+                    }
                 }
             }
-
-            puzzle.disabledlogic = [];
-            for (let settingName of boolSettings) {
-                const settingNameLower = settingName.toLowerCase();
-                if (settingNameLower.startsWith(enableLogicPrefix) && !boolSettings[settingName]) {
-                    puzzle.disabledlogic.push(settingNameLower.substr(enableLogicPrefix.length));
-                }
-            }
-
-            puzzle.truecandidatesoptions = [];
-            if (boolSettings['ColoredCandidates']) {
-                puzzle.truecandidatesoptions.push('colored');
-            }
-            if (boolSettings['LogicalCandidates']) {
-                puzzle.truecandidatesoptions.push('logical');
-            }
-
             return compressor.compressToBase64(JSON.stringify(puzzle));
         }
 
