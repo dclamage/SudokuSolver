@@ -33,13 +33,16 @@ namespace SudokuSolverConsole
         private readonly object serverLock = new();
         private readonly Dictionary<string, CancellationTokenSource> cancellationTokenMap = new();
         private readonly Dictionary<byte[], BaseResponse> trueCandidatesResponseCache = new(new ByteArrayComparer());
+        private List<string> additionalConstraints;
 
-        public async Task Listen(string host, int port)
+        public async Task Listen(string host, int port, List<string> additionalConstraints = null)
         {
             if (server != null)
             {
                 throw new InvalidOperationException("Server already listening!");
             }
+
+            this.additionalConstraints = additionalConstraints;
 
             server = new(host, port, false);
             server.ClientConnected += (_, args) => ClientConnected(args);
@@ -101,7 +104,7 @@ namespace SudokuSolverConsole
                                 break;
                         }
 
-                        Solver solver = SolverFactory.CreateFromFPuzzles(message.data, onlyGivens: onlyGivens);
+                        Solver solver = SolverFactory.CreateFromFPuzzles(message.data, this.additionalConstraints, onlyGivens: onlyGivens);
                         if (message.command == "truecandidates")
                         {
                             if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
