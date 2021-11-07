@@ -134,7 +134,7 @@ namespace SudokuSolverConsole
                     port = int.Parse(portStr);
                 }
                 using WebsocketListener websocketListener = new();
-                await websocketListener.Listen("localhost", port);
+                await websocketListener.Listen("localhost", port, constraints);
 
                 Console.WriteLine("Press CTRL + Q to quit.");
 
