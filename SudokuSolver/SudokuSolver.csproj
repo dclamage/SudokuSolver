@@ -1,17 +1,19 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net5.0</TargetFramework>
+    <TargetFramework>net6.0</TargetFramework>
     <Authors>dclamage</Authors>
     <PackageId>SudokuSolverLib</PackageId>
     <Product>SudokuSolverLib</Product>
     <PackageLicenseFile>LICENSE</PackageLicenseFile>
     <PackageProjectUrl>https://github.com/dclamage/SudokuSolver</PackageProjectUrl>
     <Copyright>© Copyright 2021 David Clamage</Copyright>
-    <Version>0.1.0</Version>
+    <Version>0.4.0</Version>
     <PackageRequireLicenseAcceptance>true</PackageRequireLicenseAcceptance>
     <RepositoryUrl>https://github.com/dclamage/SudokuSolver</RepositoryUrl>
     <Description>An extensible library to solve Sudoku and Sudoku variants.</Description>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
   </PropertyGroup>
 
   <ItemGroup>

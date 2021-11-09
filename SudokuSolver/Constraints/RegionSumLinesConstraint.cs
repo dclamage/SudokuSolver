@@ -1,255 +1,249 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using static SudokuSolver.SolverUtility;
+﻿namespace SudokuSolver.Constraints;
 
-namespace SudokuSolver.Constraints
+[Constraint(DisplayName = "Region Sum Lines", ConsoleName = "rsl")]
+public class RegionSumLinesConstraint : Constraint
 {
-    [Constraint(DisplayName = "Region Sum Lines", ConsoleName = "rsl")]
-    public class RegionSumLinesConstraint : Constraint
+    public readonly List<(int, int)> cells;
+    private readonly HashSet<(int, int)> cellsSet;
+    private List<SumGroup> lineSegments;
+    private bool isNoop;
+
+    public override string SpecificName => $"Region Sum Line from {CellName(cells[0])} - {CellName(cells[^1])}";
+
+    public RegionSumLinesConstraint(Solver solver, string options) : base(solver)
     {
-        public readonly List<(int, int)> cells;
-        private readonly HashSet<(int, int)> cellsSet;
-        private List<SumGroup> lineSegments;
-        private bool isNoop;
-
-        public override string SpecificName => $"Region Sum Line from {CellName(cells[0])} - {CellName(cells[^1])}";
-
-        public RegionSumLinesConstraint(Solver solver, string options) : base(solver)
+        var cellGroups = ParseCells(options);
+        if (cellGroups.Count != 1)
         {
-            var cellGroups = ParseCells(options);
-            if (cellGroups.Count != 1)
-            {
-                throw new ArgumentException($"Region Sum Lines constraint expects 1 cell group, got {cellGroups.Count}.");
-            }
-
-            cells = cellGroups[0];
-            cellsSet = new(cells);
+            throw new ArgumentException($"Region Sum Lines constraint expects 1 cell group, got {cellGroups.Count}.");
         }
 
-        public override LogicResult InitCandidates(Solver solver)
+        cells = cellGroups[0];
+        cellsSet = new(cells);
+    }
+
+    public override LogicResult InitCandidates(Solver solver)
+    {
+        int curRegion = 0;
+        List<(int, int)>[] groupsPerRegion = new List<(int, int)>[solver.Regions.Length];
+        foreach (var group in solver.Groups)
         {
-            int curRegion = 0;
-            List<(int, int)>[] groupsPerRegion = new List<(int, int)>[solver.Regions.Length];
-            foreach (var group in solver.Groups)
+            if (group.GroupType != GroupType.Region)
             {
-                if (group.GroupType != GroupType.Region)
+                continue;
+            }
+
+            foreach (var cell in cells)
+            {
+                if (group.Cells.Contains(cell))
                 {
-                    continue;
+                    groupsPerRegion[curRegion] ??= new();
+                    groupsPerRegion[curRegion].Add(cell);
                 }
-
-                foreach (var cell in cells)
-                {
-                    if (group.Cells.Contains(cell))
-                    {
-                        groupsPerRegion[curRegion] ??= new();
-                        groupsPerRegion[curRegion].Add(cell);
-                    }
-                }
-                curRegion++;
             }
+            curRegion++;
+        }
 
-            int numLineGroups = groupsPerRegion.Count(list => list != null && list.Count > 0);
-            int numLineCells = groupsPerRegion.Sum(list => list?.Count ?? 0);
-            if (numLineCells != cells.Count)
+        int numLineGroups = groupsPerRegion.Count(list => list != null && list.Count > 0);
+        int numLineCells = groupsPerRegion.Sum(list => list?.Count ?? 0);
+        if (numLineCells != cells.Count)
+        {
+            throw new ArgumentException($"Region Sum Line contains cells which have no region.");
+        }
+
+        lineSegments = new();
+        foreach (var cells in groupsPerRegion)
+        {
+            if (cells == null || cells.Count == 0)
             {
-                throw new ArgumentException($"Region Sum Line contains cells which have no region.");
+                continue;
             }
 
-            lineSegments = new();
-            foreach (var cells in groupsPerRegion)
-            {
-                if (cells == null || cells.Count == 0)
-                {
-                    continue;
-                }
+            lineSegments.Add(new SumGroup(solver, cells));
+        }
 
-                lineSegments.Add(new SumGroup(solver, cells));
-            }
+        isNoop = lineSegments.Count <= 1;
 
-            isNoop = lineSegments.Count <= 1;
+        if (isNoop)
+        {
+            return LogicResult.None;
+        }
 
-            if (isNoop)
-            {
-                return LogicResult.None;
-            }
+        SortedSet<int> possibleSums = PossibleSums(solver);
+        if (possibleSums == null || possibleSums.Count == 0)
+        {
+            return LogicResult.Invalid;
+        }
 
-            SortedSet<int> possibleSums = PossibleSums(solver);
-            if (possibleSums == null || possibleSums.Count == 0)
+        bool changed = false;
+        foreach (var segment in lineSegments)
+        {
+            var curLogicResult = segment.RestrictSum(solver, possibleSums);
+            if (curLogicResult == LogicResult.Invalid)
             {
                 return LogicResult.Invalid;
             }
 
-            bool changed = false;
-            foreach (var segment in lineSegments)
+            if (curLogicResult == LogicResult.Changed)
             {
-                var curLogicResult = segment.RestrictSum(solver, possibleSums);
-                if (curLogicResult == LogicResult.Invalid)
-                {
-                    return LogicResult.Invalid;
-                }
-
-                if (curLogicResult == LogicResult.Changed)
-                {
-                    changed = true;
-                }
+                changed = true;
             }
-
-            return changed ? LogicResult.Changed : LogicResult.None;
         }
 
-        public override bool EnforceConstraint(Solver solver, int i, int j, int val)
+        return changed ? LogicResult.Changed : LogicResult.None;
+    }
+
+    public override bool EnforceConstraint(Solver solver, int i, int j, int val)
+    {
+        if (isNoop || !cellsSet.Contains((i, j)))
         {
-            if (isNoop || !cellsSet.Contains((i, j)))
-            {
-                return true;
-            }
-
-            SortedSet<int> possibleSums = PossibleSums(solver);
-            if (possibleSums == null || possibleSums.Count == 0)
-            {
-                return false;
-            }
-
             return true;
         }
 
-        public override void InitLinks(Solver sudokuSolver)
+        SortedSet<int> possibleSums = PossibleSums(solver);
+        if (possibleSums == null || possibleSums.Count == 0)
         {
-            if (isNoop)
-            {
-                return;
-            }
+            return false;
+        }
 
-            // If two segments have one cell then they are clones, and so clone weak links can be formed
-            List<(int, int)> clones = new();
-            foreach (var segment in lineSegments)
-            {
-                if (segment.cells.Count == 1)
-                {
-                    clones.Add(segment.cells[0]);
-                }
-            }
+        return true;
+    }
 
-            foreach (var cellPair in clones.Combinations(2))
+    public override void InitLinks(Solver sudokuSolver)
+    {
+        if (isNoop)
+        {
+            return;
+        }
+
+        // If two segments have one cell then they are clones, and so clone weak links can be formed
+        List<(int, int)> clones = new();
+        foreach (var segment in lineSegments)
+        {
+            if (segment.cells.Count == 1)
             {
-                int cellIndex0 = FlatIndex(cellPair[0]);
-                int cellIndex1 = FlatIndex(cellPair[1]);
-                for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+                clones.Add(segment.cells[0]);
+            }
+        }
+
+        foreach (var cellPair in clones.Combinations(2))
+        {
+            int cellIndex0 = FlatIndex(cellPair[0]);
+            int cellIndex1 = FlatIndex(cellPair[1]);
+            for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+            {
+                int candIndex0 = cellIndex0 * MAX_VALUE + v0 - 1;
+                for (int v1 = 1; v1 <= MAX_VALUE; v1++)
                 {
-                    int candIndex0 = cellIndex0 * MAX_VALUE + v0 - 1;
-                    for (int v1 = 1; v1 <= MAX_VALUE; v1++)
+                    if (v0 != v1)
                     {
-                        if (v0 != v1)
-                        {
-                            int candIndex1 = cellIndex1 * MAX_VALUE + v1 - 1;
-                            sudokuSolver.AddWeakLink(candIndex0, candIndex1);
-                        }
+                        int candIndex1 = cellIndex1 * MAX_VALUE + v1 - 1;
+                        sudokuSolver.AddWeakLink(candIndex0, candIndex1);
                     }
                 }
             }
         }
+    }
 
-        public override LogicResult StepLogic(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
+    public override LogicResult StepLogic(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
+    {
+        if (isNoop)
         {
-            if (isNoop)
-            {
-                return LogicResult.None;
-            }
-            var board = solver.Board;
+            return LogicResult.None;
+        }
+        var board = solver.Board;
 
-            SortedSet<int> possibleSums = PossibleSums(solver);
-            if (possibleSums == null || possibleSums.Count == 0)
+        SortedSet<int> possibleSums = PossibleSums(solver);
+        if (possibleSums == null || possibleSums.Count == 0)
+        {
+            logicalStepDescription?.Add(new($"There are no possible sums that all segments can be.", cells));
+            return LogicResult.Invalid;
+        }
+
+        uint[] origMasks = null;
+        if (logicalStepDescription != null)
+        {
+            origMasks = new uint[cells.Count];
+            for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
             {
-                logicalStepDescription?.Add(new($"There are no possible sums that all segments can be.", cells));
+                var (i, j) = cells[cellIndex];
+                origMasks[cellIndex] = board[i, j];
+            }
+        }
+
+        bool changed = false;
+        foreach (var segment in lineSegments)
+        {
+            var curLogicResult = segment.RestrictSum(solver, possibleSums);
+            if (curLogicResult == LogicResult.Invalid)
+            {
+                logicalStepDescription?.Add(new($"Cells {solver.CompactName(segment.cells)} cannot be restricted to sum{(possibleSums.Count > 1 ? "s" : "")} {string.Join(",", possibleSums)}.", segment.cells));
                 return LogicResult.Invalid;
             }
+            changed |= curLogicResult == LogicResult.Changed;
+        }
 
-            uint[] origMasks = null;
-            if (logicalStepDescription != null)
+        if (changed && logicalStepDescription != null)
+        {
+            List<int> elims = new();
+            for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
             {
-                origMasks = new uint[cells.Count];
-                for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
+                var (i, j) = cells[cellIndex];
+                uint origMask = origMasks[cellIndex];
+                if (IsValueSet(origMask))
                 {
-                    var (i, j) = cells[cellIndex];
-                    origMasks[cellIndex] = board[i, j];
+                    continue;
                 }
-            }
 
-            bool changed = false;
-            foreach (var segment in lineSegments)
-            {
-                var curLogicResult = segment.RestrictSum(solver, possibleSums);
-                if (curLogicResult == LogicResult.Invalid)
+                uint newMask = board[i, j];
+                if (origMask != newMask)
                 {
-                    logicalStepDescription?.Add(new($"Cells {solver.CompactName(segment.cells)} cannot be restricted to sum{(possibleSums.Count > 1 ? "s" : "")} {string.Join(",", possibleSums)}.", segment.cells));
-                    return LogicResult.Invalid;
-                }
-                changed |= curLogicResult == LogicResult.Changed;
-            }
-
-            if (changed && logicalStepDescription != null)
-            {
-                List<int> elims = new();
-                for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
-                {
-                    var (i, j) = cells[cellIndex];
-                    uint origMask = origMasks[cellIndex];
-                    if (IsValueSet(origMask))
+                    uint removedMask = origMask & ~newMask;
+                    int minValue = MinValue(removedMask);
+                    int maxValue = MaxValue(removedMask);
+                    for (int v = minValue; v <= maxValue; v++)
                     {
-                        continue;
-                    }
-
-                    uint newMask = board[i, j];
-                    if (origMask != newMask)
-                    {
-                        uint removedMask = origMask & ~newMask;
-                        int minValue = MinValue(removedMask);
-                        int maxValue = MaxValue(removedMask);
-                        for (int v = minValue; v <= maxValue; v++)
+                        if (HasValue(removedMask, v))
                         {
-                            if (HasValue(removedMask, v))
-                            {
-                                elims.Add(solver.CandidateIndex((i, j), v));
-                            }
+                            elims.Add(solver.CandidateIndex((i, j), v));
                         }
                     }
                 }
-
-                logicalStepDescription?.Add(new(
-                    desc: $"Restricted to sum{(possibleSums.Count > 1 ? "s" : "")} {string.Join(",", possibleSums)} => {solver.DescribeElims(elims)}",
-                    sourceCandidates: Enumerable.Empty<int>(),
-                    elimCandidates: elims));
             }
 
-            return changed ? LogicResult.Changed : LogicResult.None;
+            logicalStepDescription?.Add(new(
+                desc: $"Restricted to sum{(possibleSums.Count > 1 ? "s" : "")} {string.Join(",", possibleSums)} => {solver.DescribeElims(elims)}",
+                sourceCandidates: Enumerable.Empty<int>(),
+                elimCandidates: elims));
         }
 
-        private SortedSet<int> PossibleSums(Solver solver)
+        return changed ? LogicResult.Changed : LogicResult.None;
+    }
+
+    private SortedSet<int> PossibleSums(Solver solver)
+    {
+        SortedSet<int> possibleSums = null;
+        foreach (var segment in lineSegments)
         {
-            SortedSet<int> possibleSums = null;
-            foreach (var segment in lineSegments)
+            var curSums = segment.PossibleSums(solver);
+            if (curSums.Count == 0)
             {
-                var curSums = segment.PossibleSums(solver);
-                if (curSums.Count == 0)
+                return null;
+            }
+
+            if (possibleSums == null)
+            {
+                possibleSums = new(curSums);
+            }
+            else
+            {
+                possibleSums.IntersectWith(curSums);
+                if (possibleSums.Count == 0)
                 {
                     return null;
                 }
-
-                if (possibleSums == null)
-                {
-                    possibleSums = new(curSums);
-                }
-                else
-                {
-                    possibleSums.IntersectWith(curSums);
-                    if (possibleSums.Count == 0)
-                    {
-                        return null;
-                    }
-                }
             }
-            return possibleSums;
         }
+        return possibleSums;
     }
 }

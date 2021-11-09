@@ -14,7 +14,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v1
       with:
-        dotnet-version: 5.0.x
+        dotnet-version: 6.0.x
     - name: Set variables
       run: |
         VER=$(cat VERSION)
@@ -31,6 +31,8 @@ jobs:
       run: dotnet test --nologo --configuration Release --no-build --verbosity normal
     - name: Publish win-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r win-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-win-x64
+    - name: Delete pdbs
+      run: rm ./publish-win-x64/*.pdb
     - name: Zip win-x64
       uses: papeloto/action-zip@v1
       with:
@@ -38,6 +40,8 @@ jobs:
         dest: SudokuSolver-${{ env.VERSION }}-win-x64.zip
     - name: Publish win10-arm64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r win10-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-win10-arm64
+    - name: Delete pdbs
+      run: rm ./publish-win10-arm64/*.pdb
     - name: Zip win10-arm64
       uses: papeloto/action-zip@v1
       with:
@@ -45,6 +49,8 @@ jobs:
         dest: SudokuSolver-${{ env.VERSION }}-win10-arm64.zip
     - name: Publish linux-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r linux-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-linux-x64
+    - name: Delete pdbs
+      run: rm ./publish-linux-x64/*.pdb
     - name: tar linux-x64
       run: |
         shopt -s dotglob
@@ -57,6 +63,8 @@ jobs:
         cd ..
     - name: Publish osx-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-x64
+    - name: Delete pdbs
+      run: rm ./publish-osx-x64/*.pdb
     - name: tar osx-x64
       run: |
         shopt -s dotglob
@@ -66,6 +74,20 @@ jobs:
         cp -r ./OSX/* ./package-osx-x64
         cd package-osx-x64
         tar -cpzf ../SudokuSolver-${{ env.VERSION }}-osx-x64.tar.gz *
+        cd ..
+    - name: Publish osx-arm64
+      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx.11.0-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-arm64
+    - name: Delete pdbs
+      run: rm ./publish-osx-arm64/*.pdb
+    - name: tar osx-arm
+      run: |
+        shopt -s dotglob
+        mkdir package-osx-arm64
+        cp -r ./publish-osx-arm64/* ./package-osx-arm64
+        cp -r ./UserScripts/* ./package-osx-arm64
+        cp -r ./OSX/* ./package-osx-arm64
+        cd package-osx-arm64
+        tar -cpzf ../SudokuSolver-${{ env.VERSION }}-osx-arm64.tar.gz *
         cd ..
     - uses: actions/upload-artifact@v2
       with:

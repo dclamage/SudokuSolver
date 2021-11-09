@@ -1,98 +1,116 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text;
-using System.Text.Json.Serialization;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
+﻿using System.Text.Json.Serialization;
 
-namespace SudokuSolver.PuzzleFormats
+namespace SudokuSolver.PuzzleFormats;
+
+static class FPuzzlesUtility
 {
-    static class FPuzzlesUtility
+    private static readonly Regex parseCellRegex = new(@"R(\d+)C(\d+)");
+    public static (int, int) ParseCell(string cell)
     {
-        private static Regex parseCellRegex = new(@"R(\d+)C(\d+)");
-        public static (int, int) ParseCell(string cell)
+        var match = parseCellRegex.Match(cell);
+        if (!match.Success)
         {
-            var match = parseCellRegex.Match(cell);
-            if (!match.Success)
-            {
-                throw new Exception($"Cannot parse cell {cell}");
-            }
-            return (int.Parse(match.Groups[1].Value) - 1, int.Parse(match.Groups[2].Value) - 1);
+            throw new Exception($"Cannot parse cell {cell}");
         }
+        return (int.Parse(match.Groups[1].Value) - 1, int.Parse(match.Groups[2].Value) - 1);
     }
-
-    public record FPuzzlesBoard(
-        int size,
-        string title,
-        string author,
-        string ruleset,
-        FPuzzlesGridEntry[][] grid,
-        [property: JsonPropertyName("diagonal+")] bool diagonalp,
-        [property: JsonPropertyName("diagonal-")] bool diagonaln,
-        bool antiknight,
-        bool antiking,
-        bool disjointgroups,
-        bool nonconsecutive,
-        string[] negative,
-        FPuzzlesArrowEntry[] arrow,
-        FPuzzlesKillerCageEntry[] killercage,
-        FPuzzlesLittleKillerSumEntry[] littlekillersum,
-        FPuzzlesCell[] odd,
-        FPuzzlesCell[] even,
-        FPuzzlesCell[] minimum,
-        FPuzzlesCell[] maximum,
-        FPuzzlesCells[] rowindexer,
-        FPuzzlesCells[] columnindexer,
-        FPuzzlesCells[] boxindexer,
-        FPuzzlesCells[] extraregion,
-        FPuzzlesLines[] thermometer,
-        FPuzzlesLines[] palindrome,
-        FPuzzlesLines[] renban,
-        FPuzzlesLines[] whispers,
-        FPuzzlesLines[] regionsumline,
-        FPuzzlesCells[] difference,
-        FPuzzlesCells[] xv,
-        FPuzzlesCells[] ratio,
-        FPuzzlesClone[] clone,
-        FPuzzlesQuadruple[] quadruple,
-        FPuzzlesLines[] betweenline,
-        FPuzzlesCell[] sandwichsum,
-        string[] disabledlogic = null,
-        string[] truecandidatesoptions = null
-    );
-
-    public record FPuzzlesGridEntry(
-        int value,
-        bool given,
-        int[] centerPencilMarks,
-        int[] givenPencilMarks,
-        int region = -1);
-
-    public record FPuzzlesArrowEntry(
-        string[][] lines,
-        string[] cells
-    );
-
-    public record FPuzzlesKillerCageEntry(
-        string[] cells,
-        string value
-    );
-
-    public record FPuzzlesLittleKillerSumEntry(
-        string cell,
-        string direction,
-        string value
-    );
-
-    public record FPuzzlesCell(string cell, string value);
-
-    public record FPuzzlesCells(string[] cells, string value = "");
-
-    public record FPuzzlesLines(string[][] lines);
-
-    public record FPuzzlesClone(string[] cells, string[] cloneCells);
-
-    public record FPuzzlesQuadruple(string[] cells, int[] values);
 }
+
+public class FPuzzlesBoard
+{
+    public int size { get; set; }
+    public string title { get; set; }
+    public string author { get; set; }
+    public string ruleset { get; set; }
+    public FPuzzlesGridEntry[][] grid { get; set; }
+    [property: JsonPropertyName("diagonal+")] public bool diagonalp { get; set; }
+    [property: JsonPropertyName("diagonal-")] public bool diagonaln { get; set; }
+    public bool antiknight { get; set; }
+    public bool antiking { get; set; }
+    public bool disjointgroups { get; set; }
+    public bool nonconsecutive { get; set; }
+    public string[] negative { get; set; }
+    public FPuzzlesArrowEntry[] arrow { get; set; }
+    public FPuzzlesKillerCageEntry[] killercage { get; set; }
+    public FPuzzlesLittleKillerSumEntry[] littlekillersum { get; set; }
+    public FPuzzlesCell[] odd { get; set; }
+    public FPuzzlesCell[] even { get; set; }
+    public FPuzzlesCell[] minimum { get; set; }
+    public FPuzzlesCell[] maximum { get; set; }
+    public FPuzzlesCells[] rowindexer { get; set; }
+    public FPuzzlesCells[] columnindexer { get; set; }
+    public FPuzzlesCells[] boxindexer { get; set; }
+    public FPuzzlesCells[] extraregion { get; set; }
+    public FPuzzlesLines[] thermometer { get; set; }
+    public FPuzzlesLines[] palindrome { get; set; }
+    public FPuzzlesLines[] renban { get; set; }
+    public FPuzzlesLines[] whispers { get; set; }
+    public FPuzzlesLines[] regionsumline { get; set; }
+    public FPuzzlesCells[] difference { get; set; }
+    public FPuzzlesCells[] xv { get; set; }
+    public FPuzzlesCells[] ratio { get; set; }
+    public FPuzzlesClone[] clone { get; set; }
+    public FPuzzlesQuadruple[] quadruple { get; set; }
+    public FPuzzlesLines[] betweenline { get; set; }
+    public FPuzzlesCell[] sandwichsum { get; set; }
+    public string[] disabledlogic { get; set; } = null;
+    public string[] truecandidatesoptions { get; set; } = null;
+};
+
+public class FPuzzlesGridEntry
+{
+    public int value { get; set; }
+    public bool given { get; set; }
+    public int[] centerPencilMarks { get; set; }
+    public int[] givenPencilMarks { get; set; }
+    public int region { get; set; } = -1;
+}
+
+public class FPuzzlesArrowEntry
+{
+    public string[][] lines { get; set; }
+    public string[] cells { get; set; }
+}
+
+public record FPuzzlesKillerCageEntry
+{
+    public string[] cells { get; set; }
+    public string value { get; set; }
+}
+
+public record FPuzzlesLittleKillerSumEntry
+{
+    public string cell { get; set; }
+    public string direction { get; set; }
+    public string value { get; set; }
+}
+
+public record FPuzzlesCell
+{
+    public string cell { get; set; }
+    public string value { get; set; }
+}
+
+public record FPuzzlesCells
+{
+    public string[] cells { get; set; }
+    public string value { get; set; } = "";
+}
+
+public record FPuzzlesLines
+{
+    public string[][] lines { get; set; }
+}
+
+public record FPuzzlesClone
+{
+    public string[] cells { get; set; }
+    public string[] cloneCells { get; set; }
+}
+
+public record FPuzzlesQuadruple
+{
+    public string[] cells { get; set; }
+    public int[] values { get; set; }
+}
+

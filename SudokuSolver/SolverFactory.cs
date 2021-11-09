@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using LZStringCSharp;
 using SudokuSolver.Constraints;
@@ -12,6 +13,11 @@ using static SudokuSolver.SolverUtility;
 
 namespace SudokuSolver
 {
+    [JsonSerializable(typeof(FPuzzlesBoard))]
+    internal partial class FpuzzlesJsonContext : JsonSerializerContext
+    {
+    }
+
     public static class SolverFactory
     {
         public static Solver CreateBlank(int size, IEnumerable<string> constraints = null)
@@ -90,7 +96,7 @@ namespace SudokuSolver
                     {
                         throw new ArgumentException($"ERROR: Could not parse a number in a candidates string: {maybeNumber}");
                     }
-                    
+
                 }
 
                 sectionStartIndex += sectionLength;
@@ -216,7 +222,7 @@ namespace SudokuSolver
             {
                 givens = givens.Substring(0, potIntendedLength);
             }
-            
+
             return givens;
         }
         public static Solver CreateFromFPuzzles(string fpuzzlesURL, IEnumerable<string> additionalConstraints = null, bool onlyGivens = false)
@@ -231,7 +237,7 @@ namespace SudokuSolver
             }
 
             string fpuzzlesJson = LZString.DecompressFromBase64(fpuzzlesURL);
-            var fpuzzlesData = JsonSerializer.Deserialize<FPuzzlesBoard>(fpuzzlesJson);
+            var fpuzzlesData = JsonSerializer.Deserialize(fpuzzlesJson, FpuzzlesJsonContext.Default.FPuzzlesBoard);
 
             // Set the default regions
             int i, j;
@@ -963,13 +969,14 @@ namespace SudokuSolver
                         }
                     }
                     int region = solver.Regions[i, j];
-                    grid[i][j] = new FPuzzlesGridEntry(
-                        value: value,
-                        given: given,
-                        centerPencilMarks: centerPencilMarks,
-                        givenPencilMarks: null,
-                        region: region
-                    );
+                    grid[i][j] = new FPuzzlesGridEntry()
+                    {
+                        value = value,
+                        given = given,
+                        centerPencilMarks = centerPencilMarks,
+                        givenPencilMarks = null,
+                        region = region
+                    };
                 }
             }
 
@@ -1004,7 +1011,7 @@ namespace SudokuSolver
                 string[][] lines = new string[1][];
                 lines[0] = new string[] { startCell }.Concat(c.arrowCells.Select(CN)).ToArray();
                 string[] cells = c.circleCells.Select(CN).ToArray();
-                arrow.Add(new(lines, cells));
+                arrow.Add(new() { lines = lines, cells = cells });
             }
 
             List<FPuzzlesKillerCageEntry> killercage = new();
@@ -1012,7 +1019,7 @@ namespace SudokuSolver
             {
                 string value = c.sum != 0 ? c.sum.ToString() : null;
                 string[] cells = c.cells.Select(CN).ToArray();
-                killercage.Add(new(cells, value));
+                killercage.Add(new() { cells = cells, value = value });
             }
 
             List<FPuzzlesLittleKillerSumEntry> littlekillersum = new();
@@ -1036,94 +1043,94 @@ namespace SudokuSolver
                         direction = "DL";
                         break;
                 }
-                littlekillersum.Add(new(cell, direction, value));
+                littlekillersum.Add(new() { cell = cell, direction = direction, value = value });
             }
 
             List<FPuzzlesCell> odd = new();
             foreach (var cell in solver.Constraints<OddConstraint>().SelectMany(c => c.cells))
             {
-                odd.Add(new(CN(cell), null));
+                odd.Add(new() { cell = CN(cell) });
             }
 
             List<FPuzzlesCell> even = new();
             foreach (var cell in solver.Constraints<EvenConstraint>().SelectMany(c => c.cells))
             {
-                even.Add(new(CN(cell), null));
+                even.Add(new() { cell = CN(cell) });
             }
 
             List<FPuzzlesCell> minimum = new();
             foreach (var cell in solver.Constraints<MinimumConstraint>().SelectMany(c => c.cells))
             {
-                minimum.Add(new(CN(cell), null));
+                minimum.Add(new() { cell = CN(cell) });
             }
 
             List<FPuzzlesCell> maximum = new();
             foreach (var cell in solver.Constraints<MaximumConstraint>().SelectMany(c => c.cells))
             {
-                maximum.Add(new(CN(cell), null));
+                maximum.Add(new() { cell = CN(cell) });
             }
 
             List<FPuzzlesCells> rowindexer = new();
             foreach (var c in solver.Constraints<RowIndexerConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                rowindexer.Add(new(cells, null));
+                rowindexer.Add(new() { cells = cells });
             }
 
             List<FPuzzlesCells> columnindexer = new();
             foreach (var c in solver.Constraints<ColIndexerConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                columnindexer.Add(new(cells, null));
+                columnindexer.Add(new() { cells = cells });
             }
 
             List<FPuzzlesCells> boxindexer = new();
             foreach (var c in solver.Constraints<BoxIndexerConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                boxindexer.Add(new(cells, null));
+                boxindexer.Add(new() { cells = cells });
             }
 
             List<FPuzzlesCells> extraregion = new();
             foreach (var c in solver.Constraints<ExtraRegionConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                extraregion.Add(new(cells, null));
+                extraregion.Add(new() { cells = cells });
             }
 
             List<FPuzzlesLines> thermometer = new();
             foreach (var c in solver.Constraints<ThermometerConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                thermometer.Add(new(new string[][] { cells }));
+                thermometer.Add(new() { lines = new string[][] { cells } });
             }
 
             List<FPuzzlesLines> palindrome = new();
             foreach (var c in solver.Constraints<PalindromeConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                palindrome.Add(new(new string[][] { cells }));
+                palindrome.Add(new() { lines = new string[][] { cells } });
             }
 
             List<FPuzzlesLines> renban = new();
             foreach (var c in solver.Constraints<RenbanConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                renban.Add(new(new string[][] { cells }));
+                renban.Add(new() { lines = new string[][] { cells } });
             }
 
             List<FPuzzlesLines> whispers = new();
             foreach (var c in solver.Constraints<WhispersConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                whispers.Add(new(new string[][] { cells }));
+                whispers.Add(new() { lines = new string[][] { cells } });
             }
 
             List<FPuzzlesLines> regionSumLines = new();
             foreach (var c in solver.Constraints<RegionSumLinesConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                regionSumLines.Add(new(new string[][] { cells }));
+                regionSumLines.Add(new() { lines = new string[][] { cells } });
             }
 
             List<FPuzzlesCells> difference = new();
@@ -1132,7 +1139,7 @@ namespace SudokuSolver
                 var cell1 = (marker.Key.Item1, marker.Key.Item2);
                 var cell2 = (marker.Key.Item3, marker.Key.Item4);
                 string value = marker.Value != 1 ? marker.Value.ToString() : null;
-                difference.Add(new(new string[] { CN(cell1), CN(cell2) }, value));
+                difference.Add(new() { cells = new string[] { CN(cell1), CN(cell2) }, value = value });
             }
 
             List<FPuzzlesCells> xv = new();
@@ -1149,7 +1156,7 @@ namespace SudokuSolver
                 {
                     value = "V";
                 }
-                xv.Add(new(new string[] { CN(cell1), CN(cell2) }, value));
+                xv.Add(new() { cells = new string[] { CN(cell1), CN(cell2) }, value = value });
             }
 
             List<FPuzzlesCells> ratio = new();
@@ -1158,7 +1165,7 @@ namespace SudokuSolver
                 var cell1 = (marker.Key.Item1, marker.Key.Item2);
                 var cell2 = (marker.Key.Item3, marker.Key.Item4);
                 string value = marker.Value != 2 ? marker.Value.ToString() : null;
-                ratio.Add(new(new string[] { CN(cell1), CN(cell2) }, value));
+                ratio.Add(new() { cells = new string[] { CN(cell1), CN(cell2) }, value = value });
             }
 
             List<FPuzzlesClone> clone = new();
@@ -1166,7 +1173,7 @@ namespace SudokuSolver
             {
                 string[] cells = c.cellPairs.Select(pair => CN(pair.Item1)).ToArray();
                 string[] cloneCells = c.cellPairs.Select(pair => CN(pair.Item2)).ToArray();
-                clone.Add(new(cells, cloneCells));
+                clone.Add(new() { cells = cells, cloneCells = cloneCells });
             }
 
             List<FPuzzlesQuadruple> quadruple = new();
@@ -1182,7 +1189,7 @@ namespace SudokuSolver
                         values[valueIndex++] = v;
                     }
                 }
-                quadruple.Add(new(cells, values));
+                quadruple.Add(new() { cells = cells, values = values });
             }
 
             List<FPuzzlesLines> betweenline = new();
@@ -1197,54 +1204,55 @@ namespace SudokuSolver
                     lines[0][cellIndex++] = cell;
                 }
                 lines[0][cellIndex++] = CN(c.outerCell1);
-                betweenline.Add(new(lines));
+                betweenline.Add(new() { lines = lines });
             }
 
             List<FPuzzlesCell> sandwichsum = new();
             foreach (var c in solver.Constraints<SandwichConstraint>())
             {
-                sandwichsum.Add(new(CN(c.cellStart), c.sum.ToString()));
+                sandwichsum.Add(new() { cell = CN(c.cellStart), value = c.sum.ToString() });
             }
 
-            FPuzzlesBoard fp = new(
-                size: solver.WIDTH,
-                title: solver.Title,
-                author: solver.Author,
-                ruleset: solver.Rules,
-                grid: grid,
-                diagonalp: solver.Constraints<DiagonalPositiveGroupConstraint>().Any(),
-                diagonaln: solver.Constraints<DiagonalNegativeGroupConstraint>().Any(),
-                antiknight: solver.Constraints<KnightConstraint>().Any(),
-                antiking: solver.Constraints<KingConstraint>().Any(),
-                disjointgroups: solver.Constraints<DisjointGroupConstraint>().Count() == solver.MAX_VALUE,
-                nonconsecutive: solver.Constraints<DifferenceConstraint>().Any(c => c.negativeConstraint && c.negativeConstraintValues.Contains(1)),
-                negative: negative.ToArray(),
-                arrow: arrow.ToArray(),
-                killercage: killercage.ToArray(),
-                littlekillersum: littlekillersum.ToArray(),
-                odd: odd.ToArray(),
-                even: even.ToArray(),
-                minimum: minimum.ToArray(),
-                maximum: maximum.ToArray(),
-                rowindexer: rowindexer.ToArray(),
-                columnindexer: columnindexer.ToArray(),
-                boxindexer: boxindexer.ToArray(),
-                extraregion: extraregion.ToArray(),
-                thermometer: thermometer.ToArray(),
-                palindrome: palindrome.ToArray(),
-                renban: renban.ToArray(),
-                whispers: whispers.ToArray(),
-                regionsumline: regionSumLines.ToArray(),
-                difference: difference.ToArray(),
-                xv: xv.ToArray(),
-                ratio: ratio.ToArray(),
-                clone: clone.ToArray(),
-                quadruple: quadruple.ToArray(),
-                betweenline: betweenline.ToArray(),
-                sandwichsum: sandwichsum.ToArray()
-            );
+            FPuzzlesBoard fp = new()
+            {
+                size = solver.WIDTH,
+                title = solver.Title,
+                author = solver.Author,
+                ruleset = solver.Rules,
+                grid = grid,
+                diagonalp = solver.Constraints<DiagonalPositiveGroupConstraint>().Any(),
+                diagonaln = solver.Constraints<DiagonalNegativeGroupConstraint>().Any(),
+                antiknight = solver.Constraints<KnightConstraint>().Any(),
+                antiking = solver.Constraints<KingConstraint>().Any(),
+                disjointgroups = solver.Constraints<DisjointGroupConstraint>().Count() == solver.MAX_VALUE,
+                nonconsecutive = solver.Constraints<DifferenceConstraint>().Any(c => c.negativeConstraint && c.negativeConstraintValues.Contains(1)),
+                negative = negative.ToArray(),
+                arrow = arrow.ToArray(),
+                killercage = killercage.ToArray(),
+                littlekillersum = littlekillersum.ToArray(),
+                odd = odd.ToArray(),
+                even = even.ToArray(),
+                minimum = minimum.ToArray(),
+                maximum = maximum.ToArray(),
+                rowindexer = rowindexer.ToArray(),
+                columnindexer = columnindexer.ToArray(),
+                boxindexer = boxindexer.ToArray(),
+                extraregion = extraregion.ToArray(),
+                thermometer = thermometer.ToArray(),
+                palindrome = palindrome.ToArray(),
+                renban = renban.ToArray(),
+                whispers = whispers.ToArray(),
+                regionsumline = regionSumLines.ToArray(),
+                difference = difference.ToArray(),
+                xv = xv.ToArray(),
+                ratio = ratio.ToArray(),
+                clone = clone.ToArray(),
+                quadruple = quadruple.ToArray(),
+                betweenline = betweenline.ToArray(),
+                sandwichsum = sandwichsum.ToArray()
+            };
 
-            string fpuzzlesJson = JsonSerializer.Serialize(fp);
+            string fpuzzlesJson = JsonSerializer.Serialize(fp, FpuzzlesJsonContext.Default.FPuzzlesBoard);
             string fpuzzlesBase64 = LZString.CompressToBase64(fpuzzlesJson);
             return justBase64 ? fpuzzlesBase64 : $"https://www.f-puzzles.com/?load={fpuzzlesBase64}";
         }

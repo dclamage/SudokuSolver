@@ -1,192 +1,203 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Channels;
-using static SudokuSolver.SolverUtility;
+﻿namespace SudokuSolver.Constraints;
 
-namespace SudokuSolver.Constraints
+[Constraint(DisplayName = "Minimum", ConsoleName = "min")]
+public class MinimumConstraint : Constraint
 {
-    [Constraint(DisplayName = "Minimum", ConsoleName = "min")]
-    public class MinimumConstraint : Constraint
+    public readonly List<(int, int)> cells;
+    private readonly HashSet<(int, int)> cellsLookup;
+    private readonly Dictionary<(int, int), List<(int, int)>> adjCellLookup = new();
+    private readonly Dictionary<(int, int), int> minUniqueValuesLookup = new();
+
+    public MinimumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
     {
-        public readonly List<(int, int)> cells;
-        private readonly HashSet<(int, int)> cellsLookup;
-        private readonly Dictionary<(int, int), List<(int, int)>> adjCellLookup = new();
-        private readonly Dictionary<(int, int), int> minUniqueValuesLookup = new();
-
-        public MinimumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+        var cellGroups = ParseCells(options);
+        if (cellGroups.Count != 1)
         {
-            var cellGroups = ParseCells(options);
-            if (cellGroups.Count != 1)
-            {
-                throw new ArgumentException($"Minimum constraint expects 1 cell group, got {cellGroups.Count}.");
-            }
+            throw new ArgumentException($"Minimum constraint expects 1 cell group, got {cellGroups.Count}.");
+        }
 
-            cells = cellGroups[0];
-            cellsLookup = new(cells);
+        cells = cellGroups[0];
+        cellsLookup = new(cells);
 
-            foreach (var cell0 in cells)
+        foreach (var cell0 in cells)
+        {
+            foreach (var cell1 in AdjacentCells(cell0.Item1, cell0.Item2))
             {
-                foreach (var cell1 in AdjacentCells(cell0.Item1, cell0.Item2))
+                if (!cellsLookup.Contains(cell1))
                 {
-                    if (!cellsLookup.Contains(cell1))
-                    {
-                        adjCellLookup.AddToList(cell1, cell0);
-                    }
+                    adjCellLookup.AddToList(cell1, cell0);
                 }
             }
         }
+    }
 
-        public override LogicResult InitCandidates(Solver sudokuSolver)
+    public override LogicResult InitCandidates(Solver sudokuSolver)
+    {
+        if (cells == null || cells.Count == 0)
         {
-            if (cells == null || cells.Count == 0)
+            return LogicResult.None;
+        }
+
+        bool changed = false;
+        foreach (var (i0, j0) in cells)
+        {
+            minUniqueValuesLookup[(i0, j0)] = sudokuSolver.MinimumUniqueValues(ValidAdjacentCells(i0, j0));
+
+            var logicResult = DoLogic(sudokuSolver, i0, j0, null);
+            if (logicResult == LogicResult.Invalid)
             {
-                return LogicResult.None;
+                return LogicResult.Invalid;
             }
+            changed |= logicResult == LogicResult.Changed;
+        }
+        return changed ? LogicResult.Changed : LogicResult.None;
+    }
 
-            bool changed = false;
-            foreach (var (i0, j0) in cells)
+    public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
+    {
+        if (cells == null || cells.Count == 0)
+        {
+            return true;
+        }
+
+        var cell0 = (i, j);
+        if (cellsLookup.Contains(cell0))
+        {
+            uint clearMask = (1u << val) - 1;
+            foreach (var cell1 in ValidAdjacentCells(i, j))
             {
-                minUniqueValuesLookup[(i0, j0)] = sudokuSolver.MinimumUniqueValues(ValidAdjacentCells(i0, j0));
-
-                var logicResult = DoLogic(sudokuSolver, i0, j0, null);
+                var logicResult = sudokuSolver.ClearMask(cell1.Item1, cell1.Item2, clearMask);
                 if (logicResult == LogicResult.Invalid)
                 {
-                    return LogicResult.Invalid;
+                    return false;
                 }
-                changed |= logicResult == LogicResult.Changed;
             }
-            return changed ? LogicResult.Changed : LogicResult.None;
         }
-
-        public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
+        else if (adjCellLookup.TryGetValue(cell0, out var cellList))
         {
-            if (cells == null || cells.Count == 0)
+            uint clearMask = ALL_VALUES_MASK & ~((1u << val) - 1);
+            if (clearMask != 0)
             {
-                return true;
-            }
-
-            var cell0 = (i, j);
-            if (cellsLookup.Contains(cell0))
-            {
-                uint clearMask = (1u << val) - 1;
-                foreach (var cell1 in ValidAdjacentCells(i, j))
+                foreach (var minCell in cellList)
                 {
-                    var logicResult = sudokuSolver.ClearMask(cell1.Item1, cell1.Item2, clearMask);
+                    var logicResult = sudokuSolver.ClearMask(minCell.Item1, minCell.Item2, clearMask);
                     if (logicResult == LogicResult.Invalid)
                     {
                         return false;
                     }
                 }
             }
-            else if (adjCellLookup.TryGetValue(cell0, out var cellList))
+        }
+
+        return true;
+    }
+
+    public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
+    {
+        if (cells == null || cells.Count == 0)
+        {
+            return LogicResult.None;
+        }
+
+        bool changed = false;
+        foreach (var (i0, j0) in cells)
+        {
+            var logicResult = DoLogic(sudokuSolver, i0, j0, logicalStepDescription);
+            if (logicResult == LogicResult.Invalid)
             {
-                uint clearMask = ALL_VALUES_MASK & ~((1u << val) - 1);
-                if (clearMask != 0)
+                return LogicResult.Invalid;
+            }
+            changed |= logicResult == LogicResult.Changed;
+        }
+        return changed ? LogicResult.Changed : LogicResult.None;
+    }
+
+    private LogicResult DoLogic(Solver sudokuSolver, int i0, int j0, StringBuilder logicalStepDescription)
+    {
+        var board = sudokuSolver.Board;
+        uint cellMask0 = board[i0, j0] & ~valueSetMask;
+        bool changed = false;
+
+        // Clear adjacent cells of the minimum value in this cell and lower
+        {
+            int minValue = MinValue(cellMask0);
+            uint clearMask = (1u << minValue) - 1;
+            foreach (var (i1, j1) in ValidAdjacentCells(i0, j0))
+            {
+                var logicResult = sudokuSolver.ClearMask(i1, j1, clearMask);
+                if (logicResult == LogicResult.Invalid)
                 {
-                    foreach (var minCell in cellList)
+                    if (logicalStepDescription != null)
                     {
-                        var logicResult = sudokuSolver.ClearMask(minCell.Item1, minCell.Item2, clearMask);
-                        if (logicResult == LogicResult.Invalid)
+                        logicalStepDescription.Clear();
+                        logicalStepDescription.Append($"{CellName(i0, j0)} has minimum value {minValue}, causing {CellName(i1, j1)} to have no valid candidates.");
+                    }
+                    return LogicResult.Invalid;
+                }
+
+                if (logicResult == LogicResult.Changed)
+                {
+                    if (logicalStepDescription != null)
+                    {
+                        if (!changed)
                         {
-                            return false;
+                            logicalStepDescription.Append($"{CellName(i0, j0)} has minimum value {minValue}, removing {MaskToString(clearMask)} from {CellName(i1, j1)}");
+                        }
+                        else
+                        {
+                            logicalStepDescription.Append($", {CellName(i1, j1)}");
                         }
                     }
+                    changed = true;
                 }
             }
 
-            return true;
+            if (changed && logicalStepDescription != null)
+            {
+                return LogicResult.Changed;
+            }
         }
 
-        public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
+        // Clear this cell based on the candidates available in the adjacent cells
         {
-            if (cells == null || cells.Count == 0)
+            uint adjCellsMask = AdjacentCellsMask(sudokuSolver, i0, j0);
+            if (adjCellsMask == 0)
             {
                 return LogicResult.None;
             }
 
-            bool changed = false;
-            foreach (var (i0, j0) in cells)
+            int minUniqueValues = minUniqueValuesLookup[(i0, j0)];
+
+            int numRemoved = 0;
+            for (int v = MAX_VALUE; numRemoved < minUniqueValues && v >= 0; v--)
             {
-                var logicResult = DoLogic(sudokuSolver, i0, j0, logicalStepDescription);
-                if (logicResult == LogicResult.Invalid)
+                uint valMask = ValueMask(v);
+                if ((adjCellsMask & valMask) != 0)
                 {
-                    return LogicResult.Invalid;
-                }
-                changed |= logicResult == LogicResult.Changed;
-            }
-            return changed ? LogicResult.Changed : LogicResult.None;
-        }
-
-        private LogicResult DoLogic(Solver sudokuSolver, int i0, int j0, StringBuilder logicalStepDescription)
-        {
-            var board = sudokuSolver.Board;
-            uint cellMask0 = board[i0, j0] & ~valueSetMask;
-            bool changed = false;
-
-            // Clear adjacent cells of the minimum value in this cell and lower
-            {
-                int minValue = MinValue(cellMask0);
-                uint clearMask = (1u << minValue) - 1;
-                foreach (var (i1, j1) in ValidAdjacentCells(i0, j0))
-                {
-                    var logicResult = sudokuSolver.ClearMask(i1, j1, clearMask);
-                    if (logicResult == LogicResult.Invalid)
-                    {
-                        if (logicalStepDescription != null)
-                        {
-                            logicalStepDescription.Clear();
-                            logicalStepDescription.Append($"{CellName(i0, j0)} has minimum value {minValue}, causing {CellName(i1, j1)} to have no valid candidates.");
-                        }
-                        return LogicResult.Invalid;
-                    }
-
-                    if (logicResult == LogicResult.Changed)
-                    {
-                        if (logicalStepDescription != null)
-                        {
-                            if (!changed)
-                            {
-                                logicalStepDescription.Append($"{CellName(i0, j0)} has minimum value {minValue}, removing {MaskToString(clearMask)} from {CellName(i1, j1)}");
-                            }
-                            else
-                            {
-                                logicalStepDescription.Append($", {CellName(i1, j1)}");
-                            }
-                        }
-                        changed = true;
-                    }
-                }
-
-                if (changed && logicalStepDescription != null)
-                {
-                    return LogicResult.Changed;
+                    adjCellsMask &= ~valMask;
+                    numRemoved++;
                 }
             }
 
-            // Clear this cell based on the candidates available in the adjacent cells
+            if (adjCellsMask == 0)
             {
-                uint adjCellsMask = AdjacentCellsMask(sudokuSolver, i0, j0);
-                if (adjCellsMask == 0)
+                if (logicalStepDescription != null)
                 {
-                    return LogicResult.None;
+                    logicalStepDescription.Clear();
+                    logicalStepDescription.Append($"{CellName(i0, j0)} has no valid candidates to fulfill minimum.");
                 }
+                return LogicResult.Invalid;
+            }
 
-                int minUniqueValues = minUniqueValuesLookup[(i0, j0)];
+            int maxAdjVal = MaxValue(adjCellsMask) + 1;
 
-                int numRemoved = 0;
-                for (int v = MAX_VALUE; numRemoved < minUniqueValues && v >= 0; v--)
-                {
-                    uint valMask = ValueMask(v);
-                    if ((adjCellsMask & valMask) != 0)
-                    {
-                        adjCellsMask &= ~valMask;
-                        numRemoved++;
-                    }
-                }
+            uint clearMask = ALL_VALUES_MASK & ~((1u << (maxAdjVal - 1)) - 1);
+            clearMask &= cellMask0;
 
-                if (adjCellsMask == 0)
+            if (clearMask != 0)
+            {
+                var clearResult = sudokuSolver.ClearMask(i0, j0, clearMask);
+                if (clearResult == LogicResult.Invalid)
                 {
                     if (logicalStepDescription != null)
                     {
@@ -196,81 +207,63 @@ namespace SudokuSolver.Constraints
                     return LogicResult.Invalid;
                 }
 
-                int maxAdjVal = MaxValue(adjCellsMask) + 1;
-
-                uint clearMask = ALL_VALUES_MASK & ~((1u << (maxAdjVal - 1)) - 1);
-                clearMask &= cellMask0;
-
-                if (clearMask != 0)
+                if (clearResult == LogicResult.Changed)
                 {
-                    var clearResult = sudokuSolver.ClearMask(i0, j0, clearMask);
-                    if (clearResult == LogicResult.Invalid)
+                    if (logicalStepDescription != null)
                     {
-                        if (logicalStepDescription != null)
-                        {
-                            logicalStepDescription.Clear();
-                            logicalStepDescription.Append($"{CellName(i0, j0)} has no valid candidates to fulfill minimum.");
-                        }
-                        return LogicResult.Invalid;
+                        logicalStepDescription.Append($"Adjacent values to {CellName(i0, j0)} cannot be higher than {maxAdjVal}, removing {MaskToString(clearMask)}");
+                        return LogicResult.Changed;
                     }
-
-                    if (clearResult == LogicResult.Changed)
-                    {
-                        if (logicalStepDescription != null)
-                        {
-                            logicalStepDescription.Append($"Adjacent values to {CellName(i0, j0)} cannot be higher than {maxAdjVal}, removing {MaskToString(clearMask)}");
-                            return LogicResult.Changed;
-                        }
-                        changed = true;
-                    }
-                }
-            }
-
-            return changed ? LogicResult.Changed : LogicResult.None;
-        }
-
-        private uint AdjacentCellsMask(Solver sudokuSolver, int i, int j)
-        {
-            var board = sudokuSolver.Board;
-            uint adjValuesMask = board[i, j];
-            foreach (var (i1, j1) in ValidAdjacentCells(i, j))
-            {
-                adjValuesMask |= board[i1, j1];
-            }
-            return adjValuesMask & ~valueSetMask;
-        }
-
-        private IEnumerable<(int, int)> ValidAdjacentCells(int i, int j)
-        {
-            foreach (var (i1, j1) in AdjacentCells(i, j))
-            {
-                if (!cellsLookup.Contains((i1, j1)))
-                {
-                    yield return (i1, j1);
+                    changed = true;
                 }
             }
         }
 
-        public override void InitLinks(Solver sudokuSolver)
-        {
-            foreach (var minCell in cells)
-            {
-                int minCellIndex = FlatIndex(minCell);
-                for (int v0 = 1; v0 <= MAX_VALUE; v0++)
-                {
-                    int minCellCandIndex = minCellIndex * MAX_VALUE + v0 - 1;
+        return changed ? LogicResult.Changed : LogicResult.None;
+    }
 
-                    foreach (var maxCell in ValidAdjacentCells(minCell.Item1, minCell.Item2))
+    private uint AdjacentCellsMask(Solver sudokuSolver, int i, int j)
+    {
+        var board = sudokuSolver.Board;
+        uint adjValuesMask = board[i, j];
+        foreach (var (i1, j1) in ValidAdjacentCells(i, j))
+        {
+            adjValuesMask |= board[i1, j1];
+        }
+        return adjValuesMask & ~valueSetMask;
+    }
+
+    private IEnumerable<(int, int)> ValidAdjacentCells(int i, int j)
+    {
+        foreach (var (i1, j1) in AdjacentCells(i, j))
+        {
+            if (!cellsLookup.Contains((i1, j1)))
+            {
+                yield return (i1, j1);
+            }
+        }
+    }
+
+    public override void InitLinks(Solver sudokuSolver)
+    {
+        foreach (var minCell in cells)
+        {
+            int minCellIndex = FlatIndex(minCell);
+            for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+            {
+                int minCellCandIndex = minCellIndex * MAX_VALUE + v0 - 1;
+
+                foreach (var maxCell in ValidAdjacentCells(minCell.Item1, minCell.Item2))
+                {
+                    int maxCellIndex = FlatIndex(maxCell);
+                    for (int v1 = 1; v1 <= v0; v1++)
                     {
-                        int maxCellIndex = FlatIndex(maxCell);
-                        for (int v1 = 1; v1 <= v0; v1++)
-                        {
-                            int maxCellCandIndex = maxCellIndex * MAX_VALUE + v1 - 1;
-                            sudokuSolver.AddWeakLink(maxCellCandIndex, minCellCandIndex);
-                        }
+                        int maxCellCandIndex = maxCellIndex * MAX_VALUE + v1 - 1;
+                        sudokuSolver.AddWeakLink(maxCellCandIndex, minCellCandIndex);
                     }
                 }
             }
         }
     }
 }
+
