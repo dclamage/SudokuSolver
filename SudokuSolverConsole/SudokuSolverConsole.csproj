@@ -1,14 +1,17 @@
-<Project Sdk="Microsoft.NET.Sdk">
+﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net5.0</TargetFramework>
-    <RuntimeIdentifiers>win-x64;win10-arm64;linux-x64;osx-x64</RuntimeIdentifiers>
+    <TargetFramework>net6.0</TargetFramework>
+    <RuntimeIdentifiers>win-x64;win10-arm64;linux-x64;osx-x64;osx.11.0-arm64</RuntimeIdentifiers>
+	<ImplicitUsings>enable</ImplicitUsings>
+	<Nullable>disable</Nullable>
+    <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Mono.Options" Version="6.6.0.161" />
-    <PackageReference Include="WatsonWebsocket" Version="2.3.0" />
+    <PackageReference Include="McMaster.Extensions.CommandLineUtils" Version="3.1.0" />
+    <PackageReference Include="WatsonWebsocket" Version="2.3.2" />
   </ItemGroup>
 
   <ItemGroup>

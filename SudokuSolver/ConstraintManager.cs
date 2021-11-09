@@ -1,139 +1,118 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Reflection;
-using System.IO;
-using SudokuSolver.Constraints;
+﻿namespace SudokuSolver;
 
-namespace SudokuSolver
+public static class ConstraintManager
 {
-    public static class ConstraintManager
+    static ConstraintManager()
     {
-        static ConstraintManager()
+        foreach (Type type in constraintTypeConstructors.Keys.Concat(constraintGroupTypeConstructors.Keys))
         {
-            foreach (Type type in GetAllConstraints())
+            var constraintAttribute = GetConstraintAttribute(type);
+            if (constraintAttribute.ConsoleName != null && constraintConsoleNameLookup.TryGetValue(constraintAttribute.ConsoleName, out Type existingNameType))
             {
-                var constraintAttribute = GetConstraintAttribute(type);
-                if (constraintAttribute.ConsoleName != null && constraintConsoleNameLookup.TryGetValue(constraintAttribute.ConsoleName, out Type existingNameType))
+                Console.Error.WriteLine($"**WARNING** Duplicate constraint name of {constraintAttribute.ConsoleName} used by {existingNameType.FullName} and {type.FullName}.");
+            }
+            else
+            {
+                if (constraintAttribute.ConsoleName != null)
                 {
-                    Console.Error.WriteLine($"**WARNING** Duplicate constraint name of {constraintAttribute.ConsoleName} used by {existingNameType.FullName} and {type.FullName}.");
-                }
-                else
-                {
-                    if (constraintAttribute.ConsoleName != null)
-                    {
-                        constraintConsoleNameLookup[constraintAttribute.ConsoleName] = type;
-                    }
+                    constraintConsoleNameLookup[constraintAttribute.ConsoleName] = type;
                 }
             }
         }
-
-        public static void AddConstraintByName(this Solver solver, string name, string options)
-        {
-            if (!constraintConsoleNameLookup.TryGetValue(name, out Type type))
-            {
-                throw new ArgumentException($"**ERROR** Cannot find constraint named {name} so this constraint is ignored.");
-            }
-            AddConstraint(solver, type, options);
-        }
-
-        public static void AddConstraint(this Solver solver, Type type, string options)
-        {
-            try
-            {
-                switch (Activator.CreateInstance(type, solver, options))
-                {
-                    case Constraint constraint:
-                        solver.AddConstraint(constraint);
-                        break;
-                    case IConstraintGroup constraintGroup:
-                        constraintGroup.AddConstraints(solver);
-                        break;
-                }
-                List<string> constraintStrings;
-                if (solver.customInfo.TryGetValue("ConstraintStrings", out object constraintStringsObj))
-                {
-                    constraintStrings = (List<string>)constraintStringsObj;
-                }
-                else
-                {
-                    solver.customInfo["ConstraintStrings"] = constraintStrings = new();
-                }
-
-                if (string.IsNullOrWhiteSpace(options))
-                {
-                    constraintStrings.Add(type.Name);
-                }
-                else
-                {
-                    constraintStrings.Add($"{type.Name}:{options}");
-                }
-            }
-            catch (Exception e)
-            {
-                throw new ArgumentException($"**ERROR** Cannot instantiate constraint {type.Name}: {e.Message}");
-            }
-        }
-
-        public static IEnumerable<ConstraintAttribute> ConstraintAttributes => constraintConsoleNameLookup.Values.Select(GetConstraintAttribute);
-
-        private static IEnumerable<Type> GetAllConstraints()
-        {
-            List<Assembly> assemblies = AppDomain.CurrentDomain.GetAssemblies().ToList();
-
-            // Dynamically include the plugins assembly
-            try
-            {
-                foreach (string file in Directory.EnumerateFiles(@"./plugins", "*.dll", new EnumerationOptions() { MatchCasing = MatchCasing.CaseInsensitive, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.Hidden | FileAttributes.System | FileAttributes.Directory }))
-                {
-                    if (!file.EndsWith("SudokuSolver.dll"))
-                    {
-                        try
-                        {
-                            Assembly assembly = Assembly.LoadFrom(file);
-                            assemblies.Add(assembly);
-                        }
-                        catch (Exception e)
-                        {
-                            throw new ArgumentException($"**WARNING** Could not load plugin at {file}: {e.Message}");
-                        }
-                    }
-                }
-            }
-            catch (Exception) { }
-
-            return assemblies
-                .Where(assembly => !assembly.IsDynamic)
-                .SelectMany(assembly => assembly.GetExportedTypes())
-                .Where(IsValidConstraint);
-        }
-
-        private static bool IsValidConstraint(Type type)
-        {
-            if (type.IsInterface || type.IsAbstract)
-            {
-                return false;
-            }
-
-            if (!typeof(Constraint).IsAssignableFrom(type) && !typeof(IConstraintGroup).IsAssignableFrom(type))
-            {
-                return false;
-            }
-
-            if (GetConstraintAttribute(type) == null)
-            {
-                Console.Error.WriteLine($"**WARNING** Constraint with type {type.FullName} cannot be used because it is missing the Constraint attribute.");
-                return false;
-            }
-
-            return true;
-        }
-
-        private static ConstraintAttribute GetConstraintAttribute(Type type)
-        {
-            return Attribute.GetCustomAttribute(type, typeof(ConstraintAttribute)) as ConstraintAttribute;
-        }
-
-        private static readonly Dictionary<string, Type> constraintConsoleNameLookup = new();
     }
+
+    public static void AddConstraintByName(this Solver solver, string name, string options)
+    {
+        if (!constraintConsoleNameLookup.TryGetValue(name, out Type type))
+        {
+            throw new ArgumentException($"**ERROR** Cannot find constraint named {name} so this constraint is ignored.");
+        }
+        AddConstraint(solver, type, options);
+    }
+
+    public static void AddConstraint(this Solver solver, Type type, string options)
+    {
+        try
+        {
+            if (constraintTypeConstructors.TryGetValue(type, out var constraintConstructor))
+            {
+                solver.AddConstraint(constraintConstructor(solver, options));
+            }
+            else if (constraintGroupTypeConstructors.TryGetValue(type, out var constraintGroupConstructor))
+            {
+                constraintGroupConstructor(solver, options).AddConstraints(solver);
+            }
+
+            List<string> constraintStrings;
+            if (solver.customInfo.TryGetValue("ConstraintStrings", out object constraintStringsObj))
+            {
+                constraintStrings = (List<string>)constraintStringsObj;
+            }
+            else
+            {
+                solver.customInfo["ConstraintStrings"] = constraintStrings = new();
+            }
+
+            if (string.IsNullOrWhiteSpace(options))
+            {
+                constraintStrings.Add(type.Name);
+            }
+            else
+            {
+                constraintStrings.Add($"{type.Name}:{options}");
+            }
+        }
+        catch (Exception e)
+        {
+            throw new ArgumentException($"**ERROR** Cannot instantiate constraint {type.Name}: {e.Message}");
+        }
+    }
+
+    public static IEnumerable<ConstraintAttribute> ConstraintAttributes => constraintConsoleNameLookup.Values.Select(GetConstraintAttribute);
+
+    private static ConstraintAttribute GetConstraintAttribute(Type type)
+    {
+        return Attribute.GetCustomAttribute(type, typeof(ConstraintAttribute)) as ConstraintAttribute;
+    }
+
+    private static readonly Dictionary<string, Type> constraintConsoleNameLookup = new();
+
+    private static readonly Dictionary<Type, Func<Solver, string, Constraint>> constraintTypeConstructors = new()
+    {
+        { typeof(ArrowSumConstraint), (solver, options) => new ArrowSumConstraint(solver, options) },
+        { typeof(BetweenLineConstraint), (solver, options) => new BetweenLineConstraint(solver, options) },
+        { typeof(ChessConstraint), (solver, options) => new ChessConstraint(solver, options) },
+        { typeof(DiagonalNegativeGroupConstraint), (solver, options) => new DiagonalNegativeGroupConstraint(solver, options) },
+        { typeof(DiagonalNonconsecutiveConstraint), (solver, options) => new DiagonalNonconsecutiveConstraint(solver, options) },
+        { typeof(DiagonalPositiveGroupConstraint), (solver, options) => new DiagonalPositiveGroupConstraint(solver, options) },
+        { typeof(DifferenceConstraint), (solver, options) => new DifferenceConstraint(solver, options) },
+        { typeof(DisjointGroupConstraint), (solver, options) => new DisjointGroupConstraint(solver, options) },
+        { typeof(EvenConstraint), (solver, options) => new EvenConstraint(solver, options) },
+        { typeof(ExtraRegionConstraint), (solver, options) => new ExtraRegionConstraint(solver, options) },
+        { typeof(RowIndexerConstraint), (solver, options) => new RowIndexerConstraint(solver, options) },
+        { typeof(ColIndexerConstraint), (solver, options) => new ColIndexerConstraint(solver, options) },
+        { typeof(BoxIndexerConstraint), (solver, options) => new BoxIndexerConstraint(solver, options) },
+        { typeof(KillerCageConstraint), (solver, options) => new KillerCageConstraint(solver, options) },
+        { typeof(KingConstraint), (solver, options) => new KingConstraint(solver, options) },
+        { typeof(KnightConstraint), (solver, options) => new KnightConstraint(solver, options) },
+        { typeof(MaximumConstraint), (solver, options) => new MaximumConstraint(solver, options) },
+        { typeof(MinimumConstraint), (solver, options) => new MinimumConstraint(solver, options) },
+        { typeof(OddConstraint), (solver, options) => new OddConstraint(solver, options) },
+        { typeof(PalindromeConstraint), (solver, options) => new PalindromeConstraint(solver, options) },
+        { typeof(QuadrupleConstraint), (solver, options) => new QuadrupleConstraint(solver, options) },
+        { typeof(RatioConstraint), (solver, options) => new RatioConstraint(solver, options) },
+        { typeof(RegionSumLinesConstraint), (solver, options) => new RegionSumLinesConstraint(solver, options) },
+        { typeof(RenbanConstraint), (solver, options) => new RenbanConstraint(solver, options) },
+        { typeof(SandwichConstraint), (solver, options) => new SandwichConstraint(solver, options) },
+        { typeof(SelfTaxicabConstraint), (solver, options) => new SelfTaxicabConstraint(solver, options) },
+        { typeof(SumConstraint), (solver, options) => new SumConstraint(solver, options) },
+        { typeof(TaxicabConstraint), (solver, options) => new TaxicabConstraint(solver, options) },
+        { typeof(ThermometerConstraint), (solver, options) => new ThermometerConstraint(solver, options) },
+        { typeof(WhispersConstraint), (solver, options) => new WhispersConstraint(solver, options) },
+    };
+
+    private static readonly Dictionary<Type, Func<Solver, string, IConstraintGroup>> constraintGroupTypeConstructors = new()
+    {
+        { typeof(DisjointConstraintGroup), (solver, options) => new DisjointConstraintGroup(solver, options) },
+    };
 }
