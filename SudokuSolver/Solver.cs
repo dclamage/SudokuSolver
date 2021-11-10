@@ -104,6 +104,7 @@ public class Solver
     public readonly int MAX_VALUE;
     public readonly uint ALL_VALUES_MASK;
     public readonly int NUM_CELLS;
+    public readonly int NUM_CANDIDATES;
     public readonly int[][][] combinations;
 
     public string Title { get; init; }
@@ -131,9 +132,8 @@ public class Solver
     private readonly SortedSet<int>[] weakLinks;
     private SortedSet<int>[] CloneWeakLinks()
     {
-        int numCandidates = HEIGHT * WIDTH * MAX_VALUE;
-        SortedSet<int>[] newWeakLinks = new SortedSet<int>[numCandidates];
-        for (int ci = 0; ci < numCandidates; ci++)
+        SortedSet<int>[] newWeakLinks = new SortedSet<int>[NUM_CANDIDATES];
+        for (int ci = 0; ci < NUM_CANDIDATES; ci++)
         {
             newWeakLinks[ci] = new(weakLinks[ci]);
         }
@@ -344,6 +344,7 @@ public class Solver
         MAX_VALUE = maxValue;
         ALL_VALUES_MASK = (1u << MAX_VALUE) - 1;
         NUM_CELLS = width * height;
+        NUM_CANDIDATES = NUM_CELLS * MAX_VALUE;
         combinations = new int[MAX_VALUE][][];
         memos = new();
         memosLock = new();
@@ -362,9 +363,8 @@ public class Solver
         Groups = new();
         CellToGroupMap = new();
 
-        int numCandidates = HEIGHT * WIDTH * MAX_VALUE;
-        weakLinks = new SortedSet<int>[numCandidates];
-        for (int ci = 0; ci < numCandidates; ci++)
+        weakLinks = new SortedSet<int>[NUM_CANDIDATES];
+        for (int ci = 0; ci < NUM_CANDIDATES; ci++)
         {
             weakLinks[ci] = new();
         }
@@ -377,6 +377,7 @@ public class Solver
         MAX_VALUE = other.MAX_VALUE;
         ALL_VALUES_MASK = other.ALL_VALUES_MASK;
         NUM_CELLS = other.NUM_CELLS;
+        NUM_CANDIDATES = other.NUM_CANDIDATES;
         combinations = other.combinations;
         Title = other.Title;
         Author = other.Author;
@@ -3724,8 +3725,11 @@ public class Solver
         return LogicResult.None;
     }
 
+    internal string ValueNames(uint mask) =>
+        string.Join(MAX_VALUE <= 9 ? "" : ",", Enumerable.Range(1, MAX_VALUE).Where(v => HasValue(mask, v)));
+
     internal string CompactName(uint mask, List<(int, int)> cells) =>
-        string.Join(MAX_VALUE <= 9 ? "" : ",", Enumerable.Range(1, MAX_VALUE).Where(v => HasValue(mask, v))) + CompactName(cells);
+        ValueNames(mask) + CompactName(cells);
 
     internal string CompactName(List<(int, int)> cells)
     {
@@ -3807,7 +3811,7 @@ public class Solver
     }
     private Dictionary<int, StrongLinkDesc>[] FindStrongLinks()
     {
-        Dictionary<int, StrongLinkDesc>[] strongLinks = new Dictionary<int, StrongLinkDesc>[NUM_CELLS * MAX_VALUE];
+        Dictionary<int, StrongLinkDesc>[] strongLinks = new Dictionary<int, StrongLinkDesc>[NUM_CANDIDATES];
         for (int candIndex = 0; candIndex < strongLinks.Length; candIndex++)
         {
             strongLinks[candIndex] = new();
@@ -4048,46 +4052,6 @@ public class Solver
         return !IsValueSet(mask) && HasValue(mask, v);
     }
 
-    // Returns true if cell 0 has the ability to eliminate all candidates from cell 1
-    internal bool HasFullWeakLinks((int, int) cell0, (int, int) cell1)
-    {
-        uint mask0 = board[cell0.Item1, cell0.Item2];
-        uint mask1 = board[cell1.Item1, cell1.Item2];
-        uint sharedMask = mask0 & mask1;
-        if (sharedMask != mask1)
-        {
-            return false;
-        }
-        for (int v0 = 1; v0 <= MAX_VALUE; v0++)
-        {
-            uint valueMask0 = ValueMask(v0);
-            if ((mask0 & valueMask0) == 0)
-            {
-                continue;
-            }
-            int cand0 = CandidateIndex(cell0, v0);
-            for (int v1 = 1; v1 <= MAX_VALUE; v1++)
-            {
-                uint valueMask1 = ValueMask(v1);
-                if ((mask1 & valueMask1) == 0)
-                {
-                    continue;
-                }
-                int cand1 = CandidateIndex(cell1, v1);
-                if (weakLinks[cand0].Contains(cand1))
-                {
-                    mask1 &= ~valueMask1;
-                    if (mask1 == 0)
-                    {
-                        return true;
-                    }
-                }
-            }
-        }
-
-        return false;
-    }
-
     internal IEnumerable<int> CalcElims(int candIndex0, int candIndex1) =>
         weakLinks[candIndex0].Where(IsCandIndexValid).Intersect(weakLinks[candIndex1].Where(IsCandIndexValid));
 
@@ -4177,76 +4141,7 @@ public class Solver
         return string.Join(';', elimDescs);
     }
 
-    // 0 = 1 - 2 = 3 - 4 = 5 - 6 = 7 - 8 = 9
-    // 0 = 3, 0 = 5, 0 = 7, 0 = 9
-    // 2 = 5, 2 = 7, 2 = 9
-    // 4 = 7, 4 = 9
-    // 6 = 9
-    private HashSet<int> CalcStrongElims(List<int> chain)
-    {
-        HashSet<int> elims = new();
-        for (int chainIndex0 = 0; chainIndex0 < chain.Count; chainIndex0 += 2)
-        {
-            int cand0 = chain[chainIndex0];
-            for (int chainIndex1 = chainIndex0 + 1; chainIndex1 < chain.Count; chainIndex1 += 2)
-            {
-                int cand1 = chain[chainIndex1];
-                elims.UnionWith(CalcElims(cand0, cand1));
-            }
-        }
-        return elims;
-    }
-
-    // 0 = 1 - 2 = 3 - 4 = 5 - 0
-    // 1 - 2, 1 - 4, 1 - 0
-    // 3 - 4, 3 - 0
-    // 5 - 0
-    private HashSet<int> CalcWeakToStrongElims(List<int> chain)
-    {
-        HashSet<int> elims = new();
-        for (int chainIndex0 = 1; chainIndex0 < chain.Count; chainIndex0 += 2)
-        {
-            int cand0 = chain[chainIndex0];
-            for (int chainIndex1 = chainIndex0 + 1; chainIndex1 < chain.Count; chainIndex1 += 2)
-            {
-                int cand1 = chain[chainIndex1];
-                elims.UnionWith(CalcElims(cand0, cand1));
-            }
-        }
-        return elims;
-    }
-
-    // For CNLs, all strong links convert to also be weak links.
-    // If those weak links are part of an ALS, the other candidates
-    // in the ALS must be present.
-    private HashSet<int> CalcStrongToWeakElims(Dictionary<int, StrongLinkDesc>[] strongLinks, List<int> chain)
-    {
-        HashSet<int> elims = new();
-        for (int chainIndex0 = 0; chainIndex0 < chain.Count; chainIndex0 += 2)
-        {
-            int cand0 = chain[chainIndex0];
-            for (int chainIndex1 = chainIndex0 + 1; chainIndex1 < chain.Count; chainIndex1 += 2)
-            {
-                int cand1 = chain[chainIndex1];
-                var (_, _, v0) = CandIndexToCoord(cand0);
-                var (_, _, v1) = CandIndexToCoord(cand1);
-                if (strongLinks[cand0].TryGetValue(cand1, out StrongLinkDesc strongLinkDescOut) && strongLinkDescOut.alsCells != null)
-                {
-                    uint totalMask = 0;
-                    foreach (var cell in strongLinkDescOut.alsCells)
-                    {
-                        totalMask |= board[cell.Item1, cell.Item2];
-                    }
-                    uint clearMask = totalMask & ~ValueMask(v0) & ~ValueMask(v1) & ~valueSetMask;
-                    CalcElims(elims, clearMask, strongLinkDescOut.alsCells);
-                }
-            }
-
-        }
-        return elims;
-    }
-
-    private int NumSetValues
+    internal int NumSetValues
     {
         get
         {
@@ -4265,301 +4160,13 @@ public class Solver
         }
     }
 
-    private struct ChainQueueEntry
-    {
-        public readonly List<int> chain;
-        public readonly bool allowALS;
-
-        public ChainQueueEntry(List<int> chain, bool allowALS = true)
-        {
-            this.chain = chain;
-            this.allowALS = allowALS;
-        }
-    }
-
-    private LogicResult FindAIC(List<LogicalStepDesc> logicalStepDescs)
-    {
-        const int chainCapacity = 16;
-
-        var strongLinks = FindStrongLinks();
-
-        // Keep track of all dangling chains to process
-        Queue<ChainQueueEntry> chainQueue = new();
-
-        // Seed the chain stack with all candidates which have a strong link
-        for (int i = 0; i < HEIGHT; i++)
-        {
-            for (int j = 0; j < WIDTH; j++)
-            {
-                int cellIndex = (i * WIDTH + j) * MAX_VALUE;
-                for (int v = 1; v < MAX_VALUE; v++)
-                {
-                    int candIndex0 = cellIndex + v - 1;
-                    if (IsCandIndexValid(candIndex0) && strongLinks[candIndex0].Count > 0)
-                    {
-                        chainQueue.Enqueue(new(new() { candIndex0 }));
-                    }
-                }
-            }
-        }
-
-        // Process each chain found, adding more chains if still viable
-        List<int> bestChain = null;
-        List<int> bestChainElims = null;
-        int bestChainDirectSingles = 0;
-        int bestChainSinglesAfterBasics = 0;
-        string bestChainDescPrefix = null;
-        int maxChainSize = 0;
-        bool bestChainCausesInvalidBoard = false;
-
-        void CheckBestChain(List<int> chain, List<int> chainElims, string chainDescPrefix)
-        {
-            if (chainElims.Count == 0)
-            {
-                return;
-            }
-
-            // Apply the eliminations to a board clone
-            Solver directSinglesSolver = Clone();
-            foreach (int elimCandIndex in chainElims)
-            {
-                var (i, j, v) = CandIndexToCoord(elimCandIndex);
-                if (!directSinglesSolver.ClearValue(i, j, v))
-                {
-                    bestChain = new(chain);
-                    bestChainElims = new(chainElims);
-                    bestChainDirectSingles = 0;
-                    bestChainSinglesAfterBasics = 0;
-                    bestChainDescPrefix = chainDescPrefix;
-                    bestChainCausesInvalidBoard = true;
-                    return;
-                }
-            }
-            if (directSinglesSolver.ApplySingles() == LogicResult.Invalid)
-            {
-                bestChain = new(chain);
-                bestChainElims = new(chainElims);
-                bestChainDirectSingles = 0;
-                bestChainSinglesAfterBasics = 0;
-                bestChainDescPrefix = chainDescPrefix;
-                bestChainCausesInvalidBoard = true;
-                return;
-            }
-
-            Solver singlesAfterBasicsSolver = directSinglesSolver.Clone();
-            singlesAfterBasicsSolver.SetToBasicsOnly();
-            if (singlesAfterBasicsSolver.ConsolidateBoard() == LogicResult.Invalid)
-            {
-                bestChain = new(chain);
-                bestChainElims = new(chainElims);
-                bestChainDirectSingles = 0;
-                bestChainSinglesAfterBasics = 0;
-                bestChainDescPrefix = chainDescPrefix;
-                bestChainCausesInvalidBoard = true;
-                return;
-            }
-
-            int numDirectSingles = directSinglesSolver.NumSetValues;
-            int numSinglesAfterBasics = singlesAfterBasicsSolver.NumSetValues;
-            (int, int, int, int) chainVals = (numSinglesAfterBasics, numDirectSingles, chainElims.Count, -chain.Count);
-            (int, int, int, int) bestChainVals = bestChain != null ? (bestChainSinglesAfterBasics, bestChainDirectSingles, bestChainElims.Count, -bestChain.Count) : default;
-            if (bestChain == null || chainVals.CompareTo(bestChainVals) > 0)
-            {
-                if (bestChain == null)
-                {
-                    maxChainSize = chain.Count + 4;
-                }
-                bestChain = new(chain);
-                bestChainElims = new(chainElims);
-                bestChainDirectSingles = numDirectSingles;
-                bestChainSinglesAfterBasics = numSinglesAfterBasics;
-                bestChainDescPrefix = chainDescPrefix;
-
-                if (bestChainDirectSingles == NUM_CELLS)
-                {
-                    maxChainSize = chain.Count;
-                }
-            }
-        }
-
-        while (chainQueue.Count > 0 && !bestChainCausesInvalidBoard)
-        {
-            var chainEntry = chainQueue.Dequeue();
-            var chain = chainEntry.chain;
-            if (bestChain != null && maxChainSize > 0 && chain.Count + 1 > maxChainSize)
-            {
-                // Prefer reporting shorter chains
-                break;
-            }
-
-            // Append a strong link to each weak link and see if this causes eliminations.
-            foreach (int strongIndexEnd in strongLinks[chain[^1]].Keys)
-            {
-                if (!IsCandIndexValid(strongIndexEnd))
-                {
-                    continue;
-                }
-
-                // Reject any strong links to repeated nodes, unless it's the first node that's repeated
-                if (chain.IndexOf(strongIndexEnd) > 0)
-                {
-                    continue;
-                }
-
-                List<int> newChain = new(chainCapacity);
-                newChain.AddRange(chain);
-                newChain.Add(strongIndexEnd);
-
-                bool isDNL = newChain[0] == strongIndexEnd;
-
-                bool haveALSElim = false;
-                if (chainEntry.allowALS)
-                {
-                    var chainElims = CalcStrongElims(newChain);
-                    if (chainElims.Count > 0)
-                    {
-                        haveALSElim = true;
-
-                        CheckBestChain(newChain, chainElims.ToList(), isDNL ? "DNL: " : "AIC: ");
-                        if (bestChainCausesInvalidBoard)
-                        {
-                            break;
-                        }
-                    }
-                }
-
-                if (isDNL || maxChainSize > 0 && newChain.Count + 1 > maxChainSize)
-                {
-                    continue;
-                }
-
-                // Add a placeholder weak link
-                newChain.Add(-1);
-
-                // Check for a CNL
-                if (weakLinks[strongIndexEnd].Contains(newChain[0]))
-                {
-                    newChain[^1] = newChain[0];
-
-                    var chainElims = CalcStrongElims(newChain);
-                    chainElims.UnionWith(CalcWeakToStrongElims(newChain));
-                    chainElims.UnionWith(CalcStrongToWeakElims(strongLinks, newChain));
-                    if (chainElims.Count > 0)
-                    {
-                        CheckBestChain(newChain, chainElims.ToList(), "CNL: ");
-                    }
-                }
-
-                // Add all chain continuations
-                if (!bestChainCausesInvalidBoard && (maxChainSize == 0 || newChain.Count < maxChainSize))
-                {
-                    foreach (int weakIndexEnd in weakLinks[strongIndexEnd])
-                    {
-                        if (IsCandIndexValid(weakIndexEnd) && !newChain.Contains(weakIndexEnd))
-                        {
-                            newChain[^1] = weakIndexEnd;
-                            chainQueue.Enqueue(new(newChain, chainEntry.allowALS && !haveALSElim));
-                        }
-                    }
-                }
-            }
-        }
-
-        if (bestChain != null)
-        {
-            // Form the description string
-            StringBuilder stepDescription = null;
-            if (logicalStepDescs != null)
-            {
-                stepDescription = new();
-                stepDescription.Append(bestChainDescPrefix);
-
-                bool strong = false;
-                for (int ci = 0; ci < bestChain.Count; ci++, strong = !strong)
-                {
-                    if (ci > 0)
-                    {
-                        if (strong)
-                        {
-                            int candIndex0 = bestChain[ci - 1];
-                            int candIndex1 = bestChain[ci];
-                            if (strongLinks[candIndex0].TryGetValue(candIndex1, out StrongLinkDesc strongLinkDescOut) && !string.IsNullOrWhiteSpace(strongLinkDescOut.humanDesc))
-                            {
-                                stepDescription.Append($" = [{strongLinkDescOut.humanDesc}]");
-                            }
-                            else
-                            {
-                                stepDescription.Append($" = ");
-                            }
-                        }
-                        else
-                        {
-                            stepDescription.Append(" - ");
-                        }
-                    }
-
-                    if (ci + 1 < bestChain.Count)
-                    {
-                        int candIndex0 = bestChain[ci];
-                        int candIndex1 = bestChain[ci + 1];
-                        var (i0, j0, v0) = CandIndexToCoord(candIndex0);
-                        var (i1, j1, v1) = CandIndexToCoord(candIndex1);
-                        if (i0 == i1 && j0 == j1)
-                        {
-                            stepDescription.Append($"({v0}{(strong ? "-" : $"=")}{v1}){CellName(i0, j0)}");
-                            strong = !strong;
-                            ci++;
-                            continue;
-                        }
-                    }
-
-                    if (ci > 0)
-                    {
-                        int candIndex0 = bestChain[ci - 1];
-                        int candIndex1 = bestChain[ci];
-                        var (i0, j0, v0) = CandIndexToCoord(candIndex0);
-                        var (i1, j1, v1) = CandIndexToCoord(candIndex1);
-
-                        if (v0 == v1)
-                        {
-                            stepDescription.Append(CellName(i1, j1));
-                            continue;
-                        }
-                    }
-
-                    stepDescription.Append(CandIndexDesc(bestChain[ci]));
-                }
-
-                stepDescription.Append(" => ");
-                stepDescription.Append(DescribeElims(bestChainElims));
-
-                logicalStepDescs.Add(new(
-                    desc: stepDescription.ToString(),
-                    sourceCandidates: bestChain,
-                    elimCandidates: bestChainElims,
-                    sourceIsAIC: true));
-            }
-
-            // Perform the eliminations
-            foreach (int elimCandIndex in bestChainElims)
-            {
-                var (i, j, v) = CandIndexToCoord(elimCandIndex);
-                if (!ClearValue(i, j, v))
-                {
-                    return LogicResult.Invalid;
-                }
-            }
-
-            return LogicResult.Changed;
-        }
-        return LogicResult.None;
-    }
+    private LogicResult FindAIC(List<LogicalStepDesc> logicalStepDescs) => new AICSolver(this, logicalStepDescs).FindAIC();
 
     private LogicResult FindSimpleContradictions(List<LogicalStepDesc> logicalStepDescs)
     {
         for (int allowedValueCount = 2; allowedValueCount <= MAX_VALUE; allowedValueCount++)
         {
-            ContradictionResult bestContradiction = null;
+            ContradictionResult? bestContradiction = null;
             for (int i = 0; i < HEIGHT; i++)
             {
                 for (int j = 0; j < WIDTH; j++)
@@ -4623,7 +4230,7 @@ public class Solver
                                     if (!DisableContradictions)
                                     {
                                         int changes = boardCopy.AmountCellsFilled() - this.AmountCellsFilled();
-                                        if (bestContradiction == null || changes < bestContradiction.Changes)
+                                        if (!bestContradiction.HasValue || changes < bestContradiction.Value.Changes)
                                         {
                                             bestContradiction = new ContradictionResult(changes, boardCopy, i, j, v, contradictionSteps);
                                         }
@@ -4635,16 +4242,18 @@ public class Solver
                 }
             }
 
-            if (bestContradiction != null)
+            if (bestContradiction.HasValue)
             {
+                var contradiction = bestContradiction.Value;
+
                 logicalStepDescs?.Add(new(
-                    desc: $"Setting {CellName(bestContradiction.I, bestContradiction.J)} to {bestContradiction.V} causes a contradiction:",
+                    desc: $"Setting {CellName(contradiction.I, contradiction.J)} to {contradiction.V} causes a contradiction:",
                     sourceCandidates: Enumerable.Empty<int>(),
-                    elimCandidates: CandidateIndex((bestContradiction.I, bestContradiction.J), bestContradiction.V).ToEnumerable(),
-                    subSteps: bestContradiction.ContraditionSteps
+                    elimCandidates: CandidateIndex((contradiction.I, contradiction.J), contradiction.V).ToEnumerable(),
+                    subSteps: contradiction.ContraditionSteps
                 ));
 
-                if (!ClearValue(bestContradiction.I, bestContradiction.J, bestContradiction.V))
+                if (!ClearValue(contradiction.I, contradiction.J, contradiction.V))
                 {
                     return LogicResult.Invalid;
                 }
@@ -4668,8 +4277,7 @@ public class Solver
         return counter;
     }
 
-    private record ContradictionResult
-    (
+    private record struct ContradictionResult(
         int Changes,
         Solver BoardCopy,
         int I,
