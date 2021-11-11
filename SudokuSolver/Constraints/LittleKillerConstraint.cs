@@ -151,6 +151,8 @@ public class LittleKillerConstraint : Constraint
         return sum == actualSum;
     }
 
+    public override void InitLinks(Solver sudokuSolver) => sumCells?.InitLinks(sudokuSolver, sum.ToEnumerable());
+
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
         return sumCells?.StepLogic(sudokuSolver, sum.ToEnumerable(), logicalStepDescription) ?? LogicResult.None;

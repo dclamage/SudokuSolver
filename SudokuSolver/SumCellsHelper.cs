@@ -77,6 +77,81 @@ public class SumCellsHelper
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
+    public void InitLinks(Solver solver, IEnumerable<int> possibleSums)
+    {
+        var sums = possibleSums as SortedSet<int> ?? new SortedSet<int>(possibleSums);
+        if (sums.Count == 0)
+        {
+            return;
+        }
+
+        var origBoard = solver.Board;
+        foreach (var (i, j) in cells)
+        {
+            uint origMask = origBoard[i, j];
+            if (ValueCount(origMask) <= 1)
+            {
+                continue;
+            }
+
+            int minVal = MinValue(origMask);
+            int maxVal = MaxValue(origMask);
+            for (int v = minVal; v <= maxVal; v++)
+            {
+                if (!HasValue(origMask, v))
+                {
+                    continue;
+                }
+
+                Solver cloneSolver = solver.Clone();
+                var cloneBoard = cloneSolver.Board;
+                if (!cloneSolver.SetValue(i, j, v))
+                {
+                    solver.ClearValue(i, j, v);
+                    continue;
+                }
+
+                LogicResult logicResult;
+                do
+                {
+                    logicResult = StepLogic(cloneSolver, sums, null);
+                } while (logicResult == LogicResult.Changed);
+
+                if (logicResult == LogicResult.Invalid)
+                {
+                    solver.ClearValue(i, j, v);
+                    continue;
+                }
+
+                int cand0 = solver.CandidateIndex(i, j, v);
+                foreach (var (i1, j1) in cells)
+                {
+                    if ((i1, j1) == (i, j))
+                    {
+                        continue;
+                    }
+
+                    uint origMask1 = origBoard[i1, j1] & ~valueSetMask;
+                    uint newMask1 = cloneBoard[i1, j1] & ~valueSetMask;
+                    if (origMask1 != newMask1)
+                    {
+                        uint diffMask1 = origMask1 & ~newMask1;
+                        int diffMin = MinValue(diffMask1);
+                        int diffMax = MaxValue(diffMask1);
+                        for (int v1 = diffMin; v1 <= diffMax; v1++)
+                        {
+                            if (HasValue(diffMask1, v1))
+                            {
+                                int cand1 = solver.CandidateIndex(i1, j1, v1);
+                                solver.AddWeakLink(cand0, cand1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     record StepLogicMemo(List<int> Elims, string LogicalStepDesc, LogicResult Result)
     {
         public StepLogicMemo(string logicalStepDesc, LogicResult result) : this(null, logicalStepDesc, result) { }
