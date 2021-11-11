@@ -29,14 +29,14 @@ static internal class TestUtility
 
     public static void TestUniqueSolution(this Solver solver, string expectedSolution)
     {
-        Solver solver1 = solver.Clone();
+        Solver solver1 = solver.Clone(willRunNonSinglesLogic: false);
         Assert.AreEqual(1u, solver1.CountSolutions(multiThread: true));
 
-        Solver solver2 = solver.Clone();
+        Solver solver2 = solver.Clone(willRunNonSinglesLogic: false);
         Assert.IsTrue(solver2.FindSolution(multiThread: true));
         Assert.AreEqual(expectedSolution, solver2.ToGivenString());
 
-        Solver solver3 = solver.Clone();
+        Solver solver3 = solver.Clone(willRunNonSinglesLogic: false);
         Assert.IsTrue(solver3.FillRealCandidates(multiThread: true));
         Assert.IsTrue(solver3.IsComplete);
         Assert.AreEqual(expectedSolution, solver3.ToGivenString());
@@ -44,25 +44,25 @@ static internal class TestUtility
 
     public static void TestInvalidSolution(this Solver solver)
     {
-        Solver solver1 = solver.Clone();
+        Solver solver1 = solver.Clone(willRunNonSinglesLogic: false);
         Assert.AreEqual(0ul, solver1.CountSolutions(multiThread: true));
 
-        Solver solver2 = solver.Clone();
+        Solver solver2 = solver.Clone(willRunNonSinglesLogic: false);
         Assert.IsFalse(solver2.FindSolution(multiThread: true));
 
-        Solver solver3 = solver.Clone();
+        Solver solver3 = solver.Clone(willRunNonSinglesLogic: false);
         Assert.IsFalse(solver3.FillRealCandidates(multiThread: true));
     }
 
     public static void TestMultipleSolution(this Solver solver)
     {
-        Solver solver1 = solver.Clone();
+        Solver solver1 = solver.Clone(willRunNonSinglesLogic: false);
         Assert.IsTrue(solver1.CountSolutions(multiThread: true) > 1ul);
 
-        Solver solver2 = solver.Clone();
+        Solver solver2 = solver.Clone(willRunNonSinglesLogic: false);
         Assert.IsTrue(solver2.FindSolution(multiThread: true));
 
-        Solver solver3 = solver.Clone();
+        Solver solver3 = solver.Clone(willRunNonSinglesLogic: false);
         Assert.IsTrue(solver3.FillRealCandidates(multiThread: true));
         Assert.IsFalse(solver3.IsComplete);
     }

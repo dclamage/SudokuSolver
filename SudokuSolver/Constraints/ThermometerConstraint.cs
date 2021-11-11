@@ -1,4 +1,6 @@
-﻿namespace SudokuSolver.Constraints;
+﻿using System.Collections.Generic;
+
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Thermometer", ConsoleName = "thermo")]
 public class ThermometerConstraint : Constraint
@@ -18,7 +20,7 @@ public class ThermometerConstraint : Constraint
         cellsSet = new(cells);
     }
 
-    public override string SpecificName => $"Thermometer at {CellName(cells[0])}";
+    public override string SpecificName => $"Thermometer {CellName(cells[0])} - {CellName(cells[^1])}";
 
     public override LogicResult InitCandidates(Solver sudokuSolver)
     {
@@ -93,6 +95,8 @@ public class ThermometerConstraint : Constraint
         return true;
     }
 
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(solver, cells, logicalStepDescription);
+
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
         if (cells.Count == 0)
@@ -101,101 +105,80 @@ public class ThermometerConstraint : Constraint
         }
 
         var board = sudokuSolver.Board;
-        bool changed = false;
-        for (int ti = 0; ti < cells.Count - 1; ti++)
+        List<int> elims = null;
+        bool hadChange = false;
+        bool changed;
+        do
         {
-            var curCell = cells[ti];
-            var nextCell = cells[ti + 1];
-            uint curMask = board[curCell.Item1, curCell.Item2];
-            uint nextMask = board[nextCell.Item1, nextCell.Item2];
-            bool curValueSet = IsValueSet(curMask);
-            bool nextValueSet = IsValueSet(nextMask);
+            changed = false;
+            for (int ti = 0; ti < cells.Count - 1; ti++)
+            {
+                var curCell = cells[ti];
+                var nextCell = cells[ti + 1];
+                uint curMask = board[curCell.Item1, curCell.Item2];
+                uint nextMask = board[nextCell.Item1, nextCell.Item2];
+                bool curValueSet = IsValueSet(curMask);
+                bool nextValueSet = IsValueSet(nextMask);
 
-            int clearNextValStart = curValueSet ? GetValue(curMask) : MinValue(curMask);
-            uint clearMask = board[nextCell.Item1, nextCell.Item2] & MaskValAndLower(clearNextValStart);
-            LogicResult clearResult = sudokuSolver.ClearMask(nextCell.Item1, nextCell.Item2, clearMask);
-            if (clearResult == LogicResult.Invalid)
-            {
-                logicalStepDescription?.Append($"{CellName(nextCell)} has no more valid candidates.");
-                return LogicResult.Invalid;
-            }
-            if (clearResult == LogicResult.Changed)
-            {
-                if (!changed)
+                int clearNextValStart = curValueSet ? GetValue(curMask) : MinValue(curMask);
+                uint clearMask = board[nextCell.Item1, nextCell.Item2] & MaskValAndLower(clearNextValStart);
+                LogicResult clearResult = sudokuSolver.ClearMask(nextCell.Item1, nextCell.Item2, clearMask);
+                if (clearResult == LogicResult.Invalid)
                 {
-                    logicalStepDescription?.Append($"Cleared values {MaskToString(clearMask)} from {CellName(nextCell)}");
+                    logicalStepDescription?.Append($"{CellName(nextCell)} has no more valid candidates.");
+                    return LogicResult.Invalid;
                 }
-                else
+                if (clearResult == LogicResult.Changed)
                 {
-                    logicalStepDescription?.Append($"; {MaskToString(clearMask)} from {CellName(nextCell)}");
+                    if (logicalStepDescription != null)
+                    {
+                        elims ??= new();
+                        for (int v = 1; v <= MAX_VALUE; v++)
+                        {
+                            if (HasValue(clearMask, v))
+                            {
+                                elims.Add(CandidateIndex(nextCell, v));
+                            }
+                        }
+                    }
+                    changed = true;
+                    hadChange = true;
                 }
-                changed = true;
-            }
 
-            int clearCurValStart = nextValueSet ? GetValue(nextMask) : MaxValue(nextMask);
-            clearMask = board[curCell.Item1, curCell.Item2] & MaskValAndHigher(clearCurValStart);
-            clearResult = sudokuSolver.ClearMask(curCell.Item1, curCell.Item2, clearMask);
-            if (clearResult == LogicResult.Invalid)
-            {
-                return LogicResult.Invalid;
-            }
-            if (clearResult == LogicResult.Changed)
-            {
-                if (!changed)
+                int clearCurValStart = nextValueSet ? GetValue(nextMask) : MaxValue(nextMask);
+                clearMask = board[curCell.Item1, curCell.Item2] & MaskValAndHigher(clearCurValStart);
+                clearResult = sudokuSolver.ClearMask(curCell.Item1, curCell.Item2, clearMask);
+                if (clearResult == LogicResult.Invalid)
                 {
-                    logicalStepDescription?.Append($"Cleared values {MaskToString(clearMask)} from {CellName(curCell)}");
+                    return LogicResult.Invalid;
                 }
-                else
+                if (clearResult == LogicResult.Changed)
                 {
-                    logicalStepDescription?.Append($"; {MaskToString(clearMask)} from {CellName(curCell)}");
+                    if (logicalStepDescription != null)
+                    {
+                        elims ??= new();
+                        for (int v = 1; v <= MAX_VALUE; v++)
+                        {
+                            if (HasValue(clearMask, v))
+                            {
+                                elims.Add(CandidateIndex(curCell, v));
+                            }
+                        }
+                    }
+                    changed = true;
+                    hadChange = true;
                 }
-                changed = true;
             }
+        } while (changed);
+
+        if (logicalStepDescription != null && elims != null && elims.Count > 0)
+        {
+            logicalStepDescription.Append($"Re-evaluated => {sudokuSolver.DescribeElims(elims)}");
         }
-        return changed ? LogicResult.Changed : LogicResult.None;
+
+        return hadChange ? LogicResult.Changed : LogicResult.None;
     }
 
     public override List<(int, int)> Group => cells;
-
-    public override void InitLinks(Solver sudokuSolver)
-    {
-        for (int lineIndex0 = 0; lineIndex0 < cells.Count; lineIndex0++)
-        {
-            var cell0 = cells[lineIndex0];
-            int cellIndex0 = FlatIndex(cell0) * MAX_VALUE;
-            for (int lineIndex1 = 0; lineIndex1 < cells.Count; lineIndex1++)
-            {
-                if (lineIndex0 == lineIndex1)
-                {
-                    continue;
-                }
-
-                var cell1 = cells[lineIndex1];
-                int cellIndex1 = FlatIndex(cell1) * MAX_VALUE;
-
-                int dist = lineIndex1 - lineIndex0;
-                for (int v0 = 1; v0 <= MAX_VALUE; v0++)
-                {
-                    int candIndex0 = cellIndex0 + v0 - 1;
-                    if (dist < 0)
-                    {
-                        for (int v1 = Math.Max(1, v0 + dist + 1); v1 <= MAX_VALUE; v1++)
-                        {
-                            int candIndex1 = cellIndex1 + v1 - 1;
-                            sudokuSolver.AddWeakLink(candIndex0, candIndex1);
-                        }
-                    }
-                    else if (dist > 0)
-                    {
-                        for (int v1 = Math.Min(MAX_VALUE, v0 + dist - 1); v1 >= 1; v1--)
-                        {
-                            int candIndex1 = cellIndex1 + v1 - 1;
-                            sudokuSolver.AddWeakLink(candIndex0, candIndex1);
-                        }
-                    }
-                }
-            }
-        }
-    }
 }
 

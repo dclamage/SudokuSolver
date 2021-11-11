@@ -820,46 +820,5 @@ public class ArrowSumConstraint : Constraint
     }
     public int ArrowValue(Solver board) => arrowCells.Select(cell => board.GetValue(cell)).Sum();
 
-    public override void InitLinks(Solver sudokuSolver)
-    {
-        if (circleCells.Count != 1)
-        {
-            return;
-        }
-
-        int circleCellIndex = FlatIndex(circleCells[0]) * MAX_VALUE;
-        if (arrowCells.Count == 1)
-        {
-            int arrowCellIndex = FlatIndex(arrowCells[0]) * MAX_VALUE;
-            for (int v0 = 1; v0 <= MAX_VALUE; v0++)
-            {
-                int arrowCandIndex = arrowCellIndex + v0 - 1;
-                for (int v1 = 1; v1 <= MAX_VALUE; v1++)
-                {
-                    if (v0 != v1)
-                    {
-                        int circleCandIndex = circleCellIndex + v1 - 1;
-                        sudokuSolver.AddWeakLink(arrowCandIndex, circleCandIndex);
-                    }
-                }
-            }
-        }
-        else
-        {
-            foreach (var arrowCell in arrowCells)
-            {
-                int arrowCellIndex = FlatIndex(arrowCell) * MAX_VALUE;
-                for (int arrowVal = 1; arrowVal <= MAX_VALUE; arrowVal++)
-                {
-                    int arrowCandIndex = arrowCellIndex + arrowVal - 1;
-                    int minCircleVal = Math.Min(arrowVal + arrowCells.Count - 1, MAX_VALUE + 1);
-                    for (int circleVal = 1; circleVal < minCircleVal; circleVal++)
-                    {
-                        int circleCandIndex = circleCellIndex + circleVal - 1;
-                        sudokuSolver.AddWeakLink(arrowCandIndex, circleCandIndex);
-                    }
-                }
-            }
-        }
-    }
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(sudokuSolver, allCells, logicalStepDescription);
 }

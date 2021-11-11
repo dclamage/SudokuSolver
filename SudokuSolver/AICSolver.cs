@@ -319,7 +319,7 @@ internal class AICSolver
         }
 
         // Apply the eliminations to a board clone
-        Solver directSinglesSolver = solver.Clone();
+        Solver directSinglesSolver = solver.Clone(willRunNonSinglesLogic: false);
         foreach (int elimCandIndex in chainElims)
         {
             var (i, j, v) = solver.CandIndexToCoord(elimCandIndex);
@@ -347,7 +347,7 @@ internal class AICSolver
             return false;
         }
 
-        Solver singlesAfterBasicsSolver = directSinglesSolver.Clone();
+        Solver singlesAfterBasicsSolver = directSinglesSolver.Clone(willRunNonSinglesLogic: true);
         singlesAfterBasicsSolver.SetToBasicsOnly();
         if (singlesAfterBasicsSolver.ConsolidateBoard() == LogicResult.Invalid)
         {

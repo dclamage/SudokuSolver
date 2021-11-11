@@ -1,4 +1,6 @@
-﻿namespace SudokuSolver.Constraints;
+﻿using System.Text.Json.Serialization;
+
+namespace SudokuSolver.Constraints;
 
 public abstract class Constraint
 {
@@ -136,7 +138,110 @@ public abstract class Constraint
     /// Add any weak or strong links that are initially known due to this constraint
     /// </summary>
     /// <param name="sudokuSolver">The solver.</param>
-    public virtual void InitLinks(Solver sudokuSolver) { }
+    public virtual LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription) => LogicResult.None;
+
+    /// <summary>
+    /// Automatically determines weak links caused by this constraint.
+    /// This is done by cloning the solver and setting each candidate one
+    /// at a time, running StepLogic, and then seeing what other candidates
+    /// get eliminated.
+    /// </summary>
+    /// <param name="sudokuSolver">The solver.</param>
+    protected LogicResult InitLinksByRunningLogic(Solver solver, IEnumerable<(int, int)> cellsEnum, List<LogicalStepDesc> logicalStepDescription)
+    {
+        bool invalid = false;
+        List<int> elims = null;
+        List<(int, int)> cells = cellsEnum as List<(int, int)> ?? new(cellsEnum);
+        var origBoard = solver.Board;
+        foreach (var (i, j) in cells)
+        {
+            uint origMask = origBoard[i, j];
+            if (ValueCount(origMask) <= 1)
+            {
+                continue;
+            }
+
+            int minVal = MinValue(origMask);
+            int maxVal = MaxValue(origMask);
+            for (int v = minVal; v <= maxVal; v++)
+            {
+                if (!HasValue(origMask, v))
+                {
+                    continue;
+                }
+
+                Solver cloneSolver = solver.Clone(willRunNonSinglesLogic: false);
+                var cloneBoard = cloneSolver.Board;
+                if (!cloneSolver.SetValue(i, j, v))
+                {
+                    if (!solver.ClearValue(i, j, v))
+                    {
+                        invalid = true;
+                    }
+                    elims ??= new();
+                    elims.Add(CandidateIndex(i, j, v));
+                    continue;
+                }
+
+                LogicResult logicResult;
+                do
+                {
+                    logicResult = StepLogic(cloneSolver, (StringBuilder)null, false);
+                } while (logicResult == LogicResult.Changed);
+
+                if (logicResult == LogicResult.Invalid)
+                {
+                    if (!solver.ClearValue(i, j, v))
+                    {
+                        invalid = true;
+                    }
+                    elims ??= new();
+                    elims.Add(CandidateIndex(i, j, v));
+                    continue;
+                }
+
+                int cand0 = solver.CandidateIndex(i, j, v);
+                foreach (var (i1, j1) in cells)
+                {
+                    if ((i1, j1) == (i, j))
+                    {
+                        continue;
+                    }
+
+                    uint origMask1 = origBoard[i1, j1] & ~valueSetMask;
+                    uint newMask1 = cloneBoard[i1, j1] & ~valueSetMask;
+                    if (origMask1 != newMask1)
+                    {
+                        uint diffMask1 = origMask1 & ~newMask1;
+                        int diffMin = MinValue(diffMask1);
+                        int diffMax = MaxValue(diffMask1);
+                        for (int v1 = diffMin; v1 <= diffMax; v1++)
+                        {
+                            if (HasValue(diffMask1, v1))
+                            {
+                                int cand1 = solver.CandidateIndex(i1, j1, v1);
+                                solver.AddWeakLink(cand0, cand1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (logicalStepDescription != null && elims != null)
+        {
+            logicalStepDescription.Add(new LogicalStepDesc(
+                desc: $"[{SpecificName}] Re-evaluated => {solver.DescribeElims(elims)}",
+                sourceCandidates: Enumerable.Empty<int>(),
+                elimCandidates: elims));
+        }
+
+        if (invalid)
+        {
+            return LogicResult.Invalid;
+        }
+        return elims != null ? LogicResult.Changed : LogicResult.None;
+    }
 
     /// <summary>
     /// Useful for constraints that just need to enforce seen cells.

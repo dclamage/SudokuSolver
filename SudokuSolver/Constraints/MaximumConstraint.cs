@@ -246,7 +246,7 @@ public class MaximumConstraint : Constraint
         }
     }
 
-    public override void InitLinks(Solver sudokuSolver)
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription)
     {
         foreach (var maxCell in cells)
         {
@@ -266,5 +266,6 @@ public class MaximumConstraint : Constraint
                 }
             }
         }
+        return LogicResult.None;
     }
 }

@@ -244,7 +244,7 @@ public class MinimumConstraint : Constraint
         }
     }
 
-    public override void InitLinks(Solver sudokuSolver)
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription)
     {
         foreach (var minCell in cells)
         {
@@ -264,6 +264,7 @@ public class MinimumConstraint : Constraint
                 }
             }
         }
+        return LogicResult.None;
     }
 }
 

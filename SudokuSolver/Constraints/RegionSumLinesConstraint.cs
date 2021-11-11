@@ -1,4 +1,6 @@
-﻿namespace SudokuSolver.Constraints;
+﻿using System.Collections.Generic;
+
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Region Sum Lines", ConsoleName = "rsl")]
 public class RegionSumLinesConstraint : Constraint
@@ -109,41 +111,7 @@ public class RegionSumLinesConstraint : Constraint
         return true;
     }
 
-    public override void InitLinks(Solver sudokuSolver)
-    {
-        if (isNoop)
-        {
-            return;
-        }
-
-        // If two segments have one cell then they are clones, and so clone weak links can be formed
-        List<(int, int)> clones = new();
-        foreach (var segment in lineSegments)
-        {
-            if (segment.cells.Count == 1)
-            {
-                clones.Add(segment.cells[0]);
-            }
-        }
-
-        foreach (var cellPair in clones.Combinations(2))
-        {
-            int cellIndex0 = FlatIndex(cellPair[0]);
-            int cellIndex1 = FlatIndex(cellPair[1]);
-            for (int v0 = 1; v0 <= MAX_VALUE; v0++)
-            {
-                int candIndex0 = cellIndex0 * MAX_VALUE + v0 - 1;
-                for (int v1 = 1; v1 <= MAX_VALUE; v1++)
-                {
-                    if (v0 != v1)
-                    {
-                        int candIndex1 = cellIndex1 * MAX_VALUE + v1 - 1;
-                        sudokuSolver.AddWeakLink(candIndex0, candIndex1);
-                    }
-                }
-            }
-        }
-    }
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(solver, cells, logicalStepDescription);
 
     public override LogicResult StepLogic(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
     {

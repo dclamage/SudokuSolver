@@ -1,4 +1,6 @@
-﻿namespace SudokuSolver.Constraints;
+﻿using System.Collections.Generic;
+
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Whispers", ConsoleName = "whispers")]
 public class WhispersConstraint : Constraint
@@ -112,6 +114,8 @@ public class WhispersConstraint : Constraint
         }
         return true;
     }
+
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(solver, cells, logicalStepDescription);
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
@@ -256,37 +260,6 @@ public class WhispersConstraint : Constraint
             keepMask |= MaskValAndHigher(minLargeVal);
         }
         return keepMask;
-    }
-
-    public override void InitLinks(Solver sudokuSolver)
-    {
-        for (int lineIndex = 0; lineIndex < cells.Count; lineIndex++)
-        {
-            var cell0 = cells[lineIndex];
-            int cellIndex0 = FlatIndex(cell0) * MAX_VALUE;
-            for (int dir = 0; dir < 2; dir++)
-            {
-                if (dir == 0 && lineIndex == 0 || dir == 1 && lineIndex == cells.Count - 1)
-                {
-                    continue;
-                }
-                var cell1 = cells[dir == 0 ? lineIndex - 1 : lineIndex + 1];
-                int cellIndex1 = FlatIndex(cell1) * MAX_VALUE;
-
-                for (int v0 = 1; v0 <= MAX_VALUE; v0++)
-                {
-                    int candIndex0 = cellIndex0 + v0 - 1;
-                    for (int v1 = 1; v1 <= MAX_VALUE; v1++)
-                    {
-                        if (Math.Abs(v0 - v1) < difference)
-                        {
-                            int candIndex1 = cellIndex1 + v1 - 1;
-                            sudokuSolver.AddWeakLink(candIndex0, candIndex1);
-                        }
-                    }
-                }
-            }
-        }
     }
 }
 
