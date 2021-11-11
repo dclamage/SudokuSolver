@@ -135,6 +135,49 @@ public abstract class Constraint
     public virtual List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => null;
 
     /// <summary>
+    /// Automatically determines whether the constraint cells must contain the value
+    /// by removing the value from all cells with it and seeing if there's a contradiction
+    /// after stepping logic.
+    /// </summary>
+    /// <param name="sudokuSolver">The solver.</param>
+    protected List<(int, int)> CellsMustContainByRunningLogic(Solver solver, IEnumerable<(int, int)> cellsEnum, int value)
+    {
+        List<(int, int)> result = null;
+
+        var board = solver.Board;
+        foreach (var (i, j) in cellsEnum)
+        {
+            uint mask = board[i, j];
+            if (ValueCount(mask) <= 1 || !HasValue(mask, value))
+            {
+                continue;
+            }
+
+            result ??= new();
+            result.Add((i, j));
+        }
+
+        if (result == null)
+        {
+            return null;
+        }
+
+        Solver cloneSolver = solver.Clone(willRunNonSinglesLogic: false);
+        foreach (var (i, j) in result)
+        {
+            cloneSolver.ClearValue(i, j, value);
+        }
+
+        LogicResult logicResult;
+        do
+        {
+            logicResult = StepLogic(cloneSolver, (StringBuilder)null, false);
+        } while (logicResult == LogicResult.Changed);
+
+        return logicResult == LogicResult.Invalid ? result : null;
+    }
+
+    /// <summary>
     /// Add any weak or strong links that are initially known due to this constraint
     /// </summary>
     /// <param name="sudokuSolver">The solver.</param>

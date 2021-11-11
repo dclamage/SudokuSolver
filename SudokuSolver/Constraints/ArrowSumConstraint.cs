@@ -821,4 +821,6 @@ public class ArrowSumConstraint : Constraint
     public int ArrowValue(Solver board) => arrowCells.Select(cell => board.GetValue(cell)).Sum();
 
     public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(sudokuSolver, allCells, logicalStepDescription);
+
+    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => CellsMustContainByRunningLogic(sudokuSolver, allCells, value);
 }

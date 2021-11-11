@@ -404,7 +404,7 @@ public class Solver
         // Brute force is far too slow if the weak links are copied every clone.
         if (willRunNonSinglesLogic)
         {
-            weakLinks = CloneWeakLinks();
+            weakLinks = other.CloneWeakLinks();
         }
         else
         {
@@ -2929,31 +2929,65 @@ public class Solver
                 }
 
                 List<(int, int)> cellsMustContain = group.CellsMustContain(this, v);
-                if (cellsMustContain == null || cellsMustContain.Count <= 1)
+                var logicResult = HandleMustContain(group.ToString(), v, cellsMustContain, logicalStepDescs);
+                if (logicResult != LogicResult.None)
                 {
-                    continue;
+                    return logicResult;
                 }
-
-                uint valueMask = ValueMask(v);
-                var elims = CalcElims(valueMask, cellsMustContain);
-                if (elims == null || elims.Count == 0)
-                {
-                    continue;
-                }
-
-                logicalStepDescs?.Add(new(
-                                desc: $"Pointing: {v}{CompactName(cellsMustContain)} in {group} => {DescribeElims(elims)}",
-                                sourceCandidates: CandidateIndexes(valueMask, cellsMustContain),
-                                elimCandidates: elims
-                            ));
-                if (!ClearCandidates(elims))
-                {
-                    return LogicResult.Invalid;
-                }
-                return LogicResult.Changed;
             }
         }
+
+        foreach (var constraint in constraints)
+        {
+            for (int v = 1; v <= MAX_VALUE; v++)
+            {
+                List<(int, int)> cellsMustContain = constraint.CellsMustContain(this, v);
+                var logicResult = HandleMustContain(constraint.SpecificName, v, cellsMustContain, logicalStepDescs);
+                if (logicResult != LogicResult.None)
+                {
+                    return logicResult;
+                }
+            }
+        }
+
         return LogicResult.None;
+    }
+
+    private LogicResult HandleMustContain(string name, int v, List<(int, int)> cellsMustContain, List<LogicalStepDesc> logicalStepDescs)
+    {
+        if (cellsMustContain == null || cellsMustContain.Count == 0)
+        {
+            return LogicResult.None;
+        }
+
+        if (cellsMustContain.Count == 1)
+        {
+            var (i, j) = cellsMustContain[0];
+            logicalStepDescs?.Add(new($"Hidden Single in {name}: {CellName(i, j)}={v}", CandidateIndex((i, j), v).ToEnumerable(), null, isSingle: true));
+            if (!SetValue(i, j, v))
+            {
+                return LogicResult.Invalid;
+            }
+            return LogicResult.Changed;
+        }
+
+        uint valueMask = ValueMask(v);
+        var elims = CalcElims(valueMask, cellsMustContain);
+        if (elims == null || elims.Count == 0)
+        {
+            return LogicResult.None;
+        }
+
+        logicalStepDescs?.Add(new(
+                        desc: $"Pointing: {v}{CompactName(cellsMustContain)} in {name} => {DescribeElims(elims)}",
+                        sourceCandidates: CandidateIndexes(valueMask, cellsMustContain),
+                        elimCandidates: elims
+                    ));
+        if (!ClearCandidates(elims))
+        {
+            return LogicResult.Invalid;
+        }
+        return LogicResult.Changed;
     }
 
     private LogicResult FindUnorthodoxTuple(List<LogicalStepDesc> logicalStepDescs, int tupleSize)
