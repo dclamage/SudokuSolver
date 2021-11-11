@@ -9,6 +9,8 @@ public class BetweenLineConstraint : Constraint
     public readonly (int, int) outerCell1;
     public readonly List<(int, int)> innerCells;
     private readonly HashSet<(int, int)> innerCellsLookup;
+    private readonly List<(int, int)> cells;
+    private readonly bool valid;
     private int minUniqueInnerValues;
 
     public BetweenLineConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
@@ -19,7 +21,7 @@ public class BetweenLineConstraint : Constraint
             throw new ArgumentException($"Between Line constraint expects 1 cell group, got {cellGroups.Count}.");
         }
 
-        var cells = cellGroups[0];
+        cells = cellGroups[0];
         if (cells.Count > 2)
         {
             outerCell0 = cells[0];
@@ -30,6 +32,11 @@ public class BetweenLineConstraint : Constraint
                 innerCells.Add(cells[i]);
             }
             innerCellsLookup = new(innerCells);
+            valid = true;
+        }
+        else
+        {
+            valid = false;
         }
     }
 
@@ -62,7 +69,7 @@ public class BetweenLineConstraint : Constraint
 
     public override LogicResult InitCandidates(Solver sudokuSolver)
     {
-        if (innerCells == null || innerCells.Count == 0)
+        if (!valid)
         {
             return LogicResult.None;
         }
@@ -73,7 +80,7 @@ public class BetweenLineConstraint : Constraint
 
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
-        if (innerCells == null || innerCells.Count == 0)
+        if (!valid)
         {
             return true;
         }
@@ -237,7 +244,8 @@ public class BetweenLineConstraint : Constraint
         return true;
     }
 
-    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(solver, innerCells.Append(outerCell0).Append(outerCell1), logicalStepDescription);
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => valid ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
+    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => valid ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {

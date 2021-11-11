@@ -118,7 +118,7 @@ public class LittleKillerConstraint : Constraint
         return cell;
     }
 
-    public override string SpecificName => $"Little Killer at {CellName(cellStart)}";
+    public override string SpecificName => $"Little Killer {sum} at {CellName(cellStart)}";
 
     public override LogicResult InitCandidates(Solver sudokuSolver)
     {
@@ -154,6 +154,7 @@ public class LittleKillerConstraint : Constraint
     }
 
     public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription);
+    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumCells != null ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {

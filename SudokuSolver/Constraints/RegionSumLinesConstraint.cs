@@ -111,7 +111,8 @@ public class RegionSumLinesConstraint : Constraint
         return true;
     }
 
-    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(solver, cells, logicalStepDescription);
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => !isNoop ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
+    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => !isNoop ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
 
     public override LogicResult StepLogic(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
     {
