@@ -86,17 +86,17 @@ public enum LogicResult
 public class Solver
 {
 #if PROFILING
-        public static readonly Dictionary<string, Stopwatch> timers = new();
-        public static void PrintTimers()
+    public static readonly Dictionary<string, Stopwatch> timers = new();
+    public static void PrintTimers()
+    {
+        foreach (var timer in timers.OrderByDescending(timer => timer.Value.Elapsed))
         {
-            foreach (var timer in timers.OrderByDescending(timer => timer.Value.Elapsed))
+            //if (timer.Key != "Global")
             {
-                //if (timer.Key != "Global")
-                {
-                    Console.WriteLine($"{timer.Key}: {timer.Value.Elapsed.TotalMilliseconds}ms");
-                }
+                Console.WriteLine($"{timer.Key}: {timer.Value.Elapsed.TotalMilliseconds}ms");
             }
         }
+    }
 #endif
 
     public readonly int WIDTH;
@@ -512,11 +512,11 @@ public class Solver
     public void AddConstraint(Constraint constraint)
     {
 #if PROFILING
-            string constraintName = constraint.GetType().FullName;
-            if (!timers.ContainsKey(constraintName))
-            {
-                timers[constraintName] = new();
-            }
+        string constraintName = constraint.GetType().FullName;
+        if (!timers.ContainsKey(constraintName))
+        {
+            timers[constraintName] = new();
+        }
 #endif
         constraints.Add(constraint);
     }
@@ -597,20 +597,20 @@ public class Solver
     public bool FinalizeConstraints()
     {
 #if PROFILING
-            if (!timers.ContainsKey("Global"))
-            {
-                timers["Global"] = Stopwatch.StartNew();
+        if (!timers.ContainsKey("Global"))
+        {
+            timers["Global"] = Stopwatch.StartNew();
 
-                timers["FindNakedSingles"] = new();
-                timers["FindHiddenSingle"] = new();
-                timers["FindDirectCellForcing"] = new();
-                timers["FindNakedTuples"] = new();
-                timers["FindPointingTuples"] = new();
-                timers["FindFishes"] = new();
-                timers["FindWings"] = new();
-                timers["FindAIC"] = new();
-                timers["FindSimpleContradictions"] = new();
-            }
+            timers["FindNakedSingles"] = new();
+            timers["FindHiddenSingle"] = new();
+            timers["FindDirectCellForcing"] = new();
+            timers["FindNakedTuples"] = new();
+            timers["FindPointingTuples"] = new();
+            timers["FindFishes"] = new();
+            timers["FindWings"] = new();
+            timers["FindAIC"] = new();
+            timers["FindSimpleContradictions"] = new();
+        }
 #endif
         if (regions == null)
         {
@@ -2303,11 +2303,11 @@ public class Solver
         LogicResult result = LogicResult.None;
 
 #if PROFILING
-            timers["FindNakedSingles"].Start();
+        timers["FindNakedSingles"].Start();
 #endif
         result = FindNakedSingles(logicalStepDescs);
 #if PROFILING
-            timers["FindNakedSingles"].Stop();
+        timers["FindNakedSingles"].Stop();
 #endif
         if (result != LogicResult.None)
         {
@@ -2315,41 +2315,26 @@ public class Solver
         }
 
 #if PROFILING
-            timers["FindHiddenSingle"].Start();
+        timers["FindHiddenSingle"].Start();
 #endif
         result = FindHiddenSingle(logicalStepDescs);
 #if PROFILING
-            timers["FindHiddenSingle"].Stop();
+        timers["FindHiddenSingle"].Stop();
 #endif
         if (result != LogicResult.None)
         {
             return result;
-        }
-
-        if (!isBruteForcing)
-        {
-#if PROFILING
-                timers["FindDirectCellForcing"].Start();
-#endif
-            result = FindDirectCellForcing(logicalStepDescs);
-#if PROFILING
-                timers["FindDirectCellForcing"].Stop();
-#endif
-            if (result != LogicResult.None)
-            {
-                return result;
-            }
         }
 
         foreach (var constraint in constraints)
         {
 #if PROFILING
-                string constraintName = constraint.GetType().FullName;
-                timers[constraintName].Start();
+            string constraintName = constraint.GetType().FullName;
+            timers[constraintName].Start();
 #endif
             result = constraint.StepLogic(this, logicalStepDescs, isBruteForcing);
 #if PROFILING
-                timers[constraintName].Stop();
+            timers[constraintName].Stop();
 #endif
             if (result != LogicResult.None)
             {
@@ -2374,14 +2359,26 @@ public class Solver
             return LogicResult.None;
         }
 
+#if PROFILING
+        timers["FindDirectCellForcing"].Start();
+#endif
+        result = FindDirectCellForcing(logicalStepDescs);
+#if PROFILING
+        timers["FindDirectCellForcing"].Stop();
+#endif
+        if (result != LogicResult.None)
+        {
+            return result;
+        }
+
         if (!DisableTuples)
         {
 #if PROFILING
-                timers["FindNakedTuples"].Start();
+            timers["FindNakedTuples"].Start();
 #endif
             result = FindNakedTuples(logicalStepDescs);
 #if PROFILING
-                timers["FindNakedTuples"].Stop();
+            timers["FindNakedTuples"].Stop();
 #endif
             if (result != LogicResult.None)
             {
@@ -2392,11 +2389,11 @@ public class Solver
         if (!DisablePointing)
         {
 #if PROFILING
-                timers["FindPointingTuples"].Start();
+            timers["FindPointingTuples"].Start();
 #endif
             result = FindPointingTuples(logicalStepDescs);
 #if PROFILING
-                timers["FindPointingTuples"].Stop();
+            timers["FindPointingTuples"].Stop();
 #endif
             if (result != LogicResult.None)
             {
@@ -2407,11 +2404,11 @@ public class Solver
         if (!DisableFishes)
         {
 #if PROFILING
-                timers["FindFishes"].Start();
+            timers["FindFishes"].Start();
 #endif
             result = FindFishes(logicalStepDescs);
 #if PROFILING
-                timers["FindFishes"].Stop();
+            timers["FindFishes"].Stop();
 #endif
             if (result != LogicResult.None)
             {
@@ -2422,11 +2419,11 @@ public class Solver
         if (!DisableWings)
         {
 #if PROFILING
-                timers["FindWings"].Start();
+            timers["FindWings"].Start();
 #endif
             result = FindWings(logicalStepDescs);
 #if PROFILING
-                timers["FindWings"].Stop();
+            timers["FindWings"].Stop();
 #endif
             if (result != LogicResult.None)
             {
@@ -2437,11 +2434,11 @@ public class Solver
         if (!DisableAIC)
         {
 #if PROFILING
-                timers["FindAIC"].Start();
+            timers["FindAIC"].Start();
 #endif
             result = FindAIC(logicalStepDescs);
 #if PROFILING
-                timers["FindAIC"].Stop();
+            timers["FindAIC"].Stop();
 #endif
             if (result != LogicResult.None)
             {
@@ -2450,11 +2447,11 @@ public class Solver
         }
 
 #if PROFILING
-            timers["FindSimpleContradictions"].Start();
+        timers["FindSimpleContradictions"].Start();
 #endif
         result = FindSimpleContradictions(logicalStepDescs);
 #if PROFILING
-            timers["FindSimpleContradictions"].Stop();
+        timers["FindSimpleContradictions"].Stop();
 #endif
         if (result != LogicResult.None)
         {

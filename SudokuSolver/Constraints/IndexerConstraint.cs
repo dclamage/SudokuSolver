@@ -28,34 +28,64 @@ public abstract class AbstractIndexerConstraint : Constraint
         cellsHash = new(cells);
     }
 
-    public override bool EnforceConstraint(Solver solver, int i, int j, int value)
+    // Completely handled by weak links
+    public override bool EnforceConstraint(Solver solver, int i, int j, int value) => true;
+
+    public override void InitLinks(Solver solver)
     {
-        if (cellsHash.Contains((i, j)))
+        var board = solver.Board;
+        for (int i = 0; i < HEIGHT; i++)
         {
-            var (ti, tj, tv) = TargetCell(solver, i, j, value);
-            if (ti != i || tj != j)
+            for (int j = 0; j < WIDTH; j++)
             {
-                if (!solver.SetValue(ti, tj, tv))
+                uint mask = board[i, j];
+                if (IsValueSet(mask))
                 {
-                    return false;
+                    continue;
+                }
+
+                int minVal = MinValue(mask);
+                int maxVal = MaxValue(mask);
+                for (int v = minVal; v <= maxVal; v++)
+                {
+                    if (!HasValue(mask, v))
+                    {
+                        continue;
+                    }
+                    int cand0 = CandidateIndex(i, j, v);
+
+                    if (cellsHash.Contains((i, j)))
+                    {
+                        var (ti, tj, tv) = TargetCell(solver, i, j, v);
+                        if (ti != i || tj != j)
+                        {
+                            for (int wv = 1; wv <= MAX_VALUE; wv++)
+                            {
+                                if (wv != tv)
+                                {
+                                    solver.AddWeakLink(cand0, CandidateIndex(ti, tj, wv));
+                                }
+                            }
+                        }
+                    }
+
+                    var (ii, ij, iv) = InvTargetCell(solver, i, j, v);
+                    if (ii != i || ij != j)
+                    {
+                        if (cellsHash.Contains((ii, ij)))
+                        {
+                            for (int wv = 1; wv <= MAX_VALUE; wv++)
+                            {
+                                if (wv != iv)
+                                {
+                                    solver.AddWeakLink(cand0, CandidateIndex(ii, ij, wv));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
-
-        var (ii, ij, iv) = InvTargetCell(solver, i, j, value);
-        if (ii != i || ij != j)
-        {
-            if (cellsHash.Contains((ii, ij)))
-            {
-                if (!solver.SetValue(ii, ij, iv))
-                {
-                    return false;
-                }
-            }
-        }
-
-        // Constraint not affected.
-        return true;
     }
 
     public override LogicResult StepLogic(Solver solver, StringBuilder logicalStepDescription, bool isBruteForcing)

@@ -100,24 +100,36 @@ public class CloneConstraint : Constraint
 
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
-        if (cellToClones.Count == 0)
-        {
-            return true;
-        }
-
         if (cellToClones.TryGetValue((i, j), out var cloneCellList))
         {
-            foreach (var cloneCell in cloneCellList)
+            foreach (var (ci, cj) in cloneCellList)
             {
-                uint clearMask = ALL_VALUES_MASK & ~ValueMask(val);
-                var clearResult = sudokuSolver.ClearMask(cloneCell.Item1, cloneCell.Item2, clearMask);
-                if (clearResult == LogicResult.Invalid)
+                if (!sudokuSolver.SetValue(ci, cj, val))
                 {
                     return false;
                 }
             }
         }
         return true;
+    }
+
+    public override void InitLinks(Solver sudokuSolver)
+    {
+        foreach (var (cell0, cell1) in cellPairs)
+        {
+            for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+            {
+                int candIndex0 = CandidateIndex(cell0, v0);
+                for (int v1 = 1; v1 <= MAX_VALUE; v1++)
+                {
+                    if (v0 != v1)
+                    {
+                        int candIndex1 = CandidateIndex(cell1, v1);
+                        sudokuSolver.AddWeakLink(candIndex0, candIndex1);
+                    }
+                }
+            }
+        }
     }
 
     public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
@@ -202,26 +214,5 @@ public class CloneConstraint : Constraint
             }
         }
         return LogicResult.None;
-    }
-
-    public override void InitLinks(Solver sudokuSolver)
-    {
-        foreach (var (cell0, cell1) in cellPairs)
-        {
-            int cellIndex0 = FlatIndex(cell0);
-            int cellIndex1 = FlatIndex(cell1);
-            for (int v0 = 1; v0 <= MAX_VALUE; v0++)
-            {
-                int candIndex0 = cellIndex0 * MAX_VALUE + v0 - 1;
-                for (int v1 = 1; v1 <= MAX_VALUE; v1++)
-                {
-                    if (v0 != v1)
-                    {
-                        int candIndex1 = cellIndex1 * MAX_VALUE + v1 - 1;
-                        sudokuSolver.AddWeakLink(candIndex0, candIndex1);
-                    }
-                }
-            }
-        }
     }
 }
