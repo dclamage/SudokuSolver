@@ -1,4 +1,6 @@
-﻿namespace SudokuSolver.Constraints;
+﻿using System.Collections.Generic;
+
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Between Line", ConsoleName = "betweenline")]
 public class BetweenLineConstraint : Constraint
@@ -234,6 +236,8 @@ public class BetweenLineConstraint : Constraint
 
         return true;
     }
+
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(solver, innerCells.Append(outerCell0).Append(outerCell1), logicalStepDescription);
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {

@@ -861,12 +861,30 @@ namespace SudokuSolver
             bool[,] isOriginalGiven = new bool[height, width];
             solver.customInfo["Givens"] = isOriginalGiven;
 
+            uint[,] originalCenterMarks = !onlyGivens ? new uint[height, width] : null;
+            solver.customInfo["OriginalCenterMarks"] = originalCenterMarks;
+
             i = 0;
             foreach (var row in fpuzzlesData.grid)
             {
                 j = 0;
                 foreach (var val in row)
                 {
+                    if (!onlyGivens)
+                    {
+                        if (val.value != 0)
+                        {
+                            originalCenterMarks[i, j] = ValueMask(val.value);
+                        }
+                        else if (val.centerPencilMarks != null)
+                        {
+                            foreach (int v in val.centerPencilMarks)
+                            {
+                                originalCenterMarks[i, j] |= ValueMask(v);
+                            }
+                        }
+                    }
+
                     bool wroteValue = false;
                     int value = val.given || !onlyGivens ? val.value : 0;
                     int[] pencilMarks = !onlyGivens && val.centerPencilMarks != null && val.centerPencilMarks.Length > 0 ? val.centerPencilMarks : val.givenPencilMarks;

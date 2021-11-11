@@ -113,7 +113,7 @@ public class CloneConstraint : Constraint
         return true;
     }
 
-    public override void InitLinks(Solver sudokuSolver)
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription)
     {
         foreach (var (cell0, cell1) in cellPairs)
         {
@@ -130,6 +130,7 @@ public class CloneConstraint : Constraint
                 }
             }
         }
+        return LogicResult.None;
     }
 
     public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)

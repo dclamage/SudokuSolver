@@ -1,4 +1,6 @@
-﻿namespace SudokuSolver.Constraints;
+﻿using System.Collections.Generic;
+
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Killer Cage", ConsoleName = "killer")]
 public class KillerCageConstraint : Constraint
@@ -54,7 +56,7 @@ public class KillerCageConstraint : Constraint
         return true;
     }
 
-    public override void InitLinks(Solver sudokuSolver) => sumCells?.InitLinks(sudokuSolver, sum.ToEnumerable());
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription);
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {

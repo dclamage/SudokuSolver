@@ -1,4 +1,6 @@
-﻿namespace SudokuSolver.Constraints;
+﻿using System.Collections.Generic;
+
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Little Killer", ConsoleName = "lk")]
 public class LittleKillerConstraint : Constraint
@@ -151,7 +153,7 @@ public class LittleKillerConstraint : Constraint
         return sum == actualSum;
     }
 
-    public override void InitLinks(Solver sudokuSolver) => sumCells?.InitLinks(sudokuSolver, sum.ToEnumerable());
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription);
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {

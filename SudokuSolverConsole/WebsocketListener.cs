@@ -252,7 +252,7 @@ class WebsocketListener : IDisposable
         Solver logicalSolver = null;
         if (logical)
         {
-            logicalSolver = solver.Clone();
+            logicalSolver = solver.Clone(willRunNonSinglesLogic: true);
             if (logicalSolver.ConsolidateBoard() == LogicResult.Invalid)
             {
                 SendMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
@@ -357,6 +357,26 @@ class WebsocketListener : IDisposable
 
     void SendStep(string ipPort, int nonce, Solver solver)
     {
+        if (solver.customInfo["OriginalCenterMarks"] is uint[,] originalCenterMarks)
+        {
+            uint[,] board = solver.Board;
+            for (int i = 0; i < solver.HEIGHT; i++)
+            {
+                for (int j = 0; j < solver.WIDTH; j++)
+                {
+                    uint origMask = originalCenterMarks[i, j] & ~SolverUtility.valueSetMask;
+                    uint newMask = board[i, j] & ~SolverUtility.valueSetMask;
+                    if (origMask != newMask)
+                    {
+                        StringBuilder sb = new StringBuilder();
+                        sb.Append("Initial candidates.");
+                        SendLogicResponse(ipPort, nonce, solver, LogicResult.Changed, sb);
+                        return;
+                    }
+                }
+            }
+        }
+
         List<LogicalStepDesc> logicalStepDescs = new();
         var logicResult = solver.StepLogic(logicalStepDescs);
         SendLogicResponse(ipPort, nonce, solver, logicResult, StepsDescription(logicalStepDescs));

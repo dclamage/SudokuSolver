@@ -1,6 +1,8 @@
 ﻿//#define PROFILING
 //#define INFINITE_LOOP_CHECK
 
+using System.Reflection.Metadata.Ecma335;
+
 namespace SudokuSolver;
 
 public enum GroupType
@@ -129,7 +131,8 @@ public class Solver
 
     private uint[,] board;
     private int[,] regions = null;
-    private readonly SortedSet<int>[] weakLinks;
+    private SortedSet<int>[] weakLinks;
+    private int totalWeakLinks = 0;
     private SortedSet<int>[] CloneWeakLinks()
     {
         SortedSet<int>[] newWeakLinks = new SortedSet<int>[NUM_CANDIDATES];
@@ -370,7 +373,7 @@ public class Solver
         }
     }
 
-    public Solver(Solver other)
+    public Solver(Solver other, bool willRunNonSinglesLogic)
     {
         WIDTH = other.WIDTH;
         HEIGHT = other.HEIGHT;
@@ -398,11 +401,16 @@ public class Solver
         CellToGroupMap = other.CellToGroupMap;
         customInfo = other.customInfo;
 
-        // For now, weak links are constant after initialization
-        // Constraints like arrow, killer, LK and the like could add more weak links during the solve,
-        // but for now they will not.
-        weakLinks = other.weakLinks;
-        //weakLinks = other.CloneWeakLinks();
+        // Brute force is far too slow if the weak links are copied every clone.
+        if (willRunNonSinglesLogic)
+        {
+            weakLinks = CloneWeakLinks();
+        }
+        else
+        {
+            weakLinks = other.weakLinks;
+        }
+        totalWeakLinks = other.totalWeakLinks;
 
         // Memos are also shallow copies.
         // The "key" for memos need to be descriptive enough such that their input has a guaranteed output.
@@ -529,8 +537,14 @@ public class Solver
             var (i1, j1, v1) = CandIndexToCoord(candIndex1);
             if (HasValue(board[i0, j0], v0) && HasValue(board[i1, j1], v1))
             {
-                weakLinks[candIndex0].Add(candIndex1);
-                weakLinks[candIndex1].Add(candIndex0);
+                if (weakLinks[candIndex0].Add(candIndex1))
+                {
+                    totalWeakLinks++;
+                }
+                if (weakLinks[candIndex1].Add(candIndex0))
+                {
+                    totalWeakLinks++;
+                }
             }
         }
     }
@@ -603,6 +617,7 @@ public class Solver
 
             timers["FindNakedSingles"] = new();
             timers["FindHiddenSingle"] = new();
+            timers["AddNewWeakLinks"] = new();
             timers["FindDirectCellForcing"] = new();
             timers["FindNakedTuples"] = new();
             timers["FindPointingTuples"] = new();
@@ -655,12 +670,12 @@ public class Solver
         // Add any weak links from constraints
         foreach (var constraint in constraints)
         {
-            constraint.InitLinks(this);
+            constraint.InitLinks(this, null);
         }
 
         // Initialize the constraints again in a loop until there are no more changes
-        bool haveChange = true;
-        while (haveChange)
+        bool haveChange;
+        do
         {
             haveChange = false;
             foreach (var constraint in constraints)
@@ -675,15 +690,21 @@ public class Solver
                 {
                     haveChange = true;
                 }
+
+                int prevNumLinks = totalWeakLinks;
+                constraint.InitLinks(this, null);
+                if (prevNumLinks < totalWeakLinks)
+                {
+                    haveChange = true;
+                }
             }
-        }
+        } while (haveChange);
 
         smallGroupsBySize = Groups.Where(g => g.Cells.Count < MAX_VALUE).OrderBy(g => g.Cells.Count).ToList();
         if (smallGroupsBySize.Count == 0)
         {
             smallGroupsBySize = null;
         }
-
         return true;
     }
 
@@ -691,7 +712,7 @@ public class Solver
     /// Creates a copy of the board, including all constraints, set values, and candidates.
     /// </summary>
     /// <returns></returns>
-    public Solver Clone() => new(this);
+    public Solver Clone(bool willRunNonSinglesLogic) => new(this, willRunNonSinglesLogic);
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetValue((int, int) cell)
@@ -1414,7 +1435,7 @@ public class Solver
             throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
         }
 
-        Solver solver = Clone();
+        Solver solver = Clone(willRunNonSinglesLogic: false);
         solver.isBruteForcing = true;
         if (!multiThread)
         {
@@ -1470,7 +1491,7 @@ public class Solver
                 uint valMask = ValueMask(val);
 
                 // Create a backup board in case it needs to be restored
-                Solver backupBoard = solver.Clone();
+                Solver backupBoard = solver.Clone(willRunNonSinglesLogic: false);
                 backupBoard.isBruteForcing = true;
                 backupBoard.board[i, j] &= ~valMask;
                 if (backupBoard.board[i, j] != 0)
@@ -1601,7 +1622,7 @@ public class Solver
             uint valMask = ValueMask(val);
 
             // Create a backup board in case it needs to be restored
-            Solver newSolver = solver.Clone();
+            Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
             newSolver.isBruteForcing = true;
             newSolver.board[i, j] &= ~valMask;
             if (newSolver.board[i, j] != 0)
@@ -1636,7 +1657,7 @@ public class Solver
         using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, skipSolutions, cancellationToken);
         try
         {
-            Solver boardCopy = Clone();
+            Solver boardCopy = Clone(willRunNonSinglesLogic: false);
             boardCopy.isBruteForcing = true;
             if (state.multiThread)
             {
@@ -1806,7 +1827,7 @@ public class Solver
 
                     // Create a board without this value and push it to the stack
                     // for later processing.
-                    Solver newSolver = solver.Clone();
+                    Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
                     newSolver.isBruteForcing = true;
                     newSolver.board[i, j] &= ~valMask;
                     if (newSolver.board[i, j] != 0)
@@ -1868,7 +1889,7 @@ public class Solver
                 uint valMask = ValueMask(val);
 
                 // Create a solver without this value and start a task for it
-                Solver newSolver = solver.Clone();
+                Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
                 newSolver.isBruteForcing = true;
                 newSolver.board[i, j] &= ~valMask;
                 if (newSolver.board[i, j] != 0)
@@ -2100,7 +2121,7 @@ public class Solver
         if (!state.boardInvalid && ((state.fixedBoard[cellIndex] & valMask) == 0 || state.numSolutions != null && state.numSolutions[numSolutionsIndex] < 8))
         {
             // Do the solve on a copy of the board
-            Solver boardCopy = Clone();
+            Solver boardCopy = Clone(willRunNonSinglesLogic: false);
             boardCopy.isBruteForcing = true;
 
             // Go through all previous cells and set only their real candidates as possibilities
@@ -2208,7 +2229,7 @@ public class Solver
         do
         {
 #if INFINITE_LOOP_CHECK
-                Solver clone = Clone();
+            Solver clone = Clone();
 #endif
             if (!IsBoardValid(logicalStepDescs))
             {
@@ -2219,10 +2240,10 @@ public class Solver
                 result = StepLogic(logicalStepDescs);
             }
 #if INFINITE_LOOP_CHECK
-                if (result == LogicResult.Changed && IsSame(clone))
-                {
-                    throw new InvalidOperationException("Logic step returned a change, but no changed to candidates occured.");
-                }
+            if (result == LogicResult.Changed && IsSame(clone))
+            {
+                throw new InvalidOperationException("Logic step returned a change, but no changed to candidates occured.");
+            }
 #endif
             changed |= result == LogicResult.Changed;
         } while (result == LogicResult.Changed);
@@ -2359,17 +2380,21 @@ public class Solver
             return LogicResult.None;
         }
 
+        // Re-evaluate weak links
 #if PROFILING
-        timers["FindDirectCellForcing"].Start();
+        timers["AddNewWeakLinks"].Start();
 #endif
-        result = FindDirectCellForcing(logicalStepDescs);
-#if PROFILING
-        timers["FindDirectCellForcing"].Stop();
-#endif
-        if (result != LogicResult.None)
+        foreach (var constraint in constraints)
         {
-            return result;
+            var logicResult = constraint.InitLinks(this, logicalStepDescs);
+            if (logicResult != LogicResult.None)
+            {
+                return logicResult;
+            }
         }
+#if PROFILING
+        timers["AddNewWeakLinks"].Stop();
+#endif
 
         if (!DisableTuples)
         {
@@ -2394,6 +2419,18 @@ public class Solver
             result = FindPointingTuples(logicalStepDescs);
 #if PROFILING
             timers["FindPointingTuples"].Stop();
+#endif
+            if (result != LogicResult.None)
+            {
+                return result;
+            }
+
+#if PROFILING
+            timers["FindDirectCellForcing"].Start();
+#endif
+            result = FindDirectCellForcing(logicalStepDescs);
+#if PROFILING
+            timers["FindDirectCellForcing"].Stop();
 #endif
             if (result != LogicResult.None)
             {
@@ -4176,7 +4213,7 @@ public class Solver
                             uint valueMask = ValueMask(v);
                             if ((cellMask & valueMask) != 0)
                             {
-                                Solver boardCopy = Clone();
+                                Solver boardCopy = Clone(willRunNonSinglesLogic: false);
                                 boardCopy.isBruteForcing = true;
 
                                 List<LogicalStepDesc> contradictionSteps = logicalStepDescs != null ? new() : null;

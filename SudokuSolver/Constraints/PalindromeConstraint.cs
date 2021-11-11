@@ -207,7 +207,7 @@ public class PalindromeConstraint : Constraint
         return LogicResult.None;
     }
 
-    public override void InitLinks(Solver sudokuSolver)
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription)
     {
         foreach (var (cell0, cell1) in cellToClone)
         {
@@ -226,5 +226,6 @@ public class PalindromeConstraint : Constraint
                 }
             }
         }
+        return LogicResult.None;
     }
 }

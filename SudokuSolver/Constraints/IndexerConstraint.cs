@@ -31,7 +31,7 @@ public abstract class AbstractIndexerConstraint : Constraint
     // Completely handled by weak links
     public override bool EnforceConstraint(Solver solver, int i, int j, int value) => true;
 
-    public override void InitLinks(Solver solver)
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription)
     {
         var board = solver.Board;
         for (int i = 0; i < HEIGHT; i++)
@@ -86,6 +86,7 @@ public abstract class AbstractIndexerConstraint : Constraint
                 }
             }
         }
+        return LogicResult.None;
     }
 
     public override LogicResult StepLogic(Solver solver, StringBuilder logicalStepDescription, bool isBruteForcing)
