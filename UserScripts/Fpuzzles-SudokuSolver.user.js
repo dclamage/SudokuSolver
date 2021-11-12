@@ -8,13 +8,13 @@
 // @match        https://f-puzzles.com/*
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
 // @grant        none
-// @run-at       document-start
+// @run-at       document-end
 // ==/UserScript==
 
 (function() {
-    'use strict';
-
     const doShim = function() {
+        'use strict';
+
         // Makes center and corner marks larger so they're easier to see.
         let textScale = 1.5;
         const settingsIcon = '⚙️';
@@ -996,13 +996,27 @@
                 clearChangeHistory();
             }
         }
+
+        if (window.boolConstraints) {
+            createGrid(size, true, true);
+            if (location.search.substring(0, importString.length) === importString) {
+                mode = 'Solving';
+                importPuzzle(location.search.substring(importString.length, location.search.length), true);
+                showRules();
+                puzzleTimer.restart(true);
+            }
+        }
     }
 
-    if (window.grid) {
+    let intervalId = setInterval(() => {
+        if (typeof grid === 'undefined' ||
+            typeof exportPuzzle === 'undefined' ||
+            typeof importPuzzle === 'undefined' ||
+            typeof cell === 'undefined') {
+            return;
+        }
+
+        clearInterval(intervalId);
         doShim();
-    } else {
-        document.addEventListener('DOMContentLoaded', (event) => {
-            doShim();
-        });
-    }
+    }, 16);
 })();

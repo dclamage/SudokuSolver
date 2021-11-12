@@ -1,19 +1,17 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.5
+// @version      1.6
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
 // @match        https://f-puzzles.com/*
 // @icon         data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==
 // @grant        none
-// @run-at       document-start
+// @run-at       document-end
 // ==/UserScript==
 
 (function() {
-    'use strict';
-
     // Adding a new constraint:
     // 1. Add a new entry to the newConstraintInfo array
     // 2. If the type is not already supported, add it to the following:
@@ -103,6 +101,33 @@
                 '',
                 'Click on a cell to add a box indexer.',
                 'Click on a box indexer to remove it.'
+            ]
+        },
+        {
+            name: 'X Sum',
+            type: 'outside',
+            symbol: '◯',
+            tooltip: [
+                'Indicates the sum of the first X numbers in the row or column, ',
+                'where X is equal to the first number placed in that direction.',
+                '',
+                'Click outside the grid to add an x-sum.',
+                'Click on an x-sum to remove it.',
+                'Shift click on an x-sum to select it.',
+                'Type to enter a total into the selected x-sum (or the most recently edited one).'
+            ]
+        },
+        {
+            name: 'Skyscraper',
+            type: 'outside',
+            symbol: '▯',
+            tooltip: [
+                'Indicates the count of numbers in the row or column which increase from the previous highest value.',
+                '',
+                'Click outside the grid to add a skyscraper.',
+                'Click on a skyscraper to remove it.',
+                'Shift click on a skyscraper to select it.',
+                'Type to enter a total into the selected skyscraper (or the most recently edited one).'
             ]
         }
     ]
@@ -261,6 +286,8 @@
     }
 
     const doShim = function() {
+        'use strict';
+
         // Additional import/export data
         const origExportPuzzle = exportPuzzle;
         exportPuzzle = function(includeCandidates) {
@@ -295,6 +322,28 @@
                             fontC: "#000000",
                             fromConstraint: constraintInfo.name
                         });
+                    } else if (constraintInfo.type === 'outside') {
+                        if (!puzzle.text) {
+                            puzzle.text = [];
+                        }
+
+                        for (let instance of puzzleEntry) {
+                            puzzle.text.push({
+                                cells: [instance.cell],
+                                value: constraintInfo.symbol,
+                                fontC: "#000000",
+                                size: 1.1,
+                                fromConstraint: constraintInfo.name
+                            });
+
+                            puzzle.text.push({
+                                cells: [instance.cell],
+                                value: instance.value,
+                                fontC: "#000000",
+                                size: 0.7,
+                                fromConstraint: constraintInfo.name
+                            });
+                        }
                     }
                 }
             }
@@ -337,6 +386,20 @@
                     puzzle.cage = filteredCages;
                 } else {
                     delete puzzle.cage;
+                }
+            }
+
+            if (puzzle.text) {
+                let filteredText = [];
+                for (let text of puzzle.text) {
+                    if (!text.fromConstraint || !constraintNames.includes(text.fromConstraint)) {
+                        filteredText.push(text);
+                    }
+                }
+                if (filteredText.length > 0) {
+                    puzzle.text = filteredText;
+                } else {
+                    delete puzzle.text;
                 }
             }
 
@@ -533,6 +596,98 @@
                 }
             }
 
+            // X-Sums
+            const constraintsXSum = constraints[cID('X Sum')];
+            if (constraintsXSum && constraintsXSum.length > 0) {
+                for (let xSum of constraintsXSum) {
+                    if (xSum.value.length && !isNaN(parseInt(xSum.value))) {
+                        const index = xSum.set.indexOf(cell);
+                        if (index > -1) {
+                            const firstCell = xSum.set[0];
+                            const numCells = firstCell.value;
+                            if (numCells !== 0 && index < numCells) {
+                                const xSumValue = parseInt(xSum.value);
+
+                                if (index === 0) {
+                                    let minVal = numCells;
+                                    let numVals = 1;
+                                    if (numCells > 1) {
+                                        for (let v = 1; v <= size; v++) {
+                                            if (v !== numCells) {
+                                                minVal += v;
+                                                numVals++;
+                                                if (numVals == numCells) {
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    let maxVal = numCells;
+                                    numVals = 1;
+                                    if (numCells > 1) {
+                                        for (let v = size; v > 0; v--) {
+                                            if (v !== numCells) {
+                                                maxVal += v;
+                                                numVals++;
+                                                if (numVals == numCells) {
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if (xSumValue > maxVal || xSumValue < minVal) {
+                                        return false;
+                                    }
+                                }
+
+                                let sumValid = true;
+                                let sum = 0;
+                                for (let ci = 0; ci < firstCell.value; ci++) {
+                                    let cell = xSum.set[ci];
+                                    if (cell.value) {
+                                        sum += cell.value;
+                                    } else {
+                                        sumValid = false;
+                                    }
+                                }
+
+                                if (sumValid && sum !== xSumValue || !sumValid && sum > xSumValue) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Skyscraper
+            const constraintsSkyscraper = constraints[cID('Skyscraper')];
+            if (constraintsSkyscraper && constraintsSkyscraper.length > 0) {
+                for (let skyscraper of constraintsSkyscraper) {
+                    if (skyscraper.value.length && !isNaN(parseInt(skyscraper.value))) {
+                        const index = skyscraper.set.indexOf(cell);
+                        if (index > -1) {
+                            let seenCells = 0;
+                            let maxVal = 0;
+                            for (let cell in skyscraper.set) {
+                                let value = skyscraper.set[cell].value;
+                                if (value) {
+                                    if (maxVal < value) {
+                                        seenCells++;
+                                        maxVal = value;
+                                    }
+                                }
+                            }
+
+                            const skyscraperValue = parseInt(skyscraper.value);
+                            if (seenCells > skyscraperValue) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+
             return true;
         }
 
@@ -614,12 +769,95 @@
         // Box Indexer
         window.boxindexer = window.rowindexer;
 
+        window.xsum = function(cells) {
+            if (cells)
+                this.cell = cells[0];
+            this.set = null;
+            this.location = null;
+
+            this.value = '';
+
+            this.show = function() {
+                ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
+                ctx.font = (cellSL * 1.1) + 'px Arial';
+                ctx.fillText('◯', this.cell.x + cellSL / 2 - cellSL * 0.1, this.cell.y + (cellSL * 0.87));
+                ctx.font = (cellSL * 0.7) + 'px Arial';
+                ctx.fillText(this.value.length ? this.value : '-', this.cell.x + cellSL / 2 - cellSL * 0.13, this.cell.y + (cellSL * 0.75));
+            }
+
+            this.updateSet = function() {
+                if (this.cell) {
+                    if (this.cell.i >= 0 && this.cell.i < size) {
+                        this.set = getCellsInRow(this.cell.i);
+                        this.location = 'row ' + (this.cell.i + 1);
+                    }
+                    if (this.cell.j >= 0 && this.cell.j < size) {
+                        this.set = getCellsInColumn(this.cell.j);
+                        this.location = 'column ' + (this.cell.j + 1);
+                    }
+                }
+            }
+            this.updateSet();
+
+            this.typeNumber = function(num) {
+                if (this.value.length === 0 && num === '0') {
+                    return;
+                }
+
+                if (parseInt(this.value + String(num)) <= maxInNCells(size)) {
+                    this.value += String(num);
+                }
+            }
+        }
+
+        window.skyscraper = function(cells) {
+            if (cells)
+                this.cell = cells[0];
+            this.set = null;
+            this.location = null;
+
+            this.value = '';
+
+            this.show = function() {
+                ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
+                ctx.font = (cellSL * 1.1) + 'px Arial';
+                ctx.fillText('▯', this.cell.x + cellSL / 2 - cellSL * 0.13, this.cell.y + (cellSL * 0.8));
+                ctx.font = (cellSL * 0.7) + 'px Arial';
+                ctx.fillText(this.value.length ? this.value : '-', this.cell.x + cellSL / 2 - cellSL * 0.13, this.cell.y + (cellSL * 0.75));
+            }
+
+            this.updateSet = function() {
+                if (this.cell) {
+                    if (this.cell.i >= 0 && this.cell.i < size) {
+                        this.set = getCellsInRow(this.cell.i);
+                        this.location = 'row ' + (this.cell.i + 1);
+                    }
+                    if (this.cell.j >= 0 && this.cell.j < size) {
+                        this.set = getCellsInColumn(this.cell.j);
+                        this.location = 'column ' + (this.cell.j + 1);
+                    }
+                }
+            }
+            this.updateSet();
+
+            this.typeNumber = function(num) {
+                if (this.value.length === 0 && num === '0') {
+                    return;
+                }
+
+                if (parseInt(this.value + String(num)) <= size) {
+                    this.value += String(num);
+                }
+            }
+        }
+
         const origCategorizeTools = categorizeTools;
         categorizeTools = function() {
             origCategorizeTools();
 
             let toolLineIndex = toolConstraints.indexOf('Palindrome');
             let toolPerCellIndex = toolConstraints.indexOf('Maximum');
+            let toolOutsideIndex = toolConstraints.indexOf('Sandwich Sum');
             for (let info of newConstraintInfo) {
                 if (info.type === 'line') {
                     toolConstraints.splice(++toolLineIndex, 0, info.name);
@@ -627,6 +865,10 @@
                 } else if (info.type === 'cage') {
                     toolConstraints.splice(++toolPerCellIndex, 0, info.name);
                     regionConstraints.push(info.name);
+                } else if (info.type === 'outside') {
+                    toolConstraints.splice(++toolOutsideIndex, 0, info.name);
+                    outsideConstraints.push(info.name);
+                    typableConstraints.push(info.name);
                 }
             }
 
@@ -741,7 +983,7 @@
         }
 
         // Make all the constraint buttons smaller
-        const constraintHeight = 25;
+        const constraintHeight = 22;
         const prevCreateSidebarConstraints = createSidebarConstraints;
         createSidebarConstraints = function() {
             prevCreateSidebarConstraints();
@@ -780,11 +1022,18 @@
         }
     }
 
-    if (window.grid) {
+    let intervalId = setInterval(() => {
+        if (typeof grid === 'undefined' ||
+            typeof exportPuzzle === 'undefined' ||
+            typeof importPuzzle === 'undefined' ||
+            typeof drawConstraints === 'undefined' ||
+            typeof candidatePossibleInCell === 'undefined' ||
+            typeof categorizeTools === 'undefined' ||
+            typeof drawPopups === 'undefined') {
+            return;
+        }
+
+        clearInterval(intervalId);
         doShim();
-    } else {
-        document.addEventListener('DOMContentLoaded', (event) => {
-            doShim();
-        });
-    }
+    }, 16);
 })();
