@@ -792,7 +792,12 @@
                 const iconOffset = cellSL * 0.1 * (this.isReverse ? -1 : 1);
                 ctx.fillText('◯', this.cell.x + cellSL / 2 - iconOffset, this.cell.y + (cellSL * 0.87));
                 ctx.font = (cellSL * 0.7) + 'px Arial';
-                const textOffset = this.isReverse ? cellSL * -0.07 : cellSL * 0.13;
+                let textOffset = 0;
+                if (this.value.length <= 1) {
+                    textOffset = this.isReverse ? cellSL * -0.10 : cellSL * 0.09;
+                } else {
+                    textOffset = this.isReverse ? cellSL * -0.07 : cellSL * 0.13;
+                }
                 ctx.fillText(this.value.length ? this.value : '-', this.cell.x + cellSL / 2 - textOffset, this.cell.y + (cellSL * 0.75));
             }
 
@@ -888,12 +893,18 @@
             let toolOutsideIndex = toolConstraints.indexOf('Sandwich Sum');
             for (let info of newConstraintInfo) {
                 if (info.type === 'line') {
+                    if (toolLineIndex < toolPerCellIndex) toolPerCellIndex++;
+                    if (toolLineIndex < toolOutsideIndex) toolOutsideIndex++;
                     toolConstraints.splice(++toolLineIndex, 0, info.name);
                     lineConstraints.push(info.name);
                 } else if (info.type === 'cage') {
+                    if (toolPerCellIndex < toolLineIndex) toolLineIndex++;
+                    if (toolPerCellIndex < toolOutsideIndex) toolOutsideIndex++;
                     toolConstraints.splice(++toolPerCellIndex, 0, info.name);
                     regionConstraints.push(info.name);
                 } else if (info.type === 'outside') {
+                    if (toolOutsideIndex < toolLineIndex) toolLineIndex++;
+                    if (toolOutsideIndex < toolPerCellIndex) toolPerCellIndex++;
                     toolConstraints.splice(++toolOutsideIndex, 0, info.name);
                     outsideConstraints.push(info.name);
                     typableConstraints.push(info.name);
