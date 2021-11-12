@@ -332,7 +332,7 @@
                                 cells: [instance.cell],
                                 value: constraintInfo.symbol,
                                 fontC: "#000000",
-                                size: 1.1,
+                                size: 1.2,
                                 fromConstraint: constraintInfo.name
                             });
 
@@ -603,8 +603,7 @@
                     if (xSum.value.length && !isNaN(parseInt(xSum.value))) {
                         const index = xSum.set.indexOf(cell);
                         if (index > -1) {
-                            const firstCell = xSum.set[0];
-                            const numCells = firstCell.value;
+                            const numCells = index === 0 ? n : xSum.set[0].value;
                             if (numCells !== 0 && index < numCells) {
                                 const xSumValue = parseInt(xSum.value);
 
@@ -642,9 +641,11 @@
 
                                 let sumValid = true;
                                 let sum = 0;
-                                for (let ci = 0; ci < firstCell.value; ci++) {
+                                for (let ci = 0; ci < numCells; ci++) {
                                     let cell = xSum.set[ci];
-                                    if (cell.value) {
+                                    if (ci === index) {
+                                        sum += n;
+                                    } else if (cell.value) {
                                         sum += cell.value;
                                     } else {
                                         sumValid = false;
@@ -667,20 +668,29 @@
                     if (skyscraper.value.length && !isNaN(parseInt(skyscraper.value))) {
                         const index = skyscraper.set.indexOf(cell);
                         if (index > -1) {
+                            const skyscraperValue = parseInt(skyscraper.value);
+                            if (index + size - n + 1 < skyscraperValue) {
+                                return false;
+                            }
+
                             let seenCells = 0;
+                            let maxValIndex = -1;
                             let maxVal = 0;
-                            for (let cell in skyscraper.set) {
-                                let value = skyscraper.set[cell].value;
-                                if (value) {
+                            let haveAllVals = true;
+                            for (let ci = 0; ci < skyscraper.set.length; ci++) {
+                                let value = ci === index ? n : skyscraper.set[ci].value;
+                                if (value !== 0) {
                                     if (maxVal < value) {
                                         seenCells++;
                                         maxVal = value;
+                                        maxValIndex = ci;
                                     }
+                                } else {
+                                    haveAllVals = false;
                                 }
                             }
 
-                            const skyscraperValue = parseInt(skyscraper.value);
-                            if (seenCells > skyscraperValue) {
+                            if (haveAllVals && seenCells !== skyscraperValue || seenCells > skyscraperValue) {
                                 return false;
                             }
                         }
@@ -773,27 +783,36 @@
             if (cells)
                 this.cell = cells[0];
             this.set = null;
-            this.location = null;
-
             this.value = '';
+            this.isReverse = false;
 
             this.show = function() {
                 ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
                 ctx.font = (cellSL * 1.1) + 'px Arial';
-                ctx.fillText('◯', this.cell.x + cellSL / 2 - cellSL * 0.1, this.cell.y + (cellSL * 0.87));
+                const iconOffset = cellSL * 0.1 * (this.isReverse ? -1 : 1);
+                ctx.fillText('◯', this.cell.x + cellSL / 2 - iconOffset, this.cell.y + (cellSL * 0.87));
                 ctx.font = (cellSL * 0.7) + 'px Arial';
-                ctx.fillText(this.value.length ? this.value : '-', this.cell.x + cellSL / 2 - cellSL * 0.13, this.cell.y + (cellSL * 0.75));
+                const textOffset = this.isReverse ? cellSL * -0.07 : cellSL * 0.13;
+                ctx.fillText(this.value.length ? this.value : '-', this.cell.x + cellSL / 2 - textOffset, this.cell.y + (cellSL * 0.75));
             }
 
             this.updateSet = function() {
                 if (this.cell) {
                     if (this.cell.i >= 0 && this.cell.i < size) {
                         this.set = getCellsInRow(this.cell.i);
-                        this.location = 'row ' + (this.cell.i + 1);
+                        if (this.cell.j >= size) {
+                            this.set = this.set.slice(0);
+                            this.set.reverse();
+                            this.isReverse = true;
+                        }
                     }
                     if (this.cell.j >= 0 && this.cell.j < size) {
                         this.set = getCellsInColumn(this.cell.j);
-                        this.location = 'column ' + (this.cell.j + 1);
+                        if (this.cell.i >= size) {
+                            this.set = this.set.slice(0);
+                            this.set.reverse();
+                            this.isReverse = true;
+                        }
                     }
                 }
             }
@@ -814,27 +833,36 @@
             if (cells)
                 this.cell = cells[0];
             this.set = null;
-            this.location = null;
-
             this.value = '';
+            this.isReverse = false;
 
             this.show = function() {
                 ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
                 ctx.font = (cellSL * 1.1) + 'px Arial';
-                ctx.fillText('▯', this.cell.x + cellSL / 2 - cellSL * 0.13, this.cell.y + (cellSL * 0.8));
+                const iconOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
+                ctx.fillText('▯', this.cell.x + cellSL / 2 - iconOffset, this.cell.y + (cellSL * 0.8));
                 ctx.font = (cellSL * 0.7) + 'px Arial';
-                ctx.fillText(this.value.length ? this.value : '-', this.cell.x + cellSL / 2 - cellSL * 0.13, this.cell.y + (cellSL * 0.75));
+                const textOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
+                ctx.fillText(this.value.length ? this.value : '-', this.cell.x + cellSL / 2 - textOffset, this.cell.y + (cellSL * 0.75));
             }
 
             this.updateSet = function() {
                 if (this.cell) {
                     if (this.cell.i >= 0 && this.cell.i < size) {
                         this.set = getCellsInRow(this.cell.i);
-                        this.location = 'row ' + (this.cell.i + 1);
+                        if (this.cell.j >= size) {
+                            this.set = this.set.slice(0);
+                            this.set.reverse();
+                            this.isReverse = true;
+                        }
                     }
                     if (this.cell.j >= 0 && this.cell.j < size) {
                         this.set = getCellsInColumn(this.cell.j);
-                        this.location = 'column ' + (this.cell.j + 1);
+                        if (this.cell.i >= size) {
+                            this.set = this.set.slice(0);
+                            this.set.reverse();
+                            this.isReverse = true;
+                        }
                     }
                 }
             }
