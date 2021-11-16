@@ -239,7 +239,7 @@ namespace SudokuSolver
             string fpuzzlesJson = LZString.DecompressFromBase64(fpuzzlesURL);
             var fpuzzlesData = JsonSerializer.Deserialize(fpuzzlesJson, FpuzzlesJsonContext.Default.FPuzzlesBoard);
 
-            // Set the default regions
+         // Set the default regions
             int i, j;
             int height = fpuzzlesData.grid.Length;
             int width = fpuzzlesData.grid[0].Length;
@@ -295,6 +295,11 @@ namespace SudokuSolver
                 Author = fpuzzlesData.author,
                 Rules = fpuzzlesData.ruleset
             };
+            string[] constraintsFromRules = fpuzzlesData.ruleset.Split("constraints:");
+            if (constraintsFromRules.Length == 2) ApplyConstraints(solver, 
+                Array.FindAll(constraintsFromRules[1].Split(), c => !string.IsNullOrWhiteSpace(c))
+            );   
+            
             uint disabledLogicFlags = 0;
             if (fpuzzlesData.disabledlogic != null)
             {
