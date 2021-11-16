@@ -294,11 +294,7 @@ namespace SudokuSolver
                 Title = fpuzzlesData.title,
                 Author = fpuzzlesData.author,
                 Rules = fpuzzlesData.ruleset
-            };
-            string[] constraintsFromRules = fpuzzlesData.ruleset.Split("constraints:");
-            if (constraintsFromRules.Length == 2) ApplyConstraints(solver, 
-                Array.FindAll(constraintsFromRules[1].Split(), c => !string.IsNullOrWhiteSpace(c))
-            );   
+            };  
             
             uint disabledLogicFlags = 0;
             if (fpuzzlesData.disabledlogic != null)
@@ -858,6 +854,15 @@ namespace SudokuSolver
                 ApplyConstraints(solver, additionalConstraints);
             }
 
+            // Apply any constraints defined in the puzzle rules
+            if (solver.Rules != null) { 
+                string[] constraintsFromRules = solver.Rules.Split("constraints:");
+                if (constraintsFromRules.Length == 2) 
+                    ApplyConstraints(solver, 
+                        Array.FindAll(constraintsFromRules[1].Split(), c => !string.IsNullOrWhiteSpace(c))
+                    ); 
+            } 
+            
             if (!solver.FinalizeConstraints())
             {
                 throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
