@@ -694,7 +694,7 @@ internal class AICSolver
                     int tmaxVal = MaxValue(tmask);
                     for (int v = tminVal; v <= tmaxVal; v++)
                     {
-                        if (v != tv)
+                        if (v != tv && HasValue(tmask, v))
                         {
                             cellElims.Add(CandidateIndex(ti, tj, v));
                         }
