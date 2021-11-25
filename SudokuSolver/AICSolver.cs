@@ -569,13 +569,17 @@ internal class AICSolver
                             int cand0 = candIndices[0];
                             int cand1 = candIndices[1];
 
-                            string valSep = MAX_VALUE <= 9 ? string.Empty : ",";
-                            StringBuilder alsDesc = new();
-                            alsDesc.Append("ALS:");
-                            alsDesc.Append(solver.CompactName(totalMask, combination));
+                            StrongLinkDesc strongLinkDesc = StrongLinkDesc.Empty;
+                            if (combination.Count > 2)
+                            {
+                                string valSep = MAX_VALUE <= 9 ? string.Empty : ",";
+                                StringBuilder alsDesc = new();
+                                alsDesc.Append("ALS:");
+                                alsDesc.Append(solver.CompactName(totalMask, combination));
 
-                            string alsDescStr = alsDesc.ToString();
-                            StrongLinkDesc strongLinkDesc = new(alsDescStr, combination);
+                                string alsDescStr = alsDesc.ToString();
+                                strongLinkDesc = new(alsDescStr, combination);
+                            }
                             AddStrongLink(cand0, cand1, strongLinkDesc);
                         }
                     }
