@@ -240,12 +240,39 @@ internal class AICSolver
                 newChain.AddRange(chain);
                 newChain.Add(strongIndexEnd);
 
-                var chainElims = CalcStrongElims(newChain);
-                if (chainElims.Count > 0)
+                if (isDNL)
                 {
-                    if (!CheckBestChain(newChain, chainElims.ToList(), isDNL ? "DNL: " : "AIC: "))
+                    // Eliminate all candidates except strongIndexEnd from the cell
+                    var (i, j, v) = CandIndexToCoord(strongIndexEnd);
+                    uint elimMask = board[i, j] & ~ValueMask(v);
+                    if (elimMask != 0)
                     {
-                        return ApplyBestChain();
+                        List<int> chainElims = new();
+                        int minVal = MinValue(elimMask);
+                        int maxVal = MaxValue(elimMask);
+                        for (int curVal = minVal; curVal <= maxVal; curVal++)
+                        {
+                            if (HasValue(elimMask, curVal))
+                            {
+                                chainElims.Add(curVal);
+                            }
+                        }
+
+                        if (!CheckBestChain(newChain, chainElims, "DNL: "))
+                        {
+                            return ApplyBestChain();
+                        }
+                    }
+                }
+                else
+                {
+                    var chainElims = CalcStrongElims(newChain);
+                    if (chainElims.Count > 0)
+                    {
+                        if (!CheckBestChain(newChain, chainElims.ToList(), "AIC: "))
+                        {
+                            return ApplyBestChain();
+                        }
                     }
                 }
 
@@ -262,7 +289,7 @@ internal class AICSolver
                 {
                     newChain[^1] = newChain[0];
 
-                    chainElims = CalcStrongElims(newChain);
+                    var chainElims = CalcStrongElims(newChain);
                     chainElims.UnionWith(CalcWeakToStrongElims(newChain));
                     chainElims.UnionWith(CalcStrongToWeakElims(strongLinks, newChain));
                     if (chainElims.Count > 0)
@@ -364,8 +391,8 @@ internal class AICSolver
         int difficulty = forcingChains != null ? forcingChains.Sum(l => l.Count) : chain.Count;
         int numDirectSingles = directSinglesSolver.NumSetValues;
         int numSinglesAfterBasics = singlesAfterBasicsSolver.NumSetValues;
-        (int, int, int, int) chainVals = (numSinglesAfterBasics, numDirectSingles, chainElims.Count, -difficulty);
-        (int, int, int, int) bestChainVals = bestChain != null ? (bestChainSinglesAfterBasics, bestChainDirectSingles, bestChainElims.Count, -bestChainDifficulty) : default;
+        (int, int, int, int) chainVals = (numSinglesAfterBasics, numDirectSingles, -difficulty, chainElims.Count);
+        (int, int, int, int) bestChainVals = bestChain != null ? (bestChainSinglesAfterBasics, bestChainDirectSingles, -bestChainDifficulty, bestChainElims.Count) : default;
         if (bestChain == null || chainVals.CompareTo(bestChainVals) > 0)
         {
             bestChain = new(chain);
@@ -715,9 +742,9 @@ internal class AICSolver
     // 2 = 5, 2 = 7, 2 = 9
     // 4 = 7, 4 = 9
     // 6 = 9
-    private HashSet<int> CalcStrongElims(List<int> chain)
+    private SortedSet<int> CalcStrongElims(List<int> chain)
     {
-        HashSet<int> elims = new();
+        SortedSet<int> elims = new();
         for (int chainIndex0 = 0; chainIndex0 < chain.Count; chainIndex0 += 2)
         {
             int cand0 = chain[chainIndex0];
