@@ -5,6 +5,7 @@ public class ChessConstraint : Constraint
 {
     private readonly List<(int, int)> offsets;
     private readonly uint values;
+    private readonly SortedSet<(int, int)> cellsLookup;
 
     public ChessConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
     {
@@ -18,6 +19,7 @@ public class ChessConstraint : Constraint
             throw new ArgumentException("Chess Constraint: At least one symmetric offset is required.");
         }
 
+        List<(int, int)> cells = new();
         HashSet<(int, int)> offsetHash = new();
         foreach (string param in split)
         {
@@ -54,6 +56,16 @@ public class ChessConstraint : Constraint
                 continue;
             }
 
+            if (param[0] == 'r' || param[0] == 'R')
+            {
+                var groups = ParseCells(param);
+                foreach (var group in groups)
+                {
+                    cells.AddRange(group);
+                }
+                continue;
+            }
+
             string[] offsetSplit = param.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
             if (offsetSplit.Length != 2)
             {
@@ -78,6 +90,11 @@ public class ChessConstraint : Constraint
             }
         }
         offsets = offsetHash.ToList();
+
+        if (cells.Count > 0)
+        {
+            cellsLookup = new(cells);
+        }
     }
 
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true;
@@ -94,7 +111,10 @@ public class ChessConstraint : Constraint
                 int j = cell.Item2 + offset.Item2;
                 if (i >= 0 && i < HEIGHT && j >= 0 && j < WIDTH)
                 {
-                    yield return (i, j);
+                    if (cellsLookup == null || cellsLookup.Contains((i, j)) || cellsLookup.Contains(cell))
+                    {
+                        yield return (i, j);
+                    }
                 }
             }
         }
@@ -110,7 +130,10 @@ public class ChessConstraint : Constraint
                 int j = cell.Item2 + offset.Item2;
                 if (i >= 0 && i < HEIGHT && j >= 0 && j < WIDTH)
                 {
-                    yield return (i, j);
+                    if (cellsLookup == null || cellsLookup.Contains((i, j)) || cellsLookup.Contains(cell))
+                    {
+                        yield return (i, j);
+                    }
                 }
             }
         }
