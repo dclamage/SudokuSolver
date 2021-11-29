@@ -16,7 +16,7 @@ namespace SudokuSolver.Constraints
         protected override bool IsPairAllowedAcrossMarker(int markerValue, int v0, int v1) => (v0 + markerValue == v1 || v1 + markerValue == v0);
 
         protected override IEnumerable<OrthogonalValueConstraint> GetRelatedConstraints(Solver solver) =>
-            solver.Constraints<RatioConstraint>();
+            ((IEnumerable<OrthogonalValueConstraint>)solver.Constraints<RatioConstraint>()).Concat(solver.Constraints<AnykropkiConstraint>());
 
         protected override int DefaultMarkerValue => 1;
     }

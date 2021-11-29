@@ -51,6 +51,7 @@ namespace SudokuSolver.PuzzleFormats
         FPuzzlesCells[] difference,
         FPuzzlesCells[] xv,
         FPuzzlesCells[] ratio,
+        FPuzzlesCells[] anykropki,
         FPuzzlesClone[] clone,
         FPuzzlesQuadruple[] quadruple,
         FPuzzlesLines[] betweenline,
