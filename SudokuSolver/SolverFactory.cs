@@ -652,6 +652,29 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.anykropki != null && fpuzzlesData.anykropki.Length > 0)
+            {
+                StringBuilder anykropkiParams = new();
+
+                foreach (var anykropki in fpuzzlesData.anykropki)
+                {
+                    if (anykropkiParams.Length > 0)
+                    {
+                        anykropkiParams.Append(';');
+                    }
+                    anykropkiParams.Append(anykropki.value);
+                    foreach (var cell in anykropki.cells)
+                    {
+                        anykropkiParams.Append(cell);
+                    }
+                }
+
+                if (anykropkiParams.Length > 0)
+                {
+                    solver.AddConstraint(typeof(AnykropkiConstraint), anykropkiParams.ToString());
+                }
+            }
+
             bool negativeXV = fpuzzlesData.negative?.Contains("xv") ?? false;
             if (fpuzzlesData.xv != null && fpuzzlesData.xv.Length > 0 || negativeXV)
             {
@@ -1062,6 +1085,15 @@ namespace SudokuSolver
                 ratio.Add(new(new string[] { CN(cell1), CN(cell2) }, value));
             }
 
+            List<FPuzzlesCells> anykropki = new();
+            foreach (var marker in solver.Constraints<AnykropkiConstraint>().SelectMany(c => c.markers))
+            {
+                var cell1 = (marker.Key.Item1, marker.Key.Item2);
+                var cell2 = (marker.Key.Item3, marker.Key.Item4);
+                string value = marker.Value != 2 ? marker.Value.ToString() : null;
+                anykropki.Add(new(new string[] { CN(cell1), CN(cell2) }, value));
+            }
+
             List<FPuzzlesClone> clone = new();
             foreach (var c in solver.Constraints<CloneConstraint>())
             {
@@ -1135,6 +1167,7 @@ namespace SudokuSolver
                 difference: difference.ToArray(),
                 xv: xv.ToArray(),
                 ratio: ratio.ToArray(),
+                anykropki: anykropki.ToArray(),
                 clone: clone.ToArray(),
                 quadruple: quadruple.ToArray(),
                 betweenline: betweenline.ToArray(),
