@@ -34,19 +34,17 @@ jobs:
     - name: Delete pdbs
       run: rm ./publish-win-x64/*.pdb
     - name: Zip win-x64
-      uses: papeloto/action-zip@v1
+      uses: montudor/action-zip@v1
       with:
-        files: publish-win-x64/ UserScripts/ Windows/
-        dest: SudokuSolver-${{ env.VERSION }}-win-x64.zip
+        args: zip -qq -r SudokuSolver-${{ env.VERSION }}-win-x64.zip publish-win-x64 UserScripts Windows
     - name: Publish win10-arm64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r win10-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-win10-arm64
     - name: Delete pdbs
       run: rm ./publish-win10-arm64/*.pdb
     - name: Zip win10-arm64
-      uses: papeloto/action-zip@v1
+      uses: montudor/action-zip@v1
       with:
-        files: publish-win10-arm64/ UserScripts/ Windows/
-        dest: SudokuSolver-${{ env.VERSION }}-win10-arm64.zip
+        files: zip -qq -r SudokuSolver-${{ env.VERSION }}-win10-arm64.zip publish-win10-arm64 UserScripts Windows
     - name: Publish linux-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r linux-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-linux-x64
     - name: Delete pdbs
