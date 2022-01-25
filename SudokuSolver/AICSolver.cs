@@ -254,7 +254,7 @@ internal class AICSolver
                         {
                             if (HasValue(elimMask, curVal))
                             {
-                                chainElims.Add(curVal);
+                                chainElims.Add(CandidateIndex(i, j, curVal));
                             }
                         }
 

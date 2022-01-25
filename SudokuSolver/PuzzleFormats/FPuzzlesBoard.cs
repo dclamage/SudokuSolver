@@ -53,6 +53,8 @@ public class FPuzzlesBoard
     public FPuzzlesQuadruple[] quadruple { get; set; }
     public FPuzzlesLines[] betweenline { get; set; }
     public FPuzzlesCell[] sandwichsum { get; set; }
+    public FPuzzlesCell[] xsum { get; set; }
+    public FPuzzlesCell[] skyscraper { get; set; }
     public string[] disabledlogic { get; set; } = null;
     public string[] truecandidatesoptions { get; set; } = null;
 };
@@ -89,6 +91,14 @@ public record FPuzzlesCell
 {
     public string cell { get; set; }
     public string value { get; set; }
+
+    public void AddConstraint(Solver solver, Type constraintType)
+    {
+        if (!string.IsNullOrWhiteSpace(value) && int.TryParse(value, out _) && !string.IsNullOrWhiteSpace(cell))
+        {
+            solver.AddConstraint(constraintType, $"{value}{cell}");
+        }
+    }
 }
 
 public record FPuzzlesCells

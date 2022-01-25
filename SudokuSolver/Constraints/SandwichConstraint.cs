@@ -14,7 +14,7 @@ public class SandwichConstraint : Constraint
     private readonly uint crustsMask = 0;
     private readonly uint nonCrustsMask = 0;
     private uint fillingMask = 0;
-    private string specificName;
+    private readonly string specificName;
 
     public override string SpecificName => specificName;
 

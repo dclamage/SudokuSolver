@@ -133,7 +133,7 @@ public class SumCellsHelper
                 {
                     if (logicalStepDescription != null)
                     {
-                        string desc = $"{solver.CompactName(curGroup.cells)} has no valid candidate combination.";
+                        string desc = $"{solver.CompactName(curGroup.Cells)} has no valid candidate combination.";
                         logicalStepDescription.Append(desc);
                         solver.StoreMemo(memoKey, new StepLogicMemo(desc, LogicResult.Invalid));
                     }
@@ -189,13 +189,13 @@ public class SumCellsHelper
         {
             // One group left means it must exactly sum to whatever sum is remaining
             var (group, min, max) = groupMinMax.First(g => g.min != g.max);
-            int numCells = group.cells.Count;
+            int numCells = group.Cells.Count;
 
             // If the logical step description is desired, then track what the cells were before applying the sum range.
             uint[] oldMasks = new uint[numCells];
             for (int i = 0; i < numCells; i++)
             {
-                var cell = group.cells[i];
+                var cell = group.Cells[i];
                 oldMasks[i] = board[cell.Item1, cell.Item2];
             }
 
@@ -206,7 +206,7 @@ public class SumCellsHelper
             {
                 if (logicalStepDescription != null)
                 {
-                    string desc = $"{solver.CompactName(group.cells)} cannot sum to the desired value(s).";
+                    string desc = $"{solver.CompactName(group.Cells)} cannot sum to the desired value(s).";
                     logicalStepDescription.Append(desc);
                     solver.StoreMemo(memoKey, new StepLogicMemo(desc, LogicResult.Invalid));
                 }
@@ -222,7 +222,7 @@ public class SumCellsHelper
                 List<int> elims = new();
                 for (int i = 0; i < numCells; i++)
                 {
-                    var cell = group.cells[i];
+                    var cell = group.Cells[i];
                     uint removedMask = oldMasks[i] & ~board[cell.Item1, cell.Item2];
                     if (removedMask != 0)
                     {
@@ -269,11 +269,11 @@ public class SumCellsHelper
 
                 if (newGroupMin > groupMin || newGroupMax < groupMax)
                 {
-                    int numCells = group.cells.Count;
+                    int numCells = group.Cells.Count;
                     uint[] oldMasks = new uint[numCells];
                     for (int i = 0; i < numCells; i++)
                     {
-                        var cell = group.cells[i];
+                        var cell = group.Cells[i];
                         oldMasks[i] = board[cell.Item1, cell.Item2];
                     }
 
@@ -282,7 +282,7 @@ public class SumCellsHelper
                     {
                         if (logicalStepDescription != null)
                         {
-                            string desc = $"{solver.CompactName(group.cells)} cannot be restricted between {newGroupMin} and {newGroupMax}.";
+                            string desc = $"{solver.CompactName(group.Cells)} cannot be restricted between {newGroupMin} and {newGroupMax}.";
                             logicalStepDescription.Append(desc);
                             solver.StoreMemo(memoKey, new StepLogicMemo(desc, LogicResult.Invalid));
                         }
@@ -297,7 +297,7 @@ public class SumCellsHelper
                     {
                         for (int i = 0; i < numCells; i++)
                         {
-                            var cell = group.cells[i];
+                            var cell = group.Cells[i];
                             uint removedMask = oldMasks[i] & ~board[cell.Item1, cell.Item2];
                             if (removedMask != 0)
                             {

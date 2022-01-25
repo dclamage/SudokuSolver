@@ -2173,7 +2173,7 @@ public class Solver
                                     uint solutionValMask = curSolutionBoard.board[si, sj] & ~valueSetMask;
                                     int cellIndex = si * WIDTH + sj;
                                     state.fixedBoard[cellIndex] |= solutionValMask;
-                                    state.numSolutions[cellIndex * MAX_VALUE + GetValue(curSolutionBoard.board[si, sj]) - 1]++;
+                                    state.numSolutions[cellIndex * MAX_VALUE + GetValue(solutionValMask) - 1]++;
                                 }
                             }
                         }
@@ -2196,20 +2196,20 @@ public class Solver
     }
 
 #if INFINITE_LOOP_CHECK
-        public bool IsSame(Solver other)
+    public bool IsSame(Solver other)
+    {
+        for (int i = 0; i < HEIGHT; i++)
         {
-            for (int i = 0; i < HEIGHT; i++)
+            for (int j = 0; j < WIDTH; j++)
             {
-                for (int j = 0; j < WIDTH; j++)
+                if (other.Board[i, j] != Board[i, j])
                 {
-                    if (other.Board[i, j] != Board[i, j])
-                    {
-                        return false;
-                    }
+                    return false;
                 }
             }
-            return true;
         }
+        return true;
+    }
 #endif
 
     /// <summary>
@@ -2292,6 +2292,24 @@ public class Solver
         do
         {
             result = FindSingles();
+            changed |= result == LogicResult.Changed;
+        } while (result == LogicResult.Changed);
+
+        return (result == LogicResult.None && changed) ? LogicResult.Changed : result;
+    }
+
+    public LogicResult ApplyNakedSingles()
+    {
+        if (seenMap == null)
+        {
+            throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+        }
+
+        bool changed = false;
+        LogicResult result;
+        do
+        {
+            result = FindNakedSingles(null);
             changed |= result == LogicResult.Changed;
         } while (result == LogicResult.Changed);
 
@@ -3796,10 +3814,10 @@ public class Solver
     internal string ValueNames(uint mask) =>
         string.Join(MAX_VALUE <= 9 ? "" : ",", Enumerable.Range(1, MAX_VALUE).Where(v => HasValue(mask, v)));
 
-    internal string CompactName(uint mask, List<(int, int)> cells) =>
+    internal string CompactName(uint mask, IReadOnlyList<(int, int)> cells) =>
         ValueNames(mask) + CompactName(cells);
 
-    internal string CompactName(List<(int, int)> cells)
+    internal string CompactName(IReadOnlyList<(int, int)> cells)
     {
         string cellSep = MAX_VALUE <= 9 ? string.Empty : ",";
         char groupSep = ',';

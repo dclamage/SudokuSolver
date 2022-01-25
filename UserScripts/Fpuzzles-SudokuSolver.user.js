@@ -262,6 +262,8 @@
             }
             consoleOutput.style.top = "45.6%";
             consoleOutput.style.height = "48%";
+
+            window.solverConnected = true;
         }
 
         let hideSolverButtons = function() {
@@ -287,6 +289,8 @@
             }
 
             clearPencilmarkColors();
+
+            window.solverConnected = false;
         }
 
         let origCreateSidebarConsole = createSidebarConsole;
@@ -998,13 +1002,8 @@
         }
 
         if (window.boolConstraints) {
-            createGrid(size, true, true);
-            if (location.search.substring(0, importString.length) === importString) {
-                mode = 'Solving';
-                importPuzzle(location.search.substring(importString.length, location.search.length), true);
-                showRules();
-                puzzleTimer.restart(true);
-            }
+            window.buttons.clear();
+            window.onload();
         }
     }
 
