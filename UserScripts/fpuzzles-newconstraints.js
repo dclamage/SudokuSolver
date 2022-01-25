@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.10
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -24,8 +24,8 @@
     const newConstraintInfo = [{
             name: 'Renban',
             type: 'line',
-            color: '#C060C0',
-            colorDark: '#603060',
+            color: '#F067F0',
+            colorDark: '#642B64',
             lineWidth: 0.4,
             tooltip: [
                 'Numbers on a renban line must be consecutive, but in any order.',
@@ -39,8 +39,8 @@
         {
             name: 'Whispers',
             type: 'line',
-            color: '#60C060',
-            colorDark: '#306030',
+            color: '#67F067',
+            colorDark: '#357D35',
             lineWidth: 0.3,
             tooltip: [
                 'Adjacent numbers on a whispers line must have a difference of 5 or greater.',
@@ -785,25 +785,47 @@
             this.set = null;
             this.value = '';
             this.isReverse = false;
+            this.isRow = false;
 
             this.show = function() {
                 ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
-                ctx.font = (cellSL * 1.1) + 'px Arial';
+                ctx.font = (cellSL * 1.0) + 'px Arial';
                 const iconOffset = cellSL * 0.1 * (this.isReverse ? -1 : 1);
-                ctx.fillText('◯', this.cell.x + cellSL / 2 - iconOffset, this.cell.y + (cellSL * 0.87));
-                ctx.font = (cellSL * 0.7) + 'px Arial';
+                const iconBaseX = this.cell.x + cellSL / 2;
+                const iconBaseY = this.cell.y + (cellSL * 0.87);
+                if (this.isRow) {
+                    ctx.fillText('◯', iconBaseX - iconOffset, iconBaseY);
+                } else {
+                    ctx.fillText('◯', iconBaseX, iconBaseY - iconOffset);
+                }
+                ctx.font = (cellSL * 0.6) + 'px Arial';
                 let textOffset = 0;
                 if (this.value.length <= 1) {
                     textOffset = this.isReverse ? cellSL * -0.10 : cellSL * 0.09;
                 } else {
-                    textOffset = this.isReverse ? cellSL * -0.07 : cellSL * 0.13;
+                    textOffset = this.isReverse ? cellSL * -0.11 : cellSL * 0.08;
                 }
-                ctx.fillText(this.value.length ? this.value : '-', this.cell.x + cellSL / 2 - textOffset, this.cell.y + (cellSL * 0.75));
+
+                let textOffsetX = 0;
+                if (this.value.length == 2 && this.value[0] == '1' && this.value[1] != '1') {
+                    textOffsetX = cellSL * 0.03;
+                } else if (this.value.length == 2 && this.value[0] != '1' && this.value[1] == '1') {
+                    textOffsetX = cellSL * -0.03;
+                }
+
+                const textBaseX = this.cell.x + cellSL / 2;
+                const textBaseY = this.cell.y + (cellSL * 0.75);
+                if (this.isRow) {
+                    ctx.fillText(this.value.length ? this.value : '-', textBaseX - textOffset - textOffsetX, textBaseY);
+                } else {
+                    ctx.fillText(this.value.length ? this.value : '-', textBaseX - textOffsetX, textBaseY - textOffset);
+                }
             }
 
             this.updateSet = function() {
                 if (this.cell) {
                     if (this.cell.i >= 0 && this.cell.i < size) {
+                        this.isRow = true;
                         this.set = getCellsInRow(this.cell.i);
                         if (this.cell.j >= size) {
                             this.set = this.set.slice(0);
@@ -812,6 +834,7 @@
                         }
                     }
                     if (this.cell.j >= 0 && this.cell.j < size) {
+                        this.isRow = false;
                         this.set = getCellsInColumn(this.cell.j);
                         if (this.cell.i >= size) {
                             this.set = this.set.slice(0);
@@ -840,20 +863,34 @@
             this.set = null;
             this.value = '';
             this.isReverse = false;
+            this.isRow = false;
 
             this.show = function() {
                 ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
-                ctx.font = (cellSL * 1.1) + 'px Arial';
+                ctx.font = (cellSL * 1.0) + 'px Arial';
                 const iconOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
-                ctx.fillText('▯', this.cell.x + cellSL / 2 - iconOffset, this.cell.y + (cellSL * 0.8));
-                ctx.font = (cellSL * 0.7) + 'px Arial';
+                const iconBaseX = this.cell.x + cellSL / 2;
+                const iconBaseY = this.cell.y + (cellSL * 0.8);
+                if (this.isRow) {
+                    ctx.fillText('▯', iconBaseX - iconOffset, iconBaseY);
+                } else {
+                    ctx.fillText('▯', iconBaseX, iconBaseY - iconOffset);
+                }
+                ctx.font = (cellSL * 0.6) + 'px Arial';
                 const textOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
-                ctx.fillText(this.value.length ? this.value : '-', this.cell.x + cellSL / 2 - textOffset, this.cell.y + (cellSL * 0.75));
+                const textBaseX = this.cell.x + cellSL / 2;
+                const textBaseY = this.cell.y + (cellSL * 0.75);
+                if (this.isRow) {
+                    ctx.fillText(this.value.length ? this.value : '-', textBaseX - textOffset, textBaseY);
+                } else {
+                    ctx.fillText(this.value.length ? this.value : '-', textBaseX, textBaseY - textOffset);
+                }
             }
 
             this.updateSet = function() {
                 if (this.cell) {
                     if (this.cell.i >= 0 && this.cell.i < size) {
+                        this.isRow = true;
                         this.set = getCellsInRow(this.cell.i);
                         if (this.cell.j >= size) {
                             this.set = this.set.slice(0);
@@ -862,6 +899,7 @@
                         }
                     }
                     if (this.cell.j >= 0 && this.cell.j < size) {
+                        this.isRow = false;
                         this.set = getCellsInColumn(this.cell.j);
                         if (this.cell.i >= size) {
                             this.set = this.set.slice(0);
@@ -1057,6 +1095,15 @@
                 ctx.strokeRect(gridX - sidebarDist, gridY + gridSL, sidebarW + (buttonGap + constraintHeight) * 2, -((constraintHeight * toolConstraints.length) + (buttonGap * (toolConstraints.length - 1)) + (buttonMargin * 2)));
             } else {
                 origDrawPopups(overlapSidebars);
+            }
+        }
+
+        if (window.boolConstraints) {
+            let prevButtons = buttons.splice(0, buttons.length);
+            window.onload();
+            buttons.splice(0, buttons.length);
+            for (let i = 0; i < prevButtons.length; i++) {
+                buttons.push(prevButtons[i]);
             }
         }
     }

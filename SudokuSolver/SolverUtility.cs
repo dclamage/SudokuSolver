@@ -339,7 +339,7 @@ public static class SolverUtility
         foreach (var (i, j) in cells)
         {
             uint mask = board[i, j];
-            builder.Append(IsValueSet(mask) ? "|s" : "|").Append(mask & ~valueSetMask);
+            builder.Append(IsValueSet(mask) ? "|s" : "|").AppendFormat("{0:x}", mask & ~valueSetMask);
         }
         return builder;
     }

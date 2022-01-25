@@ -146,7 +146,7 @@ public class RegionSumLinesConstraint : Constraint
             var curLogicResult = segment.RestrictSum(solver, possibleSums);
             if (curLogicResult == LogicResult.Invalid)
             {
-                logicalStepDescription?.Add(new($"Cells {solver.CompactName(segment.cells)} cannot be restricted to sum{(possibleSums.Count > 1 ? "s" : "")} {string.Join(",", possibleSums)}.", segment.cells));
+                logicalStepDescription?.Add(new($"Cells {solver.CompactName(segment.Cells)} cannot be restricted to sum{(possibleSums.Count > 1 ? "s" : "")} {string.Join(",", possibleSums)}.", segment.Cells));
                 return LogicResult.Invalid;
             }
             changed |= curLogicResult == LogicResult.Changed;

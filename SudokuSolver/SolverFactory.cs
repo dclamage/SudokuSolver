@@ -197,6 +197,77 @@ namespace SudokuSolver
             return solver;
         }
 
+        public static Solver CreateFromGivens(char[] givens, IEnumerable<string> constraints = null)
+        {
+            int size;
+            if (givens.Length <= 81)
+            {
+                size = (int)Math.Sqrt(givens.Length);
+                if (givens.Length != size * size)
+                {
+                    throw new WrongLengthGivensException($"ERROR: A givens string must be a perfect square in length (Provided length: {givens.Length}).");
+                }
+            }
+            else
+            {
+                size = (int)Math.Sqrt(givens.Length / 2);
+                if (givens.Length != size * size * 2)
+                {
+                    throw new WrongLengthGivensException($"ERROR: A givens string must be a perfect square in length (Provided length: {givens.Length}).");
+                }
+            }
+
+            Solver solver = new(size, size, size);
+            solver.SetRegions(DefaultRegions(size));
+            if (constraints != null)
+            {
+                ApplyConstraints(solver, constraints);
+            }
+
+            if (!solver.FinalizeConstraints())
+            {
+                throw new ArgumentException("ERROR: The constraints are invalid (no solutions).");
+            }
+
+            bool[,] isOriginalGiven = new bool[size, size];
+            solver.customInfo["Givens"] = isOriginalGiven;
+
+            if (size <= 9)
+            {
+                for (int i = 0; i < givens.Length; i++)
+                {
+                    char c = givens[i];
+                    if (c >= '1' && c <= '9')
+                    {
+                        if (!solver.SetValue(i / size, i % size, c - '0'))
+                        {
+                            throw new ArgumentException($"ERROR: Givens cause there to be no solutions.");
+                        }
+                        isOriginalGiven[i / size, i % size] = true;
+                    }
+                }
+            }
+            else
+            {
+                int numVals = givens.Length / 2;
+                for (int i = 0; i < numVals; i++)
+                {
+                    char c0 = givens[i * 2];
+                    char c1 = givens[i * 2 + 1];
+                    if (c0 >= '1' && c0 <= '9' && c1 >= '0' && c1 <= '9' || c0 == '0' && c1 >= '1' && c1 <= '9')
+                    {
+                        int val = (c0 - '0') * 10 + (c1 - '0');
+                        if (!solver.SetValue(i / size, i % size, val))
+                        {
+                            throw new ArgumentException($"ERROR: Givens cause there to be no solutions.");
+                        }
+                        isOriginalGiven[i / size, i % size] = true;
+                    }
+                }
+            }
+            return solver;
+        }
+
         public static string FixGivensString(string givens)
         {
             givens = givens.Trim();
@@ -417,7 +488,7 @@ namespace SudokuSolver
             {
                 foreach (var lksum in fpuzzlesData.littlekillersum)
                 {
-                    if (!string.IsNullOrWhiteSpace(lksum.value) && lksum.value != "0")
+                    if (!string.IsNullOrWhiteSpace(lksum.value) && int.TryParse(lksum.value, out int value) && value > 0)
                     {
                         solver.AddConstraint(typeof(LittleKillerConstraint), $"{lksum.value};{lksum.cell};{lksum.direction}");
                     }
@@ -838,12 +909,23 @@ namespace SudokuSolver
             {
                 foreach (var sandwich in fpuzzlesData.sandwichsum)
                 {
-                    if (string.IsNullOrWhiteSpace(sandwich.value) || string.IsNullOrWhiteSpace(sandwich.cell))
-                    {
-                        continue;
-                    }
+                    sandwich.AddConstraint(solver, typeof(SandwichConstraint));
+                }
+            }
 
-                    solver.AddConstraint(typeof(SandwichConstraint), $"{sandwich.value}{sandwich.cell}");
+            if (fpuzzlesData.xsum != null)
+            {
+                foreach (var xsum in fpuzzlesData.xsum)
+                {
+                    xsum.AddConstraint(solver, typeof(XSumConstraint));
+                }
+            }
+
+            if (fpuzzlesData.skyscraper != null)
+            {
+                foreach (var skyscraper in fpuzzlesData.skyscraper)
+                {
+                    skyscraper.AddConstraint(solver, typeof(SkyscraperConstraint));
                 }
             }
 
@@ -1231,6 +1313,20 @@ namespace SudokuSolver
                 sandwichsum.Add(new() { cell = CN(c.cellStart), value = c.sum.ToString() });
             }
 
+            List<FPuzzlesCell> xsum = new();
+            foreach (var c in solver.Constraints<XSumConstraint>())
+            {
+                xsum.Add(new() { cell = CN(c.cellStart), value = c.sum.ToString() });
+            }
+
+            List<FPuzzlesCell> skyscraper = new();
+            foreach (var c in solver.Constraints<SkyscraperConstraint>())
+            {
+                skyscraper.Add(new() { cell = CN(c.cellStart), value = c.clue.ToString() });
+            }
+
+            static T[] ToArray<T>(List<T> list) => list.Count > 0 ? list.ToArray() : null;
+
             FPuzzlesBoard fp = new()
             {
                 size = solver.WIDTH,
@@ -1244,30 +1340,32 @@ namespace SudokuSolver
                 antiking = solver.Constraints<KingConstraint>().Any(),
                 disjointgroups = solver.Constraints<DisjointGroupConstraint>().Count() == solver.MAX_VALUE,
                 nonconsecutive = solver.Constraints<DifferenceConstraint>().Any(c => c.negativeConstraint && c.negativeConstraintValues.Contains(1)),
-                negative = negative.ToArray(),
-                arrow = arrow.ToArray(),
-                killercage = killercage.ToArray(),
-                littlekillersum = littlekillersum.ToArray(),
-                odd = odd.ToArray(),
-                even = even.ToArray(),
-                minimum = minimum.ToArray(),
-                maximum = maximum.ToArray(),
-                rowindexer = rowindexer.ToArray(),
-                columnindexer = columnindexer.ToArray(),
-                boxindexer = boxindexer.ToArray(),
-                extraregion = extraregion.ToArray(),
-                thermometer = thermometer.ToArray(),
-                palindrome = palindrome.ToArray(),
-                renban = renban.ToArray(),
-                whispers = whispers.ToArray(),
-                regionsumline = regionSumLines.ToArray(),
-                difference = difference.ToArray(),
-                xv = xv.ToArray(),
-                ratio = ratio.ToArray(),
-                clone = clone.ToArray(),
-                quadruple = quadruple.ToArray(),
-                betweenline = betweenline.ToArray(),
-                sandwichsum = sandwichsum.ToArray()
+                negative = ToArray(negative),
+                arrow = ToArray(arrow),
+                killercage = ToArray(killercage),
+                littlekillersum = ToArray(littlekillersum),
+                odd = ToArray(odd),
+                even = ToArray(even),
+                minimum = ToArray(minimum),
+                maximum = ToArray(maximum),
+                rowindexer = ToArray(rowindexer),
+                columnindexer = ToArray(columnindexer),
+                boxindexer = ToArray(boxindexer),
+                extraregion = ToArray(extraregion),
+                thermometer = ToArray(thermometer),
+                palindrome = ToArray(palindrome),
+                renban = ToArray(renban),
+                whispers = ToArray(whispers),
+                regionsumline = ToArray(regionSumLines),
+                difference = ToArray(difference),
+                xv = ToArray(xv),
+                ratio = ToArray(ratio),
+                clone = ToArray(clone),
+                quadruple = ToArray(quadruple),
+                betweenline = ToArray(betweenline),
+                sandwichsum = ToArray(sandwichsum),
+                xsum = ToArray(xsum),
+                skyscraper = ToArray(skyscraper),
             };
 
             string fpuzzlesJson = JsonSerializer.Serialize(fp, FpuzzlesJsonContext.Default.FPuzzlesBoard);

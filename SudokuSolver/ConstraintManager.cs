@@ -106,6 +106,8 @@ public static class ConstraintManager
         { typeof(RegionSumLinesConstraint), (solver, options) => new RegionSumLinesConstraint(solver, options) },
         { typeof(RenbanConstraint), (solver, options) => new RenbanConstraint(solver, options) },
         { typeof(SandwichConstraint), (solver, options) => new SandwichConstraint(solver, options) },
+        { typeof(XSumConstraint), (solver, options) => new XSumConstraint(solver, options) },
+        { typeof(SkyscraperConstraint), (solver, options) => new SkyscraperConstraint(solver, options) },
         { typeof(SelfTaxicabConstraint), (solver, options) => new SelfTaxicabConstraint(solver, options) },
         { typeof(SumConstraint), (solver, options) => new SumConstraint(solver, options) },
         { typeof(TaxicabConstraint), (solver, options) => new TaxicabConstraint(solver, options) },
