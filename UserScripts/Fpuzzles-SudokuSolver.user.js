@@ -183,7 +183,7 @@
                     boolSettings.push('TrueCandidates');
                     boolSettings['TrueCandidates'] = false;
                     defaultSettings.push(false);
-                    trueCandidatesButton = new button(solutionPathButton.x - buttonLH / 2 - buttonGap / 2, solutionPathButton.y + (buttonLH + buttonGap) * 4, buttonW - buttonLH - buttonGap, buttonLH, ['Solving', 'Setting'], 'TrueCandidates', 'True Candid.')
+                    trueCandidatesButton = new button(solutionPathButton.x - buttonLH / 2 - buttonGap / 2, solutionPathButton.y + (buttonLH + buttonGap) * consoleSidebar.buttons.length, buttonW - buttonLH - buttonGap, buttonLH, ['Solving', 'Setting'], 'TrueCandidates', 'True Candid.')
                     trueCandidatesButton.origClick = trueCandidatesButton.click;
                     trueCandidatesButton.click = function() {
                         if (!this.hovering()) {
@@ -200,6 +200,9 @@
                         }
                         return true;
                     }
+                } else {
+                    let yOffset = (consoleSidebar.buttons.filter(button => button !== trueCandidatesButton && button.y >= solutionPathButton.y).length) * (buttonLH + buttonGap);
+                    trueCandidatesButton.y = solutionPathButton.y + yOffset;
                 }
 
                 if (!solutionPathButton.origClick) {
@@ -260,8 +263,10 @@
                 prevConsoleOutputTop = consoleOutput.style.top;
                 prevConsoleOutputHeight = consoleOutput.style.height;
             }
-            consoleOutput.style.top = "45.6%";
-            consoleOutput.style.height = "48%";
+            consoleOutput.style.top = parseFloat(prevConsoleOutputTop) * 1.15 + '%';
+
+            const topDiff = parseFloat(consoleOutput.style.top) - parseFloat(prevConsoleOutputTop);
+            consoleOutput.style.height = parseFloat(prevConsoleOutputHeight) - topDiff + '%';
 
             window.solverConnected = true;
         }
