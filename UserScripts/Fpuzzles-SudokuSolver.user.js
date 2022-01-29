@@ -179,11 +179,12 @@
                 const countButton = consoleSidebar.buttons.filter(b => b.title === 'Solution Count')[0];
                 const solveButton = mainSidebar.buttons.filter(b => b.title === 'Solve')[0];
 
+                let yOffset = (consoleSidebar.buttons.filter(button => button !== trueCandidatesButton && button.y >= solutionPathButton.y).length) * (buttonLH + buttonGap);
                 if (!trueCandidatesButton) {
                     boolSettings.push('TrueCandidates');
                     boolSettings['TrueCandidates'] = false;
                     defaultSettings.push(false);
-                    trueCandidatesButton = new button(solutionPathButton.x - buttonLH / 2 - buttonGap / 2, solutionPathButton.y + (buttonLH + buttonGap) * consoleSidebar.buttons.length, buttonW - buttonLH - buttonGap, buttonLH, ['Solving', 'Setting'], 'TrueCandidates', 'True Candid.')
+                    trueCandidatesButton = new button(solutionPathButton.x - buttonLH / 2 - buttonGap / 2, solutionPathButton.y + yOffset, buttonW - buttonLH - buttonGap, buttonLH, ['Solving', 'Setting'], 'TrueCandidates', 'True Candid.')
                     trueCandidatesButton.origClick = trueCandidatesButton.click;
                     trueCandidatesButton.click = function() {
                         if (!this.hovering()) {
@@ -201,7 +202,6 @@
                         return true;
                     }
                 } else {
-                    let yOffset = (consoleSidebar.buttons.filter(button => button !== trueCandidatesButton && button.y >= solutionPathButton.y).length) * (buttonLH + buttonGap);
                     trueCandidatesButton.y = solutionPathButton.y + yOffset;
                 }
 
