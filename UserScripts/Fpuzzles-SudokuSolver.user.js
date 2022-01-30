@@ -23,6 +23,8 @@
         const connectButton = new button(canvas.width - connectButtonOffset, 40, 215, 40, ['Setting', 'Solving'], 'Connect', 'Connect');
         const settingsButton = new button(canvas.width - 65, 40, 40, 40, ['Setting', 'Solving'], settingsIcon, settingsIcon);
 
+        const canvasHeight = 900;
+
         let nonce = 0;
         let lastCommand = '';
         let lastClearCommand = '';
@@ -263,10 +265,10 @@
                 prevConsoleOutputTop = consoleOutput.style.top;
                 prevConsoleOutputHeight = consoleOutput.style.height;
             }
-            consoleOutput.style.top = parseFloat(prevConsoleOutputTop) * 1.15 + '%';
 
-            const topDiff = parseFloat(consoleOutput.style.top) - parseFloat(prevConsoleOutputTop);
-            consoleOutput.style.height = parseFloat(prevConsoleOutputHeight) - topDiff + '%';
+            const percentDiff = (buttonLH + buttonGap) / canvasHeight * 100;
+            consoleOutput.style.top = (parseFloat(prevConsoleOutputTop) + percentDiff) + '%';
+            consoleOutput.style.height = (parseFloat(prevConsoleOutputHeight) - percentDiff) + '%';
 
             window.solverConnected = true;
         }
