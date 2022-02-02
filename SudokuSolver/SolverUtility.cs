@@ -88,7 +88,6 @@ public static class SolverUtility
     public static string CellName((int, int) cell) => $"r{cell.Item1 + 1}c{cell.Item2 + 1}";
     public static string CellName(int i, int j) => CellName((i, j));
     public static string CellNames(this IEnumerable<(int, int)> cells) => string.Join(", ", cells.Select(CellName));
-    public static (int, int) CellValue(string cellName) => cellName.Length == 4 ? (cellName[1] - '1', cellName[3] - '1') : (-1, -1);
 
     public static int BinomialCoeff(int n, int k)
     {
