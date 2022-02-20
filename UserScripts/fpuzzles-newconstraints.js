@@ -106,7 +106,7 @@
         {
             name: 'X Sum',
             type: 'outside',
-            symbol: '◯',
+            symbol: '\u25EF',
             tooltip: [
                 'Indicates the sum of the first X numbers in the row or column, ',
                 'where X is equal to the first number placed in that direction.',
@@ -120,7 +120,7 @@
         {
             name: 'Skyscraper',
             type: 'outside',
-            symbol: '▯',
+            symbol: '\u25AF',
             tooltip: [
                 'Indicates the count of numbers in the row or column which increase from the previous highest value.',
                 '',
@@ -794,9 +794,9 @@
                 const iconBaseX = this.cell.x + cellSL / 2;
                 const iconBaseY = this.cell.y + (cellSL * 0.87);
                 if (this.isRow) {
-                    ctx.fillText('◯', iconBaseX - iconOffset, iconBaseY);
+                    ctx.fillText('\u25EF', iconBaseX - iconOffset, iconBaseY);
                 } else {
-                    ctx.fillText('◯', iconBaseX, iconBaseY - iconOffset);
+                    ctx.fillText('\u25EF', iconBaseX, iconBaseY - iconOffset);
                 }
                 ctx.font = (cellSL * 0.6) + 'px Arial';
                 let textOffset = 0;
@@ -872,9 +872,9 @@
                 const iconBaseX = this.cell.x + cellSL / 2;
                 const iconBaseY = this.cell.y + (cellSL * 0.8);
                 if (this.isRow) {
-                    ctx.fillText('▯', iconBaseX - iconOffset, iconBaseY);
+                    ctx.fillText('\u25AF', iconBaseX - iconOffset, iconBaseY);
                 } else {
-                    ctx.fillText('▯', iconBaseX, iconBaseY - iconOffset);
+                    ctx.fillText('\u25AF', iconBaseX, iconBaseY - iconOffset);
                 }
                 ctx.font = (cellSL * 0.6) + 'px Arial';
                 const textOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
