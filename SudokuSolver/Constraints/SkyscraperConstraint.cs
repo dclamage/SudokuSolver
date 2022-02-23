@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-
-namespace SudokuSolver.Constraints;
+﻿namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Skyscraper", ConsoleName = "skyscraper")]
 public class SkyscraperConstraint : Constraint
@@ -145,18 +143,20 @@ public class SkyscraperConstraint : Constraint
         foreach (var (i1, j1) in cells)
         {
             uint curMask = board[i1, j1];
-            if (IsValueSet(curMask))
+            int curVal;
+            if (!IsValueSet(curMask))
             {
-                int curVal = GetValue(curMask);
-                if (curVal > minValueSeen)
-                {
-                    numSeen++;
-                    minValueSeen = curVal;
-                }
+                curVal = MaxValue(curMask);
+                haveUnset = true;
             }
             else
             {
-                haveUnset = true;
+                curVal = GetValue(curMask);
+            }
+            if (curVal > minValueSeen)
+            {
+                numSeen++;
+                minValueSeen = curVal;
             }
         }
 
