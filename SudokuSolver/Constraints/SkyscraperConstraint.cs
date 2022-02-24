@@ -143,20 +143,19 @@ public class SkyscraperConstraint : Constraint
         foreach (var (i1, j1) in cells)
         {
             uint curMask = board[i1, j1];
-            int curVal;
-            if (!IsValueSet(curMask))
+            if (!IsValueSet(curMask) && ValueCount(curMask) > 1)
             {
-                curVal = MaxValue(curMask);
                 haveUnset = true;
+                break;
             }
             else
             {
-                curVal = GetValue(curMask);
-            }
-            if (curVal > minValueSeen)
-            {
-                numSeen++;
-                minValueSeen = curVal;
+                int curVal = GetValue(curMask);
+                if (curVal > minValueSeen)
+                {
+                    numSeen++;
+                    minValueSeen = curVal;
+                }
             }
         }
 
