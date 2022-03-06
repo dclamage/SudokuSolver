@@ -58,12 +58,7 @@ public static class Extensions
         }
         else
         {
-            foreach (var v in PermutationsHelper(list, i + 1))
-            {
-                yield return v;
-            }
-
-            for (int i1 = i + 1; i1 < list.Count; i1++)
+            for (int i1 = i; i1 < list.Count; i1++)
             {
                 (list[i], list[i1]) = (list[i1], list[i]);
                 foreach (var v in PermutationsHelper(list, i + 1))
