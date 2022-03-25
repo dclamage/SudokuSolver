@@ -25,7 +25,7 @@ class Program
     [Option("-f|--fpuzzles", Description = "Import a full f-puzzles URL (Everything after '?load=').")]
     private string FpuzzlesURL { get; set; }
 
-    [Option("-c|--constraint", Description =  "Provide a constraint to use.")]
+    [Option("-c|--constraint", Description = "Provide a constraint to use.")]
     string[] Constraints { get; set; }
 
     // Pre-solve options
@@ -81,7 +81,7 @@ class Program
     [Option("--list-constraints", Description = "List all available constraints.")]
     private bool ListConstraints { get; set; }
 
-    public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
+        public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
     {
         // Useful for quickly testing a puzzle without changing commandline parameters
 #if false

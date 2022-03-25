@@ -32,6 +32,7 @@ public class FPuzzlesBoard
     public string[] negative { get; set; }
     public FPuzzlesArrowEntry[] arrow { get; set; }
     public FPuzzlesKillerCageEntry[] killercage { get; set; }
+    public FPuzzlesKillerCageEntry[] cage { get; set; }
     public FPuzzlesLittleKillerSumEntry[] littlekillersum { get; set; }
     public FPuzzlesCell[] odd { get; set; }
     public FPuzzlesCell[] even { get; set; }
