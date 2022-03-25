@@ -94,6 +94,7 @@ public static class ConstraintManager
         { typeof(ColIndexerConstraint), (solver, options) => new ColIndexerConstraint(solver, options) },
         { typeof(BoxIndexerConstraint), (solver, options) => new BoxIndexerConstraint(solver, options) },
         { typeof(KillerCageConstraint), (solver, options) => new KillerCageConstraint(solver, options) },
+        { typeof(MultiSumKillerCageConstraint), (solver, options) => new MultiSumKillerCageConstraint(solver, options) },
         { typeof(KingConstraint), (solver, options) => new KingConstraint(solver, options) },
         { typeof(KnightConstraint), (solver, options) => new KnightConstraint(solver, options) },
         { typeof(LittleKillerConstraint), (solver, options) => new LittleKillerConstraint(solver, options) },

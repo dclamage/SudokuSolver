@@ -14,6 +14,7 @@ using static SudokuSolver.SolverUtility;
 namespace SudokuSolver
 {
     [JsonSerializable(typeof(FPuzzlesBoard))]
+    [JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault)]
     internal partial class FpuzzlesJsonContext : JsonSerializerContext
     {
     }
@@ -481,6 +482,46 @@ namespace SudokuSolver
                         cells.Append(cell);
                     }
                     solver.AddConstraint(typeof(KillerCageConstraint), cells.ToString());
+                }
+            }
+
+            if (fpuzzlesData.cage != null)
+            {
+                Regex valueRegex = new(@"DR(\d+)");
+
+                foreach (var cage in fpuzzlesData.cage)
+                {
+                    if (cage.cells.Length >= 1 && !string.IsNullOrWhiteSpace(cage.value) && cage.cells.Length <= width)
+                    {
+                        var match = valueRegex.Match(cage.value.Trim());
+                        if (match.Success)
+                        {
+                            int root = int.Parse(match.Groups[1].Value);
+                            int numCells = cage.cells.Length;
+                            int invNumCells = width - cage.cells.Length;
+                            int minValue = (numCells * (numCells + 1)) / 2;
+                            int maxValue = (width * (width + 1)) / 2 - (invNumCells * (invNumCells + 1)) / 2;
+                            List<int> sums = new();
+                            for (int sum = root; sum <= maxValue; sum += 9)
+                            {
+                                if (sum >= minValue)
+                                {
+                                    sums.Add(sum);
+                                }
+                            }
+
+                            StringBuilder cells = new();
+                            if (cage.value != null)
+                            {
+                                cells.Append(string.Join(',', sums)).Append(';');
+                            }
+                            foreach (string cell in cage.cells)
+                            {
+                                cells.Append(cell);
+                            }
+                            solver.AddConstraint(typeof(MultiSumKillerCageConstraint), cells.ToString());
+                        }
+                    }
                 }
             }
 
