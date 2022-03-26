@@ -11,7 +11,7 @@
 // @run-at       document-end
 // ==/UserScript==
 
-(function() {
+(function () {
     // Adding a new constraint:
     // 1. Add a new entry to the newConstraintInfo array
     // 2. If the type is not already supported, add it to the following:
@@ -22,119 +22,136 @@
     // 3. Add conflict highlighting logic to candidatePossibleInCell
     // 4. Add a new constraint class (see 'Constraint classes' comment)
     const newConstraintInfo = [{
-            name: 'Renban',
-            type: 'line',
-            color: '#F067F0',
-            colorDark: '#642B64',
-            lineWidth: 0.4,
-            tooltip: [
-                'Numbers on a renban line must be consecutive, but in any order.',
-                'Digits cannot repeat on a renban line.',
-                '',
-                'Click and drag to draw a renban line.',
-                'Click on a renban line to remove it.',
-                'Shift click and drag to draw overlapping renban lines.',
-            ]
-        },
-        {
-            name: 'Whispers',
-            type: 'line',
-            color: '#67F067',
-            colorDark: '#357D35',
-            lineWidth: 0.3,
-            tooltip: [
-                'Adjacent numbers on a whispers line must have a difference of 5 or greater.',
-                '[For non-9x9 grid sizes, this adjust to be (size / 2) rounded up.]',
-                '',
-                'Click and drag to draw a whispers line.',
-                'Click on a whispers line to remove it.',
-                'Shift click and drag to draw overlapping whispers lines.',
-            ]
-        },
-        {
-            name: 'Region Sum Line',
-            type: 'line',
-            color: '#2ECBFF',
-            colorDark: '#1E86A8',
-            lineWidth: 0.25,
-            tooltip: [
-                'Digits have an equal sum within each box the line passes through.',
-                '',
-                'Click and drag to draw a region sum line.',
-                'Click on a region sum line to remove it.',
-                'Shift click and drag to draw overlapping region sum lines.',
-            ]
-        },
-        {
-            name: 'Row Indexer',
-            type: 'cage',
-            color: '#7CC77C',
-            colorDark: '#307130',
-            tooltip: [
-                'If this cell (R, C) has value V then cell (V, C) has value R',
-                '',
-                'Click on a cell to add a row indexer.',
-                'Click on a row indexer to remove it.'
-            ]
-        },
-        {
-            name: 'Column Indexer',
-            type: 'cage',
-            color: '#C77C7C',
-            colorDark: '#713030',
-            tooltip: [
-                'If this cell (R, C) has value V then cell (R, V) has value C',
-                '(This one is used by the standard 159 constraint)',
-                '',
-                'Click on a cell to add a column indexer.',
-                'Click on a column indexer to remove it.'
-            ]
-        },
-        {
-            name: 'Box Indexer',
-            type: 'cage',
-            color: '#7C7CC7',
-            colorDark: '#303071',
-            tooltip: [
-                'If this cell at box position I has value V then',
-                'the cell in the same box at box position V has value I',
-                '',
-                'Click on a cell to add a box indexer.',
-                'Click on a box indexer to remove it.'
-            ]
-        },
-        {
-            name: 'X Sum',
-            type: 'outside',
-            symbol: '\u25EF',
-            tooltip: [
-                'Indicates the sum of the first X numbers in the row or column, ',
-                'where X is equal to the first number placed in that direction.',
-                '',
-                'Click outside the grid to add an x-sum.',
-                'Click on an x-sum to remove it.',
-                'Shift click on an x-sum to select it.',
-                'Type to enter a total into the selected x-sum (or the most recently edited one).'
-            ]
-        },
-        {
-            name: 'Skyscraper',
-            type: 'outside',
-            symbol: '\u25AF',
-            tooltip: [
-                'Indicates the count of numbers in the row or column which increase from the previous highest value.',
-                '',
-                'Click outside the grid to add a skyscraper.',
-                'Click on a skyscraper to remove it.',
-                'Shift click on a skyscraper to select it.',
-                'Type to enter a total into the selected skyscraper (or the most recently edited one).'
-            ]
-        }
+        name: 'Renban',
+        type: 'line',
+        color: '#F067F0',
+        colorDark: '#642B64',
+        lineWidth: 0.4,
+        tooltip: [
+            'Numbers on a renban line must be consecutive, but in any order.',
+            'Digits cannot repeat on a renban line.',
+            '',
+            'Click and drag to draw a renban line.',
+            'Click on a renban line to remove it.',
+            'Shift click and drag to draw overlapping renban lines.',
+        ]
+    },
+    {
+        name: 'Whispers',
+        type: 'line',
+        color: '#67F067',
+        colorDark: '#357D35',
+        lineWidth: 0.3,
+        tooltip: [
+            'Adjacent numbers on a whispers line must have a difference of 5 or greater.',
+            '[For non-9x9 grid sizes, this adjust to be (size / 2) rounded up.]',
+            '',
+            'Click and drag to draw a whispers line.',
+            'Click on a whispers line to remove it.',
+            'Shift click and drag to draw overlapping whispers lines.',
+        ]
+    },    
+    {
+        name: 'Entropic Line',
+        type: 'line',
+        color: '#FFCCAA',
+        colorDark: '#FFCCAA',
+        lineWidth: 0.25,
+        tooltip: [
+            'Any set of three sequential cells along an entropic line must contain',
+            'a low digit (1-3), a middle digit (4-6), and a high higit (7-9).',
+            'Digits my repeat on a line, if allowed by other rules.',
+            'An entropic line of length two may not contain two digits from the same rank.',
+            '',
+            'Click and drag to draw an entropic line.',
+            'Click on an entropic line to remove it.',
+            'Shift click and drag to draw overlapping entropic lines.',
+        ]
+    },
+    {
+        name: 'Region Sum Line',
+        type: 'line',
+        color: '#2ECBFF',
+        colorDark: '#1E86A8',
+        lineWidth: 0.25,
+        tooltip: [
+            'Digits have an equal sum within each box the line passes through.',
+            '',
+            'Click and drag to draw a region sum line.',
+            'Click on a region sum line to remove it.',
+            'Shift click and drag to draw overlapping region sum lines.',
+        ]
+    },
+    {
+        name: 'Row Indexer',
+        type: 'cage',
+        color: '#7CC77C',
+        colorDark: '#307130',
+        tooltip: [
+            'If this cell (R, C) has value V then cell (V, C) has value R',
+            '',
+            'Click on a cell to add a row indexer.',
+            'Click on a row indexer to remove it.'
+        ]
+    },
+    {
+        name: 'Column Indexer',
+        type: 'cage',
+        color: '#C77C7C',
+        colorDark: '#713030',
+        tooltip: [
+            'If this cell (R, C) has value V then cell (R, V) has value C',
+            '(This one is used by the standard 159 constraint)',
+            '',
+            'Click on a cell to add a column indexer.',
+            'Click on a column indexer to remove it.'
+        ]
+    },
+    {
+        name: 'Box Indexer',
+        type: 'cage',
+        color: '#7C7CC7',
+        colorDark: '#303071',
+        tooltip: [
+            'If this cell at box position I has value V then',
+            'the cell in the same box at box position V has value I',
+            '',
+            'Click on a cell to add a box indexer.',
+            'Click on a box indexer to remove it.'
+        ]
+    },
+    {
+        name: 'X Sum',
+        type: 'outside',
+        symbol: '\u25EF',
+        tooltip: [
+            'Indicates the sum of the first X numbers in the row or column, ',
+            'where X is equal to the first number placed in that direction.',
+            '',
+            'Click outside the grid to add an x-sum.',
+            'Click on an x-sum to remove it.',
+            'Shift click on an x-sum to select it.',
+            'Type to enter a total into the selected x-sum (or the most recently edited one).'
+        ]
+    },
+    {
+        name: 'Skyscraper',
+        type: 'outside',
+        symbol: '\u25AF',
+        tooltip: [
+            'Indicates the count of numbers in the row or column which increase from the previous highest value.',
+            '',
+            'Click outside the grid to add a skyscraper.',
+            'Click on a skyscraper to remove it.',
+            'Shift click on a skyscraper to select it.',
+            'Type to enter a total into the selected skyscraper (or the most recently edited one).'
+        ]
+    }
     ]
 
     // Drawing helpers
     // Outline code provided by Sven Neumann
-    const getOutline = function(cells, os) {
+    const getOutline = function (cells, os) {
         let edgePoints = [],
             grid = [],
             segs = [],
@@ -230,7 +247,7 @@
         return edgePoints;
     };
 
-    const drawLine = function(line, color, colorDark, lineWidth) {
+    const drawLine = function (line, color, colorDark, lineWidth) {
         ctx.lineWidth = cellSL * lineWidth * 0.5;
         ctx.fillStyle = boolSettings['Dark Mode'] ? colorDark : color;
         ctx.strokeStyle = boolSettings['Dark Mode'] ? colorDark : color;
@@ -248,7 +265,7 @@
         ctx.fill();
     }
 
-    const drawSolidCage = function(cells, colorLight, colorDark) {
+    const drawSolidCage = function (cells, colorLight, colorDark) {
         const color = boolSettings['Dark Mode'] ? colorDark : colorLight;
         const lineOffset = 1.0 / 32.0;
         const lineWidth = cellSL * lineOffset * 2.0;
@@ -285,12 +302,12 @@
         ctx.lineCap = prevLineCap;
     }
 
-    const doShim = function() {
+    const doShim = function () {
         'use strict';
 
         // Additional import/export data
         const origExportPuzzle = exportPuzzle;
-        exportPuzzle = function(includeCandidates) {
+        exportPuzzle = function (includeCandidates) {
             const compressed = origExportPuzzle(includeCandidates);
             const puzzle = JSON.parse(compressor.decompressFromBase64(compressed));
 
@@ -351,7 +368,7 @@
         }
 
         const origImportPuzzle = importPuzzle;
-        importPuzzle = function(string, clearHistory) {
+        importPuzzle = function (string, clearHistory) {
             // Remove any generated cosmetics
             const puzzle = JSON.parse(compressor.decompressFromBase64(string));
             let constraintNames = newConstraintInfo.map(c => c.name);
@@ -360,7 +377,7 @@
                 for (let line of puzzle.line) {
                     // Upgrade from old boolean
                     if (line.isNewConstraint) {
-                        line.fromConstraint = line.color === "#C060C0" ? "Renban" : "Whispers";
+                        line.fromConstraint = line.color === "#C060C0" ? "Renban" : (line.color === "#67F067" ? "Whispers" : "Entropic");
                         delete line.isNewConstraint;
                     }
 
@@ -409,7 +426,7 @@
 
         // Draw the new constraints
         const origDrawConstraints = drawConstraints;
-        drawConstraints = function(layer) {
+        drawConstraints = function (layer) {
             if (layer === 'Bottom') {
                 for (let info of newConstraintInfo) {
                     const id = cID(info.name);
@@ -431,7 +448,7 @@
 
         // Conflict highlighting for new constraints
         const origCandidatePossibleInCell = candidatePossibleInCell;
-        candidatePossibleInCell = function(n, cell, options) {
+        candidatePossibleInCell = function (n, cell, options) {
             if (!options) {
                 options = {};
             }
@@ -499,6 +516,53 @@
                                     return false;
                                 }
                             }
+                        }
+                    }
+                }
+            }
+
+            // Entropic Line
+            const constraintsEntropicLine = constraints[cID('Entropic Line')];
+            if (constraintsEntropicLine && constraintsEntropicLine.length > 0) {
+                const entropicLineGroups = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+                for (let entropicLine of constraintsEntropicLine) {
+                    for (let line of entropicLine.lines) {
+                        const index = line.indexOf(cell);
+                        if (index > -1) {
+                            let lineGroupIndices = [-1, -1, -1];
+
+                            let nGroup = -1;
+
+                            for (let i = 0; i < entropicLineGroups.length; i++) {
+                                if (entropicLineGroups[i].includes(n)) {
+                                    nGroup = i;
+                                }
+                            }
+
+                            for (let index = 0; index < line.length; index++) {
+                                if (line[index].value) {
+                                    for (let i = 0; i < entropicLineGroups.length; i++) {
+                                        if (entropicLineGroups[i].includes(line[index].value)) {
+                                            lineGroupIndices[i] = index % 3;
+                                        }
+                                    }
+                                }
+                            }
+
+                            if (lineGroupIndices[nGroup] !== -1) {
+                                if (lineGroupIndices[nGroup] !== (index % 3)) {
+                                    return false;
+                                }
+                                else if (!entropicLineGroups[lineGroupIndices[index % 3]].includes(n)) {
+                                    return false;
+                                }
+                            }
+                            else if (lineGroupIndices[(nGroup + 1) % 3] !== -1 && lineGroupIndices[(nGroup + 2) % 3] !== -1) {
+                                if (lineGroupIndices[(nGroup + 1) % 3] === (index % 3) || lineGroupIndices[(nGroup + 2) % 3] == (index % 3)) {
+                                    return false;
+                                }
+                            }
+
                         }
                     }
                 }
@@ -704,19 +768,19 @@
         // Constraint classes
 
         // Renban
-        window.renban = function(cell) {
+        window.renban = function (cell) {
             this.lines = [
                 [cell]
             ];
 
-            this.show = function() {
+            this.show = function () {
                 const renbanInfo = newConstraintInfo.filter(c => c.name === 'Renban')[0];
                 for (var a = 0; a < this.lines.length; a++) {
                     drawLine(this.lines[a], renbanInfo.color, renbanInfo.colorDark, renbanInfo.lineWidth);
                 }
             }
 
-            this.addCellToLine = function(cell) {
+            this.addCellToLine = function (cell) {
                 if (this.lines[this.lines.length - 1].length < size) {
                     this.lines[this.lines.length - 1].push(cell);
                 }
@@ -729,7 +793,7 @@
                 [cell]
             ];
 
-            this.show = function() {
+            this.show = function () {
                 const whispersInfo = newConstraintInfo.filter(c => c.name === 'Whispers')[0];
                 for (var a = 0; a < this.lines.length; a++) {
                     drawLine(this.lines[a], whispersInfo.color, whispersInfo.colorDark, whispersInfo.lineWidth);
@@ -741,34 +805,52 @@
             }
         }
 
-        // Region Sum Lines
-        window.regionsumline = function(cell) {
+        // Entropic Line
+        window.entropicline = function(cell) {
             this.lines = [
                 [cell]
             ];
 
-            this.show = function() {
+            this.show = function () {
+                const entropicLineInfo = newConstraintInfo.filter(c => c.name === 'Entropic Line')[0];
+                for (var a = 0; a < this.lines.length; a++) {
+                    drawLine(this.lines[a], entropicLineInfo.color, entropicLineInfo.colorDark, entropicLineInfo.lineWidth);
+                }
+            }
+
+            this.addCellToLine = function (cell) {
+                this.lines[this.lines.length - 1].push(cell);
+            }
+        }
+
+        // Region Sum Lines
+        window.regionsumline = function (cell) {
+            this.lines = [
+                [cell]
+            ];
+
+            this.show = function () {
                 const regionSumLineInfo = newConstraintInfo.filter(c => c.name === 'Region Sum Line')[0];
                 for (var a = 0; a < this.lines.length; a++) {
                     drawLine(this.lines[a], regionSumLineInfo.color, regionSumLineInfo.colorDark, regionSumLineInfo.lineWidth);
                 }
             }
 
-            this.addCellToLine = function(cell) {
+            this.addCellToLine = function (cell) {
                 this.lines[this.lines.length - 1].push(cell);
             }
         }
 
         // Row Indexer
-        window.rowindexer = function(cell) {
+        window.rowindexer = function (cell) {
             this.cells = [cell];
 
-            this.addCellToRegion = function(cell) {
+            this.addCellToRegion = function (cell) {
                 this.cells.push(cell);
                 this.sortCells();
             }
 
-            this.sortCells = function() {
+            this.sortCells = function () {
                 this.cells.sort((a, b) => (a.i * size + a.j) - (b.i * size + b.j));
             }
         }
@@ -779,7 +861,7 @@
         // Box Indexer
         window.boxindexer = window.rowindexer;
 
-        window.xsum = function(cells) {
+        window.xsum = function (cells) {
             if (cells)
                 this.cell = cells[0];
             this.set = null;
@@ -787,7 +869,7 @@
             this.isReverse = false;
             this.isRow = false;
 
-            this.show = function() {
+            this.show = function () {
                 ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
                 ctx.font = (cellSL * 1.0) + 'px Arial';
                 const iconOffset = cellSL * 0.1 * (this.isReverse ? -1 : 1);
@@ -822,7 +904,7 @@
                 }
             }
 
-            this.updateSet = function() {
+            this.updateSet = function () {
                 if (this.cell) {
                     if (this.cell.i >= 0 && this.cell.i < size) {
                         this.isRow = true;
@@ -846,7 +928,7 @@
             }
             this.updateSet();
 
-            this.typeNumber = function(num) {
+            this.typeNumber = function (num) {
                 if (this.value.length === 0 && num === '0') {
                     return;
                 }
@@ -857,7 +939,7 @@
             }
         }
 
-        window.skyscraper = function(cells) {
+        window.skyscraper = function (cells) {
             if (cells)
                 this.cell = cells[0];
             this.set = null;
@@ -865,7 +947,7 @@
             this.isReverse = false;
             this.isRow = false;
 
-            this.show = function() {
+            this.show = function () {
                 ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
                 ctx.font = (cellSL * 1.0) + 'px Arial';
                 const iconOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
@@ -887,7 +969,7 @@
                 }
             }
 
-            this.updateSet = function() {
+            this.updateSet = function () {
                 if (this.cell) {
                     if (this.cell.i >= 0 && this.cell.i < size) {
                         this.isRow = true;
@@ -911,7 +993,7 @@
             }
             this.updateSet();
 
-            this.typeNumber = function(num) {
+            this.typeNumber = function (num) {
                 if (this.value.length === 0 && num === '0') {
                     return;
                 }
@@ -923,7 +1005,7 @@
         }
 
         const origCategorizeTools = categorizeTools;
-        categorizeTools = function() {
+        categorizeTools = function () {
             origCategorizeTools();
 
             let toolLineIndex = toolConstraints.indexOf('Palindrome');
@@ -973,7 +1055,7 @@
 
         // Puzzle title
         // Unfortuantely, there's no way to shim this so it's duplicated in full.
-        getPuzzleTitle = function() {
+        getPuzzleTitle = function () {
             var title = '';
 
             ctx.font = titleLSize + 'px Arial';
@@ -1062,7 +1144,7 @@
         // Make all the constraint buttons smaller
         const constraintHeight = 22;
         const prevCreateSidebarConstraints = createSidebarConstraints;
-        createSidebarConstraints = function() {
+        createSidebarConstraints = function () {
             prevCreateSidebarConstraints();
 
             let constraintIndex = 0;
@@ -1086,7 +1168,7 @@
         }
 
         const origDrawPopups = window.drawPopups;
-        window.drawPopups = function(overlapSidebars) {
+        window.drawPopups = function (overlapSidebars) {
             if (!overlapSidebars && popup === "Constraint Tools") {
                 ctx.lineWidth = lineWW;
                 ctx.fillStyle = boolSettings['Dark Mode'] ? '#404040' : '#D0D0D0';
