@@ -929,6 +929,25 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.entropicline != null)
+            {
+                foreach (var entropicline in fpuzzlesData.entropicline)
+                {
+                    foreach (var line in entropicline.lines)
+                    {
+                        StringBuilder cells = new();
+                        foreach (var cell in line)
+                        {
+                            if (!string.IsNullOrWhiteSpace(cell))
+                            {
+                                cells.Append(cell);
+                            }
+                        }
+                        solver.AddConstraint(typeof(EntropicLineConstraint), cells.ToString());
+                    }
+                }
+            }
+
             // Apply any command-line constraints
             if (additionalConstraints != null)
             {
@@ -1325,6 +1344,13 @@ namespace SudokuSolver
                 skyscraper.Add(new() { cell = CN(c.cellStart), value = c.clue.ToString() });
             }
 
+            List<FPuzzlesLines> entropicline = new();
+            foreach (var c in solver.Constraints<EntropicLineConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                entropicline.Add(new() { lines = new string[][] { cells } });
+            }
+
             static T[] ToArray<T>(List<T> list) => list.Count > 0 ? list.ToArray() : null;
 
             FPuzzlesBoard fp = new()
@@ -1366,6 +1392,7 @@ namespace SudokuSolver
                 sandwichsum = ToArray(sandwichsum),
                 xsum = ToArray(xsum),
                 skyscraper = ToArray(skyscraper),
+                entropicline = ToArray(entropicline),
             };
 
             string fpuzzlesJson = JsonSerializer.Serialize(fp, FpuzzlesJsonContext.Default.FPuzzlesBoard);
