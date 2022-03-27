@@ -553,8 +553,10 @@
                                 if (lineGroupIndices[nGroup] !== (index % 3)) {
                                     return false;
                                 }
-                                else if (!entropicLineGroups[lineGroupIndices[index % 3]].includes(n)) {
+                                else if (lineGroupIndices[index % 3] !== -1) {
+                                    if (!entropicLineGroups[lineGroupIndices[index % 3]].includes(n)) {
                                     return false;
+                                    }
                                 }
                             }
                             else if (lineGroupIndices[(nGroup + 1) % 3] !== -1 && lineGroupIndices[(nGroup + 2) % 3] !== -1) {
