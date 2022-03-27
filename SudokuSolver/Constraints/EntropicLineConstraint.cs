@@ -175,7 +175,140 @@ public class EntropicLineConstraint : Constraint
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
-        return LogicResult.None;
+        if (cells.Count <= 1) {
+            return LogicResult.None;
+        }
+
+        var board = sudokuSolver.Board;
+        List<int> elims = null;
+        bool hadChange = false;
+        bool changed;
+
+        do
+        {
+            changed = false;
+            
+
+            for (int ti = 0; ti < cells.Count - 2; ti++) {
+                var curCell = cells[ti];
+                var nextCell = cells[ti + 1];
+                var nextNextCell = cells[ti + 2];
+                uint curMask = board[curCell.Item1, curCell.Item2];
+                uint nextMask = board[nextCell.Item1, nextCell.Item2];
+                uint nextNextMask = board[nextNextCell.Item1, nextNextCell.Item2];
+                bool curValueSet = IsValueSet(curMask);
+                bool nextValueSet = IsValueSet(nextMask);
+                bool nextNextValueSet = IsValueSet(nextNextMask);
+
+                int curGroup = getCellGroup(curMask);
+                int nextGroup = getCellGroup(nextMask);
+                int nextNextGroup = getCellGroup(nextNextMask);
+
+                if (curGroup != -1) {
+
+                    if (!nextValueSet) {
+                        LogicResult clearResult = sudokuSolver.ClearMask(nextCell.Item1, nextCell.Item2, groupMasks[curGroup]);
+                        if (clearResult == LogicResult.Invalid)
+                        {
+                            logicalStepDescription?.Append($"{CellName(nextCell)} has no more valid candidates.");
+                            return LogicResult.Invalid;
+                        }
+                        if (clearResult == LogicResult.Changed) {
+
+                            if (logicalStepDescription != null) {
+                            
+                                elims ??= new();
+
+                                foreach (var clearVal in groups[curGroup])
+                                {
+                                    elims.Add(CandidateIndex(nextCell, clearVal));
+                                }
+
+                                changed = true;
+                                hadChange = true;
+                            
+                            }
+                        
+                        }
+                    }
+                    if (curGroup == nextGroup) {
+                        logicalStepDescription?.Append($"{CellName(nextCell)} is in an invalid group.");
+                        return LogicResult.Invalid;
+                    }
+
+                    if (!nextNextValueSet) {
+                        LogicResult clearResult = sudokuSolver.ClearMask(nextNextCell.Item1, nextNextCell.Item2, groupMasks[curGroup]);
+                        if (clearResult == LogicResult.Invalid)
+                        {
+                            logicalStepDescription?.Append($"{CellName(nextNextCell)} has no more valid candidates.");
+                            return LogicResult.Invalid;
+                        }
+                        if (clearResult == LogicResult.Changed) {
+                            if (logicalStepDescription != null) {
+                            
+                                elims ??= new();
+                                                                
+                                foreach (var clearVal in groups[curGroup])
+                                {
+                                    elims.Add(CandidateIndex(nextNextCell, clearVal));
+                                }
+
+                                changed = true;
+                                hadChange = true;
+                            
+                            }
+                        }
+                    }
+                    if (curGroup == nextNextGroup) {
+                        logicalStepDescription?.Append($"{CellName(nextNextCell)} is in an invalid group.");
+                        return LogicResult.Invalid;
+                    }
+
+                }
+
+                if (nextGroup != -1) {
+
+                    if (!nextNextValueSet) {
+                        LogicResult clearResult = sudokuSolver.ClearMask(nextNextCell.Item1, nextNextCell.Item2, groupMasks[nextGroup]);
+                        if (clearResult == LogicResult.Invalid)
+                        {
+                            logicalStepDescription?.Append($"{CellName(nextNextCell)} has no more valid candidates.");
+                            return LogicResult.Invalid;
+                        }
+                        if (clearResult == LogicResult.Changed) {
+                            if (logicalStepDescription != null) {
+                            
+                                elims ??= new();
+
+                                foreach (var clearVal in groups[nextGroup])
+                                {
+                                    elims.Add(CandidateIndex(nextNextCell, clearVal));
+                                }
+
+                                changed = true;
+                                hadChange = true;
+                            
+                            }
+                        }
+                    }
+                    if (nextGroup == nextNextGroup) {
+                        logicalStepDescription?.Append($"{CellName(nextNextCell)} is in an invalid group.");
+                        return LogicResult.Invalid;
+                    }
+
+                }
+
+            }
+
+        } while (changed);
+
+
+        if (logicalStepDescription != null && elims != null && elims.Count > 0)
+        {
+            logicalStepDescription.Append($"Re-evaluated => {sudokuSolver.DescribeElims(elims)}");
+        }
+
+        return hadChange ? LogicResult.Changed : LogicResult.None;
     }
 
 }
