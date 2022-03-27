@@ -88,6 +88,7 @@ public static class ConstraintManager
         { typeof(DiagonalPositiveGroupConstraint), (solver, options) => new DiagonalPositiveGroupConstraint(solver, options) },
         { typeof(DifferenceConstraint), (solver, options) => new DifferenceConstraint(solver, options) },
         { typeof(DisjointGroupConstraint), (solver, options) => new DisjointGroupConstraint(solver, options) },
+        { typeof(EntropicLineConstraint), (solver, options) => new EntropicLineConstraint(solver, options) },
         { typeof(EvenConstraint), (solver, options) => new EvenConstraint(solver, options) },
         { typeof(ExtraRegionConstraint), (solver, options) => new ExtraRegionConstraint(solver, options) },
         { typeof(RowIndexerConstraint), (solver, options) => new RowIndexerConstraint(solver, options) },
