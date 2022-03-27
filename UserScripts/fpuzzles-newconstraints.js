@@ -539,22 +539,28 @@
                                 }
                             }
 
-                            for (let index = 0; index < line.length; index++) {
-                                if (line[index].value) {
+                            for (let loopIndex = 0; loopIndex < line.length; loopIndex++) {
+                                if (line[loopIndex].value) {
                                     for (let i = 0; i < entropicLineGroups.length; i++) {
-                                        if (entropicLineGroups[i].includes(line[index].value)) {
-                                            lineGroupIndices[i] = index % 3;
+                                        if (entropicLineGroups[i].includes(line[loopIndex].value)) {
+                                            if (lineGroupIndices[i] === -1) {
+                                                lineGroupIndices[i] = loopIndex % 3;
+                                            }
+                                            else {
+                                                if (lineGroupIndices[i] !== loopIndex % 3) {
+                                                    if (i === nGroup) {
+                                                        return false;
+                                                    }
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
 
                             if (lineGroupIndices[nGroup] !== -1) {
-                                if (lineGroupIndices[nGroup] !== (index % 3)) {
-                                    return false;
-                                }
-                                else if (lineGroupIndices[index % 3] !== -1) {
-                                    if (!entropicLineGroups[lineGroupIndices[index % 3]].includes(n)) {
+                                if (lineGroupIndices.indexOf(index % 3) !== -1) {
+                                    if (!entropicLineGroups[lineGroupIndices.indexOf(index % 3)].includes(n)) {
                                     return false;
                                     }
                                 }
