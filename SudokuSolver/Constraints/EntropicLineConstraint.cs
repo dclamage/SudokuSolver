@@ -88,6 +88,109 @@ public class EntropicLineConstraint : Constraint
 
     }
 
+    private List<int[]>[] isGroupInLineOrBox(uint[, ] board) {
+
+        if (cells.Count() < 7) {
+            return new List<int[]>[0];
+        }
+
+        // First three are positions and fourth outlines the type
+        // -1 is invalid state
+        // 0 is shared box
+        // 1 is shared horizonal line
+        // 2 is shared vertical line
+        
+        List<int[]>[] inLineOrBox = new List<int[]>[3];
+
+        bool box = false;
+        bool verticalLine = false;
+        bool horizontalLine = false;
+        int[] current = { -1, -1, -1, -1 };
+
+
+        for (int i = 0; i < 3; i++) {
+            for (int j = i; j < cells.Count - i; j += 3) {
+
+                if (cells.Count < 7 + j) {
+                    break;
+                }
+
+                for (int k = 0; k < current.Count(); k++) {
+                    current[k] = -1;
+                }
+
+                (int, int) firstPos = cells[j];
+                (int, int) firstBox = (firstPos.Item1 / 3, firstPos.Item2 / 3);
+                
+
+                current[0] = j;
+
+
+                (int, int) nextPos = cells[j + 3];
+                (int, int) nextBox = (nextPos.Item1 / 3, nextPos.Item2 / 3);
+
+                if (firstBox == nextBox) {
+                    current[1] = j + 3;
+                    box = true;
+                }
+                if (firstPos.Item1 == nextPos.Item1) {
+                    current[1] = j + 3;
+                    horizontalLine = true;
+                }
+                if (firstPos.Item2 == nextPos.Item2) {
+                    current[1] = j + 3;
+                    verticalLine = true;
+                }
+
+                if (!box && !verticalLine && !horizontalLine) {
+                    continue;
+                }
+
+                (int, int) nextNextPos = cells[j + 6];
+                (int, int) nextNextBox = (nextNextPos.Item1 / 3, nextNextPos.Item2 / 3);
+
+                if (box) {
+                    if (nextBox == nextNextBox) {
+                        current[2] = j + 6;
+                        current[3] = 0;
+                    }
+                    else {
+                        box = false;
+                    }
+                }
+                if (horizontalLine) {
+                    if (nextPos.Item1 == nextNextPos.Item1) {
+                        current[2] = j + 6;
+                        current[3] = 1;
+                    }
+                    else {
+                        horizontalLine = false;
+                    }
+                }
+                if (verticalLine) {
+                    if (nextPos.Item2 == nextNextPos.Item2) {
+                        current[2] = j + 6;
+                        current[3] = 2;
+                    }
+                    else {
+                        verticalLine = false;
+                    }
+                }
+                if (!box && !verticalLine && !horizontalLine) {
+                    continue;
+                }
+
+                if (inLineOrBox[i] == null) {
+                    inLineOrBox[i] = new List<int[]>();
+                }
+
+                inLineOrBox[i].Add((int[])current.Clone());
+            }
+        }
+        
+        return inLineOrBox;
+    }
+
     public override LogicResult InitCandidates(Solver sudokuSolver)
     {
         // Without a value in any spot entropic lines cannot rule out any value
@@ -175,6 +278,7 @@ public class EntropicLineConstraint : Constraint
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
+
         if (cells.Count <= 1) {
             return LogicResult.None;
         }
@@ -296,6 +400,81 @@ public class EntropicLineConstraint : Constraint
                         return LogicResult.Invalid;
                     }
 
+                }
+
+
+                if (!isBruteForcing) {
+                    List<int[]>[] sharedLineOrBox = isGroupInLineOrBox(board);
+                    if (sharedLineOrBox?.Count() != 0) {
+                        foreach (var group in sharedLineOrBox) {
+                            if (group != null && group.Count() != 0) {
+                                foreach(var lineOrBox in group) {
+
+                                    var firstCell = cells[lineOrBox[0]];
+                                    
+                                    // Box
+                                    if (lineOrBox[^1] == 0) {
+                                        var box = (firstCell.Item1 / 3, firstCell.Item2 / 3);
+
+                                        for (int i = 0; i < 3; i++) {
+                                            for (int j = 0; j < 3; j++) {
+                                                var cell = ((box.Item1 * 3) + i, (box.Item2 * 3) + j);
+
+                                                var cellGroup = getCellGroup(board[cell.Item1, cell.Item2]);
+
+                                                if (cellGroup != -1) {
+                                                    for (int c = 0; c < lineOrBox.Count() - 1; c++) {
+                                                        foreach (var clearVal in groups[cellGroup])
+                                                        {
+                                                            elims.Add(CandidateIndex(cells[lineOrBox[c]], clearVal));
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Horizontal line
+                                    else if (lineOrBox[^1] == 1) {
+                                        var line = firstCell.Item1;
+
+                                        for (int i = 0; i < 3; i++) {
+                                            var cell = (line, i);
+
+                                            var cellGroup = getCellGroup(board[cell.Item1, cell.Item2]);
+
+                                            if (cellGroup != -1) {
+                                                for (int c = 0; c < lineOrBox.Count() - 1; c++) {
+                                                    foreach (var clearVal in groups[cellGroup])
+                                                    {
+                                                        elims.Add(CandidateIndex(cells[lineOrBox[c]], clearVal));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    // Vertical line
+                                    else if (lineOrBox[^1] == 2) {
+                                        var line = firstCell.Item2;
+
+                                        for (int i = 0; i < 3; i++) {
+                                            var cell = (line, i);
+
+                                            var cellGroup = getCellGroup(board[cell.Item1, cell.Item2]);
+
+                                            if (cellGroup != -1) {
+                                                for (int c = 0; c < lineOrBox.Count() - 1; c++) {
+                                                    foreach (var clearVal in groups[cellGroup])
+                                                    {
+                                                        elims.Add(CandidateIndex(cells[lineOrBox[c]], clearVal));
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
 
             }
