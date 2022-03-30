@@ -40,7 +40,54 @@ namespace SudokuSolver.Constraints
             var greatResult = greatCellsSumHelper.Init(solver, AtLeast(greatCells.Count, greatCells.Count, MAX_VALUE));
             var smallResult = smallCellsSumHelper.Init(solver, AtLeast(smallCells.Count, smallCells.Count, MAX_VALUE));
 
+            if (GreatAndSmallCellsAreEachConsecutive(solver) && greatCells.Count <= smallCells.Count)
+            {
+                var changed = false;
+                foreach (var cell in smallCells)
+                {
+                    var mask = solver.Board[cell.Item1, cell.Item2];
+                    // Remove highest value from all small cells
+                    var newMask = mask & ~(1u << (MAX_VALUE - 1));
+                    solver.Board[cell.Item1, cell.Item2] &= newMask;
+                    changed = changed || mask != newMask;
+                }
+                foreach (var cell in greatCells)
+                {
+                    // Remove lowest value from all great cells
+                    var mask = solver.Board[cell.Item1, cell.Item2];
+                    var newMask = mask & ~1u;
+                    solver.Board[cell.Item1, cell.Item2] &= newMask;
+                    changed = changed || mask != newMask;
+                }
+                if (changed && greatResult == LogicResult.None)
+                {
+                    // Cheeky reuse of variable
+                    greatResult = LogicResult.Changed;
+                }
+            }
+
             return !IsValid(solver) ? LogicResult.Invalid : greatResult > smallResult ? greatResult : smallResult;
+        }
+
+        private bool GreatAndSmallCellsAreEachConsecutive(Solver solver)
+        {
+            var greatCellsAreConsecutive = false;
+            var smallCellsAreConsecutive = false;
+
+            foreach (var renban in solver.Constraints<RenbanConstraint>())
+            {
+                // Not quick but this method is only called once per solve
+
+                if (greatCells.All(cell => renban.cells.Contains(cell)))
+                {
+                    greatCellsAreConsecutive = true;
+                }
+                if (smallCells.All(cell => renban.cells.Contains(cell)))
+                {
+                    smallCellsAreConsecutive = true;
+                }
+            }
+            return greatCellsAreConsecutive && smallCellsAreConsecutive;
         }
 
         private bool IsValid(Solver solver)
