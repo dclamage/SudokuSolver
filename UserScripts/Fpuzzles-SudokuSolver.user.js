@@ -17,7 +17,7 @@
     const doShim = function() {
         // Makes center and corner marks larger so they're easier to see.
         let textScale = 1.5;
-        const settingsIcon = '⚙️';
+        const settingsIcon = '\u2699\uFE0F';
 
         const connectButtonOffset = 208;
         const connectButton = new button(canvas.width - connectButtonOffset, 40, 215, 40, ['Setting', 'Solving'], 'Connect', 'Connect');
