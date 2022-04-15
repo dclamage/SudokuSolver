@@ -1008,7 +1008,7 @@
             }
         }
 
-        if (window.boolConstraints) {
+        if (window.boolConstraints && window.buttons) {
             window.buttons.clear();
             window.onload();
         }
