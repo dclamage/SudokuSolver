@@ -1008,8 +1008,10 @@
             }
         }
 
-        if (window.boolConstraints && window.buttons) {
-            window.buttons.clear();
+        if (window.boolConstraints) {
+            if (window.buttons) {
+                window.buttons.clear();
+            }
             window.onload();
         }
     }
