@@ -524,7 +524,11 @@
             // Entropic Line
             const constraintsEntropicLine = constraints[cID('Entropic Line')];
             if (constraintsEntropicLine && constraintsEntropicLine.length > 0) {
-                const entropicLineGroups = [[1, 2, 3], [4, 5, 6], [7, 8, 9]];
+                const entropicLineGroups = [
+                    [1, 2, 3],
+                    [4, 5, 6],
+                    [7, 8, 9]
+                ];
                 for (let entropicLine of constraintsEntropicLine) {
                     for (let line of entropicLine.lines) {
                         const index = line.indexOf(cell);
@@ -552,12 +556,10 @@
                             if (lineGroupIndices[nGroup] !== -1) {
                                 if (lineGroupIndices[nGroup] !== (index % 3)) {
                                     return false;
-                                }
-                                else if (!entropicLineGroups[lineGroupIndices[index % 3]].includes(n)) {
+                                } else if (lineGroupIndices[index % 3] !== -1 && !entropicLineGroups[lineGroupIndices[index % 3]].includes(n)) {
                                     return false;
                                 }
-                            }
-                            else if (lineGroupIndices[(nGroup + 1) % 3] !== -1 && lineGroupIndices[(nGroup + 2) % 3] !== -1) {
+                            } else if (lineGroupIndices[(nGroup + 1) % 3] !== -1 && lineGroupIndices[(nGroup + 2) % 3] !== -1) {
                                 if (lineGroupIndices[(nGroup + 1) % 3] === (index % 3) || lineGroupIndices[(nGroup + 2) % 3] == (index % 3)) {
                                     return false;
                                 }
@@ -811,14 +813,14 @@
                 [cell]
             ];
 
-            this.show = function () {
+            this.show = function() {
                 const entropicLineInfo = newConstraintInfo.filter(c => c.name === 'Entropic Line')[0];
                 for (var a = 0; a < this.lines.length; a++) {
                     drawLine(this.lines[a], entropicLineInfo.color, entropicLineInfo.colorDark, entropicLineInfo.lineWidth);
                 }
             }
 
-            this.addCellToLine = function (cell) {
+            this.addCellToLine = function(cell) {
                 this.lines[this.lines.length - 1].push(cell);
             }
         }
