@@ -547,7 +547,9 @@
                                 if (line[index].value) {
                                     for (let i = 0; i < entropicLineGroups.length; i++) {
                                         if (entropicLineGroups[i].includes(line[index].value)) {
-                                            lineGroupIndices[i] = index % 3;
+                                            if (lineGroupIndices[i] === -1) {
+                                                lineGroupIndices[i] = index % 3;
+                                            }
                                         }
                                     }
                                 }
@@ -556,7 +558,7 @@
                             if (lineGroupIndices[nGroup] !== -1) {
                                 if (lineGroupIndices[nGroup] !== (index % 3)) {
                                     return false;
-                                } else if (lineGroupIndices[index % 3] !== -1 && !entropicLineGroups[lineGroupIndices[index % 3]].includes(n)) {
+                                } else if (lineGroupIndices.indexOf(index % 3) !== -1 && lineGroupIndices.indexOf(index % 3) !== nGroup) {
                                     return false;
                                 }
                             } else if (lineGroupIndices[(nGroup + 1) % 3] !== -1 && lineGroupIndices[(nGroup + 2) % 3] !== -1) {
