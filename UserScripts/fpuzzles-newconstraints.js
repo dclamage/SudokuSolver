@@ -543,17 +543,23 @@
                                 }
                             }
 
-                            for (let index = 0; index < line.length; index++) {
-                                if (line[index].value) {
-                                    for (let i = 0; i < entropicLineGroups.length; i++) {
-                                        if (entropicLineGroups[i].includes(line[index].value)) {
-                                            if (lineGroupIndices[i] === -1) {
-                                                lineGroupIndices[i] = index % 3;
+                            for (let i = 0; i < line.length; i++) {
+                                if (line[i].value) {
+                                    for (let j = 0; j < entropicLineGroups.length; j++) {
+                                        if (entropicLineGroups[j].includes(line[i].value)) {
+                                            if (lineGroupIndices[j] === -1) {
+                                                lineGroupIndices[j] = i % 3;
+                                            }
+                                            else if (lineGroupIndices[j] !== i % 3) {
+                                                if (index % 3 === i % 3 || lineGroupIndices[j] === index % 3) {
+                                                    return false;
+                                                }  
                                             }
                                         }
                                     }
                                 }
                             }
+
 
                             if (lineGroupIndices[nGroup] !== -1) {
                                 if (lineGroupIndices[nGroup] !== (index % 3)) {
