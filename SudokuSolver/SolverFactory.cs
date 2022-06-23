@@ -970,6 +970,14 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.numberedroom != null)
+            {
+                foreach (var numberedroom in fpuzzlesData.numberedroom)
+                {
+                    numberedroom.AddConstraint(solver, typeof(NumberedRoomConstraint));
+                }
+            }
+
             if (fpuzzlesData.entropicline != null)
             {
                 foreach (var entropicline in fpuzzlesData.entropicline)
@@ -1385,6 +1393,12 @@ namespace SudokuSolver
                 skyscraper.Add(new() { cell = CN(c.cellStart), value = c.clue.ToString() });
             }
 
+            List<FPuzzlesCell> numberedroom = new();
+            foreach (var c in solver.Constraints<NumberedRoomConstraint>())
+            {
+                numberedroom.Add(new() { cell = CN(c.cellStart), value = c.clue.ToString() });
+            }
+
             List<FPuzzlesLines> entropicline = new();
             foreach (var c in solver.Constraints<EntropicLineConstraint>())
             {
@@ -1433,6 +1447,7 @@ namespace SudokuSolver
                 sandwichsum = ToArray(sandwichsum),
                 xsum = ToArray(xsum),
                 skyscraper = ToArray(skyscraper),
+                numberedroom = ToArray(numberedroom),
                 entropicline = ToArray(entropicline),
             };
 

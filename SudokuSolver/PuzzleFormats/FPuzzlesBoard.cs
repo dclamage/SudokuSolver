@@ -56,6 +56,7 @@ public class FPuzzlesBoard
     public FPuzzlesCell[] sandwichsum { get; set; }
     public FPuzzlesCell[] xsum { get; set; }
     public FPuzzlesCell[] skyscraper { get; set; }
+    public FPuzzlesCell[] numberedroom { get; set; }
     public FPuzzlesLines[] entropicline { get; set; }
     public string[] disabledlogic { get; set; } = null;
     public string[] truecandidatesoptions { get; set; } = null;
