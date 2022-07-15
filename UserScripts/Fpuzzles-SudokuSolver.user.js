@@ -1009,10 +1009,12 @@
         }
 
         if (window.boolConstraints) {
-            if (window.buttons) {
-                window.buttons.clear();
-            }
+            let prevButtons = buttons.splice(0, buttons.length);
             window.onload();
+            buttons.splice(0, buttons.length);
+            for (let i = 0; i < prevButtons.length; i++) {
+                buttons.push(prevButtons[i]);
+            }
         }
     }
 
