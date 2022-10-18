@@ -821,7 +821,7 @@
 
         installChangeProxy();
 
-        const openCTCButton = new button(canvas.width / 2 - 175, canvas.height / 2 + 6 + (buttonLH + buttonGap) * 4, 400, buttonLH, ['Export'], 'OpenCTC', 'Open in CTC');
+        const openCTCButton = new button(canvas.width / 2 - 175, canvas.height / 2 + 6 + (buttonLH + buttonGap) * 4, 400, buttonLH, ['Export'], 'OpenCTC', 'Open in SudokuPad');
         const openSudokuLabButton = new button(canvas.width / 2 - 175, canvas.height / 2 + 6 + (buttonLH + buttonGap) * 5, 400, buttonLH, ['Export'], 'SudokuLab', 'Open in Sudoku Lab');
 
         let origCreateOtherButtons = createOtherButtons;
@@ -852,7 +852,7 @@
             if (!this.hovering()) {
                 return;
             }
-            window.open('https://app.crackingthecryptic.com/sudoku/?puzzleid=fpuzzles' + encodeURIComponent(exportPuzzle()));
+            window.open('https://sudokupad.app/?puzzleid=fpuzzles' + encodeURIComponent(exportPuzzle()));
             return true;
         }
 
