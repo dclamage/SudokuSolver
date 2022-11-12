@@ -860,7 +860,7 @@
             if (!this.hovering()) {
                 return;
             }
-            window.open('https://www.sudokulab.net/?fpuzzle=' + exportPuzzle());
+            window.open('https://sudokulab.net/?fpuzzle=' + exportPuzzle());
             return true;
         }
 
