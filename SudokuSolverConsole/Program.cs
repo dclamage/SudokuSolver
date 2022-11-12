@@ -5,85 +5,122 @@ using SudokuSolver;
 
 namespace SudokuSolverConsole;
 
-[Command(Name = "Sudoku Solver", Description = $"SudokuSolver version {SudokuSolverVersion.version} created by David Clamage (\"Rangsk\").\nhttps://github.com/dclamage/SudokuSolver")]
-[HelpOption()]
 class Program
 {
-    public async static Task Main(string[] args) =>
-        await CommandLineApplication.ExecuteAsync<Program>(args);
+	private static string descriptionString = $"Version {SudokuSolverVersion.version} created by David Clamage (\"Rangsk\").\n" +
+        "https://github.com/dclamage/SudokuSolver\n\n" +
+        "This is free, open source software and is supported by the community.\n" +
+        "Watch me on YouTube: https://youtube.com/rangsk\n" +
+        "Support me on Patreon: https://www.patreon.com/rangsk\n" +
+        "Buy me a Coffee: https://ko-fi.com/rangsk";
 
-    // Input board options
-    [Option("-b|--blank", Description = "Use a blank grid of a square size.")]
-    private string BlankGridSizeString { get; set; }
+    public static async Task<int> Main(string[] args)
+	{
+        var app = new CommandLineApplication();
+		app.Name = args[0];
+		app.FullName = "Sudoku Solver";
+		app.Description = descriptionString;
 
-    [Option("-g|--givens", Description = "Provide a digit string to represent the givens for the puzzle.")]
-    private string Givens { get; set; }
+        app.HelpOption();
 
-    [Option("-a|--candidates", Description = "Provide a candidate string of height^3 numbers.")]
-    private string Candidates { get; set; }
+		var blankGridSize = app.Option<int>("-b|--blank", "Use a blank grid of a square size.", CommandOptionType.SingleValue)
+			.Accepts(v => v.Range(1, 31));
+		var givens = app.Option("-g|--givens", "Provide a digit string to represent the givens for the puzzle.", CommandOptionType.SingleValue);
+		var candidates = app.Option("-a|--candidates", "Provide a candidate string of height^3 numbers.", CommandOptionType.SingleValue);
+		var fpuzzlesURL = app.Option("-f|--fpuzzles", "Import a full f-puzzles URL (Everything after '?load=').", CommandOptionType.SingleValue);
+		var constraints = app.Option("-c|--constraint", "Provide a constraint to use.", CommandOptionType.MultipleValue);
+		var print = app.Option("-p|--print", "Print the input board.", CommandOptionType.NoValue);
+		var solveBruteForce = app.Option("-s|--solve", "Provide a single brute force solution.", CommandOptionType.NoValue);
+		var solveRandomBruteForce = app.Option("-d|--random", "Provide a single random brute force solution.", CommandOptionType.NoValue);
+		var solveLogically = app.Option("-l|--logical", "Attempt to solve the puzzle logically.", CommandOptionType.NoValue);
+		var trueCandidates = app.Option("-r|--truecandidates", "Find the true candidates for the puzzle (union of all solutions).", CommandOptionType.NoValue);
+		var check = app.Option("-k|--check", "Check if there are 0, 1, or 2+ solutions.", CommandOptionType.NoValue);
+		var solutionCount = app.Option("-n|--solutioncount", "Provide an exact solution count.", CommandOptionType.NoValue);
+		var maxSolutionCount = app.Option<ulong>("-x|--maxcount", "Specify an maximum solution count.", CommandOptionType.SingleValue);
+		var multiThread = app.Option("-t|--multithread", "Use multithreading.", CommandOptionType.NoValue);
+		var outputPath = app.Option("-o|--out", "Output solution(s) to file.", CommandOptionType.SingleValue)
+			.Accepts(v => v.LegalFilePath());
+		var sortSolutionCount = app.Option("-z|--sort", "Sort the solution count (requires reading all solutions into memory).", CommandOptionType.NoValue);
+		var fpuzzlesOut = app.Option("-u|--url", "Write solution as f-puzzles URL.", CommandOptionType.NoValue);
+		var visitURL = app.Option("-v|--visit", "Automatically visit the output URL with default browser (combine with -u).", CommandOptionType.NoValue);
+		var listen = app.Option("--listen", "Listen for websocket connections.", CommandOptionType.NoValue);
+		var port = app.Option<int>("--port", "Change the listen port for websocket connections (default 4545)", CommandOptionType.SingleValue)
+			.Accepts(v => v.Range(1024, 49151));
+		port.DefaultValue = 4545;
+        var listConstraints = app.Option("--list-constraints", "List all available constraints.", CommandOptionType.NoValue);
+        var hideBanner = app.Option("--hide-banner", "Do not show the text with app version and support links.", CommandOptionType.NoValue);
 
-    [Option("-f|--fpuzzles", Description = "Import a full f-puzzles URL (Everything after '?load=').")]
-    private string FpuzzlesURL { get; set; }
+        app.OnExecuteAsync(async cancellationToken =>
+		{
+			Program program = new()
+			{
+				BlankGridSize = blankGridSize.ParsedValue,
+                Givens = givens.Value(),
+                Candidates = candidates.Value(),
+                FpuzzlesURL = fpuzzlesURL.Value(),
+                Constraints = constraints.Values.ToArray(),
+				Print = print.HasValue(),
+                SolveBruteForce = solveBruteForce.HasValue(),
+                SolveRandomBruteForce = solveRandomBruteForce.HasValue(),
+                SolveLogically = solveLogically.HasValue(),
+                TrueCandidates = trueCandidates.HasValue(),
+                Check = check.HasValue(),
+                SolutionCount = solutionCount.HasValue(),
+                MaxSolutionCount = maxSolutionCount.ParsedValue,
+                MultiThread = multiThread.HasValue(),
+                OutputPath = outputPath.Value(),
+                SortSolutionCount = sortSolutionCount.HasValue(),
+                FpuzzlesOut = fpuzzlesOut.HasValue(),
+                VisitURL = visitURL.HasValue(),
+                Listen = listen.HasValue(),
+				Port = port.ParsedValue,
+                ListConstraints = listConstraints.HasValue(),
+                HideBanner = hideBanner.HasValue(),
+            };
 
-    [Option("-c|--constraint", Description = "Provide a constraint to use.")]
-    string[] Constraints { get; set; }
+            await program.OnExecuteAsync(app, cancellationToken);
+		});
+
+		return await app.ExecuteAsync(args);
+    }
+
+	// Input board options
+	public required int BlankGridSize { get; init; }
+    public required string Givens { get; init; }
+    public required string Candidates { get; init; }
+    public required string FpuzzlesURL { get; init; }
+    public required string[] Constraints { get; init; }
 
     // Pre-solve options
-    [Option("-p|--print", Description = "Print the input board.")]
-    private bool Print { get; set; }
+    public required bool Print { get; init; }
 
     // Solve options
-    [Option("-s|--solve", Description = "Provide a single brute force solution.")]
-    private bool SolveBruteForce { get; set; }
+    public required bool SolveBruteForce { get; init; }
+    public required bool SolveRandomBruteForce { get; init; }
+    public required bool SolveLogically { get; init; }
+    public required bool TrueCandidates { get; init; }
+    public required bool Check { get; init; }
+    public required bool SolutionCount { get; init; }
+    public required ulong MaxSolutionCount { get; init; }
+    public required bool MultiThread { get; init; }
 
-    [Option("-d|--random", Description = "Provide a single random brute force solution.")]
-    private bool SolveRandomBruteForce { get; set; }
+	// Post-solve options
+    public required string OutputPath { get; init; }
+    public required bool SortSolutionCount { get; init; }
+    public required bool FpuzzlesOut { get; init; }
+    public required bool VisitURL { get; init; }
 
-    [Option("-l|--logical", Description = "Attempt to solve the puzzle logically.")]
-    private bool SolveLogically { get; set; }
+	// Websocket options
+    public required bool Listen { get; init; }
+    public required int Port { get; init; }
 
-    [Option("-r|--truecandidates", Description = "Find the true candidates for the puzzle (union of all solutions).")]
-    private bool TrueCandidates { get; set; }
+	// Help-related options
+    public required bool ListConstraints { get; init; }
+	public required bool HideBanner { get; init; }
 
-    [Option("-k|--check", Description = "Check if there are 0, 1, or 2+ solutions.")]
-    private bool Check { get; set; }
-
-    [Option("-n|--solutioncount", Description = "Provide an exact solution count.")]
-    private bool SolutionCount { get; set; }
-
-    [Option("-x|--maxcount", Description = "Specify an maximum solution count.")]
-    private ulong MaxSolutionCount { get; set; }
-
-    [Option("-t|--multithread", Description = "Use multithreading.")]
-    private bool MultiThread { get; set; }
-
-    // Post-solve options
-    [Option("-o|--out", Description = "Output solution(s) to file.")]
-    private string OutputPath { get; set; }
-
-    [Option("-z|--sort", Description = "Sort the solution count (requires reading all solutions into memory).")]
-    private bool SortSolutionCount { get; set; }
-
-    [Option("-u|--url", Description = "Write solution as f-puzzles URL.")]
-    private bool FpuzzlesOut { get; set; }
-
-    [Option("-v|--visit", Description = "Automatically visit the output URL with default browser (combine with -u).")]
-    private bool VisitURL { get; set; }
-
-    // Websocket options
-    [Option("--listen", Description = "Listen for websocket connections.")]
-    private bool Listen { get; set; }
-
-    [Option("--port", Description = "Change the listen port for websocket connections (default 4545)")]
-    private string PortStr { get; set; }
-
-    // Help-related options
-    [Option("--list-constraints", Description = "List all available constraints.")]
-    private bool ListConstraints { get; set; }
-
-        public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
-    {
-        // Useful for quickly testing a puzzle without changing commandline parameters
+	public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
+	{
+		// Useful for quickly testing a puzzle without changing commandline parameters
 #if false
             args = new string[]
             {
@@ -102,392 +139,387 @@ class Program
             };
 #endif
 
-        Stopwatch watch = Stopwatch.StartNew();
-        string processName = Process.GetCurrentProcess().ProcessName;
+		Stopwatch watch = Stopwatch.StartNew();
+		string processName = Process.GetCurrentProcess().ProcessName;
 
-        Console.WriteLine($"SudokuSolver version {SudokuSolverVersion.version} created by David Clamage (\"Rangsk\").");
-        Console.WriteLine("https://github.com/dclamage/SudokuSolver");
-        Console.WriteLine();
-
-        if (ListConstraints)
-        {
-            Console.WriteLine("Constraints:");
-            List<string> constraintNames = ConstraintManager.ConstraintAttributes.Select(attr => $"{attr.ConsoleName} ({attr.DisplayName})").ToList();
-            constraintNames.Sort();
-            foreach (var constraintName in constraintNames)
-            {
-                Console.WriteLine($"\t{constraintName}");
-            }
-            return 0;
-        }
-
-        if (Listen)
-        {
-            int port = 4545;
-            if (!string.IsNullOrWhiteSpace(PortStr))
-            {
-                port = int.Parse(PortStr);
-            }
-            using WebsocketListener websocketListener = new();
-            await websocketListener.Listen("localhost", port, Constraints);
-
-            Console.WriteLine("Press CTRL + Q to quit.");
-
-            while (true)
-            {
-                ConsoleKeyInfo key = Console.ReadKey(true);
-                if (key.Modifiers == ConsoleModifiers.Control && key.Key == ConsoleKey.Q)
-                {
-                    return 0;
-                }
-            }
-        }
-
-        bool haveFPuzzlesURL = !string.IsNullOrWhiteSpace(FpuzzlesURL);
-        bool haveGivens = !string.IsNullOrWhiteSpace(Givens);
-        bool haveBlankGridSize = !string.IsNullOrWhiteSpace(BlankGridSizeString);
-        bool haveCandidates = !string.IsNullOrWhiteSpace(Candidates);
-        if (!haveFPuzzlesURL && !haveGivens && !haveBlankGridSize && !haveCandidates)
-        {
-            Console.WriteLine($"ERROR: Must provide either an f-puzzles URL or a givens string or a blank grid or a candidates string, or must be run in listen mode.");
-            Console.WriteLine($"Try '{processName} --help' for more information.");
+		if (!HideBanner)
+		{
+			Console.WriteLine("------------------------------------");
+			Console.WriteLine("Sudoku Solver");
             Console.WriteLine();
-            Console.WriteLine("Press any key to exit...");
-            Console.ReadKey(true);
-            return 0;
+
+            Console.WriteLine(descriptionString);
+            Console.WriteLine();
+			Console.WriteLine("(Hide this banner with the --hide-banner option)");
+			Console.WriteLine("------------------------------------");
+			Console.WriteLine();
         }
 
-        int numBoardsSpecified = 0;
-        if (haveFPuzzlesURL)
-        {
-            numBoardsSpecified++;
-        }
-        if (haveGivens)
-        {
-            numBoardsSpecified++;
-        }
-        if (haveBlankGridSize)
-        {
-            numBoardsSpecified++;
-        }
-        if (haveCandidates)
-        {
-            numBoardsSpecified++;
-        }
+		if (ListConstraints)
+		{
+			Console.WriteLine("Constraints:");
+			List<string> constraintNames = ConstraintManager.ConstraintAttributes.Select(attr => $"{attr.ConsoleName} ({attr.DisplayName})").ToList();
+			constraintNames.Sort();
+			foreach (var constraintName in constraintNames)
+			{
+				Console.WriteLine($"\t{constraintName}");
+			}
+			return 0;
+		}
 
-        if (numBoardsSpecified != 1)
-        {
-            Console.WriteLine($"ERROR: Cannot provide more than one set of givens (f-puzzles URL, given string, blank grid, candidates).");
-            Console.WriteLine($"Try '{processName} --help' for more information.");
-            return 1;
-        }
+		if (Listen)
+		{
+			using WebsocketListener websocketListener = new();
+			await websocketListener.Listen("localhost", Port, Constraints);
 
-        Solver solver;
-        try
-        {
-            if (haveBlankGridSize)
-            {
-                if (int.TryParse(BlankGridSizeString, out int blankGridSize) && blankGridSize > 0 && blankGridSize < 32)
-                {
-                    solver = SolverFactory.CreateBlank(blankGridSize, Constraints);
-                }
-                else
-                {
-                    Console.WriteLine($"ERROR: Blank grid size must be between 1 and 31");
-                    Console.WriteLine($"Try '{processName} --help' for more information.");
-                    return 1;
-                }
-            }
-            else if (haveGivens)
-            {
-                solver = SolverFactory.CreateFromGivens(Givens, Constraints);
-            }
-            else if (haveFPuzzlesURL)
-            {
-                solver = SolverFactory.CreateFromFPuzzles(FpuzzlesURL, Constraints);
-                Console.WriteLine($"Imported \"{solver.Title ?? "Untitled"}\" by {solver.Author ?? "Unknown"}");
-            }
-            else // if (haveCandidates)
-            {
-                solver = SolverFactory.CreateFromCandidates(Candidates, Constraints);
-            }
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e.Message);
-            return 1;
-        }
+			Console.WriteLine("Press CTRL + Q to quit.");
 
-        if (Print)
-        {
-            Console.WriteLine("Input puzzle:");
-            solver.Print();
-        }
+			while (true)
+			{
+				ConsoleKeyInfo key = Console.ReadKey(true);
+				if (key.Modifiers == ConsoleModifiers.Control && key.Key == ConsoleKey.Q)
+				{
+					return 0;
+				}
+			}
+		}
 
-        if (SolveLogically)
-        {
-            Console.WriteLine("Solving logically:");
-            List<LogicalStepDesc> logicalStepDescs = new();
-            var logicResult = solver.ConsolidateBoard(logicalStepDescs);
-            foreach (var step in logicalStepDescs)
-            {
-                Console.WriteLine(step.ToString());
-            }
-            if (logicResult == LogicResult.Invalid)
-            {
-                Console.WriteLine($"Board is invalid!");
-            }
-            solver.Print();
+		bool haveFPuzzlesURL = !string.IsNullOrWhiteSpace(FpuzzlesURL);
+		bool haveGivens = !string.IsNullOrWhiteSpace(Givens);
+		bool haveBlankGridSize = BlankGridSize >= 1 && BlankGridSize <= 31;
+		bool haveCandidates = !string.IsNullOrWhiteSpace(Candidates);
+		if (!haveFPuzzlesURL && !haveGivens && !haveBlankGridSize && !haveCandidates)
+		{
+			Console.WriteLine($"ERROR: Must provide either an f-puzzles URL or a givens string or a blank grid or a candidates string, or must be run in listen mode.");
+			Console.WriteLine($"Try '{processName} --help' for more information.");
+			Console.WriteLine();
+			Console.WriteLine("Press any key to exit...");
+			Console.ReadKey(true);
+			return 0;
+		}
 
-            if (OutputPath != null)
-            {
-                try
-                {
-                    using StreamWriter file = new(OutputPath);
-                    await file.WriteLineAsync(solver.OutputString);
-                }
-                catch (Exception e)
-                {
-                    Console.WriteLine($"Failed to write to file: {e.Message}");
-                }
-            }
+		int numBoardsSpecified = 0;
+		if (haveFPuzzlesURL)
+		{
+			numBoardsSpecified++;
+		}
+		if (haveGivens)
+		{
+			numBoardsSpecified++;
+		}
+		if (haveBlankGridSize)
+		{
+			numBoardsSpecified++;
+		}
+		if (haveCandidates)
+		{
+			numBoardsSpecified++;
+		}
 
-            if (FpuzzlesOut)
-            {
-                OpenFPuzzles(solver, VisitURL);
-            }
-        }
+		if (numBoardsSpecified != 1)
+		{
+			Console.WriteLine($"ERROR: Cannot provide more than one set of givens (f-puzzles URL, given string, blank grid, candidates).");
+			Console.WriteLine($"Try '{processName} --help' for more information.");
+			return 1;
+		}
 
-        if (SolveBruteForce)
-        {
-            Console.WriteLine("Finding a solution with brute force:");
-            if (!solver.FindSolution(multiThread: MultiThread))
-            {
-                Console.WriteLine($"No solutions found!");
-            }
-            else
-            {
-                solver.Print();
+		Solver solver;
+		try
+		{
+			if (haveBlankGridSize)
+			{
+				solver = SolverFactory.CreateBlank(BlankGridSize, Constraints);
+			}
+			else if (haveGivens)
+			{
+				solver = SolverFactory.CreateFromGivens(Givens, Constraints);
+			}
+			else if (haveFPuzzlesURL)
+			{
+				solver = SolverFactory.CreateFromFPuzzles(FpuzzlesURL, Constraints);
+				Console.WriteLine($"Imported \"{solver.Title ?? "Untitled"}\" by {solver.Author ?? "Unknown"}");
+			}
+			else // if (haveCandidates)
+			{
+				solver = SolverFactory.CreateFromCandidates(Candidates, Constraints);
+			}
+		}
+		catch (Exception e)
+		{
+			Console.WriteLine(e.Message);
+			return 1;
+		}
 
-                if (OutputPath != null)
-                {
-                    try
-                    {
-                        using StreamWriter file = new(OutputPath);
-                        await file.WriteLineAsync(solver.OutputString);
-                    }
-                    catch (Exception e)
-                    {
-                        Console.WriteLine($"Failed to write to file: {e.Message}");
-                    }
-                }
+		if (Print)
+		{
+			Console.WriteLine("Input puzzle:");
+			solver.Print();
+		}
 
-                if (FpuzzlesOut)
-                {
-                    OpenFPuzzles(solver, VisitURL);
-                }
-            }
-        }
+		if (SolveLogically)
+		{
+			Console.WriteLine("Solving logically:");
+			List<LogicalStepDesc> logicalStepDescs = new();
+			var logicResult = solver.ConsolidateBoard(logicalStepDescs);
+			foreach (var step in logicalStepDescs)
+			{
+				Console.WriteLine(step.ToString());
+			}
+			if (logicResult == LogicResult.Invalid)
+			{
+				Console.WriteLine($"Board is invalid!");
+			}
+			solver.Print();
 
-        if (SolveRandomBruteForce)
-        {
-            Console.WriteLine("Finding a random solution with brute force:");
-            if (!solver.FindSolution(multiThread: MultiThread, isRandom: true))
-            {
-                Console.WriteLine($"No solutions found!");
-            }
-            else
-            {
-                solver.Print();
+			if (OutputPath != null)
+			{
+				try
+				{
+					using StreamWriter file = new(OutputPath);
+					await file.WriteLineAsync(solver.OutputString);
+				}
+				catch (Exception e)
+				{
+					Console.WriteLine($"Failed to write to file: {e.Message}");
+				}
+			}
 
-                if (OutputPath != null)
-                {
-                    try
-                    {
-                        using StreamWriter file = new(OutputPath);
-                        await file.WriteLineAsync(solver.OutputString);
-                    }
-                    catch (Exception e)
-                    {
-                        Console.WriteLine($"Failed to write to file: {e.Message}");
-                    }
-                }
+			if (FpuzzlesOut)
+			{
+				OpenFPuzzles(solver, VisitURL);
+			}
+		}
 
-                if (FpuzzlesOut)
-                {
-                    OpenFPuzzles(solver, VisitURL);
-                }
-            }
-        }
+		if (SolveBruteForce)
+		{
+			Console.WriteLine("Finding a solution with brute force:");
+			if (!solver.FindSolution(multiThread: MultiThread))
+			{
+				Console.WriteLine($"No solutions found!");
+			}
+			else
+			{
+				solver.Print();
 
-        if (TrueCandidates)
-        {
-            Console.WriteLine("Finding true candidates:");
-            int currentLineCursor = Console.CursorTop;
-            object consoleLock = new();
-            if (!solver.FillRealCandidates(multiThread: MultiThread, progressEvent: (uint[] board) =>
-            {
-                uint[,] board2d = new uint[solver.HEIGHT, solver.WIDTH];
-                for (int i = 0; i < solver.HEIGHT; i++)
-                {
-                    for (int j = 0; j < solver.WIDTH; j++)
-                    {
-                        int cellIndex = i * solver.WIDTH + j;
-                        board2d[i, j] = board[cellIndex];
-                    }
-                }
-                lock (consoleLock)
-                {
-                    ConsoleUtility.PrintBoard(board2d, solver.Regions, Console.Out);
-                    Console.SetCursorPosition(0, currentLineCursor);
-                }
-            }))
-            {
-                Console.WriteLine($"No solutions found!");
-            }
-            else
-            {
-                solver.Print();
+				if (OutputPath != null)
+				{
+					try
+					{
+						using StreamWriter file = new(OutputPath);
+						await file.WriteLineAsync(solver.OutputString);
+					}
+					catch (Exception e)
+					{
+						Console.WriteLine($"Failed to write to file: {e.Message}");
+					}
+				}
 
-                if (OutputPath != null)
-                {
-                    try
-                    {
-                        using StreamWriter file = new(OutputPath);
-                        await file.WriteLineAsync(solver.OutputString);
-                    }
-                    catch (Exception e)
-                    {
-                        Console.WriteLine($"Failed to write to file: {e.Message}");
-                    }
-                }
+				if (FpuzzlesOut)
+				{
+					OpenFPuzzles(solver, VisitURL);
+				}
+			}
+		}
 
-                if (FpuzzlesOut)
-                {
-                    OpenFPuzzles(solver, VisitURL);
-                }
-            }
-        }
+		if (SolveRandomBruteForce)
+		{
+			Console.WriteLine("Finding a random solution with brute force:");
+			if (!solver.FindSolution(multiThread: MultiThread, isRandom: true))
+			{
+				Console.WriteLine($"No solutions found!");
+			}
+			else
+			{
+				solver.Print();
 
-        if (SolutionCount)
-        {
-            Console.WriteLine("Finding solution count...");
+				if (OutputPath != null)
+				{
+					try
+					{
+						using StreamWriter file = new(OutputPath);
+						await file.WriteLineAsync(solver.OutputString);
+					}
+					catch (Exception e)
+					{
+						Console.WriteLine($"Failed to write to file: {e.Message}");
+					}
+				}
 
-            try
-            {
-                Action<Solver> solutionEvent = null;
-                using StreamWriter file = (OutputPath != null) ? new(OutputPath) : null;
-                if (file != null)
-                {
-                    solutionEvent = (Solver solver) =>
-                    {
-                        try
-                        {
-                            file.WriteLine(solver.GivenString);
-                        }
-                        catch (Exception e)
-                        {
-                            Console.WriteLine($"Failed to write to file: {e.Message}");
-                        }
-                    };
-                }
+				if (FpuzzlesOut)
+				{
+					OpenFPuzzles(solver, VisitURL);
+				}
+			}
+		}
 
-                ulong numSolutions = solver.CountSolutions(maxSolutions: MaxSolutionCount, multiThread: MultiThread, progressEvent: (ulong count) =>
-                {
-                    ReplaceLine($"(In progress) Found {count} solutions in {watch.Elapsed}.");
-                },
-                solutionEvent: solutionEvent);
+		if (TrueCandidates)
+		{
+			Console.WriteLine("Finding true candidates:");
+			int currentLineCursor = Console.CursorTop;
+			object consoleLock = new();
+			if (!solver.FillRealCandidates(multiThread: MultiThread, progressEvent: (uint[] board) =>
+			{
+				uint[,] board2d = new uint[solver.HEIGHT, solver.WIDTH];
+				for (int i = 0; i < solver.HEIGHT; i++)
+				{
+					for (int j = 0; j < solver.WIDTH; j++)
+					{
+						int cellIndex = i * solver.WIDTH + j;
+						board2d[i, j] = board[cellIndex];
+					}
+				}
+				lock (consoleLock)
+				{
+					ConsoleUtility.PrintBoard(board2d, solver.Regions, Console.Out);
+					Console.SetCursorPosition(0, currentLineCursor);
+				}
+			}))
+			{
+				Console.WriteLine($"No solutions found!");
+			}
+			else
+			{
+				solver.Print();
 
-                if (MaxSolutionCount > 0)
-                {
-                    numSolutions = Math.Min(numSolutions, MaxSolutionCount);
-                }
+				if (OutputPath != null)
+				{
+					try
+					{
+						using StreamWriter file = new(OutputPath);
+						await file.WriteLineAsync(solver.OutputString);
+					}
+					catch (Exception e)
+					{
+						Console.WriteLine($"Failed to write to file: {e.Message}");
+					}
+				}
 
-                if (MaxSolutionCount == 0 || numSolutions < MaxSolutionCount)
-                {
-                    ReplaceLine($"\rThere are exactly {numSolutions} solutions.");
-                }
-                else
-                {
-                    ReplaceLine($"\rThere are at least {numSolutions} solutions.");
-                }
-                Console.WriteLine();
+				if (FpuzzlesOut)
+				{
+					OpenFPuzzles(solver, VisitURL);
+				}
+			}
+		}
 
-                if (file != null && SortSolutionCount)
-                {
-                    Console.WriteLine("Sorting...");
-                    file.Close();
+		if (SolutionCount)
+		{
+			Console.WriteLine("Finding solution count...");
 
-                    string[] lines = await File.ReadAllLinesAsync(OutputPath);
-                    Array.Sort(lines);
-                    await File.WriteAllLinesAsync(OutputPath, lines);
-                    Console.WriteLine("Done.");
-                }
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"ERROR: {e.Message}");
-            }
-        }
+			try
+			{
+				Action<Solver> solutionEvent = null;
+				using StreamWriter file = (OutputPath != null) ? new(OutputPath) : null;
+				if (file != null)
+				{
+					solutionEvent = (Solver solver) =>
+					{
+						try
+						{
+							file.WriteLine(solver.GivenString);
+						}
+						catch (Exception e)
+						{
+							Console.WriteLine($"Failed to write to file: {e.Message}");
+						}
+					};
+				}
 
-        if (Check)
-        {
-            Console.WriteLine("Checking...");
-            ulong numSolutions = solver.CountSolutions(2, MultiThread);
-            Console.WriteLine($"There are {(numSolutions <= 1 ? numSolutions.ToString() : "multiple")} solutions.");
-        }
+				ulong numSolutions = solver.CountSolutions(maxSolutions: MaxSolutionCount, multiThread: MultiThread, progressEvent: (ulong count) =>
+				{
+					ReplaceLine($"(In progress) Found {count} solutions in {watch.Elapsed}.");
+				},
+				solutionEvent: solutionEvent);
 
-        watch.Stop();
-        Console.WriteLine($"Took {watch.Elapsed}");
-        return 0;
-    }
+				if (MaxSolutionCount > 0)
+				{
+					numSolutions = Math.Min(numSolutions, MaxSolutionCount);
+				}
 
-    private static void ReplaceLine(string text) =>
-        Console.Write("\r" + text + new string(' ', Console.WindowWidth - text.Length) + "\r");
+				if (MaxSolutionCount == 0 || numSolutions < MaxSolutionCount)
+				{
+					ReplaceLine($"\rThere are exactly {numSolutions} solutions.");
+				}
+				else
+				{
+					ReplaceLine($"\rThere are at least {numSolutions} solutions.");
+				}
+				Console.WriteLine();
 
-    private static void OpenFPuzzles(Solver solver, bool visit)
-    {
-        string url = SolverFactory.ToFPuzzlesURL(solver);
-        Console.WriteLine(url);
-        if (visit)
-        {
-            try
-            {
-                OpenUrl(url);
-            }
-            catch (Exception e)
-            {
-                Console.WriteLine($"Cannot open URL: {e}");
-            }
-        }
-    }
+				if (file != null && SortSolutionCount)
+				{
+					Console.WriteLine("Sorting...");
+					file.Close();
 
-    private static void OpenUrl(string url)
-    {
-        try
-        {
-            Process.Start(url);
-        }
-        catch
-        {
-            // hack because of this: https://github.com/dotnet/corefx/issues/10361
-            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-            {
-                url = url.Replace("&", "^&");
-                Process.Start(new ProcessStartInfo("cmd", $"/c start {url}") { CreateNoWindow = true });
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-            {
-                Process.Start("xdg-open", url);
-            }
-            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-            {
-                Process.Start("open", url);
-            }
-            else
-            {
-                throw;
-            }
-        }
-    }
+					string[] lines = await File.ReadAllLinesAsync(OutputPath);
+					Array.Sort(lines);
+					await File.WriteAllLinesAsync(OutputPath, lines);
+					Console.WriteLine("Done.");
+				}
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine($"ERROR: {e.Message}");
+			}
+		}
+
+		if (Check)
+		{
+			Console.WriteLine("Checking...");
+			ulong numSolutions = solver.CountSolutions(2, MultiThread);
+			Console.WriteLine($"There are {(numSolutions <= 1 ? numSolutions.ToString() : "multiple")} solutions.");
+		}
+
+		watch.Stop();
+		Console.WriteLine($"Took {watch.Elapsed}");
+		return 0;
+	}
+
+	private static void ReplaceLine(string text) =>
+		Console.Write("\r" + text + new string(' ', Console.WindowWidth - text.Length) + "\r");
+
+	private static void OpenFPuzzles(Solver solver, bool visit)
+	{
+		string url = SolverFactory.ToFPuzzlesURL(solver);
+		Console.WriteLine(url);
+		if (visit)
+		{
+			try
+			{
+				OpenUrl(url);
+			}
+			catch (Exception e)
+			{
+				Console.WriteLine($"Cannot open URL: {e}");
+			}
+		}
+	}
+
+	private static void OpenUrl(string url)
+	{
+		try
+		{
+			Process.Start(url);
+		}
+		catch
+		{
+			// hack because of this: https://github.com/dotnet/corefx/issues/10361
+			if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+			{
+				url = url.Replace("&", "^&");
+				Process.Start(new ProcessStartInfo("cmd", $"/c start {url}") { CreateNoWindow = true });
+			}
+			else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+			{
+				Process.Start("xdg-open", url);
+			}
+			else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+			{
+				Process.Start("open", url);
+			}
+			else
+			{
+				throw;
+			}
+		}
+	}
 }

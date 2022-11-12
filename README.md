@@ -24,5 +24,10 @@ I am accepting pull requests for pretty much anything, including:
 * Optimizations.
 
 ## Contact Information
-Join the [Sudoku Solver Discord](https://discord.gg/AEhpTG4z45)  
-Check out my [YouTube](https://www.youtube.com/channel/UC1RUqXOT_iaH4b7iXKRWhLw)  
+Join the [Puzzle Plaza Discord](https://discord.gg/AEhpTG4z45)  
+Check out my [YouTube](https://www.youtube.com/rangsk)  
+
+## Donations
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/F1F3GBO9Y)  
+[Join my Patreon](https://www.patreon.com/rangsk)  
+[Join my YouTube](https://www.youtube.com/rangsk/join)
