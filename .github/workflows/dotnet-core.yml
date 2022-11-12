@@ -10,11 +10,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Setup .NET
-      uses: actions/setup-dotnet@v1
+      uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: 6.0.x
+        dotnet-version: 7.0.x
     - name: Set variables
       run: |
         VER=$(cat VERSION)
@@ -83,7 +83,7 @@ jobs:
         cd package-osx-arm64
         tar -cpzf ../SudokuSolver-${{ env.VERSION }}-osx-arm64.tar.gz *
         cd ..
-    - uses: actions/upload-artifact@v2
+    - uses: actions/upload-artifact@v3
       with:
         name: SudokuSolver-${{ env.VERSION }}
         path: |
