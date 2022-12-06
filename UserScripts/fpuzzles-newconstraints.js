@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.10
+// @version      1.11
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -377,7 +377,7 @@
                 for (let line of puzzle.line) {
                     // Upgrade from old boolean
                     if (line.isNewConstraint) {
-                        line.fromConstraint = line.color === "#C060C0" ? "Renban" : (line.color === "#67F067" ? "Whispers" : "Entropic");
+                        line.fromConstraint = line.outlineC === "#C060C0" ? "Renban" : (line.outlineC === "#67F067" ? "Whispers" : "Entropic");
                         delete line.isNewConstraint;
                     }
 
@@ -549,11 +549,10 @@
                                         if (entropicLineGroups[j].includes(line[i].value)) {
                                             if (lineGroupIndices[j] === -1) {
                                                 lineGroupIndices[j] = i % 3;
-                                            }
-                                            else if (lineGroupIndices[j] !== i % 3) {
+                                            } else if (lineGroupIndices[j] !== i % 3) {
                                                 if (index % 3 === i % 3 || lineGroupIndices[j] === index % 3) {
                                                     return false;
-                                                }  
+                                                }
                                             }
                                         }
                                     }
