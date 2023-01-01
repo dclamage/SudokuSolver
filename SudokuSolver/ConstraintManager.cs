@@ -98,6 +98,7 @@ public static class ConstraintManager
         { typeof(MultiSumKillerCageConstraint), (solver, options) => new MultiSumKillerCageConstraint(solver, options) },
         { typeof(KingConstraint), (solver, options) => new KingConstraint(solver, options) },
         { typeof(KnightConstraint), (solver, options) => new KnightConstraint(solver, options) },
+        { typeof(KnightmareConstraint), (solver, options) => new KnightmareConstraint(solver, options) },
         { typeof(LittleKillerConstraint), (solver, options) => new LittleKillerConstraint(solver, options) },
         { typeof(MaximumConstraint), (solver, options) => new MaximumConstraint(solver, options) },
         { typeof(MinimumConstraint), (solver, options) => new MinimumConstraint(solver, options) },
