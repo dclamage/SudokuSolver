@@ -49,7 +49,7 @@ namespace SudokuSolver.Constraints
                     {
                         int sign0 = (i & 1) == 0 ? -1 : 1;
                         int sign1 = (i & 2) == 0 ? -1 : 1;
-                        var cell1Offset = (i & 3) == 0 ? (1 * sign0, 2 * sign1) : (2 * sign0, 1 * sign1);
+                        var cell1Offset = (i & 4) == 0 ? (1 * sign0, 2 * sign1) : (2 * sign0, 1 * sign1);
                         var cell1 = (i0 + cell1Offset.Item1, j0 + cell1Offset.Item2);
                         if (cell1.Item1 >= 0 && cell1.Item1 < HEIGHT && cell1.Item2 >= 0 && cell1.Item2 < WIDTH)
                         {
