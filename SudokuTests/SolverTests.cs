@@ -171,4 +171,19 @@ public class SolverTests
         }
 
     }
+
+    [TestMethod]
+    public void KnightmareTest()
+    {
+        string puzzle = "N4IgzglgXgpiBcBOANCALhNAbO8QGkA7CAcwAs0BbAQwCcYACNGMNEVWgVxzBjbwByAe1o0sDAMqchAa04MuPBtQAOKrAE8AdAB1CAYRhYsYZViGESyhgAVOtdYwBKMQgCNqhBgBkIhRpScrAwAZiKU1rxoDEIhDADGFrzxnBgAbowAJqSYpn7KhBoxtJkwtLqERKQUNPQMTtwsFYbGptQMVeRoAOSmlEIZyip00fGehELRYJwRaEIMAKzFDACMC1rsICS0EJkIANr7oGnUWJy4AGyoJBAZhAhoXDAAvsjAr+9vH99vICdnuAALNdbq4Hk8fu8ALrII6Qj5/U7nBBXLag+7wR7neFfXHQ2GfQkI/7I+AAZhBd3B2LxOOOSNwKDRVMxEJhcNpnKJtPZ9IBCAWlLBrJp3LFdOevMhiP58AA7EKMViXlyZaTUTcWcrpSTcILmcLtV8pVyJTyCcSGQLFdSVeLfrqECsbSK7ZbZcCDUqIcaLarHfAABwuo2EtW4ABMIZ94qhMJA9HcngOoCwfhYB32ICcEf0C02TjJ+guBaLcoLucDIDjCLT/jAmeziH0EYLgf0ZLb+kBBeb+ZrvzrGfgh2zcu7BYueYLC2LBcB+nLqEL+irA9T6YbI6zTinKxnLfnHdLx+Xudb65AQ63o5X+eXC/v2dn/ahktQQ5TV83jZz0+XRYlgBi4Vqu1bxkIqRDvoCAgAAxAAYgADBccrIZsADuuxoGQCBIVonohLQQiUPoSSPNQfj8NmrgePctY/tuTaHsu7adqxE7Ln24GoJB2DpjBeCIShaFIZh2G4fA+GEcRpHkbQlGENRLhJvRg6Mbe449suU5Pk4s5AdmC5LtmRZrhBUECbBwmoehqBYZkOF4QRqBESRZGEKwClUbBKl0SADH1r+e4Hq2D6nqZEV/heFn8f4gnwchtlifZEnOTJ7nyYpym0cmgXDreRZ6Y+B6vrxlnxdZSWieJjmSdJrmyR5XnZb5uX0W+QA=";
+        string solution = "631298475942657138785314269813425796564739821297186354126543987358971642479862513";
+        List<string> additionalConstraints = new List<string> { "knightmare" };
+        List<string> additionalConstraints2 = new List<string> { "knightmare:5,15" };
+
+        Solver solver = SolverFactory.CreateFromFPuzzles(puzzle, additionalConstraints);
+        solver.TestUniqueSolution(solution);
+
+        Solver solver2 = SolverFactory.CreateFromFPuzzles(puzzle, additionalConstraints2);
+        solver2.TestUniqueSolution(solution);
+    }
 }
