@@ -4,6 +4,11 @@
       "commandName": "Project",
       "commandLineArgs": "--listen",
       "workingDirectory": "$(SolutionDir)"
+    },
+    "Knightmare": {
+      "commandName": "Project",
+      "commandLineArgs": "--listen -c=\"knightmare\"",
+      "workingDirectory": "$(SolutionDir)"
     }
   }
 }
