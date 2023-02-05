@@ -12,7 +12,7 @@ public class MultiSumKillerCageConstraint : Constraint
 
     private static readonly Regex optionsRegex = new(@"([\d,]+);(.*)");
 
-    public MultiSumKillerCageConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public MultiSumKillerCageConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var match = optionsRegex.Match(options);
         if (match.Success)

@@ -40,7 +40,7 @@ public abstract class OrthogonalValueConstraint : Constraint
     private static readonly Regex sharedRowRegex = new(@"(\d*)r(\d+)[,-](\d+)c(\d+)");
     private static readonly Regex sharedColRegex = new(@"(\d*)r(\d+)c(\d+)[,-](\d+)");
 
-    public OrthogonalValueConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public OrthogonalValueConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         HashSet<int> markerValues = new();
         options = options.ToLowerInvariant();

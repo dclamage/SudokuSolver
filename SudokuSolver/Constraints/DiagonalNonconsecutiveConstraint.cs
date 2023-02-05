@@ -3,7 +3,7 @@
 [Constraint(DisplayName = "Diagonal Nonconsecutive", ConsoleName = "dnc")]
 public class DiagonalNonconsecutiveConstraint : Constraint
 {
-    public DiagonalNonconsecutiveConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public DiagonalNonconsecutiveConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
     }
 

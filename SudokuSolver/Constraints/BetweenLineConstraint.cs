@@ -13,7 +13,7 @@ public class BetweenLineConstraint : Constraint
     private readonly bool valid;
     private int minUniqueInnerValues;
 
-    public BetweenLineConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public BetweenLineConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count != 1)

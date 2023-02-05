@@ -10,7 +10,7 @@ public class WhispersConstraint : Constraint
     private readonly HashSet<(int, int)> cellsSet;
 
     private static readonly Regex optionsRegex = new(@"(\d+);(.*)");
-    public WhispersConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public WhispersConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var match = optionsRegex.Match(options);
         if (match.Success)

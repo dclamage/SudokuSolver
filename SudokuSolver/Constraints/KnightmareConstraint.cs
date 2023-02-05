@@ -11,7 +11,7 @@ namespace SudokuSolver.Constraints
     {
         private readonly List<int> disallowedSums = null;
 
-        public KnightmareConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+        public KnightmareConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
         {
             disallowedSums = options.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).Select(int.Parse).ToList();
             if (disallowedSums.Count == 0)

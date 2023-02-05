@@ -5,7 +5,7 @@ public class OddConstraint : Constraint
 {
     public readonly List<(int, int)> cells;
 
-    public OddConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public OddConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count != 1)

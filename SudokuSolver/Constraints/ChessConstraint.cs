@@ -7,7 +7,7 @@ public class ChessConstraint : Constraint
     private readonly uint values;
     private readonly SortedSet<(int, int)> cellsLookup;
 
-    public ChessConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public ChessConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         offsets = new();
         values = ALL_VALUES_MASK;
