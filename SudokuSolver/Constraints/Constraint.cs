@@ -9,14 +9,16 @@ public abstract class Constraint
     protected readonly int MAX_VALUE;
     protected readonly uint ALL_VALUES_MASK;
     protected readonly int NUM_CELLS;
+    protected readonly string OPTIONS;
 
-    public Constraint(Solver sudokuSolver)
+    public Constraint(Solver sudokuSolver, string options)
     {
         WIDTH = sudokuSolver.WIDTH;
         HEIGHT = sudokuSolver.HEIGHT;
         MAX_VALUE = sudokuSolver.MAX_VALUE;
         ALL_VALUES_MASK = sudokuSolver.ALL_VALUES_MASK;
         NUM_CELLS = sudokuSolver.NUM_CELLS;
+        OPTIONS = options;
     }
 
     /// <summary>

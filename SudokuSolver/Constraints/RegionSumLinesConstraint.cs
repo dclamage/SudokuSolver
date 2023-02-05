@@ -12,7 +12,7 @@ public class RegionSumLinesConstraint : Constraint
 
     public override string SpecificName => $"Region Sum Line from {CellName(cells[0])} - {CellName(cells[^1])}";
 
-    public RegionSumLinesConstraint(Solver solver, string options) : base(solver)
+    public RegionSumLinesConstraint(Solver solver, string options) : base(solver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count != 1)

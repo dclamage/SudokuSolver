@@ -23,7 +23,7 @@ public class LittleKillerConstraint : Constraint
 
     private static readonly Regex optionsRegex = new(@"(\d+);[rR](\d+)[cC](\d+);([UD][LR])");
 
-    public LittleKillerConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public LittleKillerConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var match = optionsRegex.Match(options);
         if (!match.Success)

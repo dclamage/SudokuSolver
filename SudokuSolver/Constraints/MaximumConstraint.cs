@@ -8,7 +8,7 @@ public class MaximumConstraint : Constraint
     private readonly Dictionary<(int, int), List<(int, int)>> adjCellLookup = new();
     private readonly Dictionary<(int, int), int> minUniqueValuesLookup = new();
 
-    public MaximumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public MaximumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count != 1)

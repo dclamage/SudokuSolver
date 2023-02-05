@@ -16,7 +16,7 @@ public class XSumConstraint : Constraint
     public override string SpecificName => specificName;
 
     private static readonly Regex optionsRegex = new(@"(\d+)[rR](\d+)[cC](\d+)");
-    public XSumConstraint(Solver solver, string options) : base(solver)
+    public XSumConstraint(Solver solver, string options) : base(solver, options)
     {
         var match = optionsRegex.Match(options);
         if (!match.Success)

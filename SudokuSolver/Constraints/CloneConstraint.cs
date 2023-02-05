@@ -6,7 +6,7 @@ public class CloneConstraint : Constraint
     public readonly List<((int, int), (int, int))> cellPairs = new();
     private readonly Dictionary<(int, int), List<(int, int)>> cellToClones = new();
 
-    public CloneConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public CloneConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count == 0)

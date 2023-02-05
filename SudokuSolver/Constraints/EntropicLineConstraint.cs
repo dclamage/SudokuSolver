@@ -19,7 +19,7 @@ public class EntropicLineConstraint : Constraint
 
     private int[] groupIndices = {-1, -1, -1};
 
-    public EntropicLineConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public EntropicLineConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count != 1)

@@ -8,7 +8,7 @@ public class RenbanConstraint : Constraint
     public readonly List<(int, int)> cells;
     private readonly HashSet<(int, int)> cellsSet;
 
-    public RenbanConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public RenbanConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count != 1)

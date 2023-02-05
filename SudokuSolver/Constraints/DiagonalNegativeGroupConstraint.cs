@@ -5,7 +5,7 @@ public class DiagonalNegativeGroupConstraint : Constraint
 {
     private readonly List<(int, int)> group;
 
-    public DiagonalNegativeGroupConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public DiagonalNegativeGroupConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         group = new(HEIGHT);
         for (int i = 0, j = 0; i < HEIGHT; i++, j++)
