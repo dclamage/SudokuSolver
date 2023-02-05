@@ -5,7 +5,7 @@ public class ExtraRegionConstraint : Constraint
 {
     public readonly List<(int, int)> cells;
 
-    public ExtraRegionConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public ExtraRegionConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count != 1)

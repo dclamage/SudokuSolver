@@ -11,7 +11,7 @@ public abstract class AbstractIndexerConstraint : Constraint
     // Return the indexer candidate that would target the input candidate.
     protected abstract (int, int, int) InvTargetCell(Solver solver, int i, int j, int v);
 
-    public AbstractIndexerConstraint(Solver solver, string options) : base(solver)
+    public AbstractIndexerConstraint(Solver solver, string options) : base(solver, options)
     {
         if (WIDTH != HEIGHT || WIDTH != MAX_VALUE)
         {

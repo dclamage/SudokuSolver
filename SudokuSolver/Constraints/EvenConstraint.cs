@@ -5,7 +5,7 @@ public class EvenConstraint : Constraint
 {
     public readonly List<(int, int)> cells;
 
-    public EvenConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public EvenConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count != 1)

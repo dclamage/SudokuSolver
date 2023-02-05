@@ -19,7 +19,7 @@ public class SandwichConstraint : Constraint
     public override string SpecificName => specificName;
 
     private static readonly Regex optionsRegex = new(@"(\d+)[rR](\d+)[cC](\d+)");
-    public SandwichConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public SandwichConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var match = optionsRegex.Match(options);
         if (!match.Success)

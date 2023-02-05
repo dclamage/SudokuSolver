@@ -15,7 +15,7 @@ public class QuadrupleConstraint : Constraint
 
     public override List<(int, int)> Group => groupCells;
 
-    public QuadrupleConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public QuadrupleConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         foreach (var group in options.Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {

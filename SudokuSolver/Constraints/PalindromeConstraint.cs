@@ -6,7 +6,7 @@ public class PalindromeConstraint : Constraint
     public readonly List<(int, int)> cells;
     private readonly Dictionary<(int, int), (int, int)> cellToClone;
 
-    public PalindromeConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public PalindromeConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count != 1)

@@ -3,7 +3,7 @@
 [Constraint(DisplayName = "Self Taxicab", ConsoleName = "selftaxi")]
 public class SelfTaxicabConstraint : Constraint
 {
-    public SelfTaxicabConstraint(Solver sudokuSolver, string _) : base(sudokuSolver)
+    public SelfTaxicabConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
     }
 

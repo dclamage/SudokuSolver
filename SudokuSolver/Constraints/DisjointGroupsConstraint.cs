@@ -22,13 +22,13 @@ public class DisjointGroupConstraint : Constraint
     private readonly int groupIndex = 0;
     private readonly List<(int, int)> group = new();
 
-    public DisjointGroupConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public DisjointGroupConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         groupIndex = int.Parse(options) - 1;
         InitGroup(sudokuSolver);
     }
 
-    public DisjointGroupConstraint(Solver sudokuSolver, int groupIndex) : base(sudokuSolver)
+    public DisjointGroupConstraint(Solver sudokuSolver, int groupIndex) : base(sudokuSolver, (groupIndex + 1).ToString())
     {
         this.groupIndex = groupIndex;
         InitGroup(sudokuSolver);

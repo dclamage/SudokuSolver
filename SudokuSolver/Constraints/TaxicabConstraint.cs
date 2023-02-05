@@ -6,7 +6,7 @@ public class TaxicabConstraint : Constraint
     private readonly int distance;
     private readonly List<(int, int)> offsets = new();
 
-    public TaxicabConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public TaxicabConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         distance = int.Parse(options);
 

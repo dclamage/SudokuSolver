@@ -11,7 +11,7 @@ public class ArrowSumConstraint : Constraint
     private bool isCircleGroup = false;
     private bool isAllGrouped = false;
 
-    public ArrowSumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public ArrowSumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var cellGroups = ParseCells(options);
         if (cellGroups.Count != 2)

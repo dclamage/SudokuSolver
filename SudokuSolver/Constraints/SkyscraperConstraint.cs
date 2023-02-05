@@ -14,7 +14,7 @@ public class SkyscraperConstraint : Constraint
     public override string SpecificName => specificName;
 
     private static readonly Regex optionsRegex = new(@"(\d+)[rR](\d+)[cC](\d+)");
-    public SkyscraperConstraint(Solver sudokuSolver, string options) : base(sudokuSolver)
+    public SkyscraperConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
         var match = optionsRegex.Match(options);
         if (!match.Success)
