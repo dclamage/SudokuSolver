@@ -270,6 +270,51 @@ class WebsocketListener : IDisposable
         }
     }
 
+    /// <summary>
+    /// Update solver to keep only the candidates that are present in the given response.
+    /// Send an "invalid" response if the puzzle has no more solutions after this operation.
+    /// </summary>
+    /// <param name="ipPort">IP port to send the response message</param>
+    /// <param name="nonce">Nonce of the response message</param>
+    /// <param name="solver">Solver to update</param>
+    /// <param name="response">Response of a previous "true candidates" request</param>
+    /// <param name="keepCandidateCondition">A callback that takes the number of solutions for a candidate and returns whether the candidate should be kept in the solver</param>
+    /// <returns>Is the puzzle still valid?</returns>
+    private bool KeepCandidatesOfResponse(string ipPort, int nonce, Solver solver, BaseResponse response, Predicate<int> keepCandidateCondition)
+    {
+        if (response is InvalidResponse invalidResponse)
+        {
+            SendMessage(ipPort, new InvalidResponse(nonce) { message = invalidResponse.message });
+            return false;
+        }
+
+        if (response is TrueCandidatesResponse successResponse)
+        {
+            for (int i = 0; i < solver.HEIGHT; i++)
+            {
+                for (int j = 0; j < solver.WIDTH; j++)
+                {
+                    uint mask = 0;
+                    for (int value = 1; value <= solver.MAX_VALUE; value++)
+                    {
+                        var candidateNumSolutions = successResponse.solutionsPerCandidate[(i * solver.WIDTH + j) * solver.MAX_VALUE + (value - 1)];
+                        if (keepCandidateCondition(candidateNumSolutions))
+                        {
+                            mask |= SolverUtility.ValueMask(value);
+                        }
+                    }
+                    if (solver.KeepMask(i, j, mask) == LogicResult.Invalid)
+                    {
+                        SendMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
+                        return false;
+                    }
+                }
+            }
+        }
+
+        return true;
+    }
+
     void SendTrueCandidates(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
     {
         bool colored = GetBooleanOption(solver, "truecandidatescolored");
@@ -278,13 +323,52 @@ class WebsocketListener : IDisposable
         // Save the state of the solver with the initial grid (before applying any logic to the puzzle)
         Solver request = solver.Clone(willRunNonSinglesLogic: false);
 
+        List<ResponseCacheItem> matchingCacheItems;
+        lock (serverLock)
+        {
+            // Only clone the list in the lock, filter it outside the lock
+            matchingCacheItems = new(lastTrueCandidatesResponses);
+        }
+        matchingCacheItems = matchingCacheItems.FindAll(item => request.IsInheritOf(item.request));
+
         Solver logicalSolver = null;
         if (logical)
         {
             logicalSolver = solver.Clone(willRunNonSinglesLogic: true);
+
+            foreach (var item in matchingCacheItems)
+            {
+                // Use only results of logical solves
+                if (!GetBooleanOption(item.request, "truecandidateslogical"))
+                {
+                    continue;
+                }
+
+                // Ignore results if the previous input allowed more logic types
+                if ((request.DisabledLogicFlags & ~item.request.DisabledLogicFlags) != 0)
+                {
+                    continue;
+                }
+
+                // Remove candidates that already logically proved to have no solutions
+                if (!KeepCandidatesOfResponse(ipPort, nonce, logicalSolver, item.response, numSolutions => numSolutions != 0))
+                {
+                    return;
+                }
+            }
+
             if (logicalSolver.ConsolidateBoard() == LogicResult.Invalid)
             {
                 SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
+                return;
+            }
+        }
+
+        foreach (var item in matchingCacheItems)
+        {
+            // Remove candidates that already proved (by logic or by brute force) to have no solutions
+            if (!KeepCandidatesOfResponse(ipPort, nonce, solver, item.response, numSolutions => numSolutions > 0))
+            {
                 return;
             }
         }

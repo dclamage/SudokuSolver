@@ -32,6 +32,11 @@ public abstract class Constraint
     public virtual string SpecificName => Name;
 
     /// <summary>
+    /// Gets a string that uniquely describes the constraint within the constraint type.
+    /// </summary>
+    public virtual string GetHash(Solver solver) => string.IsNullOrWhiteSpace(OPTIONS) ? "" : OPTIONS;
+
+    /// <summary>
     /// Return an enumerable of cells which cannot be the same digit as this cell.
     /// Only need to return cells which wouldn't be seen by normal sudoku rules.
     /// Also no need to return any cells if the Group property is used.
