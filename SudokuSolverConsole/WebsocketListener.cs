@@ -222,7 +222,7 @@ class WebsocketListener : IDisposable
         return false;
     }
 
-    void SendMessage(string ipPort, BaseResponse response, byte[] trueCandidatesKey = null)
+    void SendMessage(string ipPort, BaseResponse response)
     {
         string json = response switch
         {
@@ -236,11 +236,20 @@ class WebsocketListener : IDisposable
         };
         lock (serverLock)
         {
+            server.SendAsync(ipPort, json);
+        }
+    }
+
+    private void SendTrueCandidatesMessage(string ipPort, BaseResponse response, byte[] trueCandidatesKey = null)
+    {
+        lock (serverLock)
+        {
             if (trueCandidatesKey != null)
             {
                 trueCandidatesResponseCache[trueCandidatesKey] = response;
             }
-            server.SendAsync(ipPort, json);
+
+            SendMessage(ipPort, response);
         }
     }
 
@@ -255,7 +264,7 @@ class WebsocketListener : IDisposable
             logicalSolver = solver.Clone(willRunNonSinglesLogic: true);
             if (logicalSolver.ConsolidateBoard() == LogicResult.Invalid)
             {
-                SendMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
+                SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
                 return;
             }
         }
@@ -264,7 +273,7 @@ class WebsocketListener : IDisposable
         int[] numSolutions = colored ? new int[totalCandidates] : null;
         if (!solver.FillRealCandidates(multiThread: false, numSolutions: numSolutions, cancellationToken: cancellationToken))
         {
-            SendMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
+            SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
             return;
         }
 
@@ -302,11 +311,11 @@ class WebsocketListener : IDisposable
         {
             if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
             {
-                SendMessage(ipPort, response, comparableData);
+                SendTrueCandidatesMessage(ipPort, response, comparableData);
             }
             else
             {
-                SendMessage(ipPort, response);
+                SendTrueCandidatesMessage(ipPort, response);
             }
         }
     }
