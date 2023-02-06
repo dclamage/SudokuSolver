@@ -367,7 +367,6 @@ namespace SudokuSolver
                 Author = fpuzzlesData.author,
                 Rules = fpuzzlesData.ruleset
             };
-            uint disabledLogicFlags = 0;
             if (fpuzzlesData.disabledlogic != null)
             {
                 foreach (string logicName in fpuzzlesData.disabledlogic)
@@ -376,32 +375,26 @@ namespace SudokuSolver
                     {
                         case "tuples":
                             solver.DisableTuples = true;
-                            disabledLogicFlags |= (1u << 0);
                             break;
                         case "pointing":
                             solver.DisablePointing = true;
-                            disabledLogicFlags |= (1u << 1);
                             break;
                         case "fishes":
                             solver.DisableFishes = true;
-                            disabledLogicFlags |= (1u << 2);
                             break;
                         case "wings":
                             solver.DisableWings = true;
-                            disabledLogicFlags |= (1u << 3);
                             break;
                         case "aic":
                             solver.DisableAIC = true;
-                            disabledLogicFlags |= (1u << 4);
                             break;
                         case "contradictions":
                             solver.DisableContradictions = true;
-                            disabledLogicFlags |= (1u << 5);
                             break;
                     }
                 }
             }
-            comparableData.Write(disabledLogicFlags);
+            comparableData.Write(solver.DisabledLogicFlags);
 
             uint trueCandidatesOptionFlags = 0;
             if (fpuzzlesData.truecandidatesoptions != null)

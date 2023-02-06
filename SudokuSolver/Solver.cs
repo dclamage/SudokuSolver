@@ -119,6 +119,38 @@ public class Solver
     public bool DisableAIC { get; set; } = false;
     public bool DisableContradictions { get; set; } = false;
     public bool DisableFindShortestContradiction { get; set; } = false;
+    public uint DisabledLogicFlags
+    {
+        get
+        {
+            uint disabledLogicFlags = 0;
+            if (DisableTuples)
+            {
+                disabledLogicFlags |= (1u << 0);
+            }
+            if (DisablePointing)
+            {
+                disabledLogicFlags |= (1u << 1);
+            }
+            if (DisableFishes)
+            {
+                disabledLogicFlags |= (1u << 2);
+            }
+            if (DisableWings)
+            {
+                disabledLogicFlags |= (1u << 3);
+            }
+            if (DisableAIC)
+            {
+                disabledLogicFlags |= (1u << 4);
+            }
+            if (DisableContradictions)
+            {
+                disabledLogicFlags |= (1u << 5);
+            }
+            return disabledLogicFlags;
+        }
+    }
     public void SetToBasicsOnly()
     {
         DisableTuples = false;
