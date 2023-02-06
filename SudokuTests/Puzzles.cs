@@ -263,5 +263,327 @@ internal static class Puzzles
             (@"N4IgzglgXgpiBcBOANCALhNAbO8QFEA7NAJwHsAHCAYwAIAZCQmMWgRgAY2RUBDAVzQALMiQQgAVjBIwAtgE8AJmQBu02gDJaAJQGyKWXszGoS/HGBhpxAOVGzeWWgGV+ygNb9aZi7V4UDeQA6AB1CMKJSShoGJhZ4WgBBQnlaSzRaMgAzWmEZGDSYAEd+GGIIR1pqGCwsVkcyQgBzP0JaMqiqOiw42ll+MAzqRrReJj9aLDIAd1pFCCbMWgAKNgBaAGYASmQJ2QhFRRw5haXlgBY1gDYt1sUJoQWhE8WM5YB2NcQtoNoAEVOaFYDlSMgoMF4GUaEx6zF2EByjim0xg9wARqkyMJ1D4WL8eCAmiQDggANqk4AAX2QVJp1NpDPpTLpAF1kBTmYy6dyuVS2RyeZz6SAVI5Sgg2KhFmpCAhSKUhaz2bzFQyRWLcFcpRAZXKzDAhfyVYKTYyjZz1VhxUhtbr4PKDaaLaKrbgABy2sp6hVKimW63nT2y+361VhwXmp2m/24ABMQe9jrNyvDxrNbJAHXIXVhuD9ubAZNJIG07wAwhsCdormXY1Wa9xUNoAKxlxsl85tqsbLtN2O9ktsLsslnCgtFkutytNzt1mcV7u1xfTkv9ueD4ejmkgcfwcklnvnKudo9N1unks1i+lsvX8vNqtussPptP6+IW9Vj8r7Qf9e/gdtCff9y0rEcxziQs92LbQh2vftryHF9V2fKshyuNCy3eTC3UwxAQHA7dd33AD8NfMsyJLctKOrCiq1bGjO0YstcKbHtsL7Fi8IIrdQGImDWw4y8sKrcshKArimw/fDCL4yCJ20HtkO0TtlM7DCzzLDTJ1Qpsa20lsRPAjNczJOTmCgkjQPrJc9MA1t2xUwCe0c/tHKHbgR1QMhBFzMtxAAYgAMSCssy0SRICWmA5hAQDggljZtUCychZDLRpBhIMZiHESJsxiRhmBACCLIUqdj1sjsFzYyrFOqlD/w8njvN8uJ/LwYLQvCyLUGixRYvgeLEuS1L0sITLsusPA8uiOhCrgEqWAUw8Kuvc8bLvT8m3vR9dJLN8vy2ktv0O/8P0c4DRIXLyQB87A2sCkKwoiqKYqEOKEqSkAUrINKMtISbcuIfK5riYqiPk6CN3go7YL27R+2U9DMPEodWI3GSMzuvzHq6l7erej7hu+0b/qypgpoIYHZtiIrFssmDpN2mjqJsmiGIq5j0bq8T+25odMZa+7mHakBOuenqQD6gahq+n6/vGgGKaBzoCrB+mypEuzxLE3buaZm7sYejqnu617+vewbPpG36xom5XpuprpaYWiHSqhuq1Ph9T6K033lP033sMN1qRdxiXzZl62SdtsnAcd1XQbp0cgA===", "195482763842367195637591428284935617763128954519674382428716539951843276376259841")
 
     };
+
+    // Struct: ( testDescription, puzzle1, puzzle2, puzzle2.IsInheritOf(puzzle1) )
+    public static readonly (string, string, string, bool)[] inheritanceTestFPuzzles = new (string, string, string, bool)[]
+    {
+        #region Basic params and smoke tests
+        (
+            "2 same empty grids",
+            // Empty 9x9
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssW0iQA=",
+            // Empty 9x9
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssW0iQA=",
+            // Puzzle inherits itself
+            true
+        ),
+        (
+            "2 same populated grids",
+            // A random puzzle
+            @"N4IgzglgXgpiBcBOANCALhNAbO8QGUA7AewHcBbAQ0IAIAhAJ2LQAsYGwRVKBXV4hghABhFpXIwcxQlxAMeOMDDRCAcgKpYaYHgBNiAax415impQAOFrAE8AdAB1CiGrogBzTGBoRCkXTA0xABm5jQARh40AMYQDNE4NOQ8YGjaPOQ0aMRZbDFYPIGeAG4wtNK5gTjBaf6BIZUxcQkwjoTCBTDexHx1je4MELo0JYGsgTqZDdGSWN6UWNLujb5u0ZRoMMNulO7SC20AIh5e5ouEy5SVDOTEEpsMPoTRDDCUSjTBTJnjEQrhbQAGgBybwAK2IvlcJzQ3km5F8y2yNAAjAAGNoAdRYmEC+lhNAhUOi0iU0T4EFK0M8sLaAHEGJQbK5mPNXoSUmkBkyWQT4ABKWQDIYIADaouAAF9kFKZdLZQr5Uq5QBdZAS5WKuXarVStUanWao2G/W641m1Xqi3Wo2m832k1Wh02y0Gl02u2Gr0etXoNg3O7Kdhi0BYXxdMWikAAJQAzMIAKyyaMAFkTyYTwhTIBVKvlIDDhAj8HFMfjSdQqfTlczADYc3mZQXw5wS1Ho7Ws8nO7GM8IAEwN/OF4uluMD5Px3uV+PZ3PDluRsvCAAck+EAHZ1/X502R62xxvV93hIg+2v576w2hsDADBAsDgOBkQyAZo+hOO0bJ33MxTG0xRPtB0rHtkyPbNKxXasY0QYQd1QNxXmiDBpCEQ5o1kYoFkKIR+yTfNf0/eN0R/WYDwA09zxPLdKyPesoJg6M4LnRC4hgFCIDQvBDgAGSwnDcBAWNe0I2ZPzRYRv1QX8KOjFFhCAyt+wnGdhGnSjIJjTMKxjTsGJjI9aJjaC10rOCz19JCONQmQeMw1BsM6IQU2zSUrIgYJgnYMoZlfWT/2jFSDKCzcczEx85JUsyYxUrdG1AAKS209ST17BK33IwLM2Mqt4vc1AAA9in8rLkqrDTo0zdLHMEoRARACK/3KztcpynNaucvAGoK9AYEKlQS0Ssr22C5MVKTX0nNwvBYxAkBgmkNBhCEABiNENs22RIFgBAMQTJq5LrPtJs6maQBTXTFsIZa1s2rbUB23B9sOwLoJC6DTpAaahITGLrtuvB1vu6TwGgZ67AOpskvbaClJMicprqvA/tkAGVqBkHQaevbIde8rM3mqrFI677kYuq6loxkBgfu7bwdxqHhsiwKVPh0LByRrrhPm9G7pB+ndvgF7fVieIcFKlnyri0nwneGBqdpzbSNQHpsHDRWsbRqn+bp1BSCGVgEFjSHUDYDwWEGk2mcyqX23a305aUTWQZVkA1ZHF29YWnXMYF/XDZYY3TZAc33Et4ObZhhH4tQJ2Fd15XQY9jXE427Wbq9h6QAN3Qjfga2zZgC2rbx6GRoRmqQHjrONrdlOi1r0G+b973c/zwvQ+L8PS6jiviarmu07Reu+E94eM8BmmtYDvOg4LkOw4jhe+7t2LUsd+Wm9H9XG4n1AW+n/2c8DyOi5LyP8dGrtlI3uOt7Wug0Sfp/ZAbhPW+zw+lfT2f84xWM58e641jFfdeRMVKDwfkDF+z9k5j1Tp/X+PtM77xPnPEBQDl4ALAR2VKNY77V2gTTAAYmQ8hb8EF7yQc3X2R826n2FnYQBXcL5MNAeXNexNcppljkQ52a1yEUNVlQj+9Cv50J/qDdu88AFYMGjgzhzVr65WirLYhq0hFkMobvMRUjJ5N1kDIzBrDgHsNwWNW+fCh5Ay0SQnR48aEGLQcY9h8iQHuUlEAA==",
+            // The same exact puzzle
+            @"N4IgzglgXgpiBcBOANCALhNAbO8QGUA7AewHcBbAQ0IAIAhAJ2LQAsYGwRVKBXV4hghABhFpXIwcxQlxAMeOMDDRCAcgKpYaYHgBNiAax415impQAOFrAE8AdAB1CiGrogBzTGBoRCkXTA0xABm5jQARh40AMYQDNE4NOQ8YGjaPOQ0aMRZbDFYPIGeAG4wtNK5gTjBaf6BIZUxcQkwjoTCBTDexHx1je4MELo0JYGsgTqZDdGSWN6UWNLujb5u0ZRoMMNulO7SC20AIh5e5ouEy5SVDOTEEpsMPoTRDDCUSjTBTJnjEQrhbQAGgBybwAK2IvlcJzQ3km5F8y2yNAAjAAGNoAdRYmEC+lhNAhUOi0iU0T4EFK0M8sLaAHEGJQbK5mPNXoSUmkBkyWQT4ABKWQDIYIADaouAAF9kFKZdLZQr5Uq5QBdZAS5WKuXarVStUanWao2G/W641m1Xqi3Wo2m832k1Wh02y0Gl02u2Gr0etXoNg3O7Kdhi0BYXxdMWikAAJQAzMIAKyyaMAFkTyYTwhTIBVKvlIDDhAj8HFMfjSdQqfTlczADYc3mZQXw5wS1Ho7Ws8nO7GM8IAEwN/OF4uluMD5Px3uV+PZ3PDluRsvCAAck+EAHZ1/X502R62xxvV93hIg+2v576w2hsDADBAsDgOBkQyAZo+hOO0bJ33MxTG0xRPtB0rHtkyPbNKxXasY0QYQd1QNxXmiDBpCEQ5o1kYoFkKIR+yTfNf0/eN0R/WYDwA09zxPLdKyPesoJg6M4LnRC4hgFCIDQvBDgAGSwnDcBAWNe0I2ZPzRYRv1QX8KOjFFhCAyt+wnGdhGnSjIJjTMKxjTsGJjI9aJjaC10rOCz19JCONQmQeMw1BsM6IQU2zSUrIgYJgnYMoZlfWT/2jFSDKCzcczEx85JUsyYxUrdG1AAKS209ST17BK33IwLM2Mqt4vc1AAA9in8rLkqrDTo0zdLHMEoRARACK/3KztcpynNaucvAGoK9AYEKlQS0Ssr22C5MVKTX0nNwvBYxAkBgmkNBhCEABiNENs22RIFgBAMQTJq5LrPtJs6maQBTXTFsIZa1s2rbUB23B9sOwLoJC6DTpAaahITGLrtuvB1vu6TwGgZ67AOpskvbaClJMicprqvA/tkAGVqBkHQaevbIde8rM3mqrFI677kYuq6loxkBgfu7bwdxqHhsiwKVPh0LByRrrhPm9G7pB+ndvgF7fVieIcFKlnyri0nwneGBqdpzbSNQHpsHDRWsbRqn+bp1BSCGVgEFjSHUDYDwWEGk2mcyqX23a305aUTWQZVkA1ZHF29YWnXMYF/XDZYY3TZAc33Et4ObZhhH4tQJ2Fd15XQY9jXE427Wbq9h6QAN3Qjfga2zZgC2rbx6GRoRmqQHjrONrdlOi1r0G+b973c/zwvQ+L8PS6jiviarmu07Reu+E94eM8BmmtYDvOg4LkOw4jhe+7t2LUsd+Wm9H9XG4n1AW+n/2c8DyOi5LyP8dGrtlI3uOt7Wug0Sfp/ZAbhPW+zw+lfT2f84xWM58e641jFfdeRMVKDwfkDF+z9k5j1Tp/X+PtM77xPnPEBQDl4ALAR2VKNY77V2gTTAAYmQ8hb8EF7yQc3X2R826n2FnYQBXcL5MNAeXNexNcppljkQ52a1yEUNVlQj+9Cv50J/qDdu88AFYMGjgzhzVr65WirLYhq0hFkMobvMRUjJ5N1kDIzBrDgHsNwWNW+fCh5Ay0SQnR48aEGLQcY9h8iQHuUlEAA==",
+            // Puzzle inherits itself
+            true
+        ),
+        (
+            "2 completely different grids",
+            // A random puzzle
+            @"N4IgzglgXgpiBcBOANCALhNAbO8QGUA7AewHcBbAQ0IAIAhAJ2LQAsYGwRVKBXV4hghABhFpXIwcxQlxAMeOMDDRCAcgKpYaYHgBNiAax415impQAOFrAE8AdAB1CiGrogBzTGBoRCkXTA0xABm5jQARh40AMYQDNE4NOQ8YGjaPOQ0aMRZbDFYPIGeAG4wtNK5gTjBaf6BIZUxcQkwjoTCBTDexHx1je4MELo0JYGsgTqZDdGSWN6UWNLujb5u0ZRoMMNulO7SC20AIh5e5ouEy5SVDOTEEpsMPoTRDDCUSjTBTJnjEQrhbQAGgBybwAK2IvlcJzQ3km5F8y2yNAAjAAGNoAdRYmEC+lhNAhUOi0iU0T4EFK0M8sLaAHEGJQbK5mPNXoSUmkBkyWQT4ABKWQDIYIADaouAAF9kFKZdLZQr5Uq5QBdZAS5WKuXarVStUanWao2G/W641m1Xqi3Wo2m832k1Wh02y0Gl02u2Gr0etXoNg3O7Kdhi0BYXxdMWikAAJQAzMIAKyyaMAFkTyYTwhTIBVKvlIDDhAj8HFMfjSdQqfTlczADYc3mZQXw5wS1Ho7Ws8nO7GM8IAEwN/OF4uluMD5Px3uV+PZ3PDluRsvCAAck+EAHZ1/X502R62xxvV93hIg+2v576w2hsDADBAsDgOBkQyAZo+hOO0bJ33MxTG0xRPtB0rHtkyPbNKxXasY0QYQd1QNxXmiDBpCEQ5o1kYoFkKIR+yTfNf0/eN0R/WYDwA09zxPLdKyPesoJg6M4LnRC4hgFCIDQvBDgAGSwnDcBAWNe0I2ZPzRYRv1QX8KOjFFhCAyt+wnGdhGnSjIJjTMKxjTsGJjI9aJjaC10rOCz19JCONQmQeMw1BsM6IQU2zSUrIgYJgnYMoZlfWT/2jFSDKCzcczEx85JUsyYxUrdG1AAKS209ST17BK33IwLM2Mqt4vc1AAA9in8rLkqrDTo0zdLHMEoRARACK/3KztcpynNaucvAGoK9AYEKlQS0Ssr22C5MVKTX0nNwvBYxAkBgmkNBhCEABiNENs22RIFgBAMQTJq5LrPtJs6maQBTXTFsIZa1s2rbUB23B9sOwLoJC6DTpAaahITGLrtuvB1vu6TwGgZ67AOpskvbaClJMicprqvA/tkAGVqBkHQaevbIde8rM3mqrFI677kYuq6loxkBgfu7bwdxqHhsiwKVPh0LByRrrhPm9G7pB+ndvgF7fVieIcFKlnyri0nwneGBqdpzbSNQHpsHDRWsbRqn+bp1BSCGVgEFjSHUDYDwWEGk2mcyqX23a305aUTWQZVkA1ZHF29YWnXMYF/XDZYY3TZAc33Et4ObZhhH4tQJ2Fd15XQY9jXE427Wbq9h6QAN3Qjfga2zZgC2rbx6GRoRmqQHjrONrdlOi1r0G+b973c/zwvQ+L8PS6jiviarmu07Reu+E94eM8BmmtYDvOg4LkOw4jhe+7t2LUsd+Wm9H9XG4n1AW+n/2c8DyOi5LyP8dGrtlI3uOt7Wug0Sfp/ZAbhPW+zw+lfT2f84xWM58e641jFfdeRMVKDwfkDF+z9k5j1Tp/X+PtM77xPnPEBQDl4ALAR2VKNY77V2gTTAAYmQ8hb8EF7yQc3X2R826n2FnYQBXcL5MNAeXNexNcppljkQ52a1yEUNVlQj+9Cv50J/qDdu88AFYMGjgzhzVr65WirLYhq0hFkMobvMRUjJ5N1kDIzBrDgHsNwWNW+fCh5Ay0SQnR48aEGLQcY9h8iQHuUlEAA==",
+            // Another random puzzle, completely different from the puzzle above
+            @"N4IgzglgXgpiBcBOANCALhNAbO8QDkB7AAgEkATGAQxFSoFc0ALQgJwRAGEmqBbGHIQB2tEK3o4wMNByKteVLMTD1yhANb1i4ycSoAHfVgCeAOgA6Qy3IVKAUgapCYU4gGNWhMGADubctoSLnqGJvDKPJTKhPzuAlhgxBBCxMwwxArJxPpUrGjEhABmqUzpAOasEAEAFGnEAEYQZe5UZekAHAAe7QCUpsQAKqXuWPTp5E2YiVl1nj7EAIzE1YWevCXpaIT6PXqsm8NC9Lz1MKwFxW7CUm6MEABu6WCRMAFu8dMpaRDnV6O8QmQxBgpjK/QgxTS+ySiSoymkF2IADZ3NcYLcMI8IlRKG8PkkUn9jikAOwEjYZKhZHJ5RF1CpVIFpFIAJQWnBJAF4kf0AMoQXgQLC5VIkZhUNBM4ZuUbjSZoT4UokAxbLVYxCk4QpoXa5A7pI4nM6Iq5CG53LHPHGvOJYBLk77nOYWKxCIhoGDhOawoRvQj/M104aZFI0/JFCkMgJqIQAcnyPCxW2IiaeLzxdrA/VIhKorih6T1xCEJCtuNt9qycLmBXOcOVgIp+xw9yc+TmAHoG8Q1C44wmqFj67KXZYc9pCPMlk4/QHFlL0u9MyUJaihGgqSk4Q4cs5XB4vL5/LHEjKxnsDYR8mXXkCZ0r8eL8jH42uN1WRueizfyKOhCyYDKCBrkRNhmEIMphEUEw12cNwPQCH8K0SapkjPCYhGaJCl0rFIa2nX1UTnBZdjcJwS3yU13y+YYwD4OUgPyNAfAgd5+gAQTtDZXH2ICQNTCk6NiFReD/IZyn2GBCR+GV0ggRIACt6DAZ90TYCUHhBUQowQABtXTgAAX2QIyTOM0yLPMqyzIAXWQAzrMssznIskBW1lBAkVQIDHhEeA0HEGArLshyXMc8KwpC1z3LGBASW8zS/ICsYItAGLcBQEAfKkhBkqCsKXLcxRYvgAAWBLfNywLDKi1Kio8+AvKyxKqpSgrouK3B2gqnL/Oq2z7KcobHPqkrMuypL+ss2r2pG9KEG65rKr6tq0s6uKesm1bgsG8zRtwABmTbWvyob9oQcqlt6vLUp20Lhtmwr5vgABWY6VqCmy7JANwZJwPTQBwsA9JAFlEE4UqQG++o8xgTgOAAYgABiR9oUaR0RCEYLBkjhxGUbRlHREKYQ0HhvBkfRonUBY8hmAQJHTHikBSiaJgZHgRmST2oGQbBiGodQGGpHJkAEYAMUlqXMex3HRYlqXJeJ0n5ap6mQFp+nOdMF63pZmA2Y5xndZq1AyLaAGfo+Pn2QWQWQCx7A5fxtXlfXVXXZ5634F00H2QAJlENlOAOoP2Uh1Bg5esPOCRGOSRj9oY8Qe3HZx5wPapt2yZdrOvczPn/c4O3I4O4ug9K8vI5eqvQaRWuWRJBv2gb8G7e+tPnYptWMdQEn3dz9GQHzhJC84QPI6L0PJ4Fmfo5nuOZ4Tmek5nlPS/HoOy+n0Gy4j3fOHng/F4P5eD9Xg/19ByuJ+vkOK9nu+j5ZSuT5fjkH4v9+r5ZGvb9/++1dH4AOfjXN+Ncz4AK/jXH+9d/71x3iyeu+8kGHyDvXN+9dIH1y/vXH+Td/5N0QU3FBTdn5Nzfk3SBTcv5Nx/i3f+LdEEtxQS3Z+Lc34t0gS3L+Lcf7g3/uDRB4MUHg2fuDN+4NIHgy/uDFOHdZYZ0HurfuOdu6e2+mAf0dxhB6S8m9cqCxkD+2QEdbq8UUAoBMWY5A8UDHIC8kYox5jkAoC8uVExb0jpHXit1N6ViHHICMR45A5U3GmKCcgN6Li3pGPccgFxKAjomLCZEo60TbHGMCfFdJWTyqONcQkopXkTHxSMUk0JUSbKGSAA===",
+            // Puzzle doesn't inherit completely different puzzle
+            false
+        ),
+        (
+            "different grid sizes",
+            // Empty 9x9
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssW0iQA=",
+            // Empty 8x8
+            @"N4IgzglgXgpiBcAOANCA5gJwgEwQbT2AF9ljSSzKLqBdZQ68pq5ouh1zl497xv8r37CubegIm1xIyYOmiFPGkSA=",
+            // Puzzle doesn't inherit a puzzle with different dimentions
+            false
+        ),
+        (
+            "different regions",
+            // Empty 8x8, regions 4x2 (standard)
+            @"N4IgzglgXgpiBcAOANCA5gJwgEwQbT2AF9ljSSzKLqBdZQ68pq5ouh1zl497xv8r37CubegIm1xIyYOmiFPGkSA=",
+            // Empty 8x8, regions 2x4
+            @"N4IgzglgXgpiBcAOANCA5gJwgEwQbT2AF9ljSQMY0IB7AOwQCYTRLr6mWKraH4AWLm14JB5YR3gA2IT0kyAuskItZ7Ps3FyNakQN2SxrbQhlb1poksLcL8AAwG+j0qvN6jtj08vv5V5WM7FyC9ELdQwx99Pz4zSLiAmwk+AEZo9NiEAGZo3NcChIQAdmjS6yL4TMrqr0l8yoaIur5SrPhywJaEWpSevIH2gFZokcKkmozBxtHZ8YUFIiA===",
+            // Puzzle doesn't inherit a puzzle with different regions
+            false
+        ),
+        (
+            "non-functional changes",
+            // A random puzzle
+            @"N4IgzglgXgpiBcA2ANCALhNAbO8QBVMcACARhFQEMBXNACwHsAnBEAQVsabIpCepxgYaVgCUBMMD1QBzJhAAmCANrLgAX2Qatm7XvUBdZGt2mtIAG6Us1XACZZECzAB2CNPxi6QAY1doYJgAFVx8ILABZSiYAazAVUmQAFgNvH2YXQJCXMMjouITk1KMTcysbXESQGSdXd08zPV9WAGIAMTa2AAZu3h82JiZKAE8VEHbOnq7eCYBRLsRp1J0S/TLrWwQAVkbLDdwAZkdnN3gPW1NV3fLN+CTjurOGnReNK/Mak+zcqNj4+GUDgOyzW+gMRnQdECAFsGNDhIEVKAsBBMv9VCBREkAMKIXiiA64kDgwyoIYYBhI3wwLBYdGYxBE1CiRlbYmkkDRJgMADuVJRaJUykxpGx5GZors+NFB2JEL8tPpolF5BBIAFkhU8ppdLGLLF7IhAQAHiIAaAFbqASLsWyITdcOgYKbxSAAGYMFxobGtLp+/28SCwBBdAB0OwhGv5qM1AOFBOxsuZhKS+JxqeZW2xGcxWbtEIYtA1PrwLX9AdQPMU9BD4Y5PkoMlwampir1dgNzI7UuTncxONdWOxUoLRZjJfG5b9vA9XonZanIA5YAYNgpp2Fod4W9QO5Ae4P26Pu4oDn3x/PyCqh5Pt8vl62t6O95v9xfF5v77vW9SQA=",
+            // A puzzle with the same given digits, given pencilmarks and functional constraints
+            // but with different title, description, rules, decorative elements, arrow circles without a line, pencilmarks, background colors, solution digits, embedded solution
+            @"N4IgzglgXgpiBcA2ANCALhNAbO8QBVMcACAJhFQEMBXNACwHsAnBEAQVsabIpCepxgYaVgCUBMMD1QBzJhAAmCANrLgAX2Qatm7XvUBdZGt0gAbpSzVciXaYtXcpWRDMwAdgjT8YdnUZMtc0trBABGFzdPeG9rP31/YwTk4McEAGZIjy8fOwCUh1D4ABYs6NjfHSrQAGMPNBgmAAUPGogsAFlKJgBrMBVndINDJNMZVw8W9zbO7r6B5CH4kBrWAGIAIQAGADEd7d4atiYmSgBPFRA1tgAOW9veTd39rceAES2PvZBh6pXmdyNKYzLq9frwZQRUjDAxGdB0RoAWwYiOEjRUoCwEEB4NUIFExQAwoheKJ0sSfjDUKcMAwMSsYFgsLj8YgKahRGyAKw/EYgbpMBgAd3pWJxKmU+LChLCpOl5A50vSlNQdSZLNE0tlv0x2MkKjhauZl1EpEJPKp6BgAA8RBDaozjRD8eTtahCrgrbaFSAAGYMdxoQnrLahsO8SCwBBbAB0XL5TBgNTQlHcMhw9KNGvJFtQACNKEJg3g1nsyzteAxaGKYMWrmHw6h/YG62sG6HeELFPRo3HUAiIDI6HbY/G4TXRXrcZKCYTlRyiT7RFzCUu2dq4VXsHrW+3Xqguwoe/BR3yapQZLg1Az1SazfP8WbiqTyQ/Z0uicrN9WdyH27xmyDP8GxAPkwAYKxaWiSUY14WDUHgkBEOQuDUIQihnCQtCsOQCIcPwlD0KIrkiMyAi0NKciiKomiUOGIA===",
+            // Non-functional elements don't affect puzzle inheritance
+            true
+        ),
+        #endregion
+        #region Given digits
+        (
+            "add a given",
+            // A puzzle with some given digits
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt19fhtTUREA===",
+            // Add a given digit to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt19fio5KCACs7lY22tTUREA===",
+            // Adding given digits only restricts the solution
+            true
+        ),
+        (
+            "remove a given",
+            // A puzzle with some given digits
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt19fhtTUREA===",
+            // Remove a given digit from the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTsMN7jl7OpEgA",
+            // Removing given digits may lead to more puzzle solutions
+            false
+        ),
+        (
+            "replace a given",
+            // A puzzle with some given digits
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt19fhtTUREA===",
+            // Replace a given digit in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8AKwWN1rTrt19fhtTUREA===",
+            // Replacing given digits leads to other puzzle solutions
+            false
+        ),
+        #endregion
+        #region Given pencilmarks
+        (
+            "add pencilmarks into an empty cell",
+            // A puzzle with some given digits
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt19fhtTUREA===",
+            // Add given pencilmarks into an empty cell into the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt1QgywAKogDGEOwAsqwYANZg+Pym1N76sklAA=",
+            // Writing pencilmarks into an empty cell only restricts the solution
+            true
+        ),
+        (
+            "add pencilmarks",
+            // A puzzle with some given digits and given pencilmarks
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt1QgywAKogDGEOwAsqwYANZg+Pym1N76sklAA=",
+            // Add a given pencilmark into the cell that already has pencilmarks
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt1QgywAKogDGEOwAsqwYANZg+PzmAKzU3vqyKUA===",
+            // Adding more given pencilmarks may lead to more puzzle solutions
+            false
+        ),
+        (
+            "remove part of pencilmarks",
+            // A puzzle with some given digits and given pencilmarks
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt1QgywAKogDGEOwAsqwYANZg+Pym1N76sklAA=",
+            // Remove 1 given pencilmark from the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt1QgywAKogDGEOwAsqwYANZg+KbU3vqyiUA===",
+            // Removing given pencilmarks only restricts the solution
+            true
+        ),
+        (
+            "clear pencilmarks in a cell completely",
+            // A puzzle with some given digits and given pencilmarks
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt1QgywAKogDGEOwAsqwYANZg+Pym1N76sklAA=",
+            // Clear cell's pencilmarks completely in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt19fhtTUREA===",
+            // Clearing given pencilmarks effectively means allowing all values, so it may lead to more puzzle solutions
+            false
+        ),
+        (
+            "replace pencilmark",
+            // A puzzle with some given digits and given pencilmarks
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt1QgywAKogDGEOwAsqwYANZg+Pym1N76sklAA=",
+            // Replace 1 given pencilmark in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih0kANwEMAbAVzngCZU0EZjAB2CAC4ZujYrXpM2XHgEYBQ0RKkwZOuVXIHQi7ggDMa4WPiTp5PTJYcT8ACwWN1rTrt1QgywAKogDGEOwAsqwYANZg+OaI1N76sklAA=",
+            // Replacing given pencilmarks may lead to more puzzle solutions
+            false
+        ),
+        #endregion
+        #region Constraints
+        (
+            "add new constraint type",
+            // A random puzzle with some constraints
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvpGZo5xps7Rpd6+pLmBBYauNu6eUdbmpuGJYgDWEOrqMgDGGWhwwaADMH1BBoZtZa2mjdae8y4VYgBuGeoArqMg5gAMIH4TU/iFi+6IFdY3jb5iAaOENfnBM0XuZqu262LyHbiZ6mBAgADEADFDogAOzQpwAdxwUgQhwAdDZUAAzDCKUzyLRgcQYDLacRgwypTLZPzPaYzBpNUwtIxtDoAoEgsFQmHw46oZHYVHwDFYkC4/GE4mk8mU6lZE6+IA=",
+            // Add a new constraint of a type that didn't exist before to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEDABuMAHb5QAYxgAbJQhAAlRAGEAjCBqoALgAsYGALYB7czENm5IJRGkww+PBoCsukKnUAWLQAmXw0AZh8/IOCQamoKR2dXdw1oxFD1CM8MwPS/b2y4gxAMGQAjAENZeEJElzcaj3VvEPytMJz22PjSOuTG8K1/DOjsvx0tdKKxAGsIFTN5CrQ4GoVlJQamiY7xoZGuvwiOsQkKpQBXVZAdAAZ9XsUVLa99v21djW1h+LEnFwc/36BFerVenwCXTiqEsF0MQK0agAxAAxW6IADsaNCAHccCYELcAHT+VAAMww1i0lmkYEMGAqzkManU5SqD1AQK2TQiwyiWjGGgmUzEsPhSUR8BAqPRWPuqDx2AJ8GJpJAFKpNLpDKZLLZshoRCAA==",
+            // Adding new constraints only restricts the solution
+            true
+        ),
+        (
+            "add new constraint of existing type",
+            // A random puzzle with some constraints
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvpGZo5xps7Rpd6+pLmBBYauNu6eUdbmpuGJYgDWEOrqMgDGGWhwwaADMH1BBoZtZa2mjdae8y4VYgBuGeoArqMg5gAMIH4TU/iFi+6IFdY3jb5iAaOENfnBM0XuZqu262LyHbiZ6mBAgADEADFDogAOzQpwAdxwUgQhwAdDZUAAzDCKUzyLRgcQYDLacRgwypTLZPzPaYzBpNUwtIxtDoAoEgsFQmHw46oZHYVHwDFYkC4/GE4mk8mU6lZE6+IA=",
+            // Add a new constraint of a type that already exists to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvpGZo5xps7Rpd6+pLmBBYauNu6eUdbmpuGJ1QH5wQYm7e6IA9ZDCb5iANYQ6uoyAMYZaHDBoHMwM0F9bWWtpo3WnjsuFWIAbhnqAK7LIOYADCB+axv4hXuDFSPv46jdOd2bPpFdxmI62E5ieSXcTdUwIEAAYgAYndEAB2FFOADuOCkCDuADobKgAGYYRSmeRaMDiDAZbTieGGVKZbJ+AF1BpNUwtIxtDqQ6Gw+HI1EYh6oHHYPHwQnEkBkilUml0hlMllZR5dPKAt6xIxDfWGUaVVBQmF5OHwREo9GYyW4yT4omk8mySnU2n0rSM63M9KamhEIA=",
+            // Adding new constraints only restricts the solution
+            true
+        ),
+        (
+            "add a global constraint",
+            // A random puzzle with some constraints
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvpGZo5xps7Rpd6+pLmBBYauNu6eUdbmpuGJYgDWEOrqMgDGGWhwwaADMH1BBoZtZa2mjdae8y4VYgBuGeoArqMg5gAMIH4TU/iFi+6IFdY3jb5iAaOENfnBM0XuZqu262LyHbiZ6mBAgADEADFDogAOzQpwAdxwUgQhwAdDZUAAzDCKUzyLRgcQYDLacRgwypTLZPzPaYzBpNUwtIxtDoAoEgsFQmHw46oZHYVHwDFYkC4/GE4mk8mU6lZE6+IA=",
+            // Add anti-knight constraint to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAEMAdgBcIAa0kQ0AC2kJpGAK4xU05TAwBbAPaGY0g/lAAbCJJhh8eEACUArAGEAjCFQuALB4ATL6uAMzeoS5BwSDU1BQgtvaO8ASuMYhREW5RgVl+nrnxNKgYMJIARlJWSXYOTq6eIYUeYXltcQmkdSmNLhH+UTG5fl4eWSVichDW1gYAxuJocGmgCzBzqc7uHkN+iJ0He3GJG1v4ruPtYyd+MTfhnWIAbuLW2gggXgAMIKW9VaEQHbHbNKKeR4BZ5iYyaaTJGAeL4AYgAYj9EAB2DGhADuOD0CB+ADp/KgAGYYUweYySMAacR2NTwVwVaqSf49RGgp77DIeUZXCZdVBwhH1ZGs9GYnF/VAE7BE+Ck8kgKk0ukMjBMmRfFzsmo0IhAA===",
+            // Adding new constraints only restricts the solution
+            true
+        ),
+        (
+            "remove a global constraint",
+            // A random puzzle with some constraints
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAEMAdgBcIAa0kQ0AC2kJpGAK4xU05TAwBbAPaGY0g/lAAbCJJhh8eEACUArAGEAjCFQuALB4ATL6uAMzeoS5BwSDU1BQgtvaO8ASuMYhREW5RgVl+nrnxNKgYMJIARlJWSXYOTq6eIYUeYXltcQmkdSmNLhH+UTG5fl4eWSVichDW1gYAxuJocGmgCzBzqc7uHkN+iJ0He3GJG1v4ruPtYyd+MTfhnWIAbuLW2gggXgAMIKW9VaEQHbHbNKKeR4BZ5iYyaaTJGAeL4AYgAYj9EAB2DGhADuOD0CB+ADp/KgAGYYUweYySMAacR2NTwVwVaqSf49RGgp77DIeUZXCZdVBwhH1ZGs9GYnF/VAE7BE+Ck8kgKk0ukMjBMmRfFzsmo0IhAA===",
+            // Remove anti-knight constraint from the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvpGZo5xps7Rpd6+pLmBBYauNu6eUdbmpuGJYgDWEOrqMgDGGWhwwaADMH1BBoZtZa2mjdae8y4VYgBuGeoArqMg5gAMIH4TU/iFi+6IFdY3jb5iAaOENfnBM0XuZqu262LyHbiZ6mBAgADEADFDogAOzQpwAdxwUgQhwAdDZUAAzDCKUzyLRgcQYDLacRgwypTLZPzPaYzBpNUwtIxtDoAoEgsFQmHw46oZHYVHwDFYkC4/GE4mk8mU6lZE6+IA=",
+            // Removing constraints may lead to more puzzle solutions
+            false
+        ),
+        (
+            "remove a constraint",
+            // A random puzzle with some constraints
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvpGZo5xps7Rpd6+pLmBBYauNu6eUdbmpuGJYgDWEOrqMgDGGWhwwaADMH1BBoZtZa2mjdae8y4VYgBuGeoArqMg5gAMIH4TU/iFi+6IFdY3jb5iAaOENfnBM0XuZqu262LyHbiZ6mBAgADEADFDogAOzQpwAdxwUgQhwAdDZUAAzDCKUzyLRgcQYDLacRgwypTLZPzPaYzBpNUwtIxtDoAoEgsFQmHw46oZHYVHwDFYkC4/GE4mk8mU6lZE6+IA=",
+            // Remove 1 renban from the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvoupjbunlHW5qbhiWIA1hDq6jIAxhlocMGgTTANQQaGFc7uFcXWnoPWroNiAG4Z6gCu7SDmAAwgfl09+EZmI0aIpuP7Rd5JuTo5AfnBfa57HqZlRhVVYvLz4lemCCAAxABiK0QAHZAU4AO44KQIFYAOhsqAAZhhFKZ5FowOIMBltOIfoZUplsjQiEA==",
+            // Removing constraints may lead to more puzzle solutions
+            false
+        ),
+        (
+            "remove all constraints of a type",
+            // A random puzzle with some constraints
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvpGZo5xps7Rpd6+pLmBBYauNu6eUdbmpuGJYgDWEOrqMgDGGWhwwaADMH1BBoZtZa2mjdae8y4VYgBuGeoArqMg5gAMIH4TU/iFi+6IFdY3jb5iAaOENfnBM0XuZqu262LyHbiZ6mBAgADEADFDogAOzQpwAdxwUgQhwAdDZUAAzDCKUzyLRgcQYDLacRgwypTLZPzPaYzBpNUwtIxtDoAoEgsFQmHw46oZHYVHwDFYkC4/GE4mk8mU6lZE6+IA=",
+            // Remove all renbans from the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qADWEOrqMgDGAIZocMGgmTDpQQaG5qbO7hU27p5V1q5VYgBu2eoArvkg5gAMIH5FJfhGZrXWiJXuk7W+vkA==",
+            // Removing constraints may lead to more puzzle solutions
+            false
+        ),
+        (
+            "replace constraint",
+            // A random puzzle with some constraints
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvpGZo5xps7Rpd6+pLmBBYauNu6eUdbmpuGJYgDWEOrqMgDGGWhwwaADMH1BBoZtZa2mjdae8y4VYgBuGeoArqMg5gAMIH4TU/iFi+6IFdY3jb5iAaOENfnBM0XuZqu262LyHbiZ6mBAgADEADFDogAOzQpwAdxwUgQhwAdDZUAAzDCKUzyLRgcQYDLacRgwypTLZPzPaYzBpNUwtIxtDoAoEgsFQmHw46oZHYVHwDFYkC4/GE4mk8mU6lZE6+IA=",
+            // Remove 1 renban from the puzzle above and add another renban instead
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvoupjbunlHW5qbhiaS5gQUmXtaIjUbNloliANYQ6uoyAMYZaHDBoP0wvUEGhhXO7hXF1p5z1q5zYgBuGeoAriMg5gAMIH7jk/hGZoutpis3xb5iASOEtfnB067XHqZlRhVVMTyHbiZ6mBAgADEADFDogAOywpwAdxwUgQhwAdDZUAAzDCKUzyLRgcQYDLacQQwypTLZPzPKbTMyOJotQxtbxAkFgiEwuGI46oVHYdHwLE4kD4wnE0nkynU2lZE6+IA==",
+            // Replacing constraints may lead to different puzzle solutions
+            false
+        ),
+        (
+            "modify constraint options",
+            // A random puzzle with a cage and some other constraints
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvpGZo5xps7Rpd6+pLmBBYauNu6eUdbmpuGJYgDWEOrqMgDGGWhwwaADMH1BBoZtZa2mjdaeZWIAbhnqAK6jIOYADCBJNaOEJ9MzRe5m80Z2q2LyW+IBMKYIIADEAGL7iADsvycAHccFIEPsAHQ2VAAMwwilM8i0YHEGAy2nEH0MqUy2T8rwuLkWTVMLSMbQ6j2er3e8C+vwBQNQoOw4PgUJhIHhiORqPRmOxuKyR18QA",
+            // Change the cage clue the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAIwhUhgCymATFaMBmC08P2HIatQohNOnrwBEaeiO6uxu524dZmUT40qBgwWgBGAIZaav7auvpGZo5xps7Rpd6+pLmBBYauNu6eUdbmpuGJYgDWEOrqMgDGGWhwwaADMH1BBoZtZa2mjdaeZWIAbhnqAK6jIOaWSTWjhEfTM0XuZvNGdqti8lviATCmCCAAxABiAAyIAOw/JwAdxwUgQ3wAdDZUAAzDCKUzyLRgcQYDLacRvQypTLZPzPM4uRZNUwtIxtDr3R7PV7wD4/f6A1Ag7Bg+CQ6EgOEIpEotEYrE4rIgGhEIA",
+            // Updating constraint options may lead to different puzzle solutions
+            false
+        ),
+        (
+            "add cells to a line constraint",
+            // A puzzle with a renban
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEBhgA7AEYBDSflAAbCJJhh8eEACUArAGEATCFTaALPoDMJnZf1mb2w/t0hq1GqhVrFIb+s0dA2NTC2tTOwdTZ1d3VAB7AFcAF399BBAAYgAxAAZEAHY8mwB3HGSACwRcgDozVAAzDHiAW314yTBkjFlVZIztKTkFGiIgA==",
+            // Add 1 cell to the renban in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEBhgA7AEYBDSflAAbCJJhh8eEACUArAGEATCFTaALPoDMJnZf1mb2w/t2OAjPsQhq1GqhVqiiAB6po6BsamFtamdg6mzq6mHl4+qAD2AK4ALiH6CCAAxABiAAyIAOxlNgDuONkAFgilAHRmqABmGOkAtvrpkmDZGLKq2QXaUnIKNERAA===",
+            // Updating constraint options may lead to different puzzle solutions
+            false
+        ),
+        (
+            "remove cells from a line constraint",
+            // A puzzle with a renban
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEBhgA7AEYBDSflAAbCJJhh8eEACUArAGEATCFTaALPoDMJnZf1mb2w/t0hq1GqhVrFIb+s0dA2NTC2tTOwdTZ1d3VAB7AFcAF399BBAAYgAxAAZEAHY8mwB3HGSACwRcgDozVAAzDHiAW314yTBkjFlVZIztKTkFGiIgA==",
+            // Remove 1 cell from the renban in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEBhgA7AEYBDSflAAbCJJhh8eEACUAzAGEALCFTbD+3SZ0BWfQCYQ1ajVQq1ikG/WadB46fNLU1sHJ1QAewBXABcvfQQQAGIAMQAGRAB2NKsAdxxogAsEVIA6Q1QAMwxwgFt9cMkwaIxZVWiE7Sk5BRoiIA=",
+            // Updating constraint options may lead to different puzzle solutions
+            false
+        ),
+        #region Kropki dots and negative constraints
+        (
+            "add a white dot to no black dots",
+            // Empty 6x6
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cW1IkA",
+            // 6x6 with a white kropki dot
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtENggAzSTAwwAdgGM48QiGUAbDWHwgASgGYAwgCYQqQ0YMhqNIkA",
+            // Adding new constraints only restricts the solution if it doesn't affect negative constraints
+            true
+        ),
+        (
+            "add a white dot to black dots",
+            // A puzzle with 1 black dot
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEBgCGAFwgB7fKADGMADYqw+EACUALAGEdIVLr0BWENRpEgA",
+            // Add a white dot to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtENggAzSTAwwAdgGM48QiGUAbDWHwgASgGYAwgCYQqQ0YMhqNVBgCGAFwgB7fKE3bdegCxHfc31/AFYbGiIgA===",
+            // Adding new constraints only restricts the solution if it doesn't affect negative constraints
+            true
+        ),
+        (
+            "add a white dot to anti-ratio and no black dots",
+            // Empty 6x6 with anti-ratio
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAxyIAexBj187SupEgA==",
+            // 6x6 with anti-ratio and a white kropki dot
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtENggAzSTAwwAdgGM48QiGUAbDWHwgASgGYAwgZCpDRgEwhqNVPJhoAhgBcIANxV4QGVxAD2Nqi+boGqtkA=",
+            // Adding white dots affects the anti-ratio area
+            false
+        ),
+        (
+            "add a white dot to anti-ratio and black dots",
+            // A puzzle with 1 black dot and anti-ratio
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAxyIAexBj187StABjGABtTYfCABKAFgDCtkKjv2ArDppEgA=",
+            // Add a white dot to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtENggAzSTAwwAdgGM48QiGUAbDWHwgASgGYAwgCYQqQ0YMhqNVPJhoAhgBcIANxV4QGVxAD2Nqi+boGqoJraunoALEYx5vpxAKw2NERAA===",
+            // Adding white dots affects the anti-ratio area
+            false
+        ),
+        (
+            "add a white dot to non-consecutive",
+            // Empty 6x6 with non-consecutive
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsA9uIDG0sDBkBXAC4QAbnHgqMSmKnEw0AQzWb8IDKYiSQYq2tvw81IkA",
+            // 6x6 with non-consecutive and 1 white kropki dot
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsA9uIDG0sDBkBXAC4QAbnHgqMSmKmwQAZkZgYYsrYRAyYAGzth8IAEoBmAMIAmEKnce3EGoaVHEYNABDNU1nDCiISSDUOLVE+DxgoA==",
+            // Adding white dots affects the non-consecutive area
+            false
+        ),
+        (
+            "add a black dot to no white dots",
+            // Empty 6x6
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cW1IkA",
+            // 6x6 with a black kropki dot
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEBgCGAFwgB7fKADGMADYqw+EACUATAGEArCFRaAjIZDUaRIA===",
+            // Adding new constraints only restricts the solution if it doesn't affect negative constraints
+            true
+        ),
+        (
+            "add a black dot to white dots",
+            // A puzzle with 1 white dot
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtENggAzSTAwwAdgGM48QiGUAbDWHwgASgFYAwgBYQqPYlMhqNIkA",
+            // Add a black dot to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtENggAzSTAwwAdgGM48QiGUAbDWHwgASgFYAwgBYQqPYlMhqNVBgCGAFwgB7fKE3bdegExGDc30ARgCbGiIgA===",
+            // Adding new constraints only restricts the solution if it doesn't affect negative constraints
+            true
+        ),
+        (
+            "add a black dot to non-consecutive and no white dots",
+            // Empty 6x6 with non-consecutive
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsA9uIDG0sDBkBXAC4QAbnHgqMSmESA==",
+            // 6x6 with non-consecutive and a black kropki dot
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsA9uIDG0sDBkBXAC4QAbnHgqMSmKgwBDNZPygZMADaWw+EACUAjAGEArCFT2ATG5DUaREA==",
+            // Adding black dots affects the non-consecutive area
+            false
+        ),
+        (
+            "add a black dot to non-consecutive and white dots",
+            // A puzzle with 1 white dot and non-consecutive
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsA9uIDG0sDBkBXAC4QAbnHgqMSmKmwQAZkZgYYsrYRAyYAGzth8IAEoBWAMIAWEKheJvEGoaIiA=",
+            // Add a black dot to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsA9uIDG0sDBkBXAC4QAbnHgqMSmKmwQAZkZgYYsrYRAyYAGzth8IAEoBWAMIAWEKheJvEGoaVAwAQzVJfFBbByd4PFcARg83X1cAJlSgmiIgA===",
+            // Adding black dots affects the non-consecutive area
+            false
+        ),
+        (
+            "add a black dot to anti-ratio",
+            // Empty 6x6 with anti-ratio
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAxyIAexBj187SupEgA==",
+            // 6x6 with anti-ratio and 1 black kropki dot
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAxyIAexBj187StABjGABtTYfCABKAJgDCAVhCprARic6aRIA",
+            // Adding black dots affects the anti-ratio area
+            false
+        ),
+        #endregion
+        #endregion
+    };
 }
 
