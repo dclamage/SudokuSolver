@@ -59,6 +59,12 @@ class CountResponse : BaseResponse
     public bool inProgress { get; set; }
 }
 
+class ResponseCacheItem
+{
+    public Solver request { get; set; }
+    public BaseResponse response { get; set; }
+}
+
 class LogicalCell
 {
     public int value { get; set; }
@@ -90,6 +96,7 @@ class WebsocketListener : IDisposable
     private readonly object serverLock = new();
     private readonly Dictionary<string, CancellationTokenSource> cancellationTokenMap = new();
     private readonly Dictionary<byte[], BaseResponse> trueCandidatesResponseCache = new(new ByteArrayComparer());
+    private readonly List<ResponseCacheItem> lastTrueCandidatesResponses = new();
     private List<string> additionalConstraints;
 
     public async Task Listen(string host, int port, IEnumerable<string> additionalConstraints = null)
@@ -240,13 +247,23 @@ class WebsocketListener : IDisposable
         }
     }
 
-    private void SendTrueCandidatesMessage(string ipPort, BaseResponse response, byte[] trueCandidatesKey = null)
+    private void SendTrueCandidatesMessage(string ipPort, BaseResponse response, Solver request, CancellationToken cancellationToken, byte[] trueCandidatesKey = null)
     {
         lock (serverLock)
         {
             if (trueCandidatesKey != null)
             {
                 trueCandidatesResponseCache[trueCandidatesKey] = response;
+            }
+
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                lastTrueCandidatesResponses.Add(new() { request = request, response = response });
+                // Keep only last N responses to minimize search time and memory usage
+                if (lastTrueCandidatesResponses.Count > 1000)
+                {
+                    lastTrueCandidatesResponses.RemoveAt(0);
+                }
             }
 
             SendMessage(ipPort, response);
@@ -258,13 +275,16 @@ class WebsocketListener : IDisposable
         bool colored = GetBooleanOption(solver, "truecandidatescolored");
         bool logical = GetBooleanOption(solver, "truecandidateslogical");
 
+        // Save the state of the solver with the initial grid (before applying any logic to the puzzle)
+        Solver request = solver.Clone(willRunNonSinglesLogic: false);
+
         Solver logicalSolver = null;
         if (logical)
         {
             logicalSolver = solver.Clone(willRunNonSinglesLogic: true);
             if (logicalSolver.ConsolidateBoard() == LogicResult.Invalid)
             {
-                SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
+                SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
                 return;
             }
         }
@@ -273,7 +293,7 @@ class WebsocketListener : IDisposable
         int[] numSolutions = colored ? new int[totalCandidates] : null;
         if (!solver.FillRealCandidates(multiThread: false, numSolutions: numSolutions, cancellationToken: cancellationToken))
         {
-            SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
+            SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
             return;
         }
 
@@ -311,11 +331,11 @@ class WebsocketListener : IDisposable
         {
             if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
             {
-                SendTrueCandidatesMessage(ipPort, response, comparableData);
+                SendTrueCandidatesMessage(ipPort, response, request, cancellationToken, comparableData);
             }
             else
             {
-                SendTrueCandidatesMessage(ipPort, response);
+                SendTrueCandidatesMessage(ipPort, response, request, cancellationToken);
             }
         }
     }
