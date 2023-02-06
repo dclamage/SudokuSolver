@@ -4395,6 +4395,109 @@ public class Solver
         return counter;
     }
 
+    /// <summary>
+    /// Build a map of all constraints by type + hash
+    /// </summary>
+    private Dictionary<string, Dictionary<string, Constraint>> GetConstraintsIndex()
+    {
+        // Cache the results on the solver object
+        if (customInfo.TryGetValue("constraintsIndex", out object resultCache))
+        {
+            return resultCache as Dictionary<string, Dictionary<string, Constraint>>;
+        }
+
+        Dictionary<string, Dictionary<string, Constraint>> result = new();
+
+        foreach (Constraint constraint in constraints)
+        {
+            string name = constraint.Name;
+            if (!result.ContainsKey(name))
+            {
+                result.Add(name, new());
+            }
+            result[name].Add(constraint.GetHash(this), constraint);
+        }
+
+        customInfo.Add("constraintsIndex", result);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Check if the current grid inherits another grid,
+    /// i.e. if the current grid has exact copy of all constraints of the other grid, and possibly additional constraints.
+    /// </summary>
+    public bool IsInheritOf(Solver other)
+    {
+        // Check that the grids have the same basic parameters
+        if (WIDTH != other.WIDTH || HEIGHT != other.HEIGHT || MAX_VALUE != other.MAX_VALUE)
+        {
+            return false;
+        }
+
+        // Check that the grids have the same regions
+        if (other.regions != null)
+        {
+            if (regions == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < HEIGHT; i++)
+            {
+                for (int j = 0; j < WIDTH; j++)
+                {
+                    if (regions[i, j] != other.regions[i, j])
+                    {
+                        return false;
+                    }
+                }
+            }
+        }
+
+        // For each cell, check that the current grid has no candidates that are not present in the other grid.
+        for (int i = 0; i < HEIGHT; i++)
+        {
+            for (int j = 0; j < WIDTH; j++)
+            {
+                if ((board[i, j] & ~other.board[i, j] & ALL_VALUES_MASK) != 0)
+                {
+                    return false;
+                }
+            }
+        }
+
+        // Check that the other grid has no constraints that are not present in the current grid.
+        var thisConstraintsIndex = GetConstraintsIndex();
+        var otherConstraintsIndex = other.GetConstraintsIndex();
+        if (otherConstraintsIndex.Count > thisConstraintsIndex.Count)
+        {
+            return false;
+        }
+        foreach (var (constraintType, otherConstraintsOfType) in otherConstraintsIndex)
+        {
+            if (!thisConstraintsIndex.TryGetValue(constraintType, out var thisConstraintsOfType))
+            {
+                return false;
+            }
+
+            if (otherConstraintsOfType.Count > thisConstraintsOfType.Count)
+            {
+                return false;
+            }
+
+            foreach (var constraintKey in otherConstraintsOfType.Keys)
+            {
+                if (!thisConstraintsOfType.ContainsKey(constraintKey))
+                {
+                    return false;
+                }
+            }
+        }
+
+        return true;
+    }
+
     private record struct ContradictionResult(
         int Changes,
         Solver BoardCopy,

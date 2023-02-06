@@ -30,6 +30,28 @@ public abstract class OrthogonalValueConstraint : Constraint
     /// <returns>An enumerable of OrthogonalValueConstraint instances which override the negative constraint.</returns>
     protected virtual IEnumerable<OrthogonalValueConstraint> GetRelatedConstraints(Solver solver) => Enumerable.Empty<OrthogonalValueConstraint>();
 
+    public override string GetHash(Solver solver)
+    {
+        StringBuilder result = new(base.GetHash(solver));
+
+        // Include the negative constraint area "holes" in the hash
+        if (negativeConstraint)
+        {
+            var overrideMarkers = GetRelatedConstraints(solver).SelectMany(x => x.Markers.Keys).ToHashSet().ToSortedList();
+            if (overrideMarkers.Count > 0)
+            {
+                result.Append("-");
+                foreach (var (i1, j1, i2, j2) in overrideMarkers)
+                {
+                    result.Append(CellName(i1, j1));
+                    result.Append(CellName(i2, j2));
+                }
+            }
+        }
+
+        return result.ToString();
+    }
+
     protected abstract int DefaultMarkerValue { get; }
 
     public Dictionary<(int, int, int, int), int> Markers => markers;
