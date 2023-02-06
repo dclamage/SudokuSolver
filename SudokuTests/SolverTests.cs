@@ -186,4 +186,19 @@ public class SolverTests
         Solver solver2 = SolverFactory.CreateFromFPuzzles(puzzle, additionalConstraints2);
         solver2.TestUniqueSolution(solution);
     }
+
+    [TestMethod]
+    public void IsInheritOfTest()
+    {
+        foreach (var (testDescription, puzzle1, puzzle2, isInheriting) in Puzzles.inheritanceTestFPuzzles)
+        {
+            if (puzzle1.Length == 0)
+            {
+                continue;
+            }
+            Solver solver1 = SolverFactory.CreateFromFPuzzles(puzzle1, null, true);
+            Solver solver2 = SolverFactory.CreateFromFPuzzles(puzzle2, null, true);
+            Assert.AreEqual(solver2.IsInheritOf(solver1), isInheriting, $"Test case: {testDescription}");
+        }
+    }
 }
