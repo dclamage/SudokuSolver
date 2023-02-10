@@ -37,7 +37,14 @@ public abstract class OrthogonalValueConstraint : Constraint
         // Include the negative constraint area "holes" in the hash
         if (negativeConstraint)
         {
-            var overrideMarkers = GetRelatedConstraints(solver).SelectMany(x => x.Markers.Keys).ToHashSet().ToSortedList();
+            // The current constraint type could be represented by more than 1 object,
+            // so concatenate results of the regular GetRelatedConstraints() implementation
+            // with all constraints of the same type
+            // to get the full list of constraints that may affect the set of ignored pairs for the negative constraint
+            var relatedConstraints = solver.Constraints<OrthogonalValueConstraint>()
+                .Where(constraint => constraint.GetType() == GetType())
+                .Concat(GetRelatedConstraints(solver));
+            var overrideMarkers = relatedConstraints.SelectMany(x => x.Markers.Keys).ToHashSet().ToSortedList();
             if (overrideMarkers.Count > 0)
             {
                 result.Append("-");
