@@ -491,6 +491,15 @@ internal static class Puzzles
             // Updating constraint options may lead to different puzzle solutions
             false
         ),
+        (
+            "duplicate the same constraint",
+            // A puzzle with a renban
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEBhgA7AEYBDSflAAbCJJhh8eEACUALAGEAzCFTbD+3SZ0AmfQFYQ1ajVQq1ikG/WadB46fNLU1sHJ1QAewBXABcvfQQQAGIAMQAGRAB2NKsAdxxogAsEVIA6XVQAMwxwgFt9cMkwaIxZVWiE7Sk5BRoiIA=",
+            // Add the same renban to the puzzle above one more time (so that the contraint is duplicated)
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEBhgA7AEYBDSflAAbCJJhh8eEACUALAGEAzCFTbD+3SZ0AmfQFYQ1ahRAq1G+AR0Hjp85dNbBycaVDc4T2VVdU1vIyszCwSgxzEAewBXABdw/QQQAGIAMQAGRAB2UqsAdxwsgAsEEoA6XVQAMww0gFt9NMkwLIxZVSz87Sk5BRdwjy89eL8kwPtU1Eyc6Lz4QtKKqtRa7Aam1o6u3v7B4dHxyfkQGiIgA==",
+            // Duplicating constraints doesn't affect the solution
+            true
+        ),
         #region Kropki dots and negative constraints
         (
             "add a white dot to no black dots",
