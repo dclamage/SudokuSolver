@@ -37,6 +37,12 @@ public abstract class Constraint
     public virtual string GetHash(Solver solver) => string.IsNullOrWhiteSpace(OPTIONS) ? "" : OPTIONS;
 
     /// <summary>
+    /// Split the constraint to a set of smaller constraints that are together identical to the current one.
+    /// </summary>
+    /// <returns>A set of elementary constraints that represent the current constraint when united.</returns>
+    public virtual IEnumerable<Constraint> SplitToPrimitives(Solver sudokuSolver) => new Constraint[] { this };
+
+    /// <summary>
     /// Return an enumerable of cells which cannot be the same digit as this cell.
     /// Only need to return cells which wouldn't be seen by normal sudoku rules.
     /// Also no need to return any cells if the Group property is used.
