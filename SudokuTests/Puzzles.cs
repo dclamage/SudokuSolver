@@ -591,6 +591,143 @@ internal static class Puzzles
             // Adding black dots affects the anti-ratio area
             false
         ),
+        (
+            "add a white dot to non-consecutive and white dots",
+            // A puzzle with 1 white dot and non-consecutive
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsA9uIDG0sDBkBXAC4QAbnHgqMSmKmwQAZkZgYYsrYRAyYAGzth8IAEoAmAMJuQqFwEYvEGoaIiA=",
+            // Add a white dot to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsA9uIDG0sDBkBXAC4QAbnHgqMSmKmwQAZkZgYYsrYRAyYAGzth8IAEoAmAMJuQqFwEYvEGoKG3tHZxcAZg8AVh9XABZYoJoiIA==",
+            // Adding white dots affects the non-consecutive area
+            false
+        ),
+        (
+            "add a black dot to anti-ratio and black dots",
+            // A puzzle with 1 black dot and anti-ratio
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAxyIAexBj187StABjGABtTYfCABKAFgDCAJhCo79gIw6aRIA",
+            // Add a black dot to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAxyIAexBj187StABjGABtTYfCABKAFgDCAJhCo79gIw6KIE+csqbR3tEF0D7AFYvaiIgA===",
+            // Adding black dots affects the anti-ratio area
+            false
+        ),
+        (
+            "add negative constraints to regular kropki puzzle",
+            // A puzzle with kropki dots with no negative constraints
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0Q2CADNNMDDAB2AYzjxCIYwBsLYfCABKAVgDCAJhCo7ANlchaFczBWNqb2AMxODu5hTgAsvv6W1raOTgDsUXYxafGkAUHJLk4AHBnhJX65icF49qlOiBl15QmBSSF2RdkeiNkVoFXJnaGNTsN9eW01XhEZ3nHjA+2Fbh7hbn5qGACGAC4QAPb4/a3V9p2RHp3zLfnt3p6zvTeT9llxHlmRCyfJzgCMGSyAO+tymf1iGXBY2epzs4XSHkK6RBLxSDQ+9Ryx1BtWKGU6zUqP3anQBlx8GyIQA==",
+            // Add non-consecutive and anti-ratio to the puzzle above
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAOwD26gMbawMHQFcALhABuceCYxGYqbBABmTmBhi6rhEDpgAbPzB8EAAlAFYAYQAmEFQQgDZokFoKH39A4JCAZgiw2NCcgBZk1N8AoPg8UMiAdnyQwoi6lNI08syoiIAOepyeltAyjMrQmojEerH+0vSKqpCupvrEJYG24fnFrMmI7bWhudDEvLjE4v3ZjqS4nJiUtXUYNABDM0tgjFeITWTUT7MfpVBpcRgtcvVFucZu1QYl4vVEs1oRtQo1inFGnkLjD5pEAIz1RoE7EokJ4iLo0LkvbIw7ZJZxTpI1oHTKRCYY8YlFkg+ZTCHdbnAnGhRYEuKLO5EFJAA===",
+            // Adding negative constraints only restricts the solution
+            true
+        ),
+        (
+            "remove non-consecutive from a kropki puzzle",
+            // A puzzle with kropki dots with non-consecutive and anti-ratio
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAOwD26gMbawMHQFcALhABuceCYxGYqbBABmTmBhi6rhEDpgAbPzB8EAAlAFYAYQAmEFQQgDZokFoKH39A4JCAZgiw2NCcgBZk1N8AoPg8UMiAdnyQwoi6lNI08syoiIAOepyeltAyjMrQmojEerH+0vSKqpCupvrEJYG24fnFrMmI7bWhudDEvLjE4v3ZjqS4nJiUtXUYNABDM0tgjFeITWTUT7MfpVBpcRgtcvVFucZu1QYl4vVEs1oRtQo1inFGnkLjD5pEAIz1RoE7EokJ4iLo0LkvbIw7ZJZxTpI1oHTKRCYY8YlFkg+ZTCHdbnAnGhRYEuKLO5EFJAA===",
+            // Remove non-consecutive from the puzzle above
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0Q2CADNNMDDAB2AYzjxCIYwBsLYfCABKAVgDCAJhCo7ANlchaFczBWNqb2AMxODu5hTgAsvv6W1raOTgDsUXYxafGkAUHJLk4AHBnhJX65icF49qlOiBl15QmBSSF2RdkeiNkVoFXJnaGNTsN9eW01XhEZ3nHjA+2Fbh7hbn5q+jBoAIYALhAAbiY1GPsQAPa+qGcHV6b9rdX2nZEenfMt+e3enrO9X0m9iycQ8WUiCyeyWcAEYMlk4ZDvlMYbEMqixoDnnZwukPIV0kigSkGmD6jlHsjasUMp1mpUoe1OnD3j4NkQgA=",
+            // Removing negative constraint may lead to additional solutions
+            false
+        ),
+        (
+            "remove anti-ratio from a kropki puzzle",
+            // A puzzle with kropki dots with non-consecutive and anti-ratio
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAOwD26gMbawMHQFcALhABuceCYxGYqbBABmTmBhi6rhEDpgAbPzB8EAAlAFYAYQAmEFQQgDZokFoKH39A4JCAZgiw2NCcgBZk1N8AoPg8UMiAdnyQwoi6lNI08syoiIAOepyeltAyjMrQmojEerH+0vSKqpCupvrEJYG24fnFrMmI7bWhudDEvLjE4v3ZjqS4nJiUtXUYNABDM0tgjFeITWTUT7MfpVBpcRgtcvVFucZu1QYl4vVEs1oRtQo1inFGnkLjD5pEAIz1RoE7EokJ4iLo0LkvbIw7ZJZxTpI1oHTKRCYY8YlFkg+ZTCHdbnAnGhRYEuKLO5EFJAA===",
+            // Remove anti-ratio from the puzzle above
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAOwD26gMbawMHQFcALhABuceCYxGYqbBABmTmBhi6rhEDpgAbPzB8EAAlAFYAYQAmEFQQgDZokFoKH39A4JCAZgiw2NCcgBZk1N8AoPg8UMiAdnyQwoi6lNI08syoiIAOepyeltAyjMrQmojEerH+0vSKqpCupvrEJYG24fnFrMmI7bWhudDEvLjE4v3ZjqS4nJiUtQwAQzNNfEHLkYXc+sXzmfbPol4vVEs1/htQo1inFGnkLgD5pEAIz1Roo+EQkJIiLQ0LYvbgw7ZJZxTpg1oHTKRCYw8YlCkfeZTH7denvBGhRYouKLO5EFJAA=",
+            // Removing negative constraint may lead to additional solutions
+            false
+        ),
+        (
+            "add more kropki dots to regular kropki puzzle",
+            // A puzzle with kropki dots with no negative constraints
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0Q2CADNNMDDAB2AYzjxCIYwBsLYfCABKAVgDCAJhCo7ANlchaFczBWNqb2AMxODu5hTgAsvv6W1raOTgDsUXYxafGkAUHJLk4AHBnhJX65icF49qlOiBl15QmBSSF2RdkeiNkVoFXJnaGNTsN9eW01XhEZ3nHjA+2Fbh7hbn5qGACGAC4QAPb4/a3V9p2RHp3zLfnt3p6zvTeT9llxHlmRCyfJzgCMGSyAO+tymf1iGXBY2epzs4XSHkK6RBLxSDQ+9Ryx1BtWKGU6zUqP3anQBlx8GyIQA==",
+            // Add one black kropki and one white kropki to the puzzle above
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0Q2CADNNMDDAB2AYzjxCIYwBsLYfCABKAVgDCAJhCo7ANlchaFczBWNqb2AMxODu5hTgAsvv6W1raOTgDsUXYxafGkAUHJLk4AHBnhJX65icF49qlOiBl15QmBSSF2RdkeiNkVoFXJnaGNTsN9eW01XhEZ3nHjA+2Fbh7hbgut1bVOniORfmoYAIYALhAA9vj9m4MzHp3zLfnt3rse3ukbz1NZcR5Z+yek3szgAjBksuCvsC7KDYhk4WMgVs7OF0h5Cp9kclnA1/vUctdvtsSvdioSJijOuCyetsUsdhlCoC/EA==",
+            // Adding more dots only restricts the solution if there are no negative constraints
+            true
+        ),
+        #endregion
+        #region XV and negative constraints
+        (
+            "add a V to no XV",
+            // Empty 6x6
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cW1IkA",
+            // 6x6 with a V
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAA8AbvlABjGABsFYfCABKAZgDCAJhCo1AFl0gxkgIYKArnHggAaiBpEgA=",
+            // Adding new constraints only restricts the solution if it doesn't affect negative constraints
+            true
+        ),
+        (
+            "add a V to a XV puzzle",
+            // A puzzle with 1 X and 1 V
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAA8AbvlABjGABsFYfCABKAZgDCAJhCo1AFl0gxkgIYKArnHggAaiAoh5SlfDzrtG/V5NnLGwQQAA0naiIgA===",
+            // Add a V to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAA8AbvlABjGABsFYfCABKAZgDCAJhCo1AFl0gxkgIYKArnHggAaiAoh5SlfDzrtG/V5NnLGwQQAA0nUhdFZVU1RC1DX1itAFZTVAtrWwcnaiIgA===",
+            // Adding new constraints only restricts the solution if it doesn't affect negative constraints
+            true
+        ),
+        (
+            "add a X to a XV puzzle",
+            // A puzzle with 1 X and 1 V
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAA8AbvlABjGABsFYfCABKAZgDCAJhCo1AFl0gxkgIYKArnHggAaiAoh5SlfDzrtG/V5NnLGwQQAA0naiIgA===",
+            // Add an X to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAA8AbvlABjGABsFYfCABKAZgDCAJhCo1AFl0gxkgIYKArnHggAaiAoh5SlfDzrtG/V5NnLGwQQAA0nUhdFZVU1AFYtWN81RATTVAtrW1CnaiIgA===",
+            // Adding new constraints only restricts the solution if it doesn't affect negative constraints
+            true
+        ),
+        (
+            "add a V to an empty anti-XV",
+            // Empty 6x6 with anti-XV
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAAeCkGI35qRIA===",
+            // 6x6 with anti-XV and a V
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAAeCkGI35QAYxgAbQ2HwgASgBYAwgGYQqc7btbUC6YYCuykADUQNERAA",
+            // Adding V affects the anti-XV area
+            false
+        ),
+        (
+            "add an X to an empty anti-XV",
+            // Empty 6x6 with anti-XV
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAAeCkGI35qRIA===",
+            // 6x6 with anti-XV and an X
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAAeCkGI35QAYxgAbQ2HwgASgCYAwgFYQqcwGY7W1AumGArspAANEBoiIA===",
+            // Adding X affects the anti-XV area
+            false
+        ),
+        (
+            "add a V to anti-XV with existing XVs",
+            // A puzzle with 1 X, 1 V and anti-XV
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAAeCkGI35QAYxgAbQ2HwgASgCYAwgFYQqcwGY7W1AumGArspAANEAoQA2NTFQtba0sHCOsnNxAPb18ANUDqIiA==",
+            // Add a V to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAAeCkGI35QAYxgAbQ2HwgASgCYAwgFYQqcwGY7W1AumGArspAANEAoQA2NTFQtba0sHCOsnNxAPb18ANUDSYKMTM2drAEYYq3yEpJ8EEDSaIiA==",
+            // Adding V affects the anti-ratio area
+            false
+        ),
+        (
+            "add an X to anti-XV with existing XVs",
+            // A puzzle with 1 X, 1 V and anti-XV
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAAeCkGI35QAYxgAbQ2HwgASgCYAwgFYQqcwGY7W1AumGArspAANEAoQA2NTFQtba0sHCOsnNxAPb18ANUDqIiA==",
+            // Add an X to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAAeCkGI35QAYxgAbQ2HwgASgCYAwgFYQqcwGY7W1AumGArspAANEAoQA2NTFQtba0sHCOsnNxAPb18ANUDSYKMTM3MAFmtcmLy4hKSfBH9A6iIgA",
+            // Adding X affects the anti-ratio area
+            false
+        ),
+        (
+            "add anti-XV to regular XV puzzle",
+            // A puzzle with XV with no negative constraints
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAA8AbvlABjGABsFYfCABKAJgDCAVhCo1AZl0gxkgIYKArnHggAGiAoh5SlfDzqdWjfq9bDU1QLa1sQADUnaiIgA===",
+            // Add anti-XV to the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAAeCkGI35QAYxgAbQ2HwgASgCYAwgFYQqcwGY7W1AumGArspAANEAoQA2NTFQtba0sHCOsnNxAPb18ANUDqIiA==",
+            // Adding negative constraints only restricts the solution
+            true
+        ),
+        (
+            "remove anti-XV from an XV puzzle",
+            // A puzzle with 1 X, 1 V and anti-XV
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEADsYaAIYAXCADc48PCAAeCkGI35QAYxgAbQ2HwgASgCYAwgFYQqcwGY7W1AumGArspAANEAoQA2NTFQtba0sHCOsnNxAPb18ANUDqIiA==",
+            // Remove anti-XV from the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAA8AbvlABjGABsFYfCABKAJgDCAVhCo1AZl0gxkgIYKArnHggAGiAoh5SlfDzqdWjfq9bDU1QLa1sQADUnaiIgA===",
+            // Removing negative constraint may lead to additional solutions
+            false
+        ),
         #endregion
         #endregion
     };
