@@ -4415,7 +4415,7 @@ public class Solver
             {
                 result.Add(name, new());
             }
-            result[name].Add(constraint.GetHash(this), constraint);
+            result[name].TryAdd(constraint.GetHash(this), constraint);
         }
 
         customInfo.Add("constraintsIndex", result);
