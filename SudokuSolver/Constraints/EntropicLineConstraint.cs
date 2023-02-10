@@ -31,6 +31,12 @@ public class EntropicLineConstraint : Constraint
         cellsSet = new(cells);
     }
 
+    public EntropicLineConstraint(Solver sudokuSolver, IEnumerable<(int, int)> cells) : base(sudokuSolver, cells.CellNames(""))
+    {
+        this.cells = cells.ToList();
+        cellsSet = new(cells);
+    }
+
     public override string SpecificName => $"Entropic Line {CellName(cells[0])} - {CellName(cells[^1])}";
 
     private int getCellGroup(uint cellMask) {
@@ -488,6 +494,27 @@ public class EntropicLineConstraint : Constraint
         }
 
         return hadChange ? LogicResult.Changed : LogicResult.None;
+    }
+
+    public override IEnumerable<Constraint> SplitToPrimitives(Solver sudokuSolver)
+    {
+        if (cells.Count < 3)
+        {
+            return base.SplitToPrimitives(sudokuSolver);
+        }
+
+        List<EntropicLineConstraint> constraints = new(cells.Count - 2);
+        for (int i = 0; i < cells.Count - 2; i++)
+        {
+            List<(int, int)> cellsTriple = new() { cells[i], cells[i + 1], cells[i + 2] };
+            // Ensure that the lines have consistent order
+            if (cellsTriple[0].CompareTo(cellsTriple[2]) > 0)
+            {
+                cellsTriple.Reverse();
+            }
+            constraints.Add(new(sudokuSolver, cellsTriple));
+        }
+        return constraints;
     }
 
 }

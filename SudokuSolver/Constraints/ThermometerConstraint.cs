@@ -20,6 +20,12 @@ public class ThermometerConstraint : Constraint
         cellsSet = new(cells);
     }
 
+    public ThermometerConstraint(Solver sudokuSolver, IEnumerable<(int, int)> cells) : base(sudokuSolver, cells.CellNames(""))
+    {
+        this.cells = cells.ToList();
+        cellsSet = new(cells);
+    }
+
     public override string SpecificName => $"Thermometer {CellName(cells[0])} - {CellName(cells[^1])}";
 
     public override LogicResult InitCandidates(Solver sudokuSolver)
@@ -181,5 +187,15 @@ public class ThermometerConstraint : Constraint
     }
 
     public override List<(int, int)> Group => cells;
+
+    public override IEnumerable<Constraint> SplitToPrimitives(Solver sudokuSolver)
+    {
+        List<ThermometerConstraint> constraints = new(cells.Count - 1);
+        for (int i = 0; i < cells.Count - 1; i++)
+        {
+            constraints.Add(new(sudokuSolver, new (int, int)[] { cells[i], cells[i + 1] }));
+        }
+        return constraints;
+    }
 }
 
