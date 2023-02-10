@@ -915,6 +915,35 @@ internal static class Puzzles
             false
         ),
         #endregion
+        #region Killer cages
+        (
+            "add killer cage sum",
+            // A puzzle with a clueless killer cage
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAGsIAGykwMAYwCGaOPEIh5MGWHwgASgGYAwgZCo9AFhNn9ViyGo0iQA===",
+            // Add a clue to the killer cage in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAGsIAGykwMAYwCGaOPEIh5MGWHwgASgGYAwgZCo9AFhNn9ViyDEA3RVICuqkAEYADCBpEgA===",
+            // Adding a sum clue to a clueless cage can only restrict the puzzle solution
+            true
+        ),
+        (
+            "remove killer cage sum",
+            // A puzzle with a killer cage with a clue
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAGsIAGykwMAYwCGaOPEIh5MGWHwgASgGYAwgZCo9AFhNn9ViyDEA3RVICuqkAEYADCBpEgA===",
+            // Remove the clue from the killer cage in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAGsIAGykwMAYwCGaOPEIh5MGWHwgASgGYAwgZCo9AFhNn9ViyGo0iQA===",
+            // Removing killer cage clue may lead to other puzzle solutions
+            false
+        ),
+        (
+            "change killer cage sum",
+            // A puzzle with a killer cage with a clue
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAGsIAGykwMAYwCGaOPEIh5MGWHwgASgGYAwgZCo9AFhNn9ViyDEA3RVICuqkAEYADCBpEgA===",
+            // Replace the clue in the killer cage by a different value in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAGsIAGykwMAYwCGaOPEIh5MGWHwgASgGYAwgZCo9AFhNn9ViyDEA3RVICuqkAEYATCBpEgA===",
+            // Replacing killer cage clue will lead to other puzzle solutions
+            false
+        ),
+        #endregion
         #endregion
     };
 }

@@ -34,6 +34,13 @@ public class KillerCageConstraint : Constraint
         cells = cellGroups[0];
     }
 
+    public KillerCageConstraint(Solver sudokuSolver, IEnumerable<(int, int)> cells, int sum = 0)
+        : base(sudokuSolver, (sum == 0 ? "" : sum + ";") + cells.CellNames(""))
+    {
+        this.sum = sum;
+        this.cells = cells.ToList();
+    }
+
     public override string SpecificName => sum > 0 ? $"Killer Cage {sum} at {CellName(cells[0])}" : $"Killer Cage at {CellName(cells[0])}";
 
     public override LogicResult InitCandidates(Solver sudokuSolver)
@@ -66,4 +73,22 @@ public class KillerCageConstraint : Constraint
     }
 
     public override List<(int, int)> Group => cells;
+
+    public override IEnumerable<Constraint> SplitToPrimitives(Solver sudokuSolver)
+    {
+        // A killer cage with a sum clue is a union of two constraints:
+        List<KillerCageConstraint> constraints = new()
+        {
+            // 1. Digits uniqueness inside the region (represented by a clueless cage with the same cells)
+            new(sudokuSolver, cells)
+        };
+
+        if (sum != 0)
+        {
+            // 2. Sum of the cells, represented by the same object
+            constraints.Add(new(sudokuSolver, cells, sum));
+        }
+
+        return constraints;
+    }
 }
