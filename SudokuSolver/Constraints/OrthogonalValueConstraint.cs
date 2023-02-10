@@ -121,7 +121,35 @@ public abstract class OrthogonalValueConstraint : Constraint
             throw new ArgumentException($"[{GetType().Name}] Unrecognized options group: {optionGroup}");
         }
 
-        clearValuesNegative = new uint[MAX_VALUE];
+        clearValuesNegative = initClearValuesNegative();
+        initClearValuesPositiveByMarker(markerValues);
+    }
+
+    /// <summary>
+    /// Create a single negative constraint by the forbidden value
+    /// </summary>
+    public OrthogonalValueConstraint(Solver sudokuSolver, int negativeConstraintValue) : base(sudokuSolver, "neg" + negativeConstraintValue)
+    {
+        negativeConstraint = true;
+        negativeConstraintValues.Add(negativeConstraintValue);
+
+        clearValuesNegative = initClearValuesNegative();
+    }
+
+    /// <summary>
+    /// Create a single marker constraint by two cells and value
+    /// </summary>
+    public OrthogonalValueConstraint(Solver sudokuSolver, int markerValue, (int, int) cell1, (int, int) cell2) : base(sudokuSolver, markerValue + CellName(cell1) + CellName(cell2))
+    {
+        markers.Add(CellPair(cell1, cell2), markerValue);
+
+        clearValuesNegative = initClearValuesNegative();
+        initClearValuesPositiveByMarker(new int[] { markerValue });
+    }
+
+    private uint[] initClearValuesNegative()
+    {
+        var clearValuesNegative = new uint[MAX_VALUE];
         for (int v0 = 1; v0 <= MAX_VALUE; v0++)
         {
             clearValuesNegative[v0 - 1] = ValueMask(v0);
@@ -139,7 +167,11 @@ public abstract class OrthogonalValueConstraint : Constraint
                 }
             }
         }
+        return clearValuesNegative;
+    }
 
+    private void initClearValuesPositiveByMarker(IEnumerable<int> markerValues)
+    {
         foreach (int markerValue in markerValues)
         {
             uint[] positiveArray = clearValuesPositiveByMarker[markerValue] = new uint[MAX_VALUE];
@@ -629,5 +661,29 @@ public abstract class OrthogonalValueConstraint : Constraint
             }
         }
         return LogicResult.None;
+    }
+
+    public override IEnumerable<Constraint> SplitToPrimitives(Solver sudokuSolver)
+    {
+        // Return the list of each marker and each negative constraint as an individual constraint object
+
+        var type = GetType();
+        var markerConstructor = type.GetConstructor(new Type[] { typeof(Solver), typeof(int), typeof((int, int)), typeof((int, int)) });
+        var constraints = markers.Select(marker => (Constraint)markerConstructor.Invoke(new object[] {
+            sudokuSolver,
+            marker.Value,
+            (marker.Key.Item1, marker.Key.Item2),
+            (marker.Key.Item3, marker.Key.Item4),
+        }));
+
+        if (negativeConstraint)
+        {
+            var negativeConstraintConstructor = type.GetConstructor(new Type[] { typeof(Solver), typeof(int) });
+            constraints = constraints.Concat(negativeConstraintValues.Select(
+                value => (Constraint)negativeConstraintConstructor.Invoke(new object[] { sudokuSolver, value })
+            ));
+        }
+
+        return constraints;
     }
 }

@@ -4408,7 +4408,7 @@ public class Solver
 
         Dictionary<string, Dictionary<string, Constraint>> result = new();
 
-        foreach (Constraint constraint in constraints)
+        foreach (Constraint constraint in constraints.SelectMany(constraint => constraint.SplitToPrimitives(this)))
         {
             string name = constraint.Name;
             if (!result.ContainsKey(name))
