@@ -729,6 +729,192 @@ internal static class Puzzles
             false
         ),
         #endregion
+        #region Whispers
+        (
+            "add a line segment to whispers",
+            // A puzzle with whispers line
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCsAYQBMIVHoAsRgMzn9No5ZDVqNVGs3KQnrfjz6xmYW1nYWjs6uqAD2AK4ALr5GCCAAxIgA7ABiAAyZ9uI48ZIIOQB0NqgAZhjRALZG0epg8RgAhhrxKQDq0nIKSjREQA==",
+            // Add 1 more line segment to whispers line in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCsAYQBMIVHoAsRgMzn9No5ft6TRgyGrUaqNZuUgflr4ePrGZhbWdhaOzhZuHl6oAPYArgAuQUYIIADEiADsAGIADIX24jjpkgglAHQ2qABmGMkAtkbJ6mDpGACGGuk5AOrScgpKNERAA===",
+            // Adding a new segment to existing whispers line is identical to adding a separate whispers line
+            true
+        ),
+        (
+            "remove a line segment from whispers",
+            // A puzzle with whispers line
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCsAYQBMIVHoAsRgMzn9No5ft6TRgyGrUaqNZuUgflr4ePrGZhbWdhaOzhZuHl6oAPYArgAuQUYIIADEiADsAGIADIX24jjpkgglAHQ2qABmGMkAtkbJ6mDpGACGGuk5AOrScgpKNERAA===",
+            // Remove 1 line segment from whispers line in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCsAYQBMIVHoAsRgMzn9No5ZDVqNVGs3KQnrfjz6xmYW1nYWjs6uqAD2AK4ALr5GCCAAxIgA7ABiAAyZ9uI48ZIIOQB0NqgAZhjRALZG0epg8RgAhhrxKQDq0nIKSjREQA==",
+            // Removing existing whispers line segments may lead to different puzzle solutions
+            false
+        ),
+        (
+            "replace a line segment in whispers",
+            // A puzzle with whispers line
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCsAYQBMIVHoAsRgMzn9No5ZDVqNVGs3KQnrfjz6xmYW1nYWjs6uqAD2AK4ALr5GCCAAxIgA7ABiAAyZ9uI48ZIIOQB0NqgAZhjRALZG0epg8RgAhhrxKQDq0nIKSjREQA==",
+            // Replace 1 whispers line segment by a different line segment in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCsAYQBMIVHoAsRgMzn9N2yGrUaqNZuUgPW/Hn3GZhbWdhaOdi6oAPYArgAuPkYIIADEiADsAGIADBn24jhxkgjZAHQ2qABmGFEAtkZR6mBxGACGGnHJAOrScgpKNERAA===",
+            // Removing existing whispers line segments may lead to different puzzle solutions
+            false
+        ),
+        (
+            "invert whispers direction",
+            // A puzzle with whispers line
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCsAYQBMIVHoAsRgMzn9No5ZDVqNVGs3KQnrfjz6xmYW1nYWjs6uqAD2AK4ALr5GCCAAxIgA7ABiAAyZ9uI48ZIIOQB0NqgAZhjRALZG0epg8RgAhhrxKQDq0nIKSjREQA==",
+            // Replace whispers line in the puzzle above by the same line, but backwards
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQDMAYQAsIVHpNGD5/QFYjAJhDVqNVGs3KQnrfjz6xmYWVjYWDs6uqAD2AK4ALr5GCCAAxIgA7ABiAAyZtuI48ZIIOQB0BqgAZhjRALZG0epg8RgAhhrxKQDq0nIKSjREQA==",
+            // Changing whispers line direction doesn't affect the puzzle
+            true
+        ),
+        (
+            "split whispers line",
+            // A puzzle with whispers line
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCsAYQBMIVHoAsRgMzn9No5ZDVqNVGs3KQnrfjz6xmYW1nYWjs6uqAD2AK4ALr5GCCAAxIgA7ABiAAyZ9uI48ZIIOQB0NqgAZhjRALZG0epg8RgAhhrxKQDq0nIKSjREQA==",
+            // Split whispers line in the puzzle above into 2 segments
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCsAYQBMIVHoAsRgMwhq1CiDWbtuvTaOXz+63Yc0qC5wOqoaWvh4+sZmFn72YgD2AK4ALsFGCCAAxIgA7ABiAAz5PuI4qZIIRQB0NqgAZhiJALZGiepgqRgAhhqpWQDq0nIKSk7BblEeXj5WtgmoKenhmfA5+cWlqOXYldV1jc1tHV29/UMj8oogNERAA===",
+            // Multiple segments of a whispers line are identical to 1 whispers line made of them
+            true
+        ),
+        (
+            "duplicated whispers line segments",
+            // A puzzle with whispers line
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCsAYQBMIVHoAsRgMzn9No5ZDVqNVGs3KQnrfjz6xmYW1nYWjs6uqAD2AK4ALr5GCCAAxIgA7ABiAAyZ9uI48ZIIOQB0NqgAZhjRALZG0epg8RgAhhrxKQDq0nIKSjREQA==",
+            // Add a new whispers line to the puzzle above that is a subset of the existing whispers line
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQDMAYQAsIVHpNGDIatQog1m7br0BWIwCZz+qzYvGZnY0qE5wOqoaWvh4+oE+lta2YgD2AK4ALmFGCCAAxIgA7ABiAAxFPuI4GZIIpQB0BqgAZhgpALZGKepgGRgAhhoZuQDq0nIKSg5hLrHuXgl+CfF2qOlZUTnw+UVlFahV2DV1jS1tnd29A0Oj4/KKIDREQA==",
+            // Duplicating whisper line segments doesn't affect the puzzle
+            true
+        ),
+        (
+            "different whispers line in the same cells",
+            // A puzzle with whispers line (R2C1->R1C1->R1C2)
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQBMAYQCMIVHpOnz+qwZDVqNVGs3KQrrfjz7jZi1b+tkb2jqgA9gCuAC6eRgggAMSIAOwAYgAMqTbiONGSCBkAdADMqABmGOEAtkbh6mDRGACGGtEJAOrScgpKNERAA==",
+            // Replace whispers line in the puzzle above with a different whispers line that takes the same cells (R1C1->R1C2->R2C1)
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEAHcAFhDAAHGBjD5QAGwgA7GEvgEQAJQCMAYQMhUhowCYz+yyZDVqNVGs3KQrrfjz7jp88bW5namjqgA9gCuAC6eRgggAMSIAOwAYgAMqTbiONGSCBkAdADMqABmGOEAtkbh6mDRGACGGtEJAOrScgpKNERAA==",
+            // The whispers line is defined by its line segments, not by its cells
+            false
+        ),
+        #endregion
+        #region Entropic lines
+        (
+            "add a line segment to entropic line",
+            // A puzzle with entropic line
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAJhCpXbgMzezu4ALIFOAOxuoT4AbFEgtLREaraW1qn2Vo6+Xj7uAXnxPpHRznGhiai6AK5aqW4IIADEAGItbm4Agp2BAO44WgAWCAAMAHQeAKyoAGZ6ALZuuhpgOgCG5lqNAKLaeoZGAAQAMuZwyURAA===",
+            // Add 1 more line segment to entropic line in the puzzle above
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAJhCpXbgMzezu4ALIFOAOxuoT4AbFFhcQCsILS0RGq2ltaZ9laOvl4+7gFF8T6R0c5xlU5JKWq6AK5amW4IIADEAGJdbm4Agv2BAO44WgAWCAAMAHQeiagAZnoAtm66GmA6AIbmWu0Aotp6hkYABAAy5nDpREA=",
+            // Adding a new segment to existing entropic line is identical to adding a separate entropic line
+            true
+        ),
+        (
+            "remove a line segment from entropic line",
+            // A puzzle with entropic line
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAJhCpXbgMzezu4ALIFOAOxuoT4AbFFhcQCsILS0RGq2ltaZ9laOvl4+7gFF8T6R0c5xlU5JKWq6AK5amW4IIADEAGJdbm4Agv2BAO44WgAWCAAMAHQeiagAZnoAtm66GmA6AIbmWu0Aotp6hkYABAAy5nDpREA=",
+            // Remove 1 line segment from entropic line in the puzzle above
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAJhCpXbgMzezu4ALIFOAOxuoT4AbFEgtLREaraW1qn2Vo6+Xj7uAXnxPpHRznGhiai6AK5aqW4IIADEAGItbm4Agp2BAO44WgAWCAAMAHQeAKyoAGZ6ALZuuhpgOgCG5lqNAKLaeoZGAAQAMuZwyURAA===",
+            // Removing existing entropic line segments may lead to different puzzle solutions
+            false
+        ),
+        (
+            "replace a line segment in entropic line",
+            // A puzzle with entropic line
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAJhCpXbgMzezu4ALIFOAOxuoT4AbFEgtLREaraW1qn2Vo6+Xj7uAXnxPpHRznGhiai6AK5aqW4IIADEAGItbm4Agp2BAO44WgAWCAAMAHQeAKyoAGZ6ALZuuhpgOgCG5lqNAKLaeoZGAAQAMuZwyURAA===",
+            // Replace 1 entropic line segment by a different line segment in the puzzle above
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAJhCpXbgMzezu4ALIFOAOxuoT6RAKwgtLREaraW1qn2Vo6+Xj7uAXlRYZHRznEJaroArlqpbgggAMQAYs1ubgCCHYEA7jhaABYIAAwAdB6xqABmegC2broaYDoAhuZaDQCi2nqGRgAEADLmcMlEQA==",
+            // Removing existing entropic line segments may lead to different puzzle solutions
+            false
+        ),
+        (
+            "invert entropic direction",
+            // A puzzle with entropic line
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAJhCpXbgMzezu4ALIFOAOxuoT4AbFEgtLREaraW1qn2Vo6+Xj7uAXnxPpHRznGhiai6AK5aqW4IIADEAGItbm4Agp2BAO44WgAWCAAMAHQeAKyoAGZ6ALZuuhpgOgCG5lqNAKLaeoZGAAQAMuZwyURAA===",
+            // Replace entropic line in the puzzle above by the same line, but backwards
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKANgDCAFhConAdk/ezgAcAT4hAMyBTiEATCC0tERqtpbWKfZWjq6hzv5eYTnRbpEFcQmougCuWiluCCAAxABiTW5uAILtgQDuOFoAFggADAB0MQCsqABmegC2broaYDoAhuZa9QCi2nqGRgAEADLmcElEQA==",
+            // Changing entropic line direction doesn't affect the puzzle
+            true
+        ),
+        (
+            "split entropic line",
+            // A puzzle with entropic line
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAJhCpXbgMzezu4ALIFOAOxuoT4AbFEgtLREaraW1qn2Vo6+Xj7uAXnxPpHRznGhiai6AK5aqW4IIADEAGItbm4Agp2BAO44WgAWCAAMAHQeAKyoAGZ6ALZuuhpgOgCG5lqNAKLaeoZGAAQAMuZwyURAA===",
+            // Split entropic line in the puzzle above into 2 segments
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAJhCpXbgMzezu4ALCC0tBQ25jD2Vo6+oT4A7G6JzgBsqWERaraW1nmxBEGegb4BPiHZqLoArlp5bgggAMQAYm1ubgCC3YEA7jhaABYIAAwAdB4ArKgAZnoAtm66GmA6AIbmWs0Aotp6hkYABAAy0SCRhQ4laU4pd5mh4TX1jc3tnT19qIPYI+MprMQAtdMtVusMFttHsDgZjGcLkQIkA===",
+            // Multiple segments of a entropic line are not identical to 1 entropic line made of them because the direction of entropy alternation may be reversed in the connection point
+            false
+        ),
+        (
+            "duplicated entropic line segments",
+            // A puzzle with entropic line
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAJhCpXbgMzezu4ALIFOAOxuoT4AbFEgtLREaraW1qn2Vo6+Xj7uAXnxPpHRznGhiai6AK5aqW4IIADEAGItbm4Agp2BAO44WgAWCAAMAHQeAKyoAGZ6ALZuuhpgOgCG5lqNAKLaeoZGAAQAMuZwyURAA===",
+            // Add a new entropic line to the puzzle above that is a subset of the existing entropic line
+            @"N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QMAHYAXDAHsADhADGAGwga48QiDMWw+PCABKADgDCAFhConAdk/ezgBsAbS0FDbmMPZWjq5uAEyB8QDMye5ePv6ZwaHharaW1oUxBM4ZydnJIV5hqLoArlqFbgggAMQAYp1ubgCCfYEA7jhaABYIAAwAdAkArKgAZnoAtm66GmA6AIbmWm0Aotp6hkYABAAyUSARJQ7lieluaT4VWQE+NSB1II3NUa14B1ur0BsNRhN4DN5ktVutNjs9odjgZjJdrkRwkA==",
+            // Duplicating whisper line segments doesn't affect the puzzle
+            true
+        ),
+        #endregion
+        #region Thermometers
+        (
+            "add a line segment to thermometer",
+            // A puzzle with thermometer
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAEwhUhgCymAzFaP3TNkNWo0iQA=",
+            // Add 1 more line segment to thermometer in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAEwhUhgCymAzFaP3TNp4fOnjIatRpEgA===",
+            // Adding a new segment to existing thermometer can only restrict the puzzle solutions
+            true
+        ),
+        (
+            "remove a line segment from thermometer",
+            // A puzzle with thermometer
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAEwhUhgCymAzFaP3TNp4fOnjIatRpEgA===",
+            // Remove 1 line segment from thermometer in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAEwhUhgCymAzFaP3TNkNWo0iQA=",
+            // Removing existing thermometer segments may lead to different puzzle solutions
+            false
+        ),
+        (
+            "replace a line segment in thermometer",
+            // A puzzle with thermometer
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAEwhUhgCymAzFaP3TNkNWo0iQA=",
+            // Replace 1 thermometer segment by a different line segment in the puzzle above
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAEwhUhgCymAzFaP2HIatRpEgA==",
+            // Removing existing thermometer segments may lead to different puzzle solutions
+            false
+        ),
+        (
+            "invert thermometer direction",
+            // A puzzle with thermometer
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAEwhUhgCymAzFaP3TNkNWo0iQA=",
+            // Replace thermometer in the puzzle above by the same thermometer, but backwards
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAMwBhACwhUh86eNWjAVlMAmENWo0iQA=",
+            // Changing will lead to another puzzle solution
+            false
+        ),
+        (
+            "split thermometer",
+            // A puzzle with thermometer
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAEwhUhgCymAzFaP3TNkNWo0iQA=",
+            // Split thermometer in the puzzle above into 2 thermometer segments
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlACwBhAMwhUh86eMhq1CiE0698AkYCspgExWjM0tHGiIgA===",
+            // Multiple segments of a thermometer are identical to 1 thermometer made of them
+            true
+        ),
+        (
+            "duplicated thermometer segments",
+            // A puzzle with thermometer
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAKwBhAEwhUhgCymAzFaP3TNkNWo0iQA=",
+            // Add a new thermometer to the puzzle above that is a subset of the existing thermometer
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlACwBhAMwhUh86eMhq1CiE0698AkYCspgExWjM0trW3tHGiIgA===",
+            // Duplicating thermometer segments doesn't affect the puzzle
+            true
+        ),
+        (
+            "different thermometer in the same cells",
+            // A puzzle with thermometer (R2C1->R1C1->R1C2)
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAEwBhAIwhUh8xatHbxkNWo0iQA==",
+            // Replace thermometer in the puzzle above with a different thermometer that takes the same cells (R1C1->R1C2->R2C1)
+            @"N4IgzglgXgpiBcA2ANCA5gJwgEwQbT2AF9ljSSzKiBdZQih8p42+5xq1q99rj/8nx7cWtEABcAFjAwBbAPayY4mflAAbCADsYYfHhAAlAIwBhYyFQnTAJktGb5kNWo0iQA==",
+            // The thermometer is defined by its line segments, not by its cells
+            false
+        ),
+        #endregion
         #endregion
     };
 }

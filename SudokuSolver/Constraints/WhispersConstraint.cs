@@ -39,6 +39,13 @@ public class WhispersConstraint : Constraint
         cellsSet = new(cells);
     }
 
+    public WhispersConstraint(Solver sudokuSolver, IEnumerable<(int, int)> cells, int difference) : base(sudokuSolver, difference + ";" + cells.CellNames(""))
+    {
+        this.difference = difference;
+        this.cells = cells.ToList();
+        cellsSet = new(cells);
+    }
+
     public override string SpecificName => $"Whispers {CellName(cells[0])} - {CellName(cells[^1])}";
 
     public override LogicResult InitCandidates(Solver sudokuSolver)
@@ -261,6 +268,18 @@ public class WhispersConstraint : Constraint
             keepMask |= MaskValAndHigher(minLargeVal);
         }
         return keepMask;
+    }
+
+    public override IEnumerable<Constraint> SplitToPrimitives(Solver sudokuSolver)
+    {
+        List<WhispersConstraint> constraints = new(cells.Count - 1);
+        for (int i = 0; i < cells.Count - 1; i++)
+        {
+            List<(int, int)> cellsPair = new() { cells[i], cells[i + 1] };
+            cellsPair.Sort();
+            constraints.Add(new(sudokuSolver, cellsPair, difference));
+        }
+        return constraints;
     }
 }
 
