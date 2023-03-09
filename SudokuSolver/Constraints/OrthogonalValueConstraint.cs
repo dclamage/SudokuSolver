@@ -154,6 +154,9 @@ public abstract class OrthogonalValueConstraint : Constraint
         initClearValuesPositiveByMarker(new int[] { markerValue });
     }
 
+    protected abstract OrthogonalValueConstraint createNegativeConstraint(Solver sudokuSolver, int negativeConstraintValue);
+    protected abstract OrthogonalValueConstraint createMarkerConstraint(Solver sudokuSolver, int markerValue, (int, int) cell1, (int, int) cell2);
+
     private uint[] initClearValuesNegative()
     {
         var clearValuesNegative = new uint[MAX_VALUE];
@@ -674,20 +677,17 @@ public abstract class OrthogonalValueConstraint : Constraint
     {
         // Return the list of each marker and each negative constraint as an individual constraint object
 
-        var type = GetType();
-        var markerConstructor = type.GetConstructor(new Type[] { typeof(Solver), typeof(int), typeof((int, int)), typeof((int, int)) });
-        var constraints = markers.Select(marker => (Constraint)markerConstructor.Invoke(new object[] {
+        var constraints = markers.Select(marker => createMarkerConstraint(
             sudokuSolver,
             marker.Value,
             (marker.Key.Item1, marker.Key.Item2),
-            (marker.Key.Item3, marker.Key.Item4),
-        }));
+            (marker.Key.Item3, marker.Key.Item4)
+        ));
 
         if (negativeConstraint)
         {
-            var negativeConstraintConstructor = type.GetConstructor(new Type[] { typeof(Solver), typeof(int) });
             constraints = constraints.Concat(negativeConstraintValues.Select(
-                value => (Constraint)negativeConstraintConstructor.Invoke(new object[] { sudokuSolver, value })
+                value => createNegativeConstraint(sudokuSolver, value)
             ));
         }
 
