@@ -49,6 +49,7 @@ class Program
 		port.DefaultValue = 4545;
         var listConstraints = app.Option("--list-constraints", "List all available constraints.", CommandOptionType.NoValue);
         var hideBanner = app.Option("--hide-banner", "Do not show the text with app version and support links.", CommandOptionType.NoValue);
+        var verbose = app.Option("--verbose", "Print verbose logs.", CommandOptionType.NoValue);
 
         app.OnExecuteAsync(async cancellationToken =>
 		{
@@ -76,6 +77,7 @@ class Program
 				Port = port.ParsedValue,
                 ListConstraints = listConstraints.HasValue(),
                 HideBanner = hideBanner.HasValue(),
+                VerboseLogs = verbose.HasValue(),
             };
 
             await program.OnExecuteAsync(app, cancellationToken);
@@ -117,6 +119,7 @@ class Program
 	// Help-related options
     public required bool ListConstraints { get; init; }
 	public required bool HideBanner { get; init; }
+    public required bool VerboseLogs { get; init; }
 
 	public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
 	{
@@ -170,7 +173,7 @@ class Program
 		if (Listen)
 		{
 			using WebsocketListener websocketListener = new();
-			await websocketListener.Listen("localhost", Port, Constraints);
+			await websocketListener.Listen("localhost", Port, Constraints, VerboseLogs);
 
 			Console.WriteLine("Press CTRL + Q to quit.");
 
