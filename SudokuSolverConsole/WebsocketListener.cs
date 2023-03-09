@@ -98,8 +98,9 @@ class WebsocketListener : IDisposable
     private readonly Dictionary<byte[], BaseResponse> trueCandidatesResponseCache = new(new ByteArrayComparer());
     private readonly List<ResponseCacheItem> lastTrueCandidatesResponses = new();
     private List<string> additionalConstraints;
+    private bool verboseLogs = false;
 
-    public async Task Listen(string host, int port, IEnumerable<string> additionalConstraints = null)
+    public async Task Listen(string host, int port, IEnumerable<string> additionalConstraints = null, bool verboseLogs = false)
     {
         if (server != null)
         {
@@ -107,6 +108,7 @@ class WebsocketListener : IDisposable
         }
 
         this.additionalConstraints = additionalConstraints?.ToList();
+        this.verboseLogs = verboseLogs;
 
         server = new(host, port, false);
         server.ClientConnected += (_, args) => ClientConnected(args);
@@ -214,6 +216,10 @@ class WebsocketListener : IDisposable
                     }
                 catch (Exception e)
                 {
+                    if (verboseLogs)
+                    {
+                        Console.WriteLine(e);
+                    }
                     SendMessage(ipPort, new InvalidResponse(message.nonce) { message = e.Message });
                 }
             }, cancellationToken);
