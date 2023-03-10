@@ -57,6 +57,7 @@ public class FPuzzlesBoard
     public FPuzzlesCell[] xsum { get; set; }
     public FPuzzlesCell[] skyscraper { get; set; }
     public FPuzzlesLines[] entropicline { get; set; }
+    public FPuzzlesLines[] modularline { get; set; }
     public string[] disabledlogic { get; set; } = null;
     public string[] truecandidatesoptions { get; set; } = null;
 };
