@@ -69,6 +69,23 @@
             ]
         },
         {
+            name: 'Modular Line',
+            type: 'line',
+            color: '#33BBAA',
+            colorDark: '#33BBAA',
+            lineWidth: 0.25,
+            tooltip: [
+                'Every set of three sequential digits along a line must contain a complete set of residues modulo 3,',
+                'i.e. one digit from {1,4,7}, one from {2,5,8}, and one from {3,6,9}.',
+                'Digits may repeat on a line if allowed by other rules.',
+                'Modular lines of length 2 must contain elements from different classes.',
+                '',
+                'Click and drag to draw a modular line.',
+                'Click on a modular line to remove it.',
+                'Shift click and drag to draw overlapping modular lines.',
+            ]
+        },
+        {
             name: 'Region Sum Line',
             type: 'line',
             color: '#2ECBFF',
@@ -575,6 +592,12 @@
                         }
                     }
                 }
+            }
+            
+            // Modular Line
+            const constraintsModularLine = constraints[cID('Modular Line')];
+            if (constraintsModularLine && constraintsModularLine.length > 0) {
+                //...
             }
 
             // Region Sum Lines
