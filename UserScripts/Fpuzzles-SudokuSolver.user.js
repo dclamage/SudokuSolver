@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-SudokuSolver
 // @namespace    http://tampermonkey.net/
-// @version      0.4.0-alpha
+// @version      0.4.1-alpha
 // @description  Connect f-puzzles to SudokuSolver
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
