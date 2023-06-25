@@ -146,6 +146,19 @@
                 'Shift click on a skyscraper to select it.',
                 'Type to enter a total into the selected skyscraper (or the most recently edited one).'
             ]
+        },
+        {
+            name: 'Numbered Room',
+            type: 'outside',
+            symbol: '\u2229',
+            tooltip: [
+                'Indicates the digit on the Nth cell in the corresponding direction, where N is the digit placed in the first cell in that direction.',
+                '',
+                'Click outside the grid to add a numbered room.',
+                'Click on a numbered room to remove it.',
+                'Shift click on a numbered room to select it.',
+                'Type to enter a total into the selected numbered room (or the most recently edited one).'
+            ]
         }
     ]
 
@@ -771,6 +784,66 @@
                 }
             }
 
+            // Numbered Room
+            const constraintsNumberedRoom = constraints[cID('Numbered Room')];
+            if (constraintsNumberedRoom && constraintsNumberedRoom.length > 0) {
+                for (let numberedRoom of constraintsNumberedRoom) {
+                    if (numberedRoom.value.length && !isNaN(parseInt(numberedRoom.value))) {
+                        const index = numberedRoom.set.indexOf(cell);
+                        if (index > -1){
+                        const numberedRoomValue = parseInt(numberedRoom.value);
+                            if (index === 0){
+                                if (n === 1 || n === numberedRoomValue) {
+                                    if (numberedRoomValue !== 1){
+                                        return false;
+                                    }
+                                }
+                                else
+                                {
+                                    const referencedCell = numberedRoom.set[n-1];
+                                    const referencedCellValue = referencedCell.value;
+                                    if (referencedCellValue !== 0) {
+                                        if (referencedCellValue !== numberedRoomValue) {
+                                            return false;
+                                        }
+                                    }
+                                    for (let ci = 0; ci < numberedRoom.set.length; ci++) {
+                                        let value = ci === index ? n : numberedRoom.set[ci].value;
+                                        if (value !== 0) {
+                                            if ((ci + 1 === n) != (value === numberedRoomValue)) {
+                                                return false;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            else if (n === numberedRoomValue){
+                                if (index+1 === n){
+                                    return false;
+                                }
+                                const referenceCell = numberedRoom.set[0];
+                                const referenceCellValue = referenceCell.value;
+                                if (referenceCellValue !== 0) {
+                                    if (referenceCellValue !== index+1) {
+                                        return false;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                const referenceCell = numberedRoom.set[0];
+                                const referenceCellValue = referenceCell.value;
+                                if (referenceCellValue !== 0) {
+                                    if (referenceCellValue === index+1) {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             return true;
         }
 
@@ -966,6 +1039,71 @@
                     ctx.fillText('\u25AF', iconBaseX - iconOffset, iconBaseY);
                 } else {
                     ctx.fillText('\u25AF', iconBaseX, iconBaseY - iconOffset);
+                }
+                ctx.font = (cellSL * 0.6) + 'px Arial';
+                const textOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
+                const textBaseX = this.cell.x + cellSL / 2;
+                const textBaseY = this.cell.y + (cellSL * 0.75);
+                if (this.isRow) {
+                    ctx.fillText(this.value.length ? this.value : '-', textBaseX - textOffset, textBaseY);
+                } else {
+                    ctx.fillText(this.value.length ? this.value : '-', textBaseX, textBaseY - textOffset);
+                }
+            }
+
+            this.updateSet = function() {
+                if (this.cell) {
+                    if (this.cell.i >= 0 && this.cell.i < size) {
+                        this.isRow = true;
+                        this.set = getCellsInRow(this.cell.i);
+                        if (this.cell.j >= size) {
+                            this.set = this.set.slice(0);
+                            this.set.reverse();
+                            this.isReverse = true;
+                        }
+                    }
+                    if (this.cell.j >= 0 && this.cell.j < size) {
+                        this.isRow = false;
+                        this.set = getCellsInColumn(this.cell.j);
+                        if (this.cell.i >= size) {
+                            this.set = this.set.slice(0);
+                            this.set.reverse();
+                            this.isReverse = true;
+                        }
+                    }
+                }
+            }
+            this.updateSet();
+
+            this.typeNumber = function(num) {
+                if (this.value.length === 0 && num === '0') {
+                    return;
+                }
+
+                if (parseInt(this.value + String(num)) <= size) {
+                    this.value += String(num);
+                }
+            }
+        }
+
+        window.numberedroom = function(cells) {
+            if (cells)
+                this.cell = cells[0];
+            this.set = null;
+            this.value = '';
+            this.isReverse = false;
+            this.isRow = false;
+
+            this.show = function() {
+                ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
+                ctx.font = (cellSL * 1.0) + 'px Arial';
+                const iconOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
+                const iconBaseX = this.cell.x + cellSL / 2;
+                const iconBaseY = this.cell.y + (cellSL * 0.8);
+                if (this.isRow) {
+                    ctx.fillText('\u2229', iconBaseX - iconOffset, iconBaseY);
+                } else {
+                    ctx.fillText('\u2229', iconBaseX, iconBaseY - iconOffset);
                 }
                 ctx.font = (cellSL * 0.6) + 'px Arial';
                 const textOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
