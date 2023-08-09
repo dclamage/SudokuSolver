@@ -94,9 +94,9 @@ public class SumCellsHelper
         var board = solver.Board;
 
         // Check for a memo
-        string memoKey = new StringBuilder(cellsString.Length + 16 + sums.Count * 4 + cells.Count * 10)
+        string memoKey = new StringBuilder(cellsString.Length + 17 + sums.Count * 4 + cells.Count * 10)
                 .Append(cellsString)
-                .Append("|StepLogic|S")
+                .Append($"|StepLogic{(logicalStepDescription != null ? "D" : "")}|S")
                 .AppendInts(sums)
                 .Append("|M")
                 .AppendCellValueKey(solver, cells)
