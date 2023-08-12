@@ -2,6 +2,8 @@
 
 public class SumCellsHelper
 {
+    public List<(int, int)> Cells => cells;
+
     public SumCellsHelper(Solver solver, List<(int, int)> cells)
     {
         groups = solver.SplitIntoGroups(cells).Select(g => new SumGroup(solver, g)).ToList();
@@ -406,13 +408,16 @@ public class SumCellsHelper
             yield return 0;
         }
 
-        var group = groups[groupIndex];
-        for (int i = 0; i < group.Count; i++)
+        if (groupIndex < groups.Count)
         {
-            int sum = group[i];
-            foreach (int subSum in EnumerateSums(groups, groupIndex + 1))
+            var group = groups[groupIndex];
+            for (int i = 0; i < group.Count; i++)
             {
-                yield return sum + subSum;
+                int sum = group[i];
+                foreach (int subSum in EnumerateSums(groups, groupIndex + 1))
+                {
+                    yield return sum + subSum;
+                }
             }
         }
     }

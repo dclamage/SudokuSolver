@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.11
+// @version      1.12
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -21,133 +21,164 @@
     //      d. Add a drawing helper function for what it looks like
     // 3. Add conflict highlighting logic to candidatePossibleInCell
     // 4. Add a new constraint class (see 'Constraint classes' comment)
-    const newConstraintInfo = [{
-            name: 'Renban',
-            type: 'line',
-            color: '#F067F0',
-            colorDark: '#642B64',
+    const newConstraintInfo = [
+        {
+            name: "Renban",
+            type: "line",
+            color: "#F067F0",
+            colorDark: "#642B64",
             lineWidth: 0.4,
             tooltip: [
-                'Numbers on a renban line must be consecutive, but in any order.',
-                'Digits cannot repeat on a renban line.',
-                '',
-                'Click and drag to draw a renban line.',
-                'Click on a renban line to remove it.',
-                'Shift click and drag to draw overlapping renban lines.',
-            ]
+                "Numbers on a renban line must be consecutive, but in any order.",
+                "Digits cannot repeat on a renban line.",
+                "",
+                "Click and drag to draw a renban line.",
+                "Click on a renban line to remove it.",
+                "Shift click and drag to draw overlapping renban lines.",
+            ],
         },
         {
-            name: 'Whispers',
-            type: 'line',
-            color: '#67F067',
-            colorDark: '#357D35',
+            name: "Whispers",
+            type: "line",
+            color: "#67F067",
+            colorDark: "#357D35",
             lineWidth: 0.3,
             tooltip: [
-                'Adjacent numbers on a whispers line must have a difference of 5 or greater.',
-                '[For non-9x9 grid sizes, this adjust to be (size / 2) rounded up.]',
-                '',
-                'Click and drag to draw a whispers line.',
-                'Click on a whispers line to remove it.',
-                'Shift click and drag to draw overlapping whispers lines.',
-            ]
+                "Adjacent numbers on a whispers line must have a difference of 5 or greater.",
+                "[For non-9x9 grid sizes, this adjust to be (size / 2) rounded up.]",
+                "",
+                "Click and drag to draw a whispers line.",
+                "Click on a whispers line to remove it.",
+                "Shift click and drag to draw overlapping whispers lines.",
+            ],
         },
         {
-            name: 'Entropic Line',
-            type: 'line',
-            color: '#FFCCAA',
-            colorDark: '#FFCCAA',
+            name: "Entropic Line",
+            type: "line",
+            color: "#FFCCAA",
+            colorDark: "#FFCCAA",
             lineWidth: 0.25,
             tooltip: [
-                'Any set of three sequential cells along an entropic line must contain',
-                'a low digit (1-3), a middle digit (4-6), and a high higit (7-9).',
-                'Digits my repeat on a line, if allowed by other rules.',
-                'An entropic line of length two may not contain two digits from the same rank.',
-                '',
-                'Click and drag to draw an entropic line.',
-                'Click on an entropic line to remove it.',
-                'Shift click and drag to draw overlapping entropic lines.',
-            ]
+                "Any set of three sequential cells along an entropic line must contain",
+                "a low digit (1-3), a middle digit (4-6), and a high higit (7-9).",
+                "Digits my repeat on a line, if allowed by other rules.",
+                "An entropic line of length two may not contain two digits from the same rank.",
+                "",
+                "Click and drag to draw an entropic line.",
+                "Click on an entropic line to remove it.",
+                "Shift click and drag to draw overlapping entropic lines.",
+            ],
         },
         {
-            name: 'Region Sum Line',
-            type: 'line',
-            color: '#2ECBFF',
-            colorDark: '#1E86A8',
+            name: "Region Sum Line",
+            type: "line",
+            color: "#2ECBFF",
+            colorDark: "#1E86A8",
             lineWidth: 0.25,
             tooltip: [
-                'Digits have an equal sum within each box the line passes through.',
-                '',
-                'Click and drag to draw a region sum line.',
-                'Click on a region sum line to remove it.',
-                'Shift click and drag to draw overlapping region sum lines.',
-            ]
+                "Digits have an equal sum within each box the line passes through.",
+                "",
+                "Click and drag to draw a region sum line.",
+                "Click on a region sum line to remove it.",
+                "Shift click and drag to draw overlapping region sum lines.",
+            ],
         },
         {
-            name: 'Row Indexer',
-            type: 'cage',
-            color: '#7CC77C',
-            colorDark: '#307130',
+            name: "Nabner",
+            type: "line",
+            color: "#C9C883",
+            colorDark: "#787856",
+            lineWidth: 0.4,
             tooltip: [
-                'If this cell (R, C) has value V then cell (V, C) has value R',
-                '',
-                'Click on a cell to add a row indexer.',
-                'Click on a row indexer to remove it.'
-            ]
+                "Digits on a Nabner line cannot repeat.",
+                "If a digit appears on the line, then the digits consecutive with it must not appear.",
+                "",
+                "Click and drag to draw a region sum line.",
+                "Click on a region sum line to remove it.",
+                "Shift click and drag to draw overlapping region sum lines.",
+            ],
         },
         {
-            name: 'Column Indexer',
-            type: 'cage',
-            color: '#C77C7C',
-            colorDark: '#713030',
+            name: "Double Arrow",
+            type: "line",
+            color: "#C54B8B",
+            colorDark: "#763B5A",
+            endpoints: "circle",
+            lineWidth: 0.15,
             tooltip: [
-                'If this cell (R, C) has value V then cell (R, V) has value C',
-                '(This one is used by the standard 159 constraint)',
-                '',
-                'Click on a cell to add a column indexer.',
-                'Click on a column indexer to remove it.'
-            ]
+                "The sum of the digits on the line is equal to the sum of the circles at the end of each line.",
+                "",
+                "Click and drag to draw a region sum line.",
+                "Click on a region sum line to remove it.",
+                "Shift click and drag to draw overlapping region sum lines.",
+            ],
         },
         {
-            name: 'Box Indexer',
-            type: 'cage',
-            color: '#7C7CC7',
-            colorDark: '#303071',
+            name: "Row Indexer",
+            type: "cage",
+            color: "#7CC77C",
+            colorDark: "#307130",
             tooltip: [
-                'If this cell at box position I has value V then',
-                'the cell in the same box at box position V has value I',
-                '',
-                'Click on a cell to add a box indexer.',
-                'Click on a box indexer to remove it.'
-            ]
+                "If this cell (R, C) has value V then cell (V, C) has value R",
+                "",
+                "Click on a cell to add a row indexer.",
+                "Click on a row indexer to remove it.",
+            ],
         },
         {
-            name: 'X Sum',
-            type: 'outside',
-            symbol: '\u25EF',
+            name: "Column Indexer",
+            type: "cage",
+            color: "#C77C7C",
+            colorDark: "#713030",
             tooltip: [
-                'Indicates the sum of the first X numbers in the row or column, ',
-                'where X is equal to the first number placed in that direction.',
-                '',
-                'Click outside the grid to add an x-sum.',
-                'Click on an x-sum to remove it.',
-                'Shift click on an x-sum to select it.',
-                'Type to enter a total into the selected x-sum (or the most recently edited one).'
-            ]
+                "If this cell (R, C) has value V then cell (R, V) has value C",
+                "(This one is used by the standard 159 constraint)",
+                "",
+                "Click on a cell to add a column indexer.",
+                "Click on a column indexer to remove it.",
+            ],
         },
         {
-            name: 'Skyscraper',
-            type: 'outside',
-            symbol: '\u25AF',
+            name: "Box Indexer",
+            type: "cage",
+            color: "#7C7CC7",
+            colorDark: "#303071",
             tooltip: [
-                'Indicates the count of numbers in the row or column which increase from the previous highest value.',
-                '',
-                'Click outside the grid to add a skyscraper.',
-                'Click on a skyscraper to remove it.',
-                'Shift click on a skyscraper to select it.',
-                'Type to enter a total into the selected skyscraper (or the most recently edited one).'
-            ]
-        }
-    ]
+                "If this cell at box position I has value V then",
+                "the cell in the same box at box position V has value I",
+                "",
+                "Click on a cell to add a box indexer.",
+                "Click on a box indexer to remove it.",
+            ],
+        },
+        {
+            name: "X Sum",
+            type: "outside",
+            symbol: "\u25EF",
+            tooltip: [
+                "Indicates the sum of the first X numbers in the row or column, ",
+                "where X is equal to the first number placed in that direction.",
+                "",
+                "Click outside the grid to add an x-sum.",
+                "Click on an x-sum to remove it.",
+                "Shift click on an x-sum to select it.",
+                "Type to enter a total into the selected x-sum (or the most recently edited one).",
+            ],
+        },
+        {
+            name: "Skyscraper",
+            type: "outside",
+            symbol: "\u25AF",
+            tooltip: [
+                "Indicates the count of numbers in the row or column which increase from the previous highest value.",
+                "",
+                "Click outside the grid to add a skyscraper.",
+                "Click on a skyscraper to remove it.",
+                "Shift click on a skyscraper to select it.",
+                "Type to enter a total into the selected skyscraper (or the most recently edited one).",
+            ],
+        },
+    ];
 
     // Drawing helpers
     // Outline code provided by Sven Neumann
@@ -303,20 +334,22 @@
     }
 
     const doShim = function() {
-        'use strict';
+        ("use strict");
 
         // Additional import/export data
         const origExportPuzzle = exportPuzzle;
-        exportPuzzle = function(includeCandidates) {
+        exportPuzzle = function (includeCandidates) {
             const compressed = origExportPuzzle(includeCandidates);
-            const puzzle = JSON.parse(compressor.decompressFromBase64(compressed));
+            const puzzle = JSON.parse(
+                compressor.decompressFromBase64(compressed)
+            );
 
             // Add cosmetic version of constraints for those not using the solver plugin
             for (let constraintInfo of newConstraintInfo) {
                 const id = cID(constraintInfo.name);
                 const puzzleEntry = puzzle[id];
                 if (puzzleEntry && puzzleEntry.length > 0) {
-                    if (constraintInfo.type === 'line') {
+                    if (constraintInfo.type === "line") {
                         if (!puzzle.line) {
                             puzzle.line = [];
                         }
@@ -325,21 +358,47 @@
                                 lines: instance.lines,
                                 outlineC: constraintInfo.color,
                                 width: constraintInfo.lineWidth,
-                                fromConstraint: constraintInfo.name
+                                fromConstraint: constraintInfo.name,
                             });
                         }
-                    } else if (constraintInfo.type === 'cage') {
+                        if (constraintInfo.endpoints === "circle") {
+                            if (!puzzle.circle) {
+                                puzzle.circle = [];
+                            }
+
+                            for (let instance of puzzleEntry) {
+                                puzzle.circle.push({
+                                    cells: [instance.lines[0][0]],
+                                    baseC: "#EAEAEA",
+                                    outlineC: constraintInfo.color,
+                                    width: 0.85,
+                                    height: 0.85,
+                                    fromConstraint: constraintInfo.name,
+                                });
+                                
+                                const lastIndex = instance.lines[0].length - 1;
+                                puzzle.circle.push({
+                                    cells: [instance.lines[0][lastIndex]],
+                                    baseC: "#EAEAEA",
+                                    outlineC: constraintInfo.color,
+                                    width: 0.85,
+                                    height: 0.85,
+                                    fromConstraint: constraintInfo.name,
+                                });
+                            }
+                        }
+                    } else if (constraintInfo.type === "cage") {
                         if (!puzzle.cage) {
                             puzzle.cage = [];
                         }
 
                         puzzle.cage.push({
-                            cells: puzzleEntry.flatMap(inst => inst.cells),
+                            cells: puzzleEntry.flatMap((inst) => inst.cells),
                             outlineC: constraintInfo.color,
                             fontC: "#000000",
-                            fromConstraint: constraintInfo.name
+                            fromConstraint: constraintInfo.name,
                         });
-                    } else if (constraintInfo.type === 'outside') {
+                    } else if (constraintInfo.type === "outside") {
                         if (!puzzle.text) {
                             puzzle.text = [];
                         }
@@ -350,7 +409,7 @@
                                 value: constraintInfo.symbol,
                                 fontC: "#000000",
                                 size: 1.2,
-                                fromConstraint: constraintInfo.name
+                                fromConstraint: constraintInfo.name,
                             });
 
                             puzzle.text.push({
@@ -358,30 +417,38 @@
                                 value: instance.value,
                                 fontC: "#000000",
                                 size: 0.7,
-                                fromConstraint: constraintInfo.name
+                                fromConstraint: constraintInfo.name,
                             });
                         }
                     }
                 }
             }
             return compressor.compressToBase64(JSON.stringify(puzzle));
-        }
+        };
 
         const origImportPuzzle = importPuzzle;
-        importPuzzle = function(string, clearHistory) {
+        importPuzzle = function (string, clearHistory) {
             // Remove any generated cosmetics
             const puzzle = JSON.parse(compressor.decompressFromBase64(string));
-            let constraintNames = newConstraintInfo.map(c => c.name);
+            let constraintNames = newConstraintInfo.map((c) => c.name);
             if (puzzle.line) {
                 let filteredLines = [];
                 for (let line of puzzle.line) {
                     // Upgrade from old boolean
                     if (line.isNewConstraint) {
-                        line.fromConstraint = line.outlineC === "#C060C0" ? "Renban" : (line.outlineC === "#67F067" ? "Whispers" : "Entropic");
+                        line.fromConstraint =
+                            line.outlineC === "#C060C0"
+                                ? "Renban"
+                                : line.outlineC === "#67F067"
+                                ? "Whispers"
+                                : "Entropic";
                         delete line.isNewConstraint;
                     }
 
-                    if (!line.fromConstraint || !constraintNames.includes(line.fromConstraint)) {
+                    if (
+                        !line.fromConstraint ||
+                        !constraintNames.includes(line.fromConstraint)
+                    ) {
                         filteredLines.push(line);
                     }
                 }
@@ -395,7 +462,10 @@
             if (puzzle.cage) {
                 let filteredCages = [];
                 for (let cage of puzzle.cage) {
-                    if (!cage.fromConstraint || !constraintNames.includes(cage.fromConstraint)) {
+                    if (
+                        !cage.fromConstraint ||
+                        !constraintNames.includes(cage.fromConstraint)
+                    ) {
                         filteredCages.push(cage);
                     }
                 }
@@ -409,7 +479,10 @@
             if (puzzle.text) {
                 let filteredText = [];
                 for (let text of puzzle.text) {
-                    if (!text.fromConstraint || !constraintNames.includes(text.fromConstraint)) {
+                    if (
+                        !text.fromConstraint ||
+                        !constraintNames.includes(text.fromConstraint)
+                    ) {
                         filteredText.push(text);
                     }
                 }
@@ -420,35 +493,55 @@
                 }
             }
 
+            if (puzzle.circle) {
+                let filteredCircle = [];
+                for (let circle of puzzle.circle) {
+                    if (
+                        !circle.fromConstraint ||
+                        !constraintNames.includes(circle.fromConstraint)
+                    ) {
+                        filteredCircle.push(circle);
+                    }
+                }
+
+                if (filteredCircle.length > 0) {
+                    puzzle.circle = filteredCircle;
+                } else {
+                    delete puzzle.circle;
+                }
+            }
+
             string = compressor.compressToBase64(JSON.stringify(puzzle));
             origImportPuzzle(string, clearHistory);
-        }
+        };
 
         // Draw the new constraints
         const origDrawConstraints = drawConstraints;
-        drawConstraints = function(layer) {
-            if (layer === 'Bottom') {
+        drawConstraints = function (layer) {
+            if (layer === "Bottom") {
                 for (let info of newConstraintInfo) {
                     const id = cID(info.name);
                     const constraint = constraints[id];
                     if (constraint) {
-                        if (info.type !== 'cage') {
+                        if (info.type !== "cage") {
                             for (let a = 0; a < constraint.length; a++) {
                                 constraint[a].show();
                             }
                         } else {
-                            let cells = constraint.flatMap(inst => inst.cells).filter(cell => cell);
+                            let cells = constraint
+                                .flatMap((inst) => inst.cells)
+                                .filter((cell) => cell);
                             drawSolidCage(cells, info.color, info.colorDark);
                         }
                     }
                 }
             }
             origDrawConstraints(layer);
-        }
+        };
 
         // Conflict highlighting for new constraints
         const origCandidatePossibleInCell = candidatePossibleInCell;
-        candidatePossibleInCell = function(n, cell, options) {
+        candidatePossibleInCell = function (n, cell, options) {
             if (!options) {
                 options = {};
             }
@@ -461,7 +554,7 @@
             }
 
             // Renban
-            const constraintsRenban = constraints[cID('Renban')];
+            const constraintsRenban = constraints[cID("Renban")];
             if (constraintsRenban && constraintsRenban.length > 0) {
                 for (let renban of constraintsRenban) {
                     for (let line of renban.lines) {
@@ -472,8 +565,16 @@
                             let maxValue = -1;
                             for (let lineCell of line) {
                                 if (lineCell.value) {
-                                    minValue = minValue === -1 || minValue > lineCell.value ? lineCell.value : minValue;
-                                    maxValue = maxValue === -1 || maxValue < lineCell.value ? lineCell.value : maxValue;
+                                    minValue =
+                                        minValue === -1 ||
+                                        minValue > lineCell.value
+                                            ? lineCell.value
+                                            : minValue;
+                                    maxValue =
+                                        maxValue === -1 ||
+                                        maxValue < lineCell.value
+                                            ? lineCell.value
+                                            : maxValue;
                                     if (lineCell.value === n) {
                                         numMatchingValue++;
                                         if (numMatchingValue > 1) {
@@ -483,7 +584,10 @@
                                 }
                             }
                             if (minValue !== -1 && maxValue !== -1) {
-                                if (n - minValue > line.length - 1 || maxValue - n > line.length - 1) {
+                                if (
+                                    n - minValue > line.length - 1 ||
+                                    maxValue - n > line.length - 1
+                                ) {
                                     return false;
                                 }
                             }
@@ -493,26 +597,35 @@
             }
 
             // Whispers
-            const constraintsWhispers = constraints[cID('Whispers')];
+            const constraintsWhispers = constraints[cID("Whispers")];
             if (constraintsWhispers && constraintsWhispers.length > 0) {
                 const whispersDiff = Math.ceil(size / 2);
                 for (let whispers of constraintsWhispers) {
                     for (let line of whispers.lines) {
                         const index = line.indexOf(cell);
                         if (index > -1) {
-                            if (n - whispersDiff <= 0 && n + whispersDiff > size) {
+                            if (
+                                n - whispersDiff <= 0 &&
+                                n + whispersDiff > size
+                            ) {
                                 return false;
                             }
 
                             if (index > 0) {
                                 const prevCell = line[index - 1];
-                                if (prevCell.value && Math.abs(prevCell.value - n) < whispersDiff) {
+                                if (
+                                    prevCell.value &&
+                                    Math.abs(prevCell.value - n) < whispersDiff
+                                ) {
                                     return false;
                                 }
                             }
                             if (index < line.length - 1) {
                                 const nextCell = line[index + 1];
-                                if (nextCell.value && Math.abs(nextCell.value - n) < whispersDiff) {
+                                if (
+                                    nextCell.value &&
+                                    Math.abs(nextCell.value - n) < whispersDiff
+                                ) {
                                     return false;
                                 }
                             }
@@ -522,12 +635,12 @@
             }
 
             // Entropic Line
-            const constraintsEntropicLine = constraints[cID('Entropic Line')];
+            const constraintsEntropicLine = constraints[cID("Entropic Line")];
             if (constraintsEntropicLine && constraintsEntropicLine.length > 0) {
                 const entropicLineGroups = [
                     [1, 2, 3],
                     [4, 5, 6],
-                    [7, 8, 9]
+                    [7, 8, 9],
                 ];
                 for (let entropicLine of constraintsEntropicLine) {
                     for (let line of entropicLine.lines) {
@@ -537,7 +650,11 @@
 
                             let nGroup = -1;
 
-                            for (let i = 0; i < entropicLineGroups.length; i++) {
+                            for (
+                                let i = 0;
+                                i < entropicLineGroups.length;
+                                i++
+                            ) {
                                 if (entropicLineGroups[i].includes(n)) {
                                     nGroup = i;
                                 }
@@ -545,12 +662,27 @@
 
                             for (let i = 0; i < line.length; i++) {
                                 if (line[i].value) {
-                                    for (let j = 0; j < entropicLineGroups.length; j++) {
-                                        if (entropicLineGroups[j].includes(line[i].value)) {
+                                    for (
+                                        let j = 0;
+                                        j < entropicLineGroups.length;
+                                        j++
+                                    ) {
+                                        if (
+                                            entropicLineGroups[j].includes(
+                                                line[i].value
+                                            )
+                                        ) {
                                             if (lineGroupIndices[j] === -1) {
                                                 lineGroupIndices[j] = i % 3;
-                                            } else if (lineGroupIndices[j] !== i % 3) {
-                                                if (index % 3 === i % 3 || lineGroupIndices[j] === index % 3) {
+                                            } else if (
+                                                lineGroupIndices[j] !==
+                                                i % 3
+                                            ) {
+                                                if (
+                                                    index % 3 === i % 3 ||
+                                                    lineGroupIndices[j] ===
+                                                        index % 3
+                                                ) {
                                                     return false;
                                                 }
                                             }
@@ -559,27 +691,42 @@
                                 }
                             }
 
-
                             if (lineGroupIndices[nGroup] !== -1) {
-                                if (lineGroupIndices[nGroup] !== (index % 3)) {
+                                if (lineGroupIndices[nGroup] !== index % 3) {
                                     return false;
-                                } else if (lineGroupIndices.indexOf(index % 3) !== -1 && lineGroupIndices.indexOf(index % 3) !== nGroup) {
+                                } else if (
+                                    lineGroupIndices.indexOf(index % 3) !==
+                                        -1 &&
+                                    lineGroupIndices.indexOf(index % 3) !==
+                                        nGroup
+                                ) {
                                     return false;
                                 }
-                            } else if (lineGroupIndices[(nGroup + 1) % 3] !== -1 && lineGroupIndices[(nGroup + 2) % 3] !== -1) {
-                                if (lineGroupIndices[(nGroup + 1) % 3] === (index % 3) || lineGroupIndices[(nGroup + 2) % 3] == (index % 3)) {
+                            } else if (
+                                lineGroupIndices[(nGroup + 1) % 3] !== -1 &&
+                                lineGroupIndices[(nGroup + 2) % 3] !== -1
+                            ) {
+                                if (
+                                    lineGroupIndices[(nGroup + 1) % 3] ===
+                                        index % 3 ||
+                                    lineGroupIndices[(nGroup + 2) % 3] ==
+                                        index % 3
+                                ) {
                                     return false;
                                 }
                             }
-
                         }
                     }
                 }
             }
 
             // Region Sum Lines
-            const constraintsRegionSumLines = constraints[cID('Region Sum Line')];
-            if (constraintsRegionSumLines && constraintsRegionSumLines.length > 0) {
+            const constraintsRegionSumLines =
+                constraints[cID("Region Sum Line")];
+            if (
+                constraintsRegionSumLines &&
+                constraintsRegionSumLines.length > 0
+            ) {
                 for (let regionSumLine of constraintsRegionSumLines) {
                     for (let line of regionSumLine.lines) {
                         const index = line.indexOf(cell);
@@ -603,14 +750,22 @@
                             }
 
                             let firstSum = 0;
-                            for (let sumIndex = 0; sumIndex < sums.length; sumIndex++) {
+                            for (
+                                let sumIndex = 0;
+                                sumIndex < sums.length;
+                                sumIndex++
+                            ) {
                                 if (sumIsValid[sumIndex]) {
                                     firstSum = sums[sumIndex];
                                     break;
                                 }
                             }
 
-                            for (let sumIndex = 0; sumIndex < sums.length; sumIndex++) {
+                            for (
+                                let sumIndex = 0;
+                                sumIndex < sums.length;
+                                sumIndex++
+                            ) {
                                 if (sumIsValid[sumIndex]) {
                                     if (sums[sumIndex] !== firstSum) {
                                         return false;
@@ -622,31 +777,120 @@
                 }
             }
 
+            // Nabner
+            const constraintsNabner = constraints[cID("Nabner")];
+            if (constraintsNabner && constraintsNabner.length > 0) {
+                for (let nabner of constraintsNabner) {
+                    for (let line of nabner.lines) {
+                        const index = line.indexOf(cell);
+                        if (index > -1) {
+                            for (let lineCell of line) {
+                                if (lineCell !== cell && lineCell.value) {
+                                    if (Math.abs(lineCell.value - n) <= 1) {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Double Arrow
+            const constraintsDoubleArrow = constraints[cID("Double Arrow")];
+            if (constraintsDoubleArrow && constraintsDoubleArrow.length > 0) {
+                for (let doubleArrow of constraintsDoubleArrow) {
+                    for (let line of doubleArrow.lines) {
+                        const index = line.indexOf(cell);
+                        if (index > -1) {
+                            let missingValue = false;
+                            let circleSum = 0;
+                            if (index === 0) {
+                                circleSum += n;
+                            } else if (!line[0].value) {
+                                missingValue = true;
+                            } else {
+                                circleSum += line[0].value;
+                            }
+
+                            if (index === line.length - 1) {
+                                circleSum += n;
+                            } else if (!line[line.length - 1].value) {
+                                missingValue = true;
+                            } else {
+                                circleSum += line[line.length - 1].value;
+                            }
+
+                            let lineSum = 0;
+                            for (
+                                let lineIndex = 1;
+                                lineIndex < line.length - 1;
+                                lineIndex++
+                            ) {
+                                if (index === lineIndex) {
+                                    lineSum += n;
+                                } else {
+                                    if (!line[lineIndex].value) {
+                                        missingValue = true;
+                                        break;
+                                    }
+                                    lineSum += line[lineIndex].value;
+                                }
+                            }
+                            if (!missingValue && lineSum !== circleSum) {
+                                return false;
+                            }
+                        }
+                    }
+                }
+            }
+
             // Row Indexer
-            const constraintsRowIndexer = constraints[cID('Row Indexer')];
-            if (constraintsRowIndexer && constraintsRowIndexer.some(rowIndexer => rowIndexer.cells.indexOf(cell) > -1)) {
+            const constraintsRowIndexer = constraints[cID("Row Indexer")];
+            if (
+                constraintsRowIndexer &&
+                constraintsRowIndexer.some(
+                    (rowIndexer) => rowIndexer.cells.indexOf(cell) > -1
+                )
+            ) {
                 let targetCell = grid[n - 1][cell.j];
                 if (targetCell !== cell && targetCell.value) {
-                    if (targetCell.value > 0 && targetCell.value !== cell.i + 1) {
+                    if (
+                        targetCell.value > 0 &&
+                        targetCell.value !== cell.i + 1
+                    ) {
                         return false;
                     }
                 }
             }
 
             // Column Indexer
-            const constraintsColumnIndexer = constraints[cID('Column Indexer')];
-            if (constraintsColumnIndexer && constraintsColumnIndexer.some(columnIndexer => columnIndexer.cells.indexOf(cell) > -1)) {
+            const constraintsColumnIndexer = constraints[cID("Column Indexer")];
+            if (
+                constraintsColumnIndexer &&
+                constraintsColumnIndexer.some(
+                    (columnIndexer) => columnIndexer.cells.indexOf(cell) > -1
+                )
+            ) {
                 let targetCell = grid[cell.i][n - 1];
                 if (targetCell !== cell && targetCell.value) {
-                    if (targetCell.value > 0 && targetCell.value !== cell.j + 1) {
+                    if (
+                        targetCell.value > 0 &&
+                        targetCell.value !== cell.j + 1
+                    ) {
                         return false;
                     }
                 }
             }
 
             // Box Indexer
-            const constraintsBoxIndexer = constraints[cID('Box Indexer')];
-            if (constraintsBoxIndexer && constraintsBoxIndexer.some(boxIndexer => boxIndexer.cells.indexOf(cell) > -1)) {
+            const constraintsBoxIndexer = constraints[cID("Box Indexer")];
+            if (
+                constraintsBoxIndexer &&
+                constraintsBoxIndexer.some(
+                    (boxIndexer) => boxIndexer.cells.indexOf(cell) > -1
+                )
+            ) {
                 let region = cell.region;
                 if (region >= 0) {
                     let regionCells = [];
@@ -661,7 +905,10 @@
                         let cellRegionIndex = regionCells.indexOf(cell);
                         let targetCell = regionCells[n - 1];
                         if (targetCell !== cell && targetCell.value) {
-                            if (targetCell.value > 0 && targetCell.value !== cellRegionIndex + 1) {
+                            if (
+                                targetCell.value > 0 &&
+                                targetCell.value !== cellRegionIndex + 1
+                            ) {
                                 return false;
                             }
                         }
@@ -670,13 +917,14 @@
             }
 
             // X-Sums
-            const constraintsXSum = constraints[cID('X Sum')];
+            const constraintsXSum = constraints[cID("X Sum")];
             if (constraintsXSum && constraintsXSum.length > 0) {
                 for (let xSum of constraintsXSum) {
                     if (xSum.value.length && !isNaN(parseInt(xSum.value))) {
                         const index = xSum.set.indexOf(cell);
                         if (index > -1) {
-                            const numCells = index === 0 ? n : xSum.set[0].value;
+                            const numCells =
+                                index === 0 ? n : xSum.set[0].value;
                             if (numCells !== 0 && index < numCells) {
                                 const xSumValue = parseInt(xSum.value);
 
@@ -707,7 +955,10 @@
                                             }
                                         }
                                     }
-                                    if (xSumValue > maxVal || xSumValue < minVal) {
+                                    if (
+                                        xSumValue > maxVal ||
+                                        xSumValue < minVal
+                                    ) {
                                         return false;
                                     }
                                 }
@@ -725,7 +976,10 @@
                                     }
                                 }
 
-                                if (sumValid && sum !== xSumValue || !sumValid && sum > xSumValue) {
+                                if (
+                                    (sumValid && sum !== xSumValue) ||
+                                    (!sumValid && sum > xSumValue)
+                                ) {
                                     return false;
                                 }
                             }
@@ -735,10 +989,13 @@
             }
 
             // Skyscraper
-            const constraintsSkyscraper = constraints[cID('Skyscraper')];
+            const constraintsSkyscraper = constraints[cID("Skyscraper")];
             if (constraintsSkyscraper && constraintsSkyscraper.length > 0) {
                 for (let skyscraper of constraintsSkyscraper) {
-                    if (skyscraper.value.length && !isNaN(parseInt(skyscraper.value))) {
+                    if (
+                        skyscraper.value.length &&
+                        !isNaN(parseInt(skyscraper.value))
+                    ) {
                         const index = skyscraper.set.indexOf(cell);
                         if (index > -1) {
                             const skyscraperValue = parseInt(skyscraper.value);
@@ -751,7 +1008,8 @@
                             let maxVal = 0;
                             let haveAllVals = true;
                             for (let ci = 0; ci < skyscraper.set.length; ci++) {
-                                let value = ci === index ? n : skyscraper.set[ci].value;
+                                let value =
+                                    ci === index ? n : skyscraper.set[ci].value;
                                 if (value !== 0) {
                                     if (maxVal < value) {
                                         seenCells++;
@@ -763,7 +1021,11 @@
                                 }
                             }
 
-                            if (haveAllVals && seenCells !== skyscraperValue || seenCells > skyscraperValue) {
+                            if (
+                                (haveAllVals &&
+                                    seenCells !== skyscraperValue) ||
+                                seenCells > skyscraperValue
+                            ) {
                                 return false;
                             }
                         }
@@ -772,97 +1034,197 @@
             }
 
             return true;
-        }
+        };
 
         // Constraint classes
 
         // Renban
-        window.renban = function(cell) {
-            this.lines = [
-                [cell]
-            ];
+        window.renban = function (cell) {
+            this.lines = [[cell]];
 
-            this.show = function() {
-                const renbanInfo = newConstraintInfo.filter(c => c.name === 'Renban')[0];
+            this.show = function () {
+                const renbanInfo = newConstraintInfo.filter(
+                    (c) => c.name === "Renban"
+                )[0];
                 for (var a = 0; a < this.lines.length; a++) {
-                    drawLine(this.lines[a], renbanInfo.color, renbanInfo.colorDark, renbanInfo.lineWidth);
+                    drawLine(
+                        this.lines[a],
+                        renbanInfo.color,
+                        renbanInfo.colorDark,
+                        renbanInfo.lineWidth
+                    );
                 }
-            }
+            };
 
-            this.addCellToLine = function(cell) {
+            this.addCellToLine = function (cell) {
                 if (this.lines[this.lines.length - 1].length < size) {
                     this.lines[this.lines.length - 1].push(cell);
                 }
-            }
-        }
+            };
+        };
 
         // Whispers
-        window.whispers = function(cell) {
-            this.lines = [
-                [cell]
-            ];
+        window.whispers = function (cell) {
+            this.lines = [[cell]];
 
-            this.show = function() {
-                const whispersInfo = newConstraintInfo.filter(c => c.name === 'Whispers')[0];
+            this.show = function () {
+                const whispersInfo = newConstraintInfo.filter(
+                    (c) => c.name === "Whispers"
+                )[0];
                 for (var a = 0; a < this.lines.length; a++) {
-                    drawLine(this.lines[a], whispersInfo.color, whispersInfo.colorDark, whispersInfo.lineWidth);
+                    drawLine(
+                        this.lines[a],
+                        whispersInfo.color,
+                        whispersInfo.colorDark,
+                        whispersInfo.lineWidth
+                    );
                 }
-            }
+            };
 
-            this.addCellToLine = function(cell) {
+            this.addCellToLine = function (cell) {
                 this.lines[this.lines.length - 1].push(cell);
-            }
-        }
+            };
+        };
 
         // Entropic Line
-        window.entropicline = function(cell) {
-            this.lines = [
-                [cell]
-            ];
+        window.entropicline = function (cell) {
+            this.lines = [[cell]];
 
-            this.show = function() {
-                const entropicLineInfo = newConstraintInfo.filter(c => c.name === 'Entropic Line')[0];
+            this.show = function () {
+                const entropicLineInfo = newConstraintInfo.filter(
+                    (c) => c.name === "Entropic Line"
+                )[0];
                 for (var a = 0; a < this.lines.length; a++) {
-                    drawLine(this.lines[a], entropicLineInfo.color, entropicLineInfo.colorDark, entropicLineInfo.lineWidth);
+                    drawLine(
+                        this.lines[a],
+                        entropicLineInfo.color,
+                        entropicLineInfo.colorDark,
+                        entropicLineInfo.lineWidth
+                    );
                 }
-            }
+            };
 
-            this.addCellToLine = function(cell) {
+            this.addCellToLine = function (cell) {
                 this.lines[this.lines.length - 1].push(cell);
-            }
-        }
+            };
+        };
 
         // Region Sum Lines
-        window.regionsumline = function(cell) {
-            this.lines = [
-                [cell]
-            ];
+        window.regionsumline = function (cell) {
+            this.lines = [[cell]];
 
-            this.show = function() {
-                const regionSumLineInfo = newConstraintInfo.filter(c => c.name === 'Region Sum Line')[0];
+            this.show = function () {
+                const regionSumLineInfo = newConstraintInfo.filter(
+                    (c) => c.name === "Region Sum Line"
+                )[0];
                 for (var a = 0; a < this.lines.length; a++) {
-                    drawLine(this.lines[a], regionSumLineInfo.color, regionSumLineInfo.colorDark, regionSumLineInfo.lineWidth);
+                    drawLine(
+                        this.lines[a],
+                        regionSumLineInfo.color,
+                        regionSumLineInfo.colorDark,
+                        regionSumLineInfo.lineWidth
+                    );
                 }
-            }
+            };
 
-            this.addCellToLine = function(cell) {
+            this.addCellToLine = function (cell) {
                 this.lines[this.lines.length - 1].push(cell);
-            }
-        }
+            };
+        };
+
+        // Nabner Lines
+        window.nabner = function (cell) {
+            this.lines = [[cell]];
+
+            this.show = function () {
+                const nabnerLineInfo = newConstraintInfo.filter(
+                    (c) => c.name === "Nabner"
+                )[0];
+                for (var a = 0; a < this.lines.length; a++) {
+                    drawLine(
+                        this.lines[a],
+                        nabnerLineInfo.color,
+                        nabnerLineInfo.colorDark,
+                        nabnerLineInfo.lineWidth
+                    );
+                }
+            };
+
+            this.addCellToLine = function (cell) {
+                this.lines[this.lines.length - 1].push(cell);
+            };
+        };
+
+        // Double Arrows
+        window.doublearrow = function (cell) {
+            this.lines = [[cell]];
+
+            this.show = function () {
+                const nabnerLineInfo = newConstraintInfo.filter(
+                    (c) => c.name === "Double Arrow"
+                )[0];
+                const nabnerColor = boolSettings["Dark Mode"]
+                    ? nabnerLineInfo.colorDark
+                    : nabnerLineInfo.color;
+                for (let i = 0; i < this.lines.length; i++) {
+                    ctx.lineWidth = cellSL * nabnerLineInfo.lineWidth * 0.5;
+
+                    ctx.strokeStyle = nabnerColor;
+                    ctx.beginPath();
+                    ctx.moveTo(
+                        this.lines[i][0].x + cellSL / 2,
+                        this.lines[i][0].y + cellSL / 2
+                    );
+                    for (let j = 1; j < this.lines[i].length; j++)
+                        ctx.lineTo(
+                            this.lines[i][j].x + cellSL / 2,
+                            this.lines[i][j].y + cellSL / 2
+                        );
+                    ctx.stroke();
+
+                    ctx.fillStyle = boolSettings["Dark Mode"]
+                        ? "#888888"
+                        : "#EAEAEA";
+                    for (
+                        let j = 0, k = 0;
+                        j < this.lines[i].length &&
+                        (this.lines[i].length > 1 || !k);
+                        j += this.lines[i].length - 1, k++
+                    ) {
+                        ctx.beginPath();
+                        ctx.arc(
+                            this.lines[i][j].x + cellSL / 2,
+                            this.lines[i][j].y + cellSL / 2,
+                            cellSL / 2 - ctx.lineWidth / 2,
+                            0,
+                            Math.PI * 2
+                        );
+                        ctx.fill();
+                        ctx.stroke();
+                    }
+                }
+            };
+
+            this.addCellToLine = function (cell) {
+                this.lines[this.lines.length - 1].push(cell);
+            };
+        };
 
         // Row Indexer
-        window.rowindexer = function(cell) {
+        window.rowindexer = function (cell) {
             this.cells = [cell];
 
-            this.addCellToRegion = function(cell) {
+            this.addCellToRegion = function (cell) {
                 this.cells.push(cell);
                 this.sortCells();
-            }
+            };
 
-            this.sortCells = function() {
-                this.cells.sort((a, b) => (a.i * size + a.j) - (b.i * size + b.j));
-            }
-        }
+            this.sortCells = function () {
+                this.cells.sort(
+                    (a, b) => a.i * size + a.j - (b.i * size + b.j)
+                );
+            };
+        };
 
         // Column Indexer
         window.columnindexer = window.rowindexer;
@@ -870,50 +1232,69 @@
         // Box Indexer
         window.boxindexer = window.rowindexer;
 
-        window.xsum = function(cells) {
-            if (cells)
-                this.cell = cells[0];
+        window.xsum = function (cells) {
+            if (cells) this.cell = cells[0];
             this.set = null;
-            this.value = '';
+            this.value = "";
             this.isReverse = false;
             this.isRow = false;
 
-            this.show = function() {
-                ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
-                ctx.font = (cellSL * 1.0) + 'px Arial';
+            this.show = function () {
+                ctx.fillStyle = boolSettings["Dark Mode"]
+                    ? "#F0F0F0"
+                    : "#000000";
+                ctx.font = cellSL * 1.0 + "px Arial";
                 const iconOffset = cellSL * 0.1 * (this.isReverse ? -1 : 1);
                 const iconBaseX = this.cell.x + cellSL / 2;
-                const iconBaseY = this.cell.y + (cellSL * 0.87);
+                const iconBaseY = this.cell.y + cellSL * 0.87;
                 if (this.isRow) {
-                    ctx.fillText('\u25EF', iconBaseX - iconOffset, iconBaseY);
+                    ctx.fillText("\u25EF", iconBaseX - iconOffset, iconBaseY);
                 } else {
-                    ctx.fillText('\u25EF', iconBaseX, iconBaseY - iconOffset);
+                    ctx.fillText("\u25EF", iconBaseX, iconBaseY - iconOffset);
                 }
-                ctx.font = (cellSL * 0.6) + 'px Arial';
+                ctx.font = cellSL * 0.6 + "px Arial";
                 let textOffset = 0;
                 if (this.value.length <= 1) {
-                    textOffset = this.isReverse ? cellSL * -0.10 : cellSL * 0.09;
+                    textOffset = this.isReverse ? cellSL * -0.1 : cellSL * 0.09;
                 } else {
-                    textOffset = this.isReverse ? cellSL * -0.11 : cellSL * 0.08;
+                    textOffset = this.isReverse
+                        ? cellSL * -0.11
+                        : cellSL * 0.08;
                 }
 
                 let textOffsetX = 0;
-                if (this.value.length == 2 && this.value[0] == '1' && this.value[1] != '1') {
+                if (
+                    this.value.length == 2 &&
+                    this.value[0] == "1" &&
+                    this.value[1] != "1"
+                ) {
                     textOffsetX = cellSL * 0.03;
-                } else if (this.value.length == 2 && this.value[0] != '1' && this.value[1] == '1') {
+                } else if (
+                    this.value.length == 2 &&
+                    this.value[0] != "1" &&
+                    this.value[1] == "1"
+                ) {
                     textOffsetX = cellSL * -0.03;
                 }
 
                 const textBaseX = this.cell.x + cellSL / 2;
-                const textBaseY = this.cell.y + (cellSL * 0.75);
+                const textBaseY = this.cell.y + cellSL * 0.75;
                 if (this.isRow) {
-                    ctx.fillText(this.value.length ? this.value : '-', textBaseX - textOffset - textOffsetX, textBaseY);
+                    ctx.fillText(
+                        this.value.length ? this.value : "-",
+                        textBaseX - textOffset - textOffsetX,
+                        textBaseY
+                    );
                 } else {
-                    ctx.fillText(this.value.length ? this.value : '-', textBaseX - textOffsetX, textBaseY - textOffset);
+                    ctx.fillText(
+                        this.value.length ? this.value : "-",
+                        textBaseX - textOffsetX,
+                        textBaseY - textOffset
+                    );
                 }
-            }
+            };
 
-            this.updateSet = function() {
+            this.updateSet = function () {
                 if (this.cell) {
                     if (this.cell.i >= 0 && this.cell.i < size) {
                         this.isRow = true;
@@ -934,51 +1315,60 @@
                         }
                     }
                 }
-            }
+            };
             this.updateSet();
 
-            this.typeNumber = function(num) {
-                if (this.value.length === 0 && num === '0') {
+            this.typeNumber = function (num) {
+                if (this.value.length === 0 && num === "0") {
                     return;
                 }
 
                 if (parseInt(this.value + String(num)) <= maxInNCells(size)) {
                     this.value += String(num);
                 }
-            }
-        }
+            };
+        };
 
-        window.skyscraper = function(cells) {
-            if (cells)
-                this.cell = cells[0];
+        window.skyscraper = function (cells) {
+            if (cells) this.cell = cells[0];
             this.set = null;
-            this.value = '';
+            this.value = "";
             this.isReverse = false;
             this.isRow = false;
 
-            this.show = function() {
-                ctx.fillStyle = boolSettings['Dark Mode'] ? '#F0F0F0' : '#000000';
-                ctx.font = (cellSL * 1.0) + 'px Arial';
+            this.show = function () {
+                ctx.fillStyle = boolSettings["Dark Mode"]
+                    ? "#F0F0F0"
+                    : "#000000";
+                ctx.font = cellSL * 1.0 + "px Arial";
                 const iconOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
                 const iconBaseX = this.cell.x + cellSL / 2;
-                const iconBaseY = this.cell.y + (cellSL * 0.8);
+                const iconBaseY = this.cell.y + cellSL * 0.8;
                 if (this.isRow) {
-                    ctx.fillText('\u25AF', iconBaseX - iconOffset, iconBaseY);
+                    ctx.fillText("\u25AF", iconBaseX - iconOffset, iconBaseY);
                 } else {
-                    ctx.fillText('\u25AF', iconBaseX, iconBaseY - iconOffset);
+                    ctx.fillText("\u25AF", iconBaseX, iconBaseY - iconOffset);
                 }
-                ctx.font = (cellSL * 0.6) + 'px Arial';
+                ctx.font = cellSL * 0.6 + "px Arial";
                 const textOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
                 const textBaseX = this.cell.x + cellSL / 2;
-                const textBaseY = this.cell.y + (cellSL * 0.75);
+                const textBaseY = this.cell.y + cellSL * 0.75;
                 if (this.isRow) {
-                    ctx.fillText(this.value.length ? this.value : '-', textBaseX - textOffset, textBaseY);
+                    ctx.fillText(
+                        this.value.length ? this.value : "-",
+                        textBaseX - textOffset,
+                        textBaseY
+                    );
                 } else {
-                    ctx.fillText(this.value.length ? this.value : '-', textBaseX, textBaseY - textOffset);
+                    ctx.fillText(
+                        this.value.length ? this.value : "-",
+                        textBaseX,
+                        textBaseY - textOffset
+                    );
                 }
-            }
+            };
 
-            this.updateSet = function() {
+            this.updateSet = function () {
                 if (this.cell) {
                     if (this.cell.i >= 0 && this.cell.i < size) {
                         this.isRow = true;
@@ -999,39 +1389,39 @@
                         }
                     }
                 }
-            }
+            };
             this.updateSet();
 
-            this.typeNumber = function(num) {
-                if (this.value.length === 0 && num === '0') {
+            this.typeNumber = function (num) {
+                if (this.value.length === 0 && num === "0") {
                     return;
                 }
 
                 if (parseInt(this.value + String(num)) <= size) {
                     this.value += String(num);
                 }
-            }
-        }
+            };
+        };
 
         const origCategorizeTools = categorizeTools;
-        categorizeTools = function() {
+        categorizeTools = function () {
             origCategorizeTools();
 
-            let toolLineIndex = toolConstraints.indexOf('Palindrome');
-            let toolPerCellIndex = toolConstraints.indexOf('Maximum');
-            let toolOutsideIndex = toolConstraints.indexOf('Sandwich Sum');
+            let toolLineIndex = toolConstraints.indexOf("Palindrome");
+            let toolPerCellIndex = toolConstraints.indexOf("Maximum");
+            let toolOutsideIndex = toolConstraints.indexOf("Sandwich Sum");
             for (let info of newConstraintInfo) {
-                if (info.type === 'line') {
+                if (info.type === "line") {
                     if (toolLineIndex < toolPerCellIndex) toolPerCellIndex++;
                     if (toolLineIndex < toolOutsideIndex) toolOutsideIndex++;
                     toolConstraints.splice(++toolLineIndex, 0, info.name);
                     lineConstraints.push(info.name);
-                } else if (info.type === 'cage') {
+                } else if (info.type === "cage") {
                     if (toolPerCellIndex < toolLineIndex) toolLineIndex++;
                     if (toolPerCellIndex < toolOutsideIndex) toolOutsideIndex++;
                     toolConstraints.splice(++toolPerCellIndex, 0, info.name);
                     regionConstraints.push(info.name);
-                } else if (info.type === 'outside') {
+                } else if (info.type === "outside") {
                     if (toolOutsideIndex < toolLineIndex) toolLineIndex++;
                     if (toolOutsideIndex < toolPerCellIndex) toolPerCellIndex++;
                     toolConstraints.splice(++toolOutsideIndex, 0, info.name);
@@ -1040,22 +1430,47 @@
                 }
             }
 
-            draggableConstraints = [...new Set([...lineConstraints, ...regionConstraints])];
-            multicellConstraints = [...new Set([...lineConstraints, ...regionConstraints, ...borderConstraints, ...cornerConstraints])];
-            betweenCellConstraints = [...borderConstraints, ...cornerConstraints];
+            draggableConstraints = [
+                ...new Set([...lineConstraints, ...regionConstraints]),
+            ];
+            multicellConstraints = [
+                ...new Set([
+                    ...lineConstraints,
+                    ...regionConstraints,
+                    ...borderConstraints,
+                    ...cornerConstraints,
+                ]),
+            ];
+            betweenCellConstraints = [
+                ...borderConstraints,
+                ...cornerConstraints,
+            ];
             allConstraints = [...boolConstraints, ...toolConstraints];
 
             tools = [...toolConstraints, ...toolCosmetics];
-            selectableTools = [...selectableConstraints, ...selectableCosmetics];
+            selectableTools = [
+                ...selectableConstraints,
+                ...selectableCosmetics,
+            ];
             lineTools = [...lineConstraints, ...lineCosmetics];
             regionTools = [...regionConstraints, ...regionCosmetics];
-            diagonalRegionTools = [...diagonalRegionConstraints, ...diagonalRegionCosmetics];
+            diagonalRegionTools = [
+                ...diagonalRegionConstraints,
+                ...diagonalRegionCosmetics,
+            ];
             outsideTools = [...outsideConstraints, ...outsideCosmetics];
-            outsideCornerTools = [...outsideCornerConstraints, ...outsideCornerCosmetics];
-            oneCellAtATimeTools = [...perCellConstraints, ...draggableConstraints, ...draggableCosmetics];
+            outsideCornerTools = [
+                ...outsideCornerConstraints,
+                ...outsideCornerCosmetics,
+            ];
+            oneCellAtATimeTools = [
+                ...perCellConstraints,
+                ...draggableConstraints,
+                ...draggableCosmetics,
+            ];
             draggableTools = [...draggableConstraints, ...draggableCosmetics];
             multicellTools = [...multicellConstraints, ...multicellCosmetics];
-        }
+        };
 
         // Tooltips
         for (let info of newConstraintInfo) {
@@ -1064,109 +1479,186 @@
 
         // Puzzle title
         // Unfortuantely, there's no way to shim this so it's duplicated in full.
-        getPuzzleTitle = function() {
-            var title = '';
+        getPuzzleTitle = function () {
+            var title = "";
 
-            ctx.font = titleLSize + 'px Arial';
+            ctx.font = titleLSize + "px Arial";
 
             if (customTitle.length) {
                 title = customTitle;
             } else {
-                if (size !== 9)
-                    title += size + 'x' + size + ' ';
-                if (getCells().some(a => a.region !== (Math.floor(a.i / regionH) * regionH) + Math.floor(a.j / regionW)))
-                    title += 'Irregular ';
-                if (constraints[cID('Extra Region')].length)
-                    title += 'Extra-Region ';
-                if (constraints[cID('Odd')].length && !constraints[cID('Even')].length)
-                    title += 'Odd ';
-                if (!constraints[cID('Odd')].length && constraints[cID('Even')].length)
-                    title += 'Even ';
-                if (constraints[cID('Odd')].length && constraints[cID('Even')].length)
-                    title += 'Odd-Even ';
-                if (constraints[cID('Diagonal +')] !== constraints[cID('Diagonal -')])
-                    title += 'Single-Diagonal ';
-                if (constraints[cID('Nonconsecutive')] && !(constraints[cID('Difference')].length && constraints[cID('Difference')].some(a => ['', '1'].includes(a.value))) && !constraints[cID('Ratio')].negative)
-                    title += 'Nonconsecutive ';
-                if (constraints[cID('Nonconsecutive')] && constraints[cID('Difference')].length && constraints[cID('Difference')].some(a => ['', '1'].includes(a.value)) && !constraints[cID('Ratio')].negative)
-                    title += 'Consecutive ';
-                if (!constraints[cID('Nonconsecutive')] && constraints[cID('Difference')].length && constraints[cID('Difference')].every(a => ['', '1'].includes(a.value)))
-                    title += 'Consecutive-Pairs ';
-                if (constraints[cID('Antiknight')])
-                    title += 'Antiknight ';
-                if (constraints[cID('Antiking')])
-                    title += 'Antiking ';
-                if (constraints[cID('Disjoint Groups')])
-                    title += 'Disjoint-Group ';
-                if (constraints[cID('XV')].length || constraints[cID('XV')].negative)
-                    title += 'XV ' + (constraints[cID('XV')].negative ? '(-) ' : '');
-                if (constraints[cID('Little Killer Sum')].length)
-                    title += 'Little Killer ';
-                if (constraints[cID('Sandwich Sum')].length)
-                    title += 'Sandwich ';
-                if (constraints[cID('Thermometer')].length)
-                    title += 'Thermo ';
-                if (constraints[cID('Palindrome')].length)
-                    title += 'Palindrome ';
-                if (constraints[cID('Difference')].length && constraints[cID('Difference')].some(a => !['', '1'].includes(a.value)) && !(constraints[cID('Nonconsecutive')] && constraints[cID('Ratio')].negative))
-                    title += 'Difference ';
-                if ((constraints[cID('Ratio')].length || constraints[cID('Ratio')].negative) && !(constraints[cID('Nonconsecutive')] && constraints[cID('Ratio')].negative))
-                    title += 'Ratio ' + (constraints[cID('Ratio')].negative ? '(-) ' : '');;
-                if (constraints[cID('Nonconsecutive')] && constraints[cID('Ratio')].negative)
-                    title += 'Kropki ';
-                if (constraints[cID('Killer Cage')].length)
-                    title += 'Killer ';
-                if (constraints[cID('Clone')].length)
-                    title += 'Clone ';
-                if (constraints[cID('Arrow')].length)
-                    title += 'Arrow ';
-                if (constraints[cID('Between Line')].length)
-                    title += 'Between ';
-                if (constraints[cID('Quadruple')].length)
-                    title += 'Quadruples '
-                if (constraints[cID('Minimum')].length || constraints[cID('Maximum')].length)
-                    title += 'Extremes '
+                if (size !== 9) title += size + "x" + size + " ";
+                if (
+                    getCells().some(
+                        (a) =>
+                            a.region !==
+                            Math.floor(a.i / regionH) * regionH +
+                                Math.floor(a.j / regionW)
+                    )
+                )
+                    title += "Irregular ";
+                if (constraints[cID("Extra Region")].length)
+                    title += "Extra-Region ";
+                if (
+                    constraints[cID("Odd")].length &&
+                    !constraints[cID("Even")].length
+                )
+                    title += "Odd ";
+                if (
+                    !constraints[cID("Odd")].length &&
+                    constraints[cID("Even")].length
+                )
+                    title += "Even ";
+                if (
+                    constraints[cID("Odd")].length &&
+                    constraints[cID("Even")].length
+                )
+                    title += "Odd-Even ";
+                if (
+                    constraints[cID("Diagonal +")] !==
+                    constraints[cID("Diagonal -")]
+                )
+                    title += "Single-Diagonal ";
+                if (
+                    constraints[cID("Nonconsecutive")] &&
+                    !(
+                        constraints[cID("Difference")].length &&
+                        constraints[cID("Difference")].some((a) =>
+                            ["", "1"].includes(a.value)
+                        )
+                    ) &&
+                    !constraints[cID("Ratio")].negative
+                )
+                    title += "Nonconsecutive ";
+                if (
+                    constraints[cID("Nonconsecutive")] &&
+                    constraints[cID("Difference")].length &&
+                    constraints[cID("Difference")].some((a) =>
+                        ["", "1"].includes(a.value)
+                    ) &&
+                    !constraints[cID("Ratio")].negative
+                )
+                    title += "Consecutive ";
+                if (
+                    !constraints[cID("Nonconsecutive")] &&
+                    constraints[cID("Difference")].length &&
+                    constraints[cID("Difference")].every((a) =>
+                        ["", "1"].includes(a.value)
+                    )
+                )
+                    title += "Consecutive-Pairs ";
+                if (constraints[cID("Antiknight")]) title += "Antiknight ";
+                if (constraints[cID("Antiking")]) title += "Antiking ";
+                if (constraints[cID("Disjoint Groups")])
+                    title += "Disjoint-Group ";
+                if (
+                    constraints[cID("XV")].length ||
+                    constraints[cID("XV")].negative
+                )
+                    title +=
+                        "XV " + (constraints[cID("XV")].negative ? "(-) " : "");
+                if (constraints[cID("Little Killer Sum")].length)
+                    title += "Little Killer ";
+                if (constraints[cID("Sandwich Sum")].length)
+                    title += "Sandwich ";
+                if (constraints[cID("Thermometer")].length) title += "Thermo ";
+                if (constraints[cID("Palindrome")].length)
+                    title += "Palindrome ";
+                if (
+                    constraints[cID("Difference")].length &&
+                    constraints[cID("Difference")].some(
+                        (a) => !["", "1"].includes(a.value)
+                    ) &&
+                    !(
+                        constraints[cID("Nonconsecutive")] &&
+                        constraints[cID("Ratio")].negative
+                    )
+                )
+                    title += "Difference ";
+                if (
+                    (constraints[cID("Ratio")].length ||
+                        constraints[cID("Ratio")].negative) &&
+                    !(
+                        constraints[cID("Nonconsecutive")] &&
+                        constraints[cID("Ratio")].negative
+                    )
+                )
+                    title +=
+                        "Ratio " +
+                        (constraints[cID("Ratio")].negative ? "(-) " : "");
+                if (
+                    constraints[cID("Nonconsecutive")] &&
+                    constraints[cID("Ratio")].negative
+                )
+                    title += "Kropki ";
+                if (constraints[cID("Killer Cage")].length) title += "Killer ";
+                if (constraints[cID("Clone")].length) title += "Clone ";
+                if (constraints[cID("Arrow")].length) title += "Arrow ";
+                if (constraints[cID("Between Line")].length)
+                    title += "Between ";
+                if (constraints[cID("Quadruple")].length)
+                    title += "Quadruples ";
+                if (
+                    constraints[cID("Minimum")].length ||
+                    constraints[cID("Maximum")].length
+                )
+                    title += "Extremes ";
 
                 for (let info of newConstraintInfo) {
-                    if (constraints[cID(info.name)] && constraints[cID(info.name)].length > 0) {
+                    if (
+                        constraints[cID(info.name)] &&
+                        constraints[cID(info.name)].length > 0
+                    ) {
                         title += `${info.name} `;
                     }
                 }
 
-                title += 'Sudoku';
+                title += "Sudoku";
 
-                if (constraints[cID('Diagonal +')] && constraints[cID('Diagonal -')])
-                    title += ' X';
+                if (
+                    constraints[cID("Diagonal +")] &&
+                    constraints[cID("Diagonal -")]
+                )
+                    title += " X";
 
-                if (title === 'Sudoku')
-                    title = 'Classic Sudoku';
+                if (title === "Sudoku") title = "Classic Sudoku";
 
-                if (ctx.measureText(title).width > (canvas.width - 711))
-                    title = 'Extreme Variant Sudoku';
+                if (ctx.measureText(title).width > canvas.width - 711)
+                    title = "Extreme Variant Sudoku";
             }
 
-            buttons[buttons.findIndex(a => a.id === 'EditInfo')].x = canvas.width / 2 + ctx.measureText(title).width / 2 + 40;
+            buttons[buttons.findIndex((a) => a.id === "EditInfo")].x =
+                canvas.width / 2 + ctx.measureText(title).width / 2 + 40;
 
             return title;
-        }
+        };
 
         // Make all the constraint buttons smaller
         const constraintHeight = 22;
         const prevCreateSidebarConstraints = createSidebarConstraints;
-        createSidebarConstraints = function() {
+        createSidebarConstraints = function () {
             prevCreateSidebarConstraints();
 
             let constraintIndex = 0;
             let constraintButtons = sidebars[0].buttons;
             for (let i = 0; i < constraintButtons.length; i++) {
                 let b = sidebars[0].buttons[i];
-                if (b.modes.indexOf("Constraint Tools") > -1 && b.title !== '-') {
+                if (
+                    b.modes.indexOf("Constraint Tools") > -1 &&
+                    b.title !== "-"
+                ) {
                     b.h = constraintHeight;
-                    b.y = gridY + gridSL - (constraintHeight * toolConstraints.length + (buttonGap * (toolConstraints.length - 1)) + buttonMargin) + ((constraintHeight + buttonGap) * constraintIndex);
+                    b.y =
+                        gridY +
+                        gridSL -
+                        (constraintHeight * toolConstraints.length +
+                            buttonGap * (toolConstraints.length - 1) +
+                            buttonMargin) +
+                        (constraintHeight + buttonGap) * constraintIndex;
 
                     if (i + 1 < constraintButtons.length) {
                         let bm = constraintButtons[i + 1];
-                        if (bm.title === '-') {
+                        if (bm.title === "-") {
                             bm.h = b.h;
                             bm.y = b.y;
                         }
@@ -1174,20 +1666,42 @@
                     constraintIndex++;
                 }
             }
-        }
+        };
 
         const origDrawPopups = window.drawPopups;
-        window.drawPopups = function(overlapSidebars) {
+        window.drawPopups = function (overlapSidebars) {
             if (!overlapSidebars && popup === "Constraint Tools") {
                 ctx.lineWidth = lineWW;
-                ctx.fillStyle = boolSettings['Dark Mode'] ? '#404040' : '#D0D0D0';
-                ctx.strokeStyle = boolSettings['Dark Mode'] ? '#202020' : '#808080';
-                ctx.fillRect(gridX - sidebarDist, gridY + gridSL, sidebarW + (buttonGap + constraintHeight) * 2, -((constraintHeight * toolConstraints.length) + (buttonGap * (toolConstraints.length - 1)) + (buttonMargin * 2)));
-                ctx.strokeRect(gridX - sidebarDist, gridY + gridSL, sidebarW + (buttonGap + constraintHeight) * 2, -((constraintHeight * toolConstraints.length) + (buttonGap * (toolConstraints.length - 1)) + (buttonMargin * 2)));
+                ctx.fillStyle = boolSettings["Dark Mode"]
+                    ? "#404040"
+                    : "#D0D0D0";
+                ctx.strokeStyle = boolSettings["Dark Mode"]
+                    ? "#202020"
+                    : "#808080";
+                ctx.fillRect(
+                    gridX - sidebarDist,
+                    gridY + gridSL,
+                    sidebarW + (buttonGap + constraintHeight) * 2,
+                    -(
+                        constraintHeight * toolConstraints.length +
+                        buttonGap * (toolConstraints.length - 1) +
+                        buttonMargin * 2
+                    )
+                );
+                ctx.strokeRect(
+                    gridX - sidebarDist,
+                    gridY + gridSL,
+                    sidebarW + (buttonGap + constraintHeight) * 2,
+                    -(
+                        constraintHeight * toolConstraints.length +
+                        buttonGap * (toolConstraints.length - 1) +
+                        buttonMargin * 2
+                    )
+                );
             } else {
                 origDrawPopups(overlapSidebars);
             }
-        }
+        };
 
         if (window.boolConstraints) {
             let prevButtons = buttons.splice(0, buttons.length);

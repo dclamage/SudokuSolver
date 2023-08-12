@@ -633,15 +633,7 @@ namespace SudokuSolver
             {
                 foreach (var extraRegion in fpuzzlesData.extraregion)
                 {
-                    StringBuilder cells = new();
-                    foreach (var cell in extraRegion.cells)
-                    {
-                        if (!string.IsNullOrWhiteSpace(cell))
-                        {
-                            cells.Append(cell);
-                        }
-                    }
-                    solver.AddConstraint(typeof(ExtraRegionConstraint), cells.ToString());
+                    solver.AddConstraint(typeof(ExtraRegionConstraint), ToOptions(extraRegion.cells));
                 }
             }
 
@@ -651,15 +643,7 @@ namespace SudokuSolver
                 {
                     foreach (var line in thermo.lines)
                     {
-                        StringBuilder cells = new();
-                        foreach (var cell in line)
-                        {
-                            if (!string.IsNullOrWhiteSpace(cell))
-                            {
-                                cells.Append(cell);
-                            }
-                        }
-                        solver.AddConstraint(typeof(ThermometerConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(ThermometerConstraint), ToOptions(line));
                     }
                 }
             }
@@ -670,15 +654,7 @@ namespace SudokuSolver
                 {
                     foreach (var line in palindrome.lines)
                     {
-                        StringBuilder cells = new();
-                        foreach (var cell in line)
-                        {
-                            if (!string.IsNullOrWhiteSpace(cell))
-                            {
-                                cells.Append(cell);
-                            }
-                        }
-                        solver.AddConstraint(typeof(PalindromeConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(PalindromeConstraint), ToOptions(line));
                     }
                 }
             }
@@ -689,15 +665,7 @@ namespace SudokuSolver
                 {
                     foreach (var line in renban.lines)
                     {
-                        StringBuilder cells = new();
-                        foreach (var cell in line)
-                        {
-                            if (!string.IsNullOrWhiteSpace(cell))
-                            {
-                                cells.Append(cell);
-                            }
-                        }
-                        solver.AddConstraint(typeof(RenbanConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(RenbanConstraint), ToOptions(line));
                     }
                 }
             }
@@ -708,15 +676,7 @@ namespace SudokuSolver
                 {
                     foreach (var line in whispers.lines)
                     {
-                        StringBuilder cells = new();
-                        foreach (var cell in line)
-                        {
-                            if (!string.IsNullOrWhiteSpace(cell))
-                            {
-                                cells.Append(cell);
-                            }
-                        }
-                        solver.AddConstraint(typeof(WhispersConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(WhispersConstraint), ToOptions(line));
                     }
                 }
             }
@@ -727,15 +687,7 @@ namespace SudokuSolver
                 {
                     foreach (var line in regionSumLine.lines)
                     {
-                        StringBuilder cells = new();
-                        foreach (var cell in line)
-                        {
-                            if (!string.IsNullOrWhiteSpace(cell))
-                            {
-                                cells.Append(cell);
-                            }
-                        }
-                        solver.AddConstraint(typeof(RegionSumLinesConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(RegionSumLinesConstraint), ToOptions(line));
                     }
                 }
             }
@@ -746,15 +698,7 @@ namespace SudokuSolver
                 {
                     foreach (var line in betweenline.lines)
                     {
-                        StringBuilder cells = new();
-                        foreach (var cell in line)
-                        {
-                            if (!string.IsNullOrWhiteSpace(cell))
-                            {
-                                cells.Append(cell);
-                            }
-                        }
-                        solver.AddConstraint(typeof(BetweenLineConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(BetweenLineConstraint), ToOptions(line));
                     }
                 }
             }
@@ -969,15 +913,29 @@ namespace SudokuSolver
                 {
                     foreach (var line in entropicline.lines)
                     {
-                        StringBuilder cells = new();
-                        foreach (var cell in line)
-                        {
-                            if (!string.IsNullOrWhiteSpace(cell))
-                            {
-                                cells.Append(cell);
-                            }
-                        }
-                        solver.AddConstraint(typeof(EntropicLineConstraint), cells.ToString());
+                        solver.AddConstraint(typeof(EntropicLineConstraint), ToOptions(line));
+                    }
+                }
+            }
+
+            if (fpuzzlesData.nabner != null)
+            {
+                foreach (var nabner in fpuzzlesData.nabner)
+                {
+                    foreach (var line in nabner.lines)
+                    {
+                        solver.AddConstraint(typeof(NabnerConstraint), ToOptions(line));
+                    }
+                }
+            }
+
+            if (fpuzzlesData.doublearrow != null)
+            {
+                foreach (var doublearrow in fpuzzlesData.doublearrow)
+                {
+                    foreach (var line in doublearrow.lines)
+                    {
+                        solver.AddConstraint(typeof(DoubleArrowConstraint), ToOptions(line));
                     }
                 }
             }
@@ -1282,7 +1240,7 @@ namespace SudokuSolver
             List<FPuzzlesLines> regionSumLines = new();
             foreach (var c in solver.Constraints<RegionSumLinesConstraint>())
             {
-                string[] cells = c.cells.Select(CN).ToArray();
+                string[] cells = c.lineCells.Select(CN).ToArray();
                 regionSumLines.Add(new() { lines = new string[][] { cells } });
             }
 
@@ -1385,6 +1343,20 @@ namespace SudokuSolver
                 entropicline.Add(new() { lines = new string[][] { cells } });
             }
 
+            List<FPuzzlesLines> nabner = new();
+            foreach (var c in solver.Constraints<NabnerConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                nabner.Add(new() { lines = new string[][] { cells } });
+            }
+
+            List<FPuzzlesLines> doublearrow = new();
+            foreach (var c in solver.Constraints<DoubleArrowConstraint>())
+            {
+                string[] cells = c.lineCells.Select(CN).ToArray();
+                doublearrow.Add(new() { lines = new string[][] { cells } });
+            }
+
             static T[] ToArray<T>(List<T> list) => list.Count > 0 ? list.ToArray() : null;
 
             FPuzzlesBoard fp = new()
@@ -1427,11 +1399,26 @@ namespace SudokuSolver
                 xsum = ToArray(xsum),
                 skyscraper = ToArray(skyscraper),
                 entropicline = ToArray(entropicline),
+                nabner = ToArray(nabner),
+                doublearrow = ToArray(doublearrow),
             };
 
             string fpuzzlesJson = JsonSerializer.Serialize(fp, FpuzzlesJsonContext.Default.FPuzzlesBoard);
             string fpuzzlesBase64 = LZString.CompressToBase64(fpuzzlesJson);
             return justBase64 ? fpuzzlesBase64 : $"https://www.f-puzzles.com/?load={fpuzzlesBase64}";
+        }
+
+        private static string ToOptions(string[] cells)
+        {
+            StringBuilder builder = new();
+            foreach (var cell in cells)
+            {
+                if (!string.IsNullOrWhiteSpace(cell))
+                {
+                    builder.Append(cell);
+                }
+            }
+            return builder.ToString();
         }
     }
 }
