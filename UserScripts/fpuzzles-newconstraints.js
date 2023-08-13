@@ -60,7 +60,7 @@
             lineWidth: 0.15625,
             tooltip: [
                 "Any set of three sequential cells along an entropic line must contain",
-                "a low digit, a middle digit, and a high higit.",
+                "a low digit, a middle digit, and a high digit.",
                 "For 9x9 this is 1-3, 4-6, 7-9.",
                 "For grid sizes not divisible by 3, the middle rank has the different number of values.",
                 "Digits my repeat on a line, if allowed by other rules.",
