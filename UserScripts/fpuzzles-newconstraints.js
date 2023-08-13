@@ -79,7 +79,8 @@
             lineWidth: 0.15625,
             tooltip: [
                 "Digits have an equal sum within each box the line passes through.",
-                "",
+                'If the line re-enters a region, then it starts a new sum.',
+                '',
                 "Click and drag to draw a region sum line.",
                 "Click on a region sum line to remove it.",
                 "Shift click and drag to draw overlapping region sum lines.",
