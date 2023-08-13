@@ -27,7 +27,7 @@
             type: "line",
             color: "#F067F0",
             colorDark: "#642B64",
-            lineWidth: 0.4,
+            lineWidth: 0.25,
             tooltip: [
                 "Numbers on a renban line must be consecutive, but in any order.",
                 "Digits cannot repeat on a renban line.",
@@ -42,7 +42,7 @@
             type: "line",
             color: "#67F067",
             colorDark: "#357D35",
-            lineWidth: 0.3,
+            lineWidth: 0.1875,
             tooltip: [
                 "Adjacent numbers on a whispers line must have a difference of 5 or greater.",
                 "[For non-9x9 grid sizes, this adjust to be (size / 2) rounded up.]",
@@ -57,10 +57,12 @@
             type: "line",
             color: "#FFCCAA",
             colorDark: "#FFCCAA",
-            lineWidth: 0.25,
+            lineWidth: 0.15625,
             tooltip: [
                 "Any set of three sequential cells along an entropic line must contain",
-                "a low digit (1-3), a middle digit (4-6), and a high higit (7-9).",
+                "a low digit, a middle digit, and a high higit.",
+                "For 9x9 this is 1-3, 4-6, 7-9.",
+                "For grid sizes not divisible by 3, the middle rank has the different number of values.",
                 "Digits my repeat on a line, if allowed by other rules.",
                 "An entropic line of length two may not contain two digits from the same rank.",
                 "",
@@ -74,7 +76,7 @@
             type: "line",
             color: "#2ECBFF",
             colorDark: "#1E86A8",
-            lineWidth: 0.25,
+            lineWidth: 0.15625,
             tooltip: [
                 "Digits have an equal sum within each box the line passes through.",
                 "",
@@ -88,7 +90,7 @@
             type: "line",
             color: "#C9C883",
             colorDark: "#787856",
-            lineWidth: 0.4,
+            lineWidth: 0.25,
             tooltip: [
                 "Digits on a Nabner line cannot repeat.",
                 "If a digit appears on the line, then the digits consecutive with it must not appear.",
@@ -565,16 +567,8 @@
                             let maxValue = -1;
                             for (let lineCell of line) {
                                 if (lineCell.value) {
-                                    minValue =
-                                        minValue === -1 ||
-                                        minValue > lineCell.value
-                                            ? lineCell.value
-                                            : minValue;
-                                    maxValue =
-                                        maxValue === -1 ||
-                                        maxValue < lineCell.value
-                                            ? lineCell.value
-                                            : maxValue;
+                                    minValue = minValue === -1 || minValue > lineCell.value ? lineCell.value : minValue;
+                                    maxValue = maxValue === -1 || maxValue < lineCell.value ? lineCell.value : maxValue;
                                     if (lineCell.value === n) {
                                         numMatchingValue++;
                                         if (numMatchingValue > 1) {
@@ -584,10 +578,7 @@
                                 }
                             }
                             if (minValue !== -1 && maxValue !== -1) {
-                                if (
-                                    n - minValue > line.length - 1 ||
-                                    maxValue - n > line.length - 1
-                                ) {
+                                if (n - minValue > line.length - 1 || maxValue - n > line.length - 1) {
                                     return false;
                                 }
                             }
@@ -604,28 +595,19 @@
                     for (let line of whispers.lines) {
                         const index = line.indexOf(cell);
                         if (index > -1) {
-                            if (
-                                n - whispersDiff <= 0 &&
-                                n + whispersDiff > size
-                            ) {
+                            if (n - whispersDiff <= 0 && n + whispersDiff > size) {
                                 return false;
                             }
 
                             if (index > 0) {
                                 const prevCell = line[index - 1];
-                                if (
-                                    prevCell.value &&
-                                    Math.abs(prevCell.value - n) < whispersDiff
-                                ) {
+                                if (prevCell.value && Math.abs(prevCell.value - n) < whispersDiff) {
                                     return false;
                                 }
                             }
                             if (index < line.length - 1) {
                                 const nextCell = line[index + 1];
-                                if (
-                                    nextCell.value &&
-                                    Math.abs(nextCell.value - n) < whispersDiff
-                                ) {
+                                if (nextCell.value && Math.abs(nextCell.value - n) < whispersDiff) {
                                     return false;
                                 }
                             }
@@ -637,81 +619,41 @@
             // Entropic Line
             const constraintsEntropicLine = constraints[cID("Entropic Line")];
             if (constraintsEntropicLine && constraintsEntropicLine.length > 0) {
-                const entropicLineGroups = [
-                    [1, 2, 3],
-                    [4, 5, 6],
-                    [7, 8, 9],
-                ];
+                // Always split into three group of "equal" size.
+                // If the size isn't divisible by 3, then the middle group is the one that differs in size from the others.
+                const smallGroupSize = Math.floor(size / 3);
+                const largeGroupSize = Math.ceil(size / 3);
+                const group1Size = size % 3 === 1 ? smallGroupSize : largeGroupSize;
+                const group2Size = size % 3 === 1 ? largeGroupSize : smallGroupSize;
+                const group3Size = size % 3 === 1 ? smallGroupSize : largeGroupSize;
+
+                let currentNumber = 1;
+                const entropicLineGroups = [group1Size, group2Size, group3Size].map((groupSize) => {
+                    const group = [];
+                    for (let i = 0; i < groupSize; i++) {
+                        group.push(currentNumber++);
+                    }
+                    return group;
+                });
+
+                function getGroup(val) {
+                    return entropicLineGroups.find((group) => group.includes(val));
+                }
+
                 for (let entropicLine of constraintsEntropicLine) {
                     for (let line of entropicLine.lines) {
                         const index = line.indexOf(cell);
-                        if (index > -1) {
-                            let lineGroupIndices = [-1, -1, -1];
-
-                            let nGroup = -1;
-
-                            for (
-                                let i = 0;
-                                i < entropicLineGroups.length;
-                                i++
-                            ) {
-                                if (entropicLineGroups[i].includes(n)) {
-                                    nGroup = i;
+                        const nGroup = getGroup(n);
+                        if (nGroup !== null && index > -1) {
+                            const startIndex = Math.max(0, index - 2);
+                            const endIndex = Math.min(line.length - 1, index + 2);
+                            for (let i = startIndex; i <= endIndex; i++) {
+                                if (i === index || line[i].value === 0) {
+                                    continue;
                                 }
-                            }
 
-                            for (let i = 0; i < line.length; i++) {
-                                if (line[i].value) {
-                                    for (
-                                        let j = 0;
-                                        j < entropicLineGroups.length;
-                                        j++
-                                    ) {
-                                        if (
-                                            entropicLineGroups[j].includes(
-                                                line[i].value
-                                            )
-                                        ) {
-                                            if (lineGroupIndices[j] === -1) {
-                                                lineGroupIndices[j] = i % 3;
-                                            } else if (
-                                                lineGroupIndices[j] !==
-                                                i % 3
-                                            ) {
-                                                if (
-                                                    index % 3 === i % 3 ||
-                                                    lineGroupIndices[j] ===
-                                                        index % 3
-                                                ) {
-                                                    return false;
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-
-                            if (lineGroupIndices[nGroup] !== -1) {
-                                if (lineGroupIndices[nGroup] !== index % 3) {
-                                    return false;
-                                } else if (
-                                    lineGroupIndices.indexOf(index % 3) !==
-                                        -1 &&
-                                    lineGroupIndices.indexOf(index % 3) !==
-                                        nGroup
-                                ) {
-                                    return false;
-                                }
-                            } else if (
-                                lineGroupIndices[(nGroup + 1) % 3] !== -1 &&
-                                lineGroupIndices[(nGroup + 2) % 3] !== -1
-                            ) {
-                                if (
-                                    lineGroupIndices[(nGroup + 1) % 3] ===
-                                        index % 3 ||
-                                    lineGroupIndices[(nGroup + 2) % 3] ==
-                                        index % 3
-                                ) {
+                                const cellGroup = getGroup(line[i].value);
+                                if (cellGroup === nGroup) {
                                     return false;
                                 }
                             }
@@ -721,7 +663,7 @@
             }
 
             // Region Sum Lines
-            const constraintsRegionSumLines = constraints[cID('Region Sum Line')];
+            const constraintsRegionSumLines = constraints[cID("Region Sum Line")];
             if (constraintsRegionSumLines && constraintsRegionSumLines.length > 0) {
                 for (let regionSumLine of constraintsRegionSumLines) {
                     for (let line of regionSumLine.lines) {
@@ -757,7 +699,7 @@
                                 completedSums.push(currentSum);
                             }
 
-                            if (completedSums.length > 1 && !completedSums.every(sum => sum === completedSums[0])) {
+                            if (completedSums.length > 1 && !completedSums.every((sum) => sum === completedSums[0])) {
                                 return false;
                             }
                         }
@@ -810,11 +752,7 @@
                             }
 
                             let lineSum = 0;
-                            for (
-                                let lineIndex = 1;
-                                lineIndex < line.length - 1;
-                                lineIndex++
-                            ) {
+                            for (let lineIndex = 1; lineIndex < line.length - 1; lineIndex++) {
                                 if (index === lineIndex) {
                                     lineSum += n;
                                 } else {
@@ -835,18 +773,10 @@
 
             // Row Indexer
             const constraintsRowIndexer = constraints[cID("Row Indexer")];
-            if (
-                constraintsRowIndexer &&
-                constraintsRowIndexer.some(
-                    (rowIndexer) => rowIndexer.cells.indexOf(cell) > -1
-                )
-            ) {
+            if (constraintsRowIndexer && constraintsRowIndexer.some((rowIndexer) => rowIndexer.cells.indexOf(cell) > -1)) {
                 let targetCell = grid[n - 1][cell.j];
                 if (targetCell !== cell && targetCell.value) {
-                    if (
-                        targetCell.value > 0 &&
-                        targetCell.value !== cell.i + 1
-                    ) {
+                    if (targetCell.value > 0 && targetCell.value !== cell.i + 1) {
                         return false;
                     }
                 }
@@ -854,18 +784,10 @@
 
             // Column Indexer
             const constraintsColumnIndexer = constraints[cID("Column Indexer")];
-            if (
-                constraintsColumnIndexer &&
-                constraintsColumnIndexer.some(
-                    (columnIndexer) => columnIndexer.cells.indexOf(cell) > -1
-                )
-            ) {
+            if (constraintsColumnIndexer && constraintsColumnIndexer.some((columnIndexer) => columnIndexer.cells.indexOf(cell) > -1)) {
                 let targetCell = grid[cell.i][n - 1];
                 if (targetCell !== cell && targetCell.value) {
-                    if (
-                        targetCell.value > 0 &&
-                        targetCell.value !== cell.j + 1
-                    ) {
+                    if (targetCell.value > 0 && targetCell.value !== cell.j + 1) {
                         return false;
                     }
                 }
@@ -873,12 +795,7 @@
 
             // Box Indexer
             const constraintsBoxIndexer = constraints[cID("Box Indexer")];
-            if (
-                constraintsBoxIndexer &&
-                constraintsBoxIndexer.some(
-                    (boxIndexer) => boxIndexer.cells.indexOf(cell) > -1
-                )
-            ) {
+            if (constraintsBoxIndexer && constraintsBoxIndexer.some((boxIndexer) => boxIndexer.cells.indexOf(cell) > -1)) {
                 let region = cell.region;
                 if (region >= 0) {
                     let regionCells = [];
@@ -893,10 +810,7 @@
                         let cellRegionIndex = regionCells.indexOf(cell);
                         let targetCell = regionCells[n - 1];
                         if (targetCell !== cell && targetCell.value) {
-                            if (
-                                targetCell.value > 0 &&
-                                targetCell.value !== cellRegionIndex + 1
-                            ) {
+                            if (targetCell.value > 0 && targetCell.value !== cellRegionIndex + 1) {
                                 return false;
                             }
                         }
@@ -911,8 +825,7 @@
                     if (xSum.value.length && !isNaN(parseInt(xSum.value))) {
                         const index = xSum.set.indexOf(cell);
                         if (index > -1) {
-                            const numCells =
-                                index === 0 ? n : xSum.set[0].value;
+                            const numCells = index === 0 ? n : xSum.set[0].value;
                             if (numCells !== 0 && index < numCells) {
                                 const xSumValue = parseInt(xSum.value);
 
@@ -943,10 +856,7 @@
                                             }
                                         }
                                     }
-                                    if (
-                                        xSumValue > maxVal ||
-                                        xSumValue < minVal
-                                    ) {
+                                    if (xSumValue > maxVal || xSumValue < minVal) {
                                         return false;
                                     }
                                 }
@@ -964,10 +874,7 @@
                                     }
                                 }
 
-                                if (
-                                    (sumValid && sum !== xSumValue) ||
-                                    (!sumValid && sum > xSumValue)
-                                ) {
+                                if ((sumValid && sum !== xSumValue) || (!sumValid && sum > xSumValue)) {
                                     return false;
                                 }
                             }
@@ -980,10 +887,7 @@
             const constraintsSkyscraper = constraints[cID("Skyscraper")];
             if (constraintsSkyscraper && constraintsSkyscraper.length > 0) {
                 for (let skyscraper of constraintsSkyscraper) {
-                    if (
-                        skyscraper.value.length &&
-                        !isNaN(parseInt(skyscraper.value))
-                    ) {
+                    if (skyscraper.value.length && !isNaN(parseInt(skyscraper.value))) {
                         const index = skyscraper.set.indexOf(cell);
                         if (index > -1) {
                             const skyscraperValue = parseInt(skyscraper.value);
@@ -996,8 +900,7 @@
                             let maxVal = 0;
                             let haveAllVals = true;
                             for (let ci = 0; ci < skyscraper.set.length; ci++) {
-                                let value =
-                                    ci === index ? n : skyscraper.set[ci].value;
+                                let value = ci === index ? n : skyscraper.set[ci].value;
                                 if (value !== 0) {
                                     if (maxVal < value) {
                                         seenCells++;
@@ -1009,11 +912,7 @@
                                 }
                             }
 
-                            if (
-                                (haveAllVals &&
-                                    seenCells !== skyscraperValue) ||
-                                seenCells > skyscraperValue
-                            ) {
+                            if ((haveAllVals && seenCells !== skyscraperValue) || seenCells > skyscraperValue) {
                                 return false;
                             }
                         }
