@@ -1291,15 +1291,7 @@ namespace SudokuSolver
             foreach (var c in solver.Constraints<QuadrupleConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                int[] values = new int[ValueCount(c.requiredMask)];
-                int valueIndex = 0;
-                for (int v = 1; v <= solver.MAX_VALUE; v++)
-                {
-                    if ((c.requiredMask & ValueMask(v)) != 0)
-                    {
-                        values[valueIndex++] = v;
-                    }
-                }
+                int[] values = c.requiredValues.ToArray();
                 quadruple.Add(new() { cells = cells, values = values });
             }
 
