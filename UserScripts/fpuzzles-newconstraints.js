@@ -93,9 +93,9 @@
                 "Digits on a Nabner line cannot repeat.",
                 "If a digit appears on the line, then the digits consecutive with it must not appear.",
                 "",
-                "Click and drag to draw a region sum line.",
-                "Click on a region sum line to remove it.",
-                "Shift click and drag to draw overlapping region sum lines.",
+                "Click and drag to draw a nabner line.",
+                "Click on a nabner to remove it.",
+                "Shift click and drag to draw overlapping nabner.",
             ],
         },
         {
@@ -108,9 +108,9 @@
             tooltip: [
                 "The sum of the digits on the line is equal to the sum of the circles at the end of each line.",
                 "",
-                "Click and drag to draw a region sum line.",
-                "Click on a region sum line to remove it.",
-                "Shift click and drag to draw overlapping region sum lines.",
+                "Click and drag to draw a double arrow.",
+                "Click on a double arrow to remove it.",
+                "Shift click and drag to draw overlapping double arrow.",
             ],
         },
         {
@@ -1621,38 +1621,47 @@
             return title;
         };
 
-        // Make all the constraint buttons smaller
-        const constraintHeight = 22;
+        // Multi-column constraint sidebar
+        let constraintSidebarWidth = 0;
         const prevCreateSidebarConstraints = createSidebarConstraints;
         createSidebarConstraints = function () {
             prevCreateSidebarConstraints();
 
-            let constraintIndex = 0;
-            let constraintButtons = sidebars[0].buttons;
-            for (let i = 0; i < constraintButtons.length; i++) {
-                let b = sidebars[0].buttons[i];
-                if (
-                    b.modes.indexOf("Constraint Tools") > -1 &&
-                    b.title !== "-"
-                ) {
-                    b.h = constraintHeight;
-                    b.y =
-                        gridY +
-                        gridSL -
-                        (constraintHeight * toolConstraints.length +
-                            buttonGap * (toolConstraints.length - 1) +
-                            buttonMargin) +
-                        (constraintHeight + buttonGap) * constraintIndex;
+            {
+                const x = gridX - (sidebarDist + sidebarW / 2);
+                const baseX = x + sidebarW;
+                const baseY = gridY + buttonGap;
+                const columnWidth = buttonMargin + buttonW + buttonGap + buttonSH + buttonGap + buttonSH + buttonMargin;
+                let constraintButtons = sidebars[0].buttons;
+                let currentX = baseX;
+                let currentY = gridY + buttonGap;
+                for (let i = 0; i < constraintButtons.length; i++) {
+                    let button = constraintButtons[i];
+                    if (button.modes.indexOf("Constraint Tools") > -1 && button.title !== "-") {
+                        button.x = currentX;
+                        button.y = currentY;
+                        button.w = buttonW;
+                        button.h = buttonSH;
 
-                    if (i + 1 < constraintButtons.length) {
-                        let bm = constraintButtons[i + 1];
-                        if (bm.title === "-") {
-                            bm.h = b.h;
-                            bm.y = b.y;
+                        if (i + 1 < constraintButtons.length) {
+                            let bm = constraintButtons[i + 1];
+                            if (bm.title === "-") {
+                                bm.x = currentX + buttonW / 2 + buttonGap + buttonSH / 2;
+                                bm.y = currentY;
+                            }
+                        }
+
+                        if (i < constraintButtons.length - 1) {
+                            currentY += buttonSH + buttonGap;
+                            if (currentY + buttonSH + buttonGap > gridY + gridSL) {
+                                currentY = baseY;
+                                currentX += columnWidth;
+                            }
                         }
                     }
-                    constraintIndex++;
                 }
+
+                constraintSidebarWidth = currentX + columnWidth - baseX;
             }
         };
 
@@ -1660,34 +1669,35 @@
         window.drawPopups = function (overlapSidebars) {
             if (!overlapSidebars && popup === "Constraint Tools") {
                 ctx.lineWidth = lineWW;
-                ctx.fillStyle = boolSettings["Dark Mode"]
-                    ? "#404040"
-                    : "#D0D0D0";
-                ctx.strokeStyle = boolSettings["Dark Mode"]
-                    ? "#202020"
-                    : "#808080";
-                ctx.fillRect(
-                    gridX - sidebarDist,
-                    gridY + gridSL,
-                    sidebarW + (buttonGap + constraintHeight) * 2,
-                    -(
-                        constraintHeight * toolConstraints.length +
-                        buttonGap * (toolConstraints.length - 1) +
-                        buttonMargin * 2
-                    )
-                );
-                ctx.strokeRect(
-                    gridX - sidebarDist,
-                    gridY + gridSL,
-                    sidebarW + (buttonGap + constraintHeight) * 2,
-                    -(
-                        constraintHeight * toolConstraints.length +
-                        buttonGap * (toolConstraints.length - 1) +
-                        buttonMargin * 2
-                    )
-                );
+                ctx.fillStyle = boolSettings["Dark Mode"] ? "#404040" : "#D0D0D0";
+                ctx.strokeStyle = boolSettings["Dark Mode"] ? "#202020" : "#808080";
+                ctx.fillRect(gridX - sidebarDist, gridY + gridSL, constraintSidebarWidth, -gridSL);
+                ctx.strokeRect(gridX - sidebarDist, gridY + gridSL, constraintSidebarWidth, -gridSL);
             } else {
                 origDrawPopups(overlapSidebars);
+            }
+        };
+
+        const prevonmousemove = document.onmousemove;
+        document.onmousemove = function (e) {
+            if (!testPaused() && !disableInputs && !holding && sidebars.length && popup === "Constraint Tools") {
+		        updateCursorPosition(e);
+
+                const hoveredButton =
+                    sidebars[sidebars.findIndex((a) => a.title === "Constraints")].buttons[
+                        sidebars[sidebars.findIndex((a) => a.title === "Constraints")].buttons.findIndex((a) => a.id === "ConstraintTools")
+                    ];
+                if (
+                    (mouseX < hoveredButton.x - hoveredButton.w / 2 - buttonMargin ||
+                        mouseX > hoveredButton.x + hoveredButton.w / 2 + buttonMargin ||
+                        mouseY < hoveredButton.y - buttonMargin ||
+                        mouseY > hoveredButton.y + buttonSH + buttonMargin) &&
+                    (mouseX < gridX - sidebarDist || mouseX > gridX - sidebarDist + constraintSidebarWidth || mouseY < gridY || mouseY > gridY + gridSL)
+                ) {
+                    closePopups();
+                }
+            } else {
+                prevonmousemove(e);
             }
         };
 
