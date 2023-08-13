@@ -721,56 +721,44 @@
             }
 
             // Region Sum Lines
-            const constraintsRegionSumLines =
-                constraints[cID("Region Sum Line")];
-            if (
-                constraintsRegionSumLines &&
-                constraintsRegionSumLines.length > 0
-            ) {
+            const constraintsRegionSumLines = constraints[cID('Region Sum Line')];
+            if (constraintsRegionSumLines && constraintsRegionSumLines.length > 0) {
                 for (let regionSumLine of constraintsRegionSumLines) {
                     for (let line of regionSumLine.lines) {
                         const index = line.indexOf(cell);
                         if (index > -1) {
-                            let sums = [];
-                            let sumIsValid = [];
-                            for (let lineCell of line) {
-                                var region = lineCell.region;
-                                if (lineCell.value) {
-                                    if (sums[region]) {
-                                        sums[region] += lineCell.value;
+                            const completedSums = [];
+                            let lastRegion = null;
+                            let currentSum = 0;
+                            let currentIsComplete = true;
+                            for (let lineIndex = 0; lineIndex < line.length; lineIndex++) {
+                                const lineCell = line[lineIndex];
+                                const region = lineCell.region;
+                                if (region !== lastRegion) {
+                                    if (region >= 0 && currentIsComplete && currentSum > 0) {
+                                        completedSums.push(currentSum);
+                                    }
+                                    currentSum = 0;
+                                    currentIsComplete = true;
+                                }
+                                if (region !== null && currentIsComplete) {
+                                    const value = lineIndex === index ? n : lineCell.value;
+                                    if (value) {
+                                        currentSum += value;
                                     } else {
-                                        sums[region] = lineCell.value;
+                                        currentIsComplete = false;
                                     }
-                                    if (sumIsValid[region] === undefined) {
-                                        sumIsValid[region] = true;
-                                    }
-                                } else {
-                                    sumIsValid[region] = false;
                                 }
+                                lastRegion = region;
                             }
 
-                            let firstSum = 0;
-                            for (
-                                let sumIndex = 0;
-                                sumIndex < sums.length;
-                                sumIndex++
-                            ) {
-                                if (sumIsValid[sumIndex]) {
-                                    firstSum = sums[sumIndex];
-                                    break;
-                                }
+                            // Check the last region
+                            if (lastRegion >= 0 && currentIsComplete && currentSum > 0) {
+                                completedSums.push(currentSum);
                             }
 
-                            for (
-                                let sumIndex = 0;
-                                sumIndex < sums.length;
-                                sumIndex++
-                            ) {
-                                if (sumIsValid[sumIndex]) {
-                                    if (sums[sumIndex] !== firstSum) {
-                                        return false;
-                                    }
-                                }
+                            if (completedSums.length > 1 && !completedSums.every(sum => sum === completedSums[0])) {
+                                return false;
                             }
                         }
                     }
