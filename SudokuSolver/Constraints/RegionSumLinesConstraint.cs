@@ -38,7 +38,7 @@ public class RegionSumLinesConstraint : EqualSumsConstraint
             {
                 cellGroups.Add(new());
             }
-            cellGroups[0].Add(cell);
+            cellGroups[^1].Add(cell);
             lastRegion = curRegion;
         }
 

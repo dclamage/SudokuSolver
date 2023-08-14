@@ -157,17 +157,24 @@ namespace SudokuSolver.Constraints
             HashSet<int> possibleSums = null;
             foreach (var sumCellsHelper in sumCellsHelpers)
             {
+                List<int> curPossibleSums = sumCellsHelper.PossibleSums(solver);
+                if (curPossibleSums == null)
+                {
+                    possibleSums = null;
+                    break;
+                }
+
                 if (possibleSums == null)
                 {
-                    possibleSums = sumCellsHelper.PossibleSums(solver).ToHashSet();
+                    possibleSums = curPossibleSums.ToHashSet();
                 }
                 else
                 {
-                    possibleSums.IntersectWith(sumCellsHelper.PossibleSums(solver));
+                    possibleSums.IntersectWith(curPossibleSums);
                 }
             }
 
-            if (possibleSums == null)
+            if (possibleSums == null || possibleSums.Count == 0)
             {
                 return new();
             }
