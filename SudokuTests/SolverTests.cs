@@ -1,8 +1,12 @@
+using System.Diagnostics;
+
 namespace SudokuTests;
 
 [TestClass]
 public class SolverTests
 {
+    public TestContext TestContext { get; set; }
+
     [TestMethod]
     public void SolveUniqueClassicGivens()
     {
@@ -114,10 +118,16 @@ public class SolverTests
     [TestMethod]
     public void SolveUniqueVariantFPuzzles()
     {
-        foreach (var curBoard in Puzzles.uniqueVariantFPuzzles)
+        TestContext.WriteLine($"Testing {Puzzles.uniqueVariantFPuzzles.Length} variant puzzles.");
+        for (int i = 0; i < Puzzles.uniqueVariantFPuzzles.Length; i++)
         {
+            TestContext.WriteLine($"Testing puzzle {i}");
+            Stopwatch sw = Stopwatch.StartNew();
+            var curBoard = Puzzles.uniqueVariantFPuzzles[i];
             Solver solver = SolverFactory.CreateFromFPuzzles(curBoard.Item1);
+            TestContext.WriteLine($"\"{solver.Title}\" by {solver.Author}");
             solver.TestUniqueSolution(curBoard.Item2);
+            TestContext.WriteLine($"Finished testing puzzle {i} in {sw.Elapsed.TotalMilliseconds:F2}ms");
         }
     }
 
