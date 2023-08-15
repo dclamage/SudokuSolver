@@ -18,7 +18,7 @@ namespace SudokuSolver.Constraints
             var groups = ParseCells(options);
             if (groups.Count != 1)
             {
-                throw new ArgumentException($"Double Arrow constraint expects 1 cell group, got {cellGroups.Count}.");
+                throw new ArgumentException($"Double Arrow constraint expects 1 cell group, got {groups.Count}.");
             }
 
             lineCells = groups[0];
