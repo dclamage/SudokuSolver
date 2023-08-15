@@ -5,7 +5,7 @@ namespace SudokuSolver.Constraints;
 [Constraint(DisplayName = "Region Sum Lines", ConsoleName = "rsl")]
 public class RegionSumLinesConstraint : EqualSumsConstraint
 {
-    public override string SpecificName => $"Region Sum Line from {CellName(cells[0])} - {CellName(cells[^1])}";
+    public override string SpecificName => $"Region Sum Line from {CellName(lineCells[0])} - {CellName(lineCells[^1])}";
 
     public readonly List<(int, int)> lineCells;
 

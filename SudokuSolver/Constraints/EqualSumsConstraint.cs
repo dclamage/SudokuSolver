@@ -8,10 +8,10 @@ namespace SudokuSolver.Constraints
 {
     public abstract class EqualSumsConstraint : Constraint
     {
-        public List<(int, int)> cells;
-        public HashSet<(int, int)> cellsHash;
-        public List<List<(int, int)>> cellGroups;
-        public List<SumCellsHelper> sumCellsHelpers;
+        private List<(int, int)> cells;
+        private HashSet<(int, int)> cellsHash;
+        private List<List<(int, int)>> cellGroups;
+        private List<SumCellsHelper> sumCellsHelpers;
 
         protected EqualSumsConstraint(Solver solver, string options) : base(solver, options)
         {
@@ -83,7 +83,7 @@ namespace SudokuSolver.Constraints
             List<int> possibleSums = PossibleSums(solver);
             if (possibleSums.Count == 0)
             {
-                logicalStepDescription?.Add(new("There are no possible sums.", cellsHash));
+                logicalStepDescription?.Add(new("There are no possible sums.", cells));
                 return LogicResult.Invalid;
             }
 
@@ -92,7 +92,7 @@ namespace SudokuSolver.Constraints
             if (logicalStepDescription != null)
             {
                 origMasks = new uint[cells.Count];
-                for (int cellIndex = 0; cellIndex < cellsHash.Count; cellIndex++)
+                for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
                 {
                     var (i, j) = cells[cellIndex];
                     origMasks[cellIndex] = board[i, j];
