@@ -560,11 +560,13 @@
             if (puzzle.whispers) {
                 let germanwhispers = [];
                 let dutchwhispers = [];
+                const germanWhisperDiff = "" + Math.ceil(size / 2);
+                const dutchWhisperDiff = "" + (Math.ceil(size / 2) - 1);
                 for (let whispers of puzzle.whispers) {
-                    if (whispers.value === "" + Math.ceil(size / 2)) {
+                    if (!whispers.value || whispers.value === germanWhisperDiff) {
                         germanwhispers.push(whispers);
                         delete germanwhispers[germanwhispers.length - 1].value;
-                    } else if (whispers.value === "" + (Math.ceil(size / 2) - 1)) {
+                    } else if (whispers.value === dutchWhisperDiff) {
                         dutchwhispers.push(whispers);
                         delete dutchwhispers[dutchwhispers.length - 1].value;
                     }
