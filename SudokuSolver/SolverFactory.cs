@@ -674,9 +674,19 @@ namespace SudokuSolver
             {
                 foreach (var whispers in fpuzzlesData.whispers)
                 {
-                    foreach (var line in whispers.lines)
+                    if (whispers.value == null)
                     {
-                        solver.AddConstraint(typeof(WhispersConstraint), ToOptions(line));
+                        foreach (var line in whispers.lines)
+                        {
+                            solver.AddConstraint(typeof(WhispersConstraint), ToOptions(line));
+                        }
+                    }
+                    else
+                    {
+                        foreach (var line in whispers.lines)
+                        {
+                            solver.AddConstraint(typeof(WhispersConstraint), $"{whispers.value};{ToOptions(line)}");
+                        }
                     }
                 }
             }
@@ -914,6 +924,17 @@ namespace SudokuSolver
                     foreach (var line in entropicline.lines)
                     {
                         solver.AddConstraint(typeof(EntropicLineConstraint), ToOptions(line));
+                    }
+                }
+            }
+
+            if (fpuzzlesData.modularline != null)
+            {
+                foreach (var modularLine in fpuzzlesData.modularline)
+                {
+                    foreach (var line in modularLine.lines)
+                    {
+                        solver.AddConstraint(typeof(ModularLineConstraint), ToOptions(line));
                     }
                 }
             }
@@ -1234,7 +1255,10 @@ namespace SudokuSolver
             foreach (var c in solver.Constraints<WhispersConstraint>())
             {
                 string[] cells = c.cells.Select(CN).ToArray();
-                whispers.Add(new() { lines = new string[][] { cells } });
+                whispers.Add(new() {
+                    lines = new string[][] { cells },
+                    value = c.difference.ToString(),
+                });
             }
 
             List<FPuzzlesLines> regionSumLines = new();
@@ -1335,6 +1359,13 @@ namespace SudokuSolver
                 entropicline.Add(new() { lines = new string[][] { cells } });
             }
 
+            List<FPuzzlesLines> modularline = new();
+            foreach (var c in solver.Constraints<ModularLineConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                modularline.Add(new() { lines = new string[][] { cells } });
+            }
+
             List<FPuzzlesLines> nabner = new();
             foreach (var c in solver.Constraints<NabnerConstraint>())
             {
@@ -1391,6 +1422,7 @@ namespace SudokuSolver
                 xsum = ToArray(xsum),
                 skyscraper = ToArray(skyscraper),
                 entropicline = ToArray(entropicline),
+                modularline = ToArray(modularline),
                 nabner = ToArray(nabner),
                 doublearrow = ToArray(doublearrow),
             };

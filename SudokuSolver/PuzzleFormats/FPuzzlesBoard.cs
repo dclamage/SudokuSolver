@@ -57,6 +57,7 @@ public class FPuzzlesBoard
     public FPuzzlesCell[] xsum { get; set; }
     public FPuzzlesCell[] skyscraper { get; set; }
     public FPuzzlesLines[] entropicline { get; set; }
+    public FPuzzlesLines[] modularline { get; set; }
     public FPuzzlesLines[] nabner { get; set; }
     public FPuzzlesLines[] doublearrow { get; set; }
     public string[] disabledlogic { get; set; } = null;
@@ -114,6 +115,7 @@ public record FPuzzlesCells
 public record FPuzzlesLines
 {
     public string[][] lines { get; set; }
+    public string value { get; set; }
 }
 
 public record FPuzzlesClone

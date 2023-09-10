@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.12
+// @version      1.13
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -38,18 +38,33 @@
             ],
         },
         {
-            name: "Whispers",
+            name: "German Whispers",
             type: "line",
             color: "#67F067",
             colorDark: "#357D35",
             lineWidth: 0.1875,
             tooltip: [
-                "Adjacent numbers on a whispers line must have a difference of 5 or greater.",
-                "[For non-9x9 grid sizes, this adjust to be (size / 2) rounded up.]",
+                "Adjacent numbers on a German whispers line must have a difference of 5 or greater.",
+                "[For non-9x9 grid sizes, this adjusts to be (size / 2) rounded up.]",
                 "",
-                "Click and drag to draw a whispers line.",
-                "Click on a whispers line to remove it.",
-                "Shift click and drag to draw overlapping whispers lines.",
+                "Click and drag to draw a German whispers line.",
+                "Click on a German whispers line to remove it.",
+                "Shift click and drag to draw overlapping German whispers lines.",
+            ],
+        },
+        {
+            name: "Dutch Whispers",
+            type: "line",
+            color: "#FF9A00",
+            colorDark: "#B26B00",
+            lineWidth: 0.1875,
+            tooltip: [
+                "Adjacent numbers on a Dutch whispers line must have a difference of 4 or greater.",
+                "[For non-9x9 grid sizes, this adjusts to be (size / 2) - 1 rounded up.]",
+                "",
+                "Click and drag to draw a Dutch whispers line.",
+                "Click on a Dutch whispers line to remove it.",
+                "Shift click and drag to draw overlapping Dutch whispers lines.",
             ],
         },
         {
@@ -72,6 +87,24 @@
             ],
         },
         {
+            name: "Modular Line",
+            type: "line",
+            color: "#33BBBB",
+            colorDark: "#1E6E6E",
+            lineWidth: 0.15625,
+            tooltip: [
+                "Any set of three sequential cells along an modular line must contain",
+                "a digit that is 0 mod 3, 1 mod 3, and 2 mod 3.",
+                "For 9x9 this is (1,4,7), (2,5,8), (3,6,9).",
+                "Digits my repeat on a line, if allowed by other rules.",
+                "A modular line of length two may not contain two digits which are the same mod 3.",
+                "",
+                "Click and drag to draw an modular line.",
+                "Click on an modular line to remove it.",
+                "Shift click and drag to draw overlapping modular lines.",
+            ],
+        },
+        {
             name: "Region Sum Line",
             type: "line",
             color: "#2ECBFF",
@@ -79,8 +112,8 @@
             lineWidth: 0.15625,
             tooltip: [
                 "Digits have an equal sum within each box the line passes through.",
-                'If the line re-enters a region, then it starts a new sum.',
-                '',
+                "If the line re-enters a region, then it starts a new sum.",
+                "",
                 "Click and drag to draw a region sum line.",
                 "Click on a region sum line to remove it.",
                 "Shift click and drag to draw overlapping region sum lines.",
@@ -343,9 +376,7 @@
         const origExportPuzzle = exportPuzzle;
         exportPuzzle = function (includeCandidates) {
             const compressed = origExportPuzzle(includeCandidates);
-            const puzzle = JSON.parse(
-                compressor.decompressFromBase64(compressed)
-            );
+            const puzzle = JSON.parse(compressor.decompressFromBase64(compressed));
 
             // Add cosmetic version of constraints for those not using the solver plugin
             for (let constraintInfo of newConstraintInfo) {
@@ -378,7 +409,7 @@
                                     height: 0.85,
                                     fromConstraint: constraintInfo.name,
                                 });
-                                
+
                                 const lastIndex = instance.lines[0].length - 1;
                                 puzzle.circle.push({
                                     cells: [instance.lines[0][lastIndex]],
@@ -426,6 +457,30 @@
                     }
                 }
             }
+
+            // Export as a single whisper constraint with a configurable difference
+            const allWhispers = [];
+
+            for (let germanwhisper of puzzle.germanwhispers || []) {
+                allWhispers.push({
+                    lines: germanwhisper.lines,
+                    value: "" + Math.ceil(size / 2),
+                });
+            }
+
+            for (let dutchwhisper of puzzle.dutchwhispers || []) {
+                allWhispers.push({
+                    lines: dutchwhisper.lines,
+                    value: "" + (Math.ceil(size / 2) - 1),
+                });
+            }
+
+            if (allWhispers.length > 0) {
+                puzzle.whispers = allWhispers;
+                delete puzzle.germanwhispers;
+                delete puzzle.dutchwhispers;
+            }
+
             return compressor.compressToBase64(JSON.stringify(puzzle));
         };
 
@@ -439,19 +494,16 @@
                 for (let line of puzzle.line) {
                     // Upgrade from old boolean
                     if (line.isNewConstraint) {
-                        line.fromConstraint =
-                            line.outlineC === "#C060C0"
-                                ? "Renban"
-                                : line.outlineC === "#67F067"
-                                ? "Whispers"
-                                : "Entropic";
+                        line.fromConstraint = line.outlineC === "#C060C0" ? "Renban" : line.outlineC === "#67F067" ? "German Whispers" : "Entropic";
                         delete line.isNewConstraint;
                     }
 
-                    if (
-                        !line.fromConstraint ||
-                        !constraintNames.includes(line.fromConstraint)
-                    ) {
+                    // Upgrade "Whispers" to "German Whispers"
+                    if (line.fromConstraint === "Whispers") {
+                        line.fromConstraint = "German Whispers";
+                    }
+
+                    if (!line.fromConstraint || !constraintNames.includes(line.fromConstraint)) {
                         filteredLines.push(line);
                     }
                 }
@@ -465,10 +517,7 @@
             if (puzzle.cage) {
                 let filteredCages = [];
                 for (let cage of puzzle.cage) {
-                    if (
-                        !cage.fromConstraint ||
-                        !constraintNames.includes(cage.fromConstraint)
-                    ) {
+                    if (!cage.fromConstraint || !constraintNames.includes(cage.fromConstraint)) {
                         filteredCages.push(cage);
                     }
                 }
@@ -482,10 +531,7 @@
             if (puzzle.text) {
                 let filteredText = [];
                 for (let text of puzzle.text) {
-                    if (
-                        !text.fromConstraint ||
-                        !constraintNames.includes(text.fromConstraint)
-                    ) {
+                    if (!text.fromConstraint || !constraintNames.includes(text.fromConstraint)) {
                         filteredText.push(text);
                     }
                 }
@@ -499,10 +545,7 @@
             if (puzzle.circle) {
                 let filteredCircle = [];
                 for (let circle of puzzle.circle) {
-                    if (
-                        !circle.fromConstraint ||
-                        !constraintNames.includes(circle.fromConstraint)
-                    ) {
+                    if (!circle.fromConstraint || !constraintNames.includes(circle.fromConstraint)) {
                         filteredCircle.push(circle);
                     }
                 }
@@ -512,6 +555,28 @@
                 } else {
                     delete puzzle.circle;
                 }
+            }
+
+            if (puzzle.whispers) {
+                let germanwhispers = [];
+                let dutchwhispers = [];
+                for (let whispers of puzzle.whispers) {
+                    if (whispers.value === "" + Math.ceil(size / 2)) {
+                        germanwhispers.push(whispers);
+                        delete germanwhispers[germanwhispers.length - 1].value;
+                    } else if (whispers.value === "" + (Math.ceil(size / 2) - 1)) {
+                        dutchwhispers.push(whispers);
+                        delete dutchwhispers[dutchwhispers.length - 1].value;
+                    }
+                }
+
+                if (germanwhispers.length > 0) {
+                    puzzle.germanwhispers = germanwhispers;
+                }
+                if (dutchwhispers.length > 0) {
+                    puzzle.dutchwhispers = dutchwhispers;
+                }
+                delete puzzle.whispers;
             }
 
             string = compressor.compressToBase64(JSON.stringify(puzzle));
@@ -531,9 +596,7 @@
                                 constraint[a].show();
                             }
                         } else {
-                            let cells = constraint
-                                .flatMap((inst) => inst.cells)
-                                .filter((cell) => cell);
+                            let cells = constraint.flatMap((inst) => inst.cells).filter((cell) => cell);
                             drawSolidCage(cells, info.color, info.colorDark);
                         }
                     }
@@ -588,11 +651,40 @@
                 }
             }
 
-            // Whispers
-            const constraintsWhispers = constraints[cID("Whispers")];
-            if (constraintsWhispers && constraintsWhispers.length > 0) {
+            // German Whispers
+            const constraintsGermanWhispers = constraints[cID("German Whispers")];
+            if (constraintsGermanWhispers && constraintsGermanWhispers.length > 0) {
                 const whispersDiff = Math.ceil(size / 2);
-                for (let whispers of constraintsWhispers) {
+                for (let whispers of constraintsGermanWhispers) {
+                    for (let line of whispers.lines) {
+                        const index = line.indexOf(cell);
+                        if (index > -1) {
+                            if (n - whispersDiff <= 0 && n + whispersDiff > size) {
+                                return false;
+                            }
+
+                            if (index > 0) {
+                                const prevCell = line[index - 1];
+                                if (prevCell.value && Math.abs(prevCell.value - n) < whispersDiff) {
+                                    return false;
+                                }
+                            }
+                            if (index < line.length - 1) {
+                                const nextCell = line[index + 1];
+                                if (nextCell.value && Math.abs(nextCell.value - n) < whispersDiff) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Dutch Whispers
+            const constraintsDutchWhispers = constraints[cID("Dutch Whispers")];
+            if (constraintsDutchWhispers && constraintsDutchWhispers.length > 0) {
+                const whispersDiff = Math.ceil(size / 2) - 1;
+                for (let whispers of constraintsDutchWhispers) {
                     for (let line of whispers.lines) {
                         const index = line.indexOf(cell);
                         if (index > -1) {
@@ -643,6 +735,40 @@
 
                 for (let entropicLine of constraintsEntropicLine) {
                     for (let line of entropicLine.lines) {
+                        const index = line.indexOf(cell);
+                        const nGroup = getGroup(n);
+                        if (nGroup !== null && index > -1) {
+                            const startIndex = Math.max(0, index - 2);
+                            const endIndex = Math.min(line.length - 1, index + 2);
+                            for (let i = startIndex; i <= endIndex; i++) {
+                                if (i === index || line[i].value === 0) {
+                                    continue;
+                                }
+
+                                const cellGroup = getGroup(line[i].value);
+                                if (cellGroup === nGroup) {
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Modular Line
+            const constraintsModularLine = constraints[cID("Modular Line")];
+            if (constraintsModularLine && constraintsModularLine.length > 0) {
+                const modularLineGroups = [[], [], []];
+                for (let v = 1; v <= size; v++) {
+                    modularLineGroups[v % 3].push(v);
+                }
+
+                function getGroup(val) {
+                    return modularLineGroups.find((group) => group.includes(val));
+                }
+
+                for (let modularLine of constraintsModularLine) {
+                    for (let line of modularLine.lines) {
                         const index = line.indexOf(cell);
                         const nGroup = getGroup(n);
                         if (nGroup !== null && index > -1) {
@@ -931,16 +1057,9 @@
             this.lines = [[cell]];
 
             this.show = function () {
-                const renbanInfo = newConstraintInfo.filter(
-                    (c) => c.name === "Renban"
-                )[0];
+                const renbanInfo = newConstraintInfo.filter((c) => c.name === "Renban")[0];
                 for (var a = 0; a < this.lines.length; a++) {
-                    drawLine(
-                        this.lines[a],
-                        renbanInfo.color,
-                        renbanInfo.colorDark,
-                        renbanInfo.lineWidth
-                    );
+                    drawLine(this.lines[a], renbanInfo.color, renbanInfo.colorDark, renbanInfo.lineWidth);
                 }
             };
 
@@ -951,21 +1070,30 @@
             };
         };
 
-        // Whispers
-        window.whispers = function (cell) {
+        // German Whispers
+        window.germanwhispers = function (cell) {
             this.lines = [[cell]];
 
             this.show = function () {
-                const whispersInfo = newConstraintInfo.filter(
-                    (c) => c.name === "Whispers"
-                )[0];
+                const whispersInfo = newConstraintInfo.filter((c) => c.name === "German Whispers")[0];
                 for (var a = 0; a < this.lines.length; a++) {
-                    drawLine(
-                        this.lines[a],
-                        whispersInfo.color,
-                        whispersInfo.colorDark,
-                        whispersInfo.lineWidth
-                    );
+                    drawLine(this.lines[a], whispersInfo.color, whispersInfo.colorDark, whispersInfo.lineWidth);
+                }
+            };
+
+            this.addCellToLine = function (cell) {
+                this.lines[this.lines.length - 1].push(cell);
+            };
+        };
+
+        // Dutch Whispers
+        window.dutchwhispers = function (cell) {
+            this.lines = [[cell]];
+
+            this.show = function () {
+                const whispersInfo = newConstraintInfo.filter((c) => c.name === "Dutch Whispers")[0];
+                for (var a = 0; a < this.lines.length; a++) {
+                    drawLine(this.lines[a], whispersInfo.color, whispersInfo.colorDark, whispersInfo.lineWidth);
                 }
             };
 
@@ -979,16 +1107,25 @@
             this.lines = [[cell]];
 
             this.show = function () {
-                const entropicLineInfo = newConstraintInfo.filter(
-                    (c) => c.name === "Entropic Line"
-                )[0];
+                const entropicLineInfo = newConstraintInfo.filter((c) => c.name === "Entropic Line")[0];
                 for (var a = 0; a < this.lines.length; a++) {
-                    drawLine(
-                        this.lines[a],
-                        entropicLineInfo.color,
-                        entropicLineInfo.colorDark,
-                        entropicLineInfo.lineWidth
-                    );
+                    drawLine(this.lines[a], entropicLineInfo.color, entropicLineInfo.colorDark, entropicLineInfo.lineWidth);
+                }
+            };
+
+            this.addCellToLine = function (cell) {
+                this.lines[this.lines.length - 1].push(cell);
+            };
+        };
+
+        // Modular Line
+        window.modularline = function (cell) {
+            this.lines = [[cell]];
+
+            this.show = function () {
+                const modularLineInfo = newConstraintInfo.filter((c) => c.name === "Modular Line")[0];
+                for (var a = 0; a < this.lines.length; a++) {
+                    drawLine(this.lines[a], modularLineInfo.color, modularLineInfo.colorDark, modularLineInfo.lineWidth);
                 }
             };
 
@@ -1002,16 +1139,9 @@
             this.lines = [[cell]];
 
             this.show = function () {
-                const regionSumLineInfo = newConstraintInfo.filter(
-                    (c) => c.name === "Region Sum Line"
-                )[0];
+                const regionSumLineInfo = newConstraintInfo.filter((c) => c.name === "Region Sum Line")[0];
                 for (var a = 0; a < this.lines.length; a++) {
-                    drawLine(
-                        this.lines[a],
-                        regionSumLineInfo.color,
-                        regionSumLineInfo.colorDark,
-                        regionSumLineInfo.lineWidth
-                    );
+                    drawLine(this.lines[a], regionSumLineInfo.color, regionSumLineInfo.colorDark, regionSumLineInfo.lineWidth);
                 }
             };
 
@@ -1025,16 +1155,9 @@
             this.lines = [[cell]];
 
             this.show = function () {
-                const nabnerLineInfo = newConstraintInfo.filter(
-                    (c) => c.name === "Nabner"
-                )[0];
+                const nabnerLineInfo = newConstraintInfo.filter((c) => c.name === "Nabner")[0];
                 for (var a = 0; a < this.lines.length; a++) {
-                    drawLine(
-                        this.lines[a],
-                        nabnerLineInfo.color,
-                        nabnerLineInfo.colorDark,
-                        nabnerLineInfo.lineWidth
-                    );
+                    drawLine(this.lines[a], nabnerLineInfo.color, nabnerLineInfo.colorDark, nabnerLineInfo.lineWidth);
                 }
             };
 
@@ -1048,45 +1171,21 @@
             this.lines = [[cell]];
 
             this.show = function () {
-                const nabnerLineInfo = newConstraintInfo.filter(
-                    (c) => c.name === "Double Arrow"
-                )[0];
-                const nabnerColor = boolSettings["Dark Mode"]
-                    ? nabnerLineInfo.colorDark
-                    : nabnerLineInfo.color;
+                const nabnerLineInfo = newConstraintInfo.filter((c) => c.name === "Double Arrow")[0];
+                const nabnerColor = boolSettings["Dark Mode"] ? nabnerLineInfo.colorDark : nabnerLineInfo.color;
                 for (let i = 0; i < this.lines.length; i++) {
                     ctx.lineWidth = cellSL * nabnerLineInfo.lineWidth * 0.5;
 
                     ctx.strokeStyle = nabnerColor;
                     ctx.beginPath();
-                    ctx.moveTo(
-                        this.lines[i][0].x + cellSL / 2,
-                        this.lines[i][0].y + cellSL / 2
-                    );
-                    for (let j = 1; j < this.lines[i].length; j++)
-                        ctx.lineTo(
-                            this.lines[i][j].x + cellSL / 2,
-                            this.lines[i][j].y + cellSL / 2
-                        );
+                    ctx.moveTo(this.lines[i][0].x + cellSL / 2, this.lines[i][0].y + cellSL / 2);
+                    for (let j = 1; j < this.lines[i].length; j++) ctx.lineTo(this.lines[i][j].x + cellSL / 2, this.lines[i][j].y + cellSL / 2);
                     ctx.stroke();
 
-                    ctx.fillStyle = boolSettings["Dark Mode"]
-                        ? "#888888"
-                        : "#EAEAEA";
-                    for (
-                        let j = 0, k = 0;
-                        j < this.lines[i].length &&
-                        (this.lines[i].length > 1 || !k);
-                        j += this.lines[i].length - 1, k++
-                    ) {
+                    ctx.fillStyle = boolSettings["Dark Mode"] ? "#888888" : "#EAEAEA";
+                    for (let j = 0, k = 0; j < this.lines[i].length && (this.lines[i].length > 1 || !k); j += this.lines[i].length - 1, k++) {
                         ctx.beginPath();
-                        ctx.arc(
-                            this.lines[i][j].x + cellSL / 2,
-                            this.lines[i][j].y + cellSL / 2,
-                            cellSL / 2 - ctx.lineWidth / 2,
-                            0,
-                            Math.PI * 2
-                        );
+                        ctx.arc(this.lines[i][j].x + cellSL / 2, this.lines[i][j].y + cellSL / 2, cellSL / 2 - ctx.lineWidth / 2, 0, Math.PI * 2);
                         ctx.fill();
                         ctx.stroke();
                     }
@@ -1108,9 +1207,7 @@
             };
 
             this.sortCells = function () {
-                this.cells.sort(
-                    (a, b) => a.i * size + a.j - (b.i * size + b.j)
-                );
+                this.cells.sort((a, b) => a.i * size + a.j - (b.i * size + b.j));
             };
         };
 
@@ -1128,9 +1225,7 @@
             this.isRow = false;
 
             this.show = function () {
-                ctx.fillStyle = boolSettings["Dark Mode"]
-                    ? "#F0F0F0"
-                    : "#000000";
+                ctx.fillStyle = boolSettings["Dark Mode"] ? "#F0F0F0" : "#000000";
                 ctx.font = cellSL * 1.0 + "px Arial";
                 const iconOffset = cellSL * 0.1 * (this.isReverse ? -1 : 1);
                 const iconBaseX = this.cell.x + cellSL / 2;
@@ -1145,40 +1240,22 @@
                 if (this.value.length <= 1) {
                     textOffset = this.isReverse ? cellSL * -0.1 : cellSL * 0.09;
                 } else {
-                    textOffset = this.isReverse
-                        ? cellSL * -0.11
-                        : cellSL * 0.08;
+                    textOffset = this.isReverse ? cellSL * -0.11 : cellSL * 0.08;
                 }
 
                 let textOffsetX = 0;
-                if (
-                    this.value.length == 2 &&
-                    this.value[0] == "1" &&
-                    this.value[1] != "1"
-                ) {
+                if (this.value.length == 2 && this.value[0] == "1" && this.value[1] != "1") {
                     textOffsetX = cellSL * 0.03;
-                } else if (
-                    this.value.length == 2 &&
-                    this.value[0] != "1" &&
-                    this.value[1] == "1"
-                ) {
+                } else if (this.value.length == 2 && this.value[0] != "1" && this.value[1] == "1") {
                     textOffsetX = cellSL * -0.03;
                 }
 
                 const textBaseX = this.cell.x + cellSL / 2;
                 const textBaseY = this.cell.y + cellSL * 0.75;
                 if (this.isRow) {
-                    ctx.fillText(
-                        this.value.length ? this.value : "-",
-                        textBaseX - textOffset - textOffsetX,
-                        textBaseY
-                    );
+                    ctx.fillText(this.value.length ? this.value : "-", textBaseX - textOffset - textOffsetX, textBaseY);
                 } else {
-                    ctx.fillText(
-                        this.value.length ? this.value : "-",
-                        textBaseX - textOffsetX,
-                        textBaseY - textOffset
-                    );
+                    ctx.fillText(this.value.length ? this.value : "-", textBaseX - textOffsetX, textBaseY - textOffset);
                 }
             };
 
@@ -1225,9 +1302,7 @@
             this.isRow = false;
 
             this.show = function () {
-                ctx.fillStyle = boolSettings["Dark Mode"]
-                    ? "#F0F0F0"
-                    : "#000000";
+                ctx.fillStyle = boolSettings["Dark Mode"] ? "#F0F0F0" : "#000000";
                 ctx.font = cellSL * 1.0 + "px Arial";
                 const iconOffset = cellSL * 0.13 * (this.isReverse ? -1 : 1);
                 const iconBaseX = this.cell.x + cellSL / 2;
@@ -1242,17 +1317,9 @@
                 const textBaseX = this.cell.x + cellSL / 2;
                 const textBaseY = this.cell.y + cellSL * 0.75;
                 if (this.isRow) {
-                    ctx.fillText(
-                        this.value.length ? this.value : "-",
-                        textBaseX - textOffset,
-                        textBaseY
-                    );
+                    ctx.fillText(this.value.length ? this.value : "-", textBaseX - textOffset, textBaseY);
                 } else {
-                    ctx.fillText(
-                        this.value.length ? this.value : "-",
-                        textBaseX,
-                        textBaseY - textOffset
-                    );
+                    ctx.fillText(this.value.length ? this.value : "-", textBaseX, textBaseY - textOffset);
                 }
             };
 
@@ -1318,44 +1385,19 @@
                 }
             }
 
-            draggableConstraints = [
-                ...new Set([...lineConstraints, ...regionConstraints]),
-            ];
-            multicellConstraints = [
-                ...new Set([
-                    ...lineConstraints,
-                    ...regionConstraints,
-                    ...borderConstraints,
-                    ...cornerConstraints,
-                ]),
-            ];
-            betweenCellConstraints = [
-                ...borderConstraints,
-                ...cornerConstraints,
-            ];
+            draggableConstraints = [...new Set([...lineConstraints, ...regionConstraints])];
+            multicellConstraints = [...new Set([...lineConstraints, ...regionConstraints, ...borderConstraints, ...cornerConstraints])];
+            betweenCellConstraints = [...borderConstraints, ...cornerConstraints];
             allConstraints = [...boolConstraints, ...toolConstraints];
 
             tools = [...toolConstraints, ...toolCosmetics];
-            selectableTools = [
-                ...selectableConstraints,
-                ...selectableCosmetics,
-            ];
+            selectableTools = [...selectableConstraints, ...selectableCosmetics];
             lineTools = [...lineConstraints, ...lineCosmetics];
             regionTools = [...regionConstraints, ...regionCosmetics];
-            diagonalRegionTools = [
-                ...diagonalRegionConstraints,
-                ...diagonalRegionCosmetics,
-            ];
+            diagonalRegionTools = [...diagonalRegionConstraints, ...diagonalRegionCosmetics];
             outsideTools = [...outsideConstraints, ...outsideCosmetics];
-            outsideCornerTools = [
-                ...outsideCornerConstraints,
-                ...outsideCornerCosmetics,
-            ];
-            oneCellAtATimeTools = [
-                ...perCellConstraints,
-                ...draggableConstraints,
-                ...draggableCosmetics,
-            ];
+            outsideCornerTools = [...outsideCornerConstraints, ...outsideCornerCosmetics];
+            oneCellAtATimeTools = [...perCellConstraints, ...draggableConstraints, ...draggableCosmetics];
             draggableTools = [...draggableConstraints, ...draggableCosmetics];
             multicellTools = [...multicellConstraints, ...multicellCosmetics];
         };
@@ -1376,147 +1418,75 @@
                 title = customTitle;
             } else {
                 if (size !== 9) title += size + "x" + size + " ";
-                if (
-                    getCells().some(
-                        (a) =>
-                            a.region !==
-                            Math.floor(a.i / regionH) * regionH +
-                                Math.floor(a.j / regionW)
-                    )
-                )
-                    title += "Irregular ";
-                if (constraints[cID("Extra Region")].length)
-                    title += "Extra-Region ";
-                if (
-                    constraints[cID("Odd")].length &&
-                    !constraints[cID("Even")].length
-                )
-                    title += "Odd ";
-                if (
-                    !constraints[cID("Odd")].length &&
-                    constraints[cID("Even")].length
-                )
-                    title += "Even ";
-                if (
-                    constraints[cID("Odd")].length &&
-                    constraints[cID("Even")].length
-                )
-                    title += "Odd-Even ";
-                if (
-                    constraints[cID("Diagonal +")] !==
-                    constraints[cID("Diagonal -")]
-                )
-                    title += "Single-Diagonal ";
+                if (getCells().some((a) => a.region !== Math.floor(a.i / regionH) * regionH + Math.floor(a.j / regionW))) title += "Irregular ";
+                if (constraints[cID("Extra Region")].length) title += "Extra-Region ";
+                if (constraints[cID("Odd")].length && !constraints[cID("Even")].length) title += "Odd ";
+                if (!constraints[cID("Odd")].length && constraints[cID("Even")].length) title += "Even ";
+                if (constraints[cID("Odd")].length && constraints[cID("Even")].length) title += "Odd-Even ";
+                if (constraints[cID("Diagonal +")] !== constraints[cID("Diagonal -")]) title += "Single-Diagonal ";
                 if (
                     constraints[cID("Nonconsecutive")] &&
-                    !(
-                        constraints[cID("Difference")].length &&
-                        constraints[cID("Difference")].some((a) =>
-                            ["", "1"].includes(a.value)
-                        )
-                    ) &&
+                    !(constraints[cID("Difference")].length && constraints[cID("Difference")].some((a) => ["", "1"].includes(a.value))) &&
                     !constraints[cID("Ratio")].negative
                 )
                     title += "Nonconsecutive ";
                 if (
                     constraints[cID("Nonconsecutive")] &&
                     constraints[cID("Difference")].length &&
-                    constraints[cID("Difference")].some((a) =>
-                        ["", "1"].includes(a.value)
-                    ) &&
+                    constraints[cID("Difference")].some((a) => ["", "1"].includes(a.value)) &&
                     !constraints[cID("Ratio")].negative
                 )
                     title += "Consecutive ";
                 if (
                     !constraints[cID("Nonconsecutive")] &&
                     constraints[cID("Difference")].length &&
-                    constraints[cID("Difference")].every((a) =>
-                        ["", "1"].includes(a.value)
-                    )
+                    constraints[cID("Difference")].every((a) => ["", "1"].includes(a.value))
                 )
                     title += "Consecutive-Pairs ";
                 if (constraints[cID("Antiknight")]) title += "Antiknight ";
                 if (constraints[cID("Antiking")]) title += "Antiking ";
-                if (constraints[cID("Disjoint Groups")])
-                    title += "Disjoint-Group ";
-                if (
-                    constraints[cID("XV")].length ||
-                    constraints[cID("XV")].negative
-                )
-                    title +=
-                        "XV " + (constraints[cID("XV")].negative ? "(-) " : "");
-                if (constraints[cID("Little Killer Sum")].length)
-                    title += "Little Killer ";
-                if (constraints[cID("Sandwich Sum")].length)
-                    title += "Sandwich ";
+                if (constraints[cID("Disjoint Groups")]) title += "Disjoint-Group ";
+                if (constraints[cID("XV")].length || constraints[cID("XV")].negative)
+                    title += "XV " + (constraints[cID("XV")].negative ? "(-) " : "");
+                if (constraints[cID("Little Killer Sum")].length) title += "Little Killer ";
+                if (constraints[cID("Sandwich Sum")].length) title += "Sandwich ";
                 if (constraints[cID("Thermometer")].length) title += "Thermo ";
-                if (constraints[cID("Palindrome")].length)
-                    title += "Palindrome ";
+                if (constraints[cID("Palindrome")].length) title += "Palindrome ";
                 if (
                     constraints[cID("Difference")].length &&
-                    constraints[cID("Difference")].some(
-                        (a) => !["", "1"].includes(a.value)
-                    ) &&
-                    !(
-                        constraints[cID("Nonconsecutive")] &&
-                        constraints[cID("Ratio")].negative
-                    )
+                    constraints[cID("Difference")].some((a) => !["", "1"].includes(a.value)) &&
+                    !(constraints[cID("Nonconsecutive")] && constraints[cID("Ratio")].negative)
                 )
                     title += "Difference ";
                 if (
-                    (constraints[cID("Ratio")].length ||
-                        constraints[cID("Ratio")].negative) &&
-                    !(
-                        constraints[cID("Nonconsecutive")] &&
-                        constraints[cID("Ratio")].negative
-                    )
+                    (constraints[cID("Ratio")].length || constraints[cID("Ratio")].negative) &&
+                    !(constraints[cID("Nonconsecutive")] && constraints[cID("Ratio")].negative)
                 )
-                    title +=
-                        "Ratio " +
-                        (constraints[cID("Ratio")].negative ? "(-) " : "");
-                if (
-                    constraints[cID("Nonconsecutive")] &&
-                    constraints[cID("Ratio")].negative
-                )
-                    title += "Kropki ";
+                    title += "Ratio " + (constraints[cID("Ratio")].negative ? "(-) " : "");
+                if (constraints[cID("Nonconsecutive")] && constraints[cID("Ratio")].negative) title += "Kropki ";
                 if (constraints[cID("Killer Cage")].length) title += "Killer ";
                 if (constraints[cID("Clone")].length) title += "Clone ";
                 if (constraints[cID("Arrow")].length) title += "Arrow ";
-                if (constraints[cID("Between Line")].length)
-                    title += "Between ";
-                if (constraints[cID("Quadruple")].length)
-                    title += "Quadruples ";
-                if (
-                    constraints[cID("Minimum")].length ||
-                    constraints[cID("Maximum")].length
-                )
-                    title += "Extremes ";
+                if (constraints[cID("Between Line")].length) title += "Between ";
+                if (constraints[cID("Quadruple")].length) title += "Quadruples ";
+                if (constraints[cID("Minimum")].length || constraints[cID("Maximum")].length) title += "Extremes ";
 
                 for (let info of newConstraintInfo) {
-                    if (
-                        constraints[cID(info.name)] &&
-                        constraints[cID(info.name)].length > 0
-                    ) {
+                    if (constraints[cID(info.name)] && constraints[cID(info.name)].length > 0) {
                         title += `${info.name} `;
                     }
                 }
 
                 title += "Sudoku";
 
-                if (
-                    constraints[cID("Diagonal +")] &&
-                    constraints[cID("Diagonal -")]
-                )
-                    title += " X";
+                if (constraints[cID("Diagonal +")] && constraints[cID("Diagonal -")]) title += " X";
 
                 if (title === "Sudoku") title = "Classic Sudoku";
 
-                if (ctx.measureText(title).width > canvas.width - 711)
-                    title = "Extreme Variant Sudoku";
+                if (ctx.measureText(title).width > canvas.width - 711) title = "Extreme Variant Sudoku";
             }
 
-            buttons[buttons.findIndex((a) => a.id === "EditInfo")].x =
-                canvas.width / 2 + ctx.measureText(title).width / 2 + 40;
+            buttons[buttons.findIndex((a) => a.id === "EditInfo")].x = canvas.width / 2 + ctx.measureText(title).width / 2 + 40;
 
             return title;
         };
@@ -1581,7 +1551,7 @@
         const prevonmousemove = document.onmousemove;
         document.onmousemove = function (e) {
             if (!testPaused() && !disableInputs && !holding && sidebars.length && popup === "Constraint Tools") {
-		        updateCursorPosition(e);
+                updateCursorPosition(e);
 
                 const hoveredButton =
                     sidebars[sidebars.findIndex((a) => a.title === "Constraints")].buttons[
@@ -1592,7 +1562,10 @@
                         mouseX > hoveredButton.x + hoveredButton.w / 2 + buttonMargin ||
                         mouseY < hoveredButton.y - buttonMargin ||
                         mouseY > hoveredButton.y + buttonSH + buttonMargin) &&
-                    (mouseX < gridX - sidebarDist || mouseX > gridX - sidebarDist + constraintSidebarWidth || mouseY < gridY || mouseY > gridY + gridSL)
+                    (mouseX < gridX - sidebarDist ||
+                        mouseX > gridX - sidebarDist + constraintSidebarWidth ||
+                        mouseY < gridY ||
+                        mouseY > gridY + gridSL)
                 ) {
                     closePopups();
                 }

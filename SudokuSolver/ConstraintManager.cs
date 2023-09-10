@@ -104,6 +104,7 @@ public static class ConstraintManager
         { typeof(LittleKillerConstraint), (solver, options) => new LittleKillerConstraint(solver, options) },
         { typeof(MaximumConstraint), (solver, options) => new MaximumConstraint(solver, options) },
         { typeof(MinimumConstraint), (solver, options) => new MinimumConstraint(solver, options) },
+        { typeof(ModularLineConstraint), (solver, options) => new ModularLineConstraint(solver, options) },
         { typeof(OddConstraint), (solver, options) => new OddConstraint(solver, options) },
         { typeof(PalindromeConstraint), (solver, options) => new PalindromeConstraint(solver, options) },
         { typeof(QuadrupleConstraint), (solver, options) => new QuadrupleConstraint(solver, options) },
