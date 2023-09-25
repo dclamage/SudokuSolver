@@ -44,6 +44,8 @@ class Program
 		var fpuzzlesOut = app.Option("-u|--url", "Write solution as f-puzzles URL.", CommandOptionType.NoValue);
 		var visitURL = app.Option("-v|--visit", "Automatically visit the output URL with default browser (combine with -u).", CommandOptionType.NoValue);
 		var listen = app.Option("--listen", "Listen for websocket connections.", CommandOptionType.NoValue);
+		var listenHeadless = app.Option("--listen-headless", "Listen for websocket connections (headless).", CommandOptionType.NoValue);
+		var listenSingleThreaded = app.Option("--listen-singlethreaded", "Option to force all websocket commands to execute single threaded.", CommandOptionType.NoValue);
 		var port = app.Option<int>("--port", "Change the listen port for websocket connections (default 4545)", CommandOptionType.SingleValue)
 			.Accepts(v => v.Range(1024, 49151));
 		port.DefaultValue = 4545;
@@ -74,6 +76,8 @@ class Program
                 FpuzzlesOut = fpuzzlesOut.HasValue(),
                 VisitURL = visitURL.HasValue(),
                 Listen = listen.HasValue(),
+				ListenHeadless = listenHeadless.HasValue(),
+				ListenSingleThreaded = listenSingleThreaded.HasValue(),
 				Port = port.ParsedValue,
                 ListConstraints = listConstraints.HasValue(),
                 HideBanner = hideBanner.HasValue(),
@@ -114,7 +118,9 @@ class Program
 
 	// Websocket options
     public required bool Listen { get; init; }
-    public required int Port { get; init; }
+    public required bool ListenHeadless { get; init; }
+	public required bool ListenSingleThreaded { get; init; }
+public required int Port { get; init; }
 
 	// Help-related options
     public required bool ListConstraints { get; init; }
@@ -170,20 +176,31 @@ class Program
 			return 0;
 		}
 
-		if (Listen)
+		if (Listen || ListenHeadless)
 		{
 			using WebsocketListener websocketListener = new();
-			await websocketListener.Listen("localhost", Port, Constraints, VerboseLogs);
+			await websocketListener.Listen("localhost", Port, Constraints, VerboseLogs, ListenSingleThreaded);
 
-			Console.WriteLine("Press CTRL + Q to quit.");
-
-			while (true)
+			if (Listen)
 			{
-				ConsoleKeyInfo key = Console.ReadKey(true);
-				if (key.Modifiers == ConsoleModifiers.Control && key.Key == ConsoleKey.Q)
+				Console.WriteLine("Press CTRL + Q to quit.");
+
+				while (true)
 				{
-					return 0;
+					ConsoleKeyInfo key = Console.ReadKey(true);
+					if (key.Modifiers == ConsoleModifiers.Control && key.Key == ConsoleKey.Q)
+					{
+						return 0;
+					}
 				}
+			}
+			else
+			{
+				Console.WriteLine("Ready");
+				while (true)
+				{
+                    await Task.Delay(1000, CancellationToken.None);
+                }
 			}
 		}
 
