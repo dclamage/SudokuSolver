@@ -99,8 +99,9 @@ class WebsocketListener : IDisposable
     private readonly List<ResponseCacheItem> lastTrueCandidatesResponses = new();
     private List<string> additionalConstraints;
     private bool verboseLogs = false;
+    private bool singleThreaded = false;
 
-    public async Task Listen(string host, int port, IEnumerable<string> additionalConstraints = null, bool verboseLogs = false)
+    public async Task Listen(string host, int port, IEnumerable<string> additionalConstraints = null, bool verboseLogs = false, bool singleThreaded = false)
     {
         if (server != null)
         {
@@ -109,6 +110,7 @@ class WebsocketListener : IDisposable
 
         this.additionalConstraints = additionalConstraints?.ToList();
         this.verboseLogs = verboseLogs;
+        this.singleThreaded = singleThreaded;
 
         server = new(host, port, false);
         server.ClientConnected += (_, args) => ClientConnected(args);
@@ -381,7 +383,7 @@ class WebsocketListener : IDisposable
 
         int totalCandidates = solver.HEIGHT * solver.WIDTH * solver.MAX_VALUE;
         int[] numSolutions = colored ? new int[totalCandidates] : null;
-        if (!solver.FillRealCandidates(multiThread: false, numSolutions: numSolutions, cancellationToken: cancellationToken))
+        if (!solver.FillRealCandidates(multiThread: !singleThreaded, numSolutions: numSolutions, cancellationToken: cancellationToken))
         {
             SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
             return;
@@ -432,7 +434,7 @@ class WebsocketListener : IDisposable
 
     void SendSolve(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
     {
-        if (!solver.FindSolution(multiThread: true, isRandom: true, cancellationToken: cancellationToken))
+        if (!solver.FindSolution(multiThread: !singleThreaded, isRandom: true, cancellationToken: cancellationToken))
         {
             SendMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
         }
@@ -447,7 +449,7 @@ class WebsocketListener : IDisposable
 
     void SendCount(string ipPort, int nonce, Solver solver, ulong maxSolutions, CancellationToken cancellationToken)
     {
-        ulong numSolutions = solver.CountSolutions(maxSolutions, true, cancellationToken: cancellationToken, progressEvent: (count) =>
+        ulong numSolutions = solver.CountSolutions(maxSolutions, multiThread: !singleThreaded, cancellationToken: cancellationToken, progressEvent: (count) =>
         {
             SendMessage(ipPort, new CountResponse(nonce) { count = count, inProgress = true });
         });
