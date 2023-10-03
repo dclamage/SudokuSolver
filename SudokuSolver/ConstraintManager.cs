@@ -119,6 +119,7 @@ public static class ConstraintManager
         { typeof(TaxicabConstraint), (solver, options) => new TaxicabConstraint(solver, options) },
         { typeof(ThermometerConstraint), (solver, options) => new ThermometerConstraint(solver, options) },
         { typeof(WhispersConstraint), (solver, options) => new WhispersConstraint(solver, options) },
+        { typeof(GreaterSumConstraint), (solver, options) => new GreaterSumConstraint(solver, options) },
     };
 
     private static readonly Dictionary<Type, Func<Solver, string, IConstraintGroup>> constraintGroupTypeConstructors = new()
