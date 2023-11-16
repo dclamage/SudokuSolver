@@ -14,7 +14,7 @@ jobs:
     - name: Setup .NET
       uses: actions/setup-dotnet@v3
       with:
-        dotnet-version: 7.0.x
+        dotnet-version: 8.0.x
     - name: Set variables
       run: |
         VER=$(cat VERSION)
@@ -35,12 +35,12 @@ jobs:
       run: rm ./publish-win-x64/*.pdb
     - name: Zip win-x64
       run: zip -q -j -r SudokuSolver-${{ env.VERSION }}-win-x64.zip publish-win-x64 UserScripts Windows
-    - name: Publish win10-arm64
-      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r win10-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-win10-arm64
+    - name: Publish win-arm64
+      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r win-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-win-arm64
     - name: Delete pdbs
-      run: rm ./publish-win10-arm64/*.pdb
-    - name: Zip win10-arm64
-      run: zip -q -j -r SudokuSolver-${{ env.VERSION }}-win10-arm64.zip publish-win10-arm64 UserScripts Windows
+      run: rm ./publish-win-arm64/*.pdb
+    - name: Zip win-arm64
+      run: zip -q -j -r SudokuSolver-${{ env.VERSION }}-win-arm64.zip publish-win-arm64 UserScripts Windows
     - name: Publish linux-x64
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r linux-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-linux-x64
     - name: Delete pdbs
@@ -70,7 +70,7 @@ jobs:
         tar -cpzf ../SudokuSolver-${{ env.VERSION }}-osx-x64.tar.gz *
         cd ..
     - name: Publish osx-arm64
-      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx.11.0-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-arm64
+      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-arm64
     - name: Delete pdbs
       run: rm ./publish-osx-arm64/*.pdb
     - name: tar osx-arm
