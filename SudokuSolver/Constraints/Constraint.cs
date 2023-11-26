@@ -184,7 +184,7 @@ public abstract class Constraint
         LogicResult logicResult;
         do
         {
-            logicResult = StepLogic(cloneSolver, (StringBuilder)null, false);
+            logicResult = StepLogic(cloneSolver, (List<LogicalStepDesc>)null, false);
         } while (logicResult == LogicResult.Changed);
 
         return logicResult == LogicResult.Invalid ? result : null;
@@ -242,7 +242,7 @@ public abstract class Constraint
                 LogicResult logicResult;
                 do
                 {
-                    logicResult = StepLogic(cloneSolver, (StringBuilder)null, false);
+                    logicResult = StepLogic(cloneSolver, (List<LogicalStepDesc>)null, false);
                 } while (logicResult == LogicResult.Changed);
 
                 if (logicResult == LogicResult.Invalid)

@@ -2446,12 +2446,12 @@ public class Solver
         timers["AddNewWeakLinks"].Stop();
 #endif
 
-        if (!DisableTuples)
+        if (!DisableTuples || !DisablePointing)
         {
 #if PROFILING
             timers["FindNakedTuples"].Start();
 #endif
-            result = FindNakedTuples(logicalStepDescs);
+            result = FindNakedTuplesAndPointing(logicalStepDescs);
 #if PROFILING
             timers["FindNakedTuples"].Stop();
 #endif
@@ -2463,18 +2463,6 @@ public class Solver
 
         if (!DisablePointing)
         {
-#if PROFILING
-            timers["FindPointingTuples"].Start();
-#endif
-            result = FindPointingTuples(logicalStepDescs);
-#if PROFILING
-            timers["FindPointingTuples"].Stop();
-#endif
-            if (result != LogicResult.None)
-            {
-                return result;
-            }
-
 #if PROFILING
             timers["FindDirectCellForcing"].Start();
 #endif
@@ -2894,112 +2882,124 @@ public class Solver
         return (-1, -1, 0);
     }
 
-    private LogicResult FindNakedTuples(List<LogicalStepDesc> logicalStepDescs)
+    private LogicResult FindNakedTuplesAndPointing(List<LogicalStepDesc> logicalStepDescs)
     {
         List<(int, int)> unsetCells = new(MAX_VALUE);
-        for (int tupleSize = 2; tupleSize < MAX_VALUE; tupleSize++)
+        for (int numCells = 2; numCells <= MAX_VALUE; numCells++)
         {
-            foreach (var group in Groups)
+            if (!DisableTuples && numCells < MAX_VALUE)
             {
-                if (group.Cells.Count < tupleSize)
+                foreach (var group in Groups)
                 {
-                    continue;
-                }
-
-                // Make a list of cells which aren't already set and contain fewer candidates than the tuple size
-                unsetCells.Clear();
-                foreach (var cell in group.Cells)
-                {
-                    uint cellMask = board[cell.Item1, cell.Item2];
-                    if (!IsValueSet(cellMask) && ValueCount(cellMask) <= tupleSize)
+                    if (group.Cells.Count < numCells)
                     {
-                        unsetCells.Add(cell);
+                        continue;
+                    }
+
+                    // Make a list of cells which aren't already set and contain fewer candidates than the tuple size
+                    unsetCells.Clear();
+                    foreach (var cell in group.Cells)
+                    {
+                        uint cellMask = board[cell.Item1, cell.Item2];
+                        if (!IsValueSet(cellMask) && ValueCount(cellMask) <= numCells)
+                        {
+                            unsetCells.Add(cell);
+                        }
+                    }
+
+                    if (unsetCells.Count < numCells)
+                    {
+                        continue;
+                    }
+
+                    foreach (var tupleCells in unsetCells.Combinations(numCells))
+                    {
+                        uint tupleMask = CandidateMask(tupleCells);
+                        if (ValueCount(tupleMask) == numCells)
+                        {
+                            var elims = CalcElims(tupleMask, tupleCells);
+                            if (elims.Count > 0)
+                            {
+                                logicalStepDescs?.Add(new(
+                                    desc: $"Tuple: {CompactName(tupleMask, tupleCells)} in {group} => {DescribeElims(elims)}",
+                                    sourceCandidates: CandidateIndexes(tupleMask, tupleCells),
+                                    elimCandidates: elims
+                                ));
+                                if (!ClearCandidates(elims))
+                                {
+                                    return LogicResult.Invalid;
+                                }
+                                return LogicResult.Changed;
+                            }
+                        }
                     }
                 }
-                if (unsetCells.Count < tupleSize)
+            }
+
+            if (!DisablePointing)
+            {
+                // Look for "pointing" but limit to the same number of cells as the tuple size
+                // This is a heuristic ordering which avoids finding something like a pair as pointing,
+                // but prefers 2 cells pointing over a triple.
+                foreach (var group in Groups.Where(g => g.Cells.Count == MAX_VALUE || g.FromConstraint != null))
                 {
-                    continue;
+                    uint setValuesMask = 0;
+                    uint unsetValuesMask = 0;
+                    foreach (var cell in group.Cells)
+                    {
+                        uint mask = board[cell.Item1, cell.Item2] & ~valueSetMask;
+                        if (ValueCount(mask) == 1)
+                        {
+                            setValuesMask |= mask;
+                        }
+                        else
+                        {
+                            unsetValuesMask |= mask;
+                        }
+                    }
+                    unsetValuesMask &= ~setValuesMask;
+                    if (unsetValuesMask == 0)
+                    {
+                        continue;
+                    }
+
+                    for (int v = 1; v <= MAX_VALUE; v++)
+                    {
+                        if (!HasValue(unsetValuesMask, v))
+                        {
+                            continue;
+                        }
+
+                        List<(int, int)> cellsMustContain = group.CellsMustContain(this, v);
+                        if (cellsMustContain != null && cellsMustContain.Count == numCells)
+                        {
+                            var logicResult = HandleMustContain(group.ToString(), v, cellsMustContain, logicalStepDescs);
+                            if (logicResult != LogicResult.None)
+                            {
+                                return logicResult;
+                            }
+                        }
+                    }
                 }
 
-                foreach (var tupleCells in unsetCells.Combinations(tupleSize))
+                // Check constraints as well
+                foreach (var constraint in constraints)
                 {
-                    uint tupleMask = CandidateMask(tupleCells);
-                    if (ValueCount(tupleMask) == tupleSize)
+                    for (int v = 1; v <= MAX_VALUE; v++)
                     {
-                        var elims = CalcElims(tupleMask, tupleCells);
-                        if (elims.Count > 0)
+                        List<(int, int)> cellsMustContain = constraint.CellsMustContain(this, v);
+                        if (cellsMustContain != null && cellsMustContain.Count == numCells)
                         {
-                            logicalStepDescs?.Add(new(
-                                desc: $"Tuple: {CompactName(tupleMask, tupleCells)} in {group} => {DescribeElims(elims)}",
-                                sourceCandidates: CandidateIndexes(tupleMask, tupleCells),
-                                elimCandidates: elims
-                            ));
-                            if (!ClearCandidates(elims))
+                            var logicResult = HandleMustContain(constraint.SpecificName, v, cellsMustContain, logicalStepDescs);
+                            if (logicResult != LogicResult.None)
                             {
-                                return LogicResult.Invalid;
+                                return logicResult;
                             }
-                            return LogicResult.Changed;
                         }
                     }
                 }
             }
         }
-        return LogicResult.None;
-    }
-
-    private LogicResult FindPointingTuples(List<LogicalStepDesc> logicalStepDescs)
-    {
-        foreach (var group in Groups)
-        {
-            if (group.Cells.Count != MAX_VALUE && group.FromConstraint == null)
-            {
-                continue;
-            }
-
-            uint setValuesMask = 0;
-            uint unsetValuesMask = 0;
-            foreach (var cell in group.Cells)
-            {
-                uint mask = board[cell.Item1, cell.Item2];
-                if (ValueCount(mask) == 1)
-                {
-                    setValuesMask |= mask;
-                }
-                else
-                {
-                    unsetValuesMask |= mask;
-                }
-            }
-
-            for (int v = 1; v <= MAX_VALUE; v++)
-            {
-                if (HasValue(setValuesMask, v) || !HasValue(unsetValuesMask, v))
-                {
-                    continue;
-                }
-
-                List<(int, int)> cellsMustContain = group.CellsMustContain(this, v);
-                var logicResult = HandleMustContain(group.ToString(), v, cellsMustContain, logicalStepDescs);
-                if (logicResult != LogicResult.None)
-                {
-                    return logicResult;
-                }
-            }
-        }
-
-        foreach (var constraint in constraints)
-        {
-            for (int v = 1; v <= MAX_VALUE; v++)
-            {
-                List<(int, int)> cellsMustContain = constraint.CellsMustContain(this, v);
-                var logicResult = HandleMustContain(constraint.SpecificName, v, cellsMustContain, logicalStepDescs);
-                if (logicResult != LogicResult.None)
-                {
-                    return logicResult;
-                }
-            }
-        }
-
         return LogicResult.None;
     }
 
@@ -4246,17 +4246,33 @@ public class Solver
             elimsByVal[v - 1].Add((i, j));
         }
 
-        List<string> elimDescs = new();
+        List<(List<int>, string)> elimDescs = new();
         for (int v = 1; v <= MAX_VALUE; v++)
         {
             var elimCells = elimsByVal[v - 1];
             if (elimCells != null && elimCells.Count > 0)
             {
                 elimCells.Sort();
-                elimDescs.Add($"-{v}{CompactName(elimCells)}");
+                elimDescs.Add(([v], CompactName(elimCells)));
             }
         }
-        return string.Join(';', elimDescs);
+
+        // Check for elim descriptions that differ only by value
+        for (int i1 = 0; i1 < elimDescs.Count; i1++)
+        {
+            for (int i2 = i1 + 1; i2 < elimDescs.Count; i2++)
+            {
+                if (elimDescs[i1].Item2 == elimDescs[i2].Item2)
+                {
+                    elimDescs[i1].Item1.AddRange(elimDescs[i2].Item1);
+                    elimDescs.RemoveAt(i2);
+                    i2--;
+                }
+            }
+        }
+
+        List<string> elimDescsFinal = elimDescs.Select(desc => $"-{string.Join("", desc.Item1)}{desc.Item2}").ToList();
+        return string.Join(';', elimDescsFinal);
     }
 
     internal int NumSetValues
