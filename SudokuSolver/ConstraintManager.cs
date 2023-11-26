@@ -116,6 +116,7 @@ public static class ConstraintManager
         { typeof(SkyscraperConstraint), (solver, options) => new SkyscraperConstraint(solver, options) },
         { typeof(SelfTaxicabConstraint), (solver, options) => new SelfTaxicabConstraint(solver, options) },
         { typeof(SumConstraint), (solver, options) => new SumConstraint(solver, options) },
+        { typeof(SumLinesConstraint), (solver, options) => new SumLinesConstraint(solver, options) },
         { typeof(TaxicabConstraint), (solver, options) => new TaxicabConstraint(solver, options) },
         { typeof(ThermometerConstraint), (solver, options) => new ThermometerConstraint(solver, options) },
         { typeof(WhispersConstraint), (solver, options) => new WhispersConstraint(solver, options) },

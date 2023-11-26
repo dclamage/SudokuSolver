@@ -126,7 +126,7 @@ public class SumGroup
         }
 
         int max = min;
-        List<(List<int> combination, int sum)> potentialCombinations = new();
+        List<(List<int> combination, int sum)> potentialCombinations = [];
         foreach (var combination in possibleVals.Combinations(unsetCells.Count))
         {
             int curSum = setSum + combination.Sum();
@@ -372,13 +372,13 @@ public class SumGroup
         int numUnsetCells = unsetCells.Count;
         if (numUnsetCells == 0)
         {
-            return new List<int>() { setSum };
+            return [setSum];
         }
 
         // With one unset cell remaining, it just contributes its own sum
         if (numUnsetCells == 1)
         {
-            List<int> sums = new();
+            List<int> sums = [];
             var unsetCell = unsetCells[0];
             uint curMask = board[unsetCell.Item1, unsetCell.Item2];
             for (int v = 1; v <= MAX_VALUE; v++)
@@ -405,11 +405,11 @@ public class SumGroup
             return memoData.Sums.ToList();
         }
 
-        SortedSet<int> sumsSet = new();
+        SortedSet<int> sumsSet = [];
         uint unsetMask = UnsetMask(solver);
         if (ValueCount(unsetMask) < unsetCells.Count)
         {
-            return new();
+            return [];
         }
 
         int minValue = MinValue(unsetMask);

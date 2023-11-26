@@ -338,7 +338,6 @@ public class SumCellsHelper
     {
         int minSum = 0;
         int maxSum = 0;
-        List<(SumGroup group, int min, int max)> groupMinMax = new(groups.Count);
         foreach (var curGroup in groups)
         {
             var (curMin, curMax) = curGroup.MinMaxSum(solver);

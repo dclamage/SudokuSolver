@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.13
+// @version      1.14
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -130,8 +130,22 @@
                 "If a digit appears on the line, then the digits consecutive with it must not appear.",
                 "",
                 "Click and drag to draw a nabner line.",
-                "Click on a nabner to remove it.",
-                "Shift click and drag to draw overlapping nabner.",
+                "Click on a nabner line to remove it.",
+                "Shift click and drag to draw overlapping nabner lines.",
+            ],
+        },
+        {
+            name: "Ten Line",
+            type: "line",
+            color: "#D1D1D1",
+            colorDark: "#D1D1D1",
+            lineWidth: 0.15625,
+            tooltip: [
+                "The line must be completely divided into one or more non-overlapping strings of adjacent digits which add to 10",
+                "",
+                "Click and drag to draw a ten line.",
+                "Click on a ten line to remove it.",
+                "Shift click and drag to draw overlapping ten lines.",
             ],
         },
         {
@@ -855,6 +869,48 @@
                 }
             }
 
+            // Ten Lines
+            const constraintsTenLine = constraints[cID("Ten Line")];
+            if (constraintsTenLine && constraintsTenLine.length > 0) {
+                for (let tenLine of constraintsTenLine) {
+                    for (let line of tenLine.lines) {
+                        const index = line.indexOf(cell);
+                        if (index > -1) {
+                            let currentSum = 0;
+                            for (let lineCell of line) {
+                                let cellValue = lineCell !== cell ? lineCell.value : n;
+                                if (cellValue) {
+                                    currentSum += cellValue;
+                                    if (currentSum > 10) {
+                                        return false;
+                                    } else if (currentSum === 10) {
+                                        currentSum = 0;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+
+                            // Same in reverse
+                            currentSum = 0;
+                            for (let lineCell of line.slice().reverse()) {
+                                let cellValue = lineCell !== cell ? lineCell.value : n;
+                                if (cellValue) {
+                                    currentSum += cellValue;
+                                    if (currentSum > 10) {
+                                        return false;
+                                    } else if (currentSum === 10) {
+                                        currentSum = 0;
+                                    }
+                                } else {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Double Arrow
             const constraintsDoubleArrow = constraints[cID("Double Arrow")];
             if (constraintsDoubleArrow && constraintsDoubleArrow.length > 0) {
@@ -1168,17 +1224,33 @@
             };
         };
 
+        // Ten Lines
+        window.tenline = function (cell) {
+            this.lines = [[cell]];
+
+            this.show = function () {
+                const tenLineInfo = newConstraintInfo.filter((c) => c.name === "Ten Line")[0];
+                for (var a = 0; a < this.lines.length; a++) {
+                    drawLine(this.lines[a], tenLineInfo.color, tenLineInfo.colorDark, tenLineInfo.lineWidth);
+                }
+            };
+
+            this.addCellToLine = function (cell) {
+                this.lines[this.lines.length - 1].push(cell);
+            };
+        };
+
         // Double Arrows
         window.doublearrow = function (cell) {
             this.lines = [[cell]];
 
             this.show = function () {
-                const nabnerLineInfo = newConstraintInfo.filter((c) => c.name === "Double Arrow")[0];
-                const nabnerColor = boolSettings["Dark Mode"] ? nabnerLineInfo.colorDark : nabnerLineInfo.color;
+                const darrowLineInfo = newConstraintInfo.filter((c) => c.name === "Double Arrow")[0];
+                const darrowColor = boolSettings["Dark Mode"] ? darrowLineInfo.colorDark : darrowLineInfo.color;
                 for (let i = 0; i < this.lines.length; i++) {
-                    ctx.lineWidth = cellSL * nabnerLineInfo.lineWidth * 0.5;
+                    ctx.lineWidth = cellSL * darrowLineInfo.lineWidth * 0.5;
 
-                    ctx.strokeStyle = nabnerColor;
+                    ctx.strokeStyle = darrowColor;
                     ctx.beginPath();
                     ctx.moveTo(this.lines[i][0].x + cellSL / 2, this.lines[i][0].y + cellSL / 2);
                     for (let j = 1; j < this.lines[i].length; j++) ctx.lineTo(this.lines[i][j].x + cellSL / 2, this.lines[i][j].y + cellSL / 2);

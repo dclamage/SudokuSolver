@@ -59,6 +59,7 @@ public class FPuzzlesBoard
     public FPuzzlesLines[] entropicline { get; set; }
     public FPuzzlesLines[] modularline { get; set; }
     public FPuzzlesLines[] nabner { get; set; }
+    public FPuzzlesLines[] tenline { get; set; }
     public FPuzzlesLines[] doublearrow { get; set; }
     public string[] disabledlogic { get; set; } = null;
     public string[] truecandidatesoptions { get; set; } = null;
