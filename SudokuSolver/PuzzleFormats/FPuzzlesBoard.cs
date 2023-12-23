@@ -60,6 +60,7 @@ public class FPuzzlesBoard
     public FPuzzlesLines[] modularline { get; set; }
     public FPuzzlesLines[] nabner { get; set; }
     public FPuzzlesLines[] doublearrow { get; set; }
+    public FPuzzlesLines[] zipperline { get; set; }
     public string[] disabledlogic { get; set; } = null;
     public string[] truecandidatesoptions { get; set; } = null;
 };
