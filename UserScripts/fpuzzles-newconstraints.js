@@ -150,6 +150,21 @@
             ],
         },
         {
+            name: "Zipper Line",
+            type: "line",
+            color: "#cdb1ec",
+            colorDark: "#cdb1ec",
+            lineWidth: 0.15625,
+            tooltip: [
+                "Digits equidistant from the line's center must sum to the same value.",
+                "If the line has an odd number of cells, the central cell's digit defines this sum.",
+                "",
+                "Click and drag to draw a zipper line.",
+                "Click on a zipper line to remove it.",
+                "Shift click and drag to draw overlapping zipper line.",
+            ],
+        },
+        {
             name: "Row Indexer",
             type: "cage",
             color: "#7CC77C",
@@ -900,6 +915,38 @@
                 }
             }
 
+            // Zipper Line
+            const constraintsZipperLine = constraints[cID("Zipper Line")];
+            if (constraintsZipperLine && constraintsZipperLine.length > 0) {
+                for (let zipperLine of constraintsZipperLine) {
+                    for (let line of zipperLine.lines) {
+                        let sum = -1;
+                        const index = line.indexOf(cell);
+                        if (index > -1) {
+                            for (let i = 0; i < (line.length + 1) / 2; i++) {
+                                let index0 = i;
+                                let index1 = line.length - i - 1;
+                                let value0 = index0 == index ? n : line[index0].value;
+                                let value1 = index1 == index ? n : line[index1].value;
+                                if (value0 && value1) {
+                                    if (index0 == index1) {
+                                        if (sum == -1) {
+                                            sum = value0;
+                                        } else if (sum != value0) {
+                                            return false;
+                                        }
+                                    } else if (sum == -1) {
+                                        sum = value0 + value1;
+                                    } else if (sum != value0 + value1) {
+                                        return false;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             // Row Indexer
             const constraintsRowIndexer = constraints[cID("Row Indexer")];
             if (constraintsRowIndexer && constraintsRowIndexer.some((rowIndexer) => rowIndexer.cells.indexOf(cell) > -1)) {
@@ -1173,12 +1220,12 @@
             this.lines = [[cell]];
 
             this.show = function () {
-                const nabnerLineInfo = newConstraintInfo.filter((c) => c.name === "Double Arrow")[0];
-                const nabnerColor = boolSettings["Dark Mode"] ? nabnerLineInfo.colorDark : nabnerLineInfo.color;
+                const doubleArrowInfo = newConstraintInfo.filter((c) => c.name === "Double Arrow")[0];
+                const doubleArrowColor = boolSettings["Dark Mode"] ? doubleArrowInfo.colorDark : doubleArrowInfo.color;
                 for (let i = 0; i < this.lines.length; i++) {
-                    ctx.lineWidth = cellSL * nabnerLineInfo.lineWidth * 0.5;
+                    ctx.lineWidth = cellSL * doubleArrowInfo.lineWidth * 0.5;
 
-                    ctx.strokeStyle = nabnerColor;
+                    ctx.strokeStyle = doubleArrowColor;
                     ctx.beginPath();
                     ctx.moveTo(this.lines[i][0].x + cellSL / 2, this.lines[i][0].y + cellSL / 2);
                     for (let j = 1; j < this.lines[i].length; j++) ctx.lineTo(this.lines[i][j].x + cellSL / 2, this.lines[i][j].y + cellSL / 2);
@@ -1191,6 +1238,23 @@
                         ctx.fill();
                         ctx.stroke();
                     }
+                }
+            };
+
+            this.addCellToLine = function (cell) {
+                this.lines[this.lines.length - 1].push(cell);
+            };
+        };
+
+        // Zipper Lines
+        window.zipperline = function (cell) {
+            this.lines = [[cell]];
+
+            this.show = function () {
+                const zipperLineInfo = newConstraintInfo.filter((c) => c.name === "Zipper Line")[0];
+                const zipperLineColor = boolSettings["Dark Mode"] ? zipperLineInfo.colorDark : zipperLineInfo.color;
+                for (var a = 0; a < this.lines.length; a++) {
+                    drawLine(this.lines[a], zipperLineColor, zipperLineInfo.colorDark, zipperLineInfo.lineWidth);
                 }
             };
 
