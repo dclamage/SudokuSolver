@@ -494,8 +494,24 @@ public required int Port { get; init; }
 		return 0;
 	}
 
-	private static void ReplaceLine(string text) =>
-		Console.Write("\r" + text + new string(' ', Console.WindowWidth - text.Length) + "\r");
+	private static void ReplaceLine(string text)
+	{
+		try
+		{
+			if (Console.IsOutputRedirected)
+			{
+				Console.WriteLine(text);
+			}
+			else
+			{
+				Console.Write("\r" + text + new string(' ', Console.WindowWidth - text.Length) + "\r");
+			}
+		}
+		catch (Exception)
+		{
+            Console.WriteLine(text);
+        }
+	}
 
 	private static void OpenFPuzzles(Solver solver, bool visit)
 	{
