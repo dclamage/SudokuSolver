@@ -19,7 +19,7 @@ public class SkyscraperConstraint : Constraint
         var match = optionsRegex.Match(options);
         if (!match.Success)
         {
-            throw new ArgumentException($"X-Sum options \"{options}\" invalid. Expecting: \"SrXcY\"");
+            throw new ArgumentException($"Skyscraper options \"{options}\" invalid. Expecting: \"SrXcY\"");
         }
 
         clue = int.Parse(match.Groups[1].Value);
@@ -30,7 +30,7 @@ public class SkyscraperConstraint : Constraint
 
         if (isRow && isCol || !isRow && !isCol)
         {
-            throw new ArgumentException($"X-Sum options \"{options}\" has invalid location.");
+            throw new ArgumentException($"Skyscraper options \"{options}\" has invalid location.");
         }
 
         cells = new();
