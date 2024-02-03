@@ -3,6 +3,8 @@ using System.Threading.Tasks;
 
 namespace SudokuSolver;
 
+using WeaklinkType = List<int>;
+
 /// <summary>
 /// Container for computing Alternating Inference Chain logic
 /// 1. Finds all bivalue, bilocal, and ALS strong links
@@ -22,7 +24,7 @@ internal class AICSolver
     private readonly int MAX_VALUE;
     private readonly int NUM_CANDIDATES;
     private readonly uint[,] board;
-    private readonly SortedSet<int>[] weakLinks;
+    private readonly WeaklinkType[] weakLinks;
 
     // Tracking the best result so far
     private List<int> bestChain = null;
@@ -41,8 +43,8 @@ internal class AICSolver
     private readonly Dictionary<(int, int), List<int>> discoveredStrongLinks = new();
     // a - b = c: If a is true then c is true
     private readonly Dictionary<(int, int), List<int>> discoveredWeakToStrongLinks = new();
-    private SortedSet<int>[] discoveredWeakLinksLookup = null;
-    private SortedSet<int>[] discoveredWeakToStrongLinksLookup = null;
+    private WeaklinkType[] discoveredWeakLinksLookup = null;
+    private WeaklinkType[] discoveredWeakToStrongLinksLookup = null;
 
     private readonly struct StrongLinkDesc
     {
@@ -263,6 +265,7 @@ internal class AICSolver
                             return ApplyBestChain();
                         }
                     }
+                    continue;
                 }
                 else
                 {
@@ -274,11 +277,6 @@ internal class AICSolver
                             return ApplyBestChain();
                         }
                     }
-                }
-
-                if (isDNL)
-                {
-                    continue;
                 }
 
                 // Add a placeholder weak link
@@ -593,7 +591,7 @@ internal class AICSolver
     private void PopulateLinkLookups()
     {
         // Construct an updated weak link lookup
-        discoveredWeakLinksLookup = new SortedSet<int>[NUM_CANDIDATES];
+        discoveredWeakLinksLookup = new WeaklinkType[NUM_CANDIDATES];
         for (int cand = 0; cand < NUM_CANDIDATES; cand++)
         {
             discoveredWeakLinksLookup[cand] = new();
@@ -604,7 +602,7 @@ internal class AICSolver
         }
 
         // Construct a weak to strong links lookup
-        discoveredWeakToStrongLinksLookup = new SortedSet<int>[NUM_CANDIDATES];
+        discoveredWeakToStrongLinksLookup = new WeaklinkType[NUM_CANDIDATES];
         for (int cand = 0; cand < NUM_CANDIDATES; cand++)
         {
             discoveredWeakToStrongLinksLookup[cand] = new();
@@ -625,7 +623,7 @@ internal class AICSolver
         {
             if (canHaveElims)
             {
-                SortedSet<int> curElims = discoveredWeakLinksLookup[cand0];
+                var curElims = discoveredWeakLinksLookup[cand0];
                 if (curElims.Count == 0)
                 {
                     elims = null;
@@ -655,7 +653,7 @@ internal class AICSolver
 
             if (canHaveTruths)
             {
-                SortedSet<int> curTruths = discoveredWeakToStrongLinksLookup[cand0];
+                var curTruths = discoveredWeakToStrongLinksLookup[cand0];
                 if (curTruths.Count == 0)
                 {
                     truths = null;
