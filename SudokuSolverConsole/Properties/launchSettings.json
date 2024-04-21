@@ -2,7 +2,6 @@
   "profiles": {
     "SudokuSolverConsole": {
       "commandName": "Project",
-      "commandLineArgs": "--listen",
       "workingDirectory": "$(SolutionDir)"
     },
     "Knightmare": {
