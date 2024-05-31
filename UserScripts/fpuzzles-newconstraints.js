@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.13
+// @version      1.14
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -418,7 +418,7 @@
                             for (let instance of puzzleEntry) {
                                 puzzle.circle.push({
                                     cells: [instance.lines[0][0]],
-                                    baseC: "#EAEAEA",
+                                    baseC: "#EAEAEAFF",
                                     outlineC: constraintInfo.color,
                                     width: 0.85,
                                     height: 0.85,
@@ -428,7 +428,7 @@
                                 const lastIndex = instance.lines[0].length - 1;
                                 puzzle.circle.push({
                                     cells: [instance.lines[0][lastIndex]],
-                                    baseC: "#EAEAEA",
+                                    baseC: "#EAEAEAFF",
                                     outlineC: constraintInfo.color,
                                     width: 0.85,
                                     height: 0.85,
