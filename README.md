@@ -9,7 +9,7 @@
 * A fast Sudoku solver which supports all common variants.
 * Logical solve path feature with human-like techniques.
 * Fast multi-threaded brute force solution count.
-* "Real candidates" feature to assist with setting.
+* "True candidates" feature to assist with setting.
 * Support for solving all [f-puzzles](https://www.f-puzzles.com) constraints.
 * Import from f-puzzles URLs and other common Sudoku formats, as well as direct construction via command-line.
 * Integration with the f-puzzles website to replace the built-in f-puzzles solver with this one and to enable additional solver features.
