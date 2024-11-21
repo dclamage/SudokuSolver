@@ -5,6 +5,7 @@ using System.Reflection.Metadata.Ecma335;
 
 namespace SudokuSolver;
 
+using WeaklinkType = List<int>;
 public enum GroupType
 {
     Row,
@@ -163,14 +164,14 @@ public class Solver
 
     private uint[,] board;
     private int[,] regions = null;
-    private SortedSet<int>[] weakLinks;
+    private WeaklinkType[] weakLinks;
     private int totalWeakLinks = 0;
-    private SortedSet<int>[] CloneWeakLinks()
+    private WeaklinkType[] CloneWeakLinks()
     {
-        SortedSet<int>[] newWeakLinks = new SortedSet<int>[NUM_CANDIDATES];
+        WeaklinkType[] newWeakLinks = new WeaklinkType[NUM_CANDIDATES];
         for (int ci = 0; ci < NUM_CANDIDATES; ci++)
         {
-            newWeakLinks[ci] = new(weakLinks[ci]);
+            newWeakLinks[ci] = new(weakLinks[ci]); // TODO: check here.
         }
         return newWeakLinks;
     }
@@ -202,7 +203,7 @@ public class Solver
 
     public uint[,] Board => board;
     public int[,] Regions => regions;
-    public SortedSet<int>[] WeakLinks => weakLinks;
+    public WeaklinkType[] WeakLinks => weakLinks;
     public Dictionary<string, object> customInfo = new();
     // Returns whether two cells cannot be the same value for a specific value
     // i0, j0, i1, j0, value or 0 for any value
@@ -398,7 +399,7 @@ public class Solver
         Groups = new();
         CellToGroupMap = new();
 
-        weakLinks = new SortedSet<int>[NUM_CANDIDATES];
+        weakLinks = new WeaklinkType[NUM_CANDIDATES];
         for (int ci = 0; ci < NUM_CANDIDATES; ci++)
         {
             weakLinks[ci] = new();
@@ -569,13 +570,15 @@ public class Solver
             var (i1, j1, v1) = CandIndexToCoord(candIndex1);
             if (HasValue(board[i0, j0], v0) && HasValue(board[i1, j1], v1))
             {
-                if (weakLinks[candIndex0].Add(candIndex1))
+                if (!weakLinks[candIndex0].Contains(candIndex1))
                 {
                     totalWeakLinks++;
+                    weakLinks[candIndex0].Add(candIndex1);
                 }
-                if (weakLinks[candIndex1].Add(candIndex0))
+                if (!weakLinks[candIndex1].Contains(candIndex0))
                 {
                     totalWeakLinks++;
+                    weakLinks[candIndex1].Add(candIndex0);
                 }
             }
         }
