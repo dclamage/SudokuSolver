@@ -330,9 +330,9 @@ namespace SudokuSolver
             {
                 for (j = 0; j < width; j++)
                 {
-                    if (fpuzzlesData.grid[i][j].region != -1)
+                    if (fpuzzlesData.grid[i][j].RegionProvided)
                     {
-                        regions[i, j] = fpuzzlesData.grid[i][j].region;
+                        regions[i, j] = fpuzzlesData.grid[i][j].region ?? -1;
                     }
                 }
             }
@@ -342,12 +342,15 @@ namespace SudokuSolver
             {
                 for (j = 0; j < width; j++)
                 {
-                    regionSanityCheck[regions[i, j]]++;
+                    if (regions[i, j] >= 0 && regions[i, j] < width)
+                    {
+                        regionSanityCheck[regions[i, j]]++;
+                    }
                 }
             }
             for (i = 0; i < width; i++)
             {
-                if (regionSanityCheck[i] != width)
+                if (regionSanityCheck[i] > 0 && regionSanityCheck[i] != width)
                 {
                     throw new ArgumentException($"Region {i + 1} has {regionSanityCheck[i]} cells, expected {width}");
                 }

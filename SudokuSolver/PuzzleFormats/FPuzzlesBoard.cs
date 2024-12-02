@@ -71,7 +71,20 @@ public class FPuzzlesGridEntry
     public bool given { get; set; }
     public int[] centerPencilMarks { get; set; }
     public int[] givenPencilMarks { get; set; }
-    public int region { get; set; } = -1;
+    public int? _region { get; set; }
+
+    [JsonIgnore] // Don't serialize this tracking flag
+    public bool RegionProvided { get; private set; }
+
+    public int? region
+    {
+        get => _region;
+        set
+        {
+            _region = value;
+            RegionProvided = true; // Mark as provided (even if null)
+        }
+    }
 }
 
 public class FPuzzlesArrowEntry
