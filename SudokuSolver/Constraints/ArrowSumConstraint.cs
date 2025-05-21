@@ -50,7 +50,6 @@ public class ArrowSumConstraint : Constraint
     public override LogicResult InitCandidates(Solver sudokuSolver)
     {
         bool changed = false;
-        var board = sudokuSolver.Board;
 
         if (arrowCells.Count > 1)
         {
@@ -84,12 +83,12 @@ public class ArrowSumConstraint : Constraint
                 uint maxValueMask = (1u << maxValue) - 1;
                 foreach (var cell in arrowCells)
                 {
-                    uint cellMask = board[cell.Item1, cell.Item2];
+                    uint cellMask = sudokuSolver[cell.Item1, cell.Item2];
                     if (!IsValueSet(cellMask))
                     {
                         if ((cellMask & maxValueMask) != cellMask)
                         {
-                            board[cell.Item1, cell.Item2] &= maxValueMask;
+                            sudokuSolver.KeepMask(cell.Item1, cell.Item2, maxValueMask);
                             changed = true;
                         }
                     }
@@ -101,12 +100,12 @@ public class ArrowSumConstraint : Constraint
             {
                 var sumCell = circleCells[0];
                 uint minValueMask = ~((1u << minSum) - 1);
-                uint cellMask = board[sumCell.Item1, sumCell.Item2];
+                uint cellMask = sudokuSolver[sumCell.Item1, sumCell.Item2];
                 if (!IsValueSet(cellMask))
                 {
                     if ((cellMask & minValueMask) != cellMask)
                     {
-                        board[sumCell.Item1, sumCell.Item2] &= minValueMask;
+                        sudokuSolver.KeepMask(sumCell.Item1, sumCell.Item2, minValueMask);
                         changed = true;
                     }
                 }
@@ -126,12 +125,12 @@ public class ArrowSumConstraint : Constraint
             {
                 var sumCell = circleCells[0];
                 uint maxValueMask = (1u << maxSumPrefix) - 1;
-                uint cellMask = board[sumCell.Item1, sumCell.Item2];
+                uint cellMask = sudokuSolver[sumCell.Item1, sumCell.Item2];
                 if (!IsValueSet(cellMask))
                 {
                     if ((cellMask & maxValueMask) != cellMask)
                     {
-                        board[sumCell.Item1, sumCell.Item2] &= maxValueMask;
+                        sudokuSolver.KeepMask(sumCell.Item1, sumCell.Item2, maxValueMask);
                         changed = true;
                     }
                 }

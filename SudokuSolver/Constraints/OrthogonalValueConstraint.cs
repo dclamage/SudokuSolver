@@ -247,34 +247,17 @@ public abstract class OrthogonalValueConstraint : Constraint
 
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
-        var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
-
-        var cell0 = (i, j);
-        foreach (var cell1 in AdjacentCells(i, j))
-        {
-            var pair = CellPair(cell0, cell1);
-            if (markers.TryGetValue(pair, out int markerValue))
-            {
-                var clearResult = sudokuSolver.ClearMask(cell1.Item1, cell1.Item2, clearValuesPositiveByMarker[markerValue][val - 1]);
-                if (clearResult == LogicResult.Invalid)
-                {
-                    return false;
-                }
-            }
-            else if (negativeConstraint && !overrideMarkers.Contains(pair))
-            {
-                var clearResult = sudokuSolver.ClearMask(cell1.Item1, cell1.Item2, clearValuesNegative[val - 1]);
-                if (clearResult == LogicResult.Invalid)
-                {
-                    return false;
-                }
-            }
-        }
+        // Enforced by weak links
         return true;
     }
 
     public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
     {
+        if (isBruteForcing)
+        {
+            return LogicResult.None;
+        }
+
         var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
 
         var board = sudokuSolver.Board;
@@ -389,7 +372,7 @@ public abstract class OrthogonalValueConstraint : Constraint
             }
         }
 
-        if (!isBruteForcing && negativeConstraint)
+        if (negativeConstraint)
         {
             // Look for groups where a particular digit is locked to 2, 3, or 4 places
             // For the case of 2 places, if they are adjacent then neither can be a banned digit
@@ -412,7 +395,7 @@ public abstract class OrthogonalValueConstraint : Constraint
                 {
                     uint valMask = ValueMask(val);
                     int numValInstances = 0;
-                    foreach (var pair in group.Cells)
+                    foreach (var pair in group.Cells.Select(sudokuSolver.CellIndexToCoord))
                     {
                         uint mask = board[pair.Item1, pair.Item2];
                         if (IsValueSet(mask))

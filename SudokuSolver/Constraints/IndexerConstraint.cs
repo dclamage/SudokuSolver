@@ -165,8 +165,8 @@ public class ColIndexerConstraint : AbstractIndexerConstraint
 [Constraint(DisplayName = "Box Indexer", ConsoleName = "boxindexer")]
 public class BoxIndexerConstraint : AbstractIndexerConstraint
 {
-    private readonly Dictionary<(int, int), SudokuGroup> regionMap = new();
-    private readonly Dictionary<(int, int), int> regionIndex = new();
+    private readonly Dictionary<int, SudokuGroup> regionMap = new();
+    private readonly Dictionary<int, int> regionIndex = new();
 
     public BoxIndexerConstraint(Solver solver, string options) : base(solver, options)
     {
@@ -174,16 +174,13 @@ public class BoxIndexerConstraint : AbstractIndexerConstraint
 
     public override LogicResult InitCandidates(Solver solver)
     {
-        for (int i = 0; i < HEIGHT; i++)
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
-            for (int j = 0; j < WIDTH; j++)
+            SudokuGroup region = solver.CellToGroupMap[cellIndex].Where(g => g.GroupType == GroupType.Region).FirstOrDefault();
+            if (region != null)
             {
-                SudokuGroup region = solver.CellToGroupMap[(i, j)].Where(g => g.GroupType == GroupType.Region).FirstOrDefault();
-                if (region != null)
-                {
-                    regionMap[(i, j)] = region;
-                    regionIndex[(i, j)] = region.Cells.IndexOf((i, j));
-                }
+                regionMap[cellIndex] = region;
+                regionIndex[cellIndex] = region.Cells.IndexOf(cellIndex);
             }
         }
 
@@ -192,13 +189,14 @@ public class BoxIndexerConstraint : AbstractIndexerConstraint
 
     protected override (int, int, int) TargetCell(Solver solver, int i, int j, int v)
     {
-        if (!regionMap.TryGetValue((i, j), out SudokuGroup region))
+        int cellIndex = solver.CellIndex(i, j);
+        if (!regionMap.TryGetValue(cellIndex, out SudokuGroup region))
         {
             return (i, j, v);
         }
 
-        var targetCell = region.Cells[v - 1];
-        return (targetCell.Item1, targetCell.Item2, regionIndex[(i, j)] + 1);
+        var targetCell = solver.CellIndexToCoord(region.Cells[v - 1]);
+        return (targetCell.Item1, targetCell.Item2, regionIndex[cellIndex] + 1);
     }
     protected override (int, int, int) InvTargetCell(Solver solver, int i, int j, int v) => TargetCell(solver, i, j, v);
 }

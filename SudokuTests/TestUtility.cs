@@ -5,7 +5,7 @@ static internal class TestUtility
     public static string ToGivenString(this Solver solver)
     {
         var flatBoard = solver.FlatBoard;
-        StringBuilder stringBuilder = new(flatBoard.Length);
+        StringBuilder stringBuilder = new(flatBoard.Count);
         if (solver.MAX_VALUE <= 9)
         {
             foreach (uint val in flatBoard)

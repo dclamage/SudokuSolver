@@ -397,7 +397,7 @@ class WebsocketListener : IDisposable
         int maxValue = solver.MAX_VALUE;
         var realFlatBoard = solver.FlatBoard;
         var logicalFlat = logicalSolver?.FlatBoard;
-        for (int i = 0; i < realFlatBoard.Length; i++)
+        for (int i = 0; i < realFlatBoard.Count; i++)
         {
             uint realMask = realFlatBoard[i];
             uint logicalMask = logicalFlat != null ? logicalFlat[i] : realMask;
@@ -480,7 +480,7 @@ class WebsocketListener : IDisposable
     {
         if (solver.customInfo["OriginalCenterMarks"] is uint[,] originalCenterMarks)
         {
-            uint[,] board = solver.Board;
+            var board = solver.Board;
             for (int i = 0; i < solver.HEIGHT; i++)
             {
                 for (int j = 0; j < solver.WIDTH; j++)
@@ -520,7 +520,7 @@ class WebsocketListener : IDisposable
         }
 
         var flatBoard = solver.FlatBoard;
-        LogicalCell[] cells = new LogicalCell[flatBoard.Length];
+        LogicalCell[] cells = new LogicalCell[flatBoard.Count];
         for (int i = 0; i < cells.Length; i++)
         {
             uint mask = flatBoard[i];

@@ -347,11 +347,10 @@ public class SumGroup
 
     private void ApplySumResult(Solver solver, uint[] resultMasks)
     {
-        var board = solver.Board;
         for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
         {
             var (i, j) = cells[cellIndex];
-            board[i, j] = resultMasks[cellIndex];
+            solver.KeepMask(i, j, resultMasks[cellIndex]);
         }
     }
 
