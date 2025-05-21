@@ -27,43 +27,64 @@ static internal class TestUtility
         return stringBuilder.ToString();
     }
 
-    public static void TestUniqueSolution(this Solver solver, string expectedSolution)
+    private static void TestUniqueSolutionImpl(this Solver solver, string expectedSolution, bool multiThread)
     {
         Solver solver1 = solver.Clone(willRunNonSinglesLogic: false);
-        Assert.AreEqual(1u, solver1.CountSolutions(multiThread: true));
+        ulong solutionCount = solver1.CountSolutions(multiThread: multiThread);
+        Assert.AreEqual(1u, solutionCount, $"Solution count not unique ({solutionCount}) for  {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
 
         Solver solver2 = solver.Clone(willRunNonSinglesLogic: false);
-        Assert.IsTrue(solver2.FindSolution(multiThread: true));
-        Assert.AreEqual(expectedSolution, solver2.ToGivenString());
+        Assert.IsTrue(solver2.FindSolution(multiThread: multiThread), $"Failed to find solution for puzzle:  {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
+        Assert.AreEqual(expectedSolution, solver2.ToGivenString(), $"Solution found '{solver2.ToGivenString()}' does not match expected solution '{expectedSolution}' for puzzle: {solver.ToGivenString()}");
 
         Solver solver3 = solver.Clone(willRunNonSinglesLogic: false);
-        Assert.IsTrue(solver3.FillRealCandidates(multiThread: true));
-        Assert.IsTrue(solver3.IsComplete);
-        Assert.AreEqual(expectedSolution, solver3.ToGivenString());
+        Assert.IsTrue(solver3.FillRealCandidates(multiThread: multiThread), $"Failed to fill real candidates for puzzle:  {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
+        Assert.IsTrue(solver3.IsComplete, $"Puzzle is not complete after filling real candidates for:  {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
+        Assert.AreEqual(expectedSolution, solver3.ToGivenString(), $"Solution after filling real candidates '{solver3.ToGivenString()}' does not match expected solution '{expectedSolution}' for puzzle:  {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
+    }
+
+    public static void TestUniqueSolution(this Solver solver, string expectedSolution)
+    {
+        TestUniqueSolutionImpl(solver, expectedSolution, true);  // Test multi-threaded
+        TestUniqueSolutionImpl(solver, expectedSolution, false); // Test single-threaded
+    }
+
+    private static void TestInvalidSolutionImpl(this Solver solver, bool multiThread)
+    {
+        Solver solver1 = solver.Clone(willRunNonSinglesLogic: false);
+        ulong solutionCount = solver1.CountSolutions(multiThread: multiThread);
+        Assert.AreEqual(0ul, solutionCount, $"Expected 0 solutions but found {solutionCount} solutions for invalid puzzle: {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
+
+        Solver solver2 = solver.Clone(willRunNonSinglesLogic: false);
+        Assert.IsFalse(solver2.FindSolution(multiThread: multiThread), $"Found solution for invalid puzzle: {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
+
+        Solver solver3 = solver.Clone(willRunNonSinglesLogic: false);
+        Assert.IsFalse(solver3.FillRealCandidates(multiThread: multiThread), $"Successfully filled real candidates for invalid puzzle: {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
     }
 
     public static void TestInvalidSolution(this Solver solver)
     {
+        TestInvalidSolutionImpl(solver, true);  // Test multi-threaded
+        TestInvalidSolutionImpl(solver, false); // Test single-threaded
+    }
+
+    private static void TestMultipleSolutionImpl(this Solver solver, bool multiThread)
+    {
         Solver solver1 = solver.Clone(willRunNonSinglesLogic: false);
-        Assert.AreEqual(0ul, solver1.CountSolutions(multiThread: true));
+        ulong solutionCount = solver1.CountSolutions(multiThread: multiThread);
+        Assert.IsTrue(solutionCount > 1ul, $"Expected multiple solutions but found {solutionCount} solution(s) for puzzle:  {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
 
         Solver solver2 = solver.Clone(willRunNonSinglesLogic: false);
-        Assert.IsFalse(solver2.FindSolution(multiThread: true));
+        Assert.IsTrue(solver2.FindSolution(multiThread: multiThread), $"Failed to find any solution for puzzle with multiple solutions:  {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
 
         Solver solver3 = solver.Clone(willRunNonSinglesLogic: false);
-        Assert.IsFalse(solver3.FillRealCandidates(multiThread: true));
+        Assert.IsTrue(solver3.FillRealCandidates(multiThread: multiThread), $"Failed to fill real candidates for puzzle with multiple solutions:  {solver.Title} by {solver.Author} ({solver.ToGivenString()})");
+        Assert.IsFalse(solver3.IsComplete, $"Puzzle unexpectedly complete after filling real candidates for multi-solution puzzle: {solver.Title}  by  {solver.Author}  ( {solver.ToGivenString()} )");
     }
 
     public static void TestMultipleSolution(this Solver solver)
     {
-        Solver solver1 = solver.Clone(willRunNonSinglesLogic: false);
-        Assert.IsTrue(solver1.CountSolutions(multiThread: true) > 1ul);
-
-        Solver solver2 = solver.Clone(willRunNonSinglesLogic: false);
-        Assert.IsTrue(solver2.FindSolution(multiThread: true));
-
-        Solver solver3 = solver.Clone(willRunNonSinglesLogic: false);
-        Assert.IsTrue(solver3.FillRealCandidates(multiThread: true));
-        Assert.IsFalse(solver3.IsComplete);
+        TestMultipleSolutionImpl(solver, true);  // Test multi-threaded
+        TestMultipleSolutionImpl(solver, false); // Test single-threaded
     }
 }
