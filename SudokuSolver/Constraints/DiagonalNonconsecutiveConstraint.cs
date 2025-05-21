@@ -163,9 +163,9 @@ public class DiagonalNonconsecutiveConstraint : Constraint
             {
                 uint valMask = 1u << (val - 1);
                 int numValInstances = 0;
-                foreach (var cell in group.Cells)
+                foreach (int cellIndex in group.Cells)
                 {
-                    uint mask = board[cell.Item1, cell.Item2];
+                    uint mask = board[cellIndex];
                     if (IsValueSet(mask))
                     {
                         if ((mask & valMask) != 0)
@@ -177,7 +177,7 @@ public class DiagonalNonconsecutiveConstraint : Constraint
                     }
                     if ((mask & valMask) != 0)
                     {
-                        valInstances[numValInstances++] = cell;
+                        valInstances[numValInstances++] = sudokuSolver.CellIndexToCoord(cellIndex);
                     }
                 }
                 if (numValInstances >= 2 && numValInstances <= 5)

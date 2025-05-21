@@ -26,8 +26,9 @@ public class RegionSumLinesConstraint : EqualSumsConstraint
         List<List<(int, int)>> cellGroups = new();
         foreach (var cell in lineCells)
         {
+            int cellIndex = solver.CellIndex(cell);
             SudokuGroup curRegion = solver.Groups
-                .Where(group => group.GroupType == GroupType.Region && group.Cells.Contains(cell))
+                .Where(group => group.GroupType == GroupType.Region && group.Cells.Contains(cellIndex))
                 .FirstOrDefault();
             if (curRegion == null)
             {

@@ -53,7 +53,7 @@ static class ConsoleUtility
         PrintBoardSingleLine(board.Board, textWriter);
     }
 
-    public static void PrintBoardSingleLine(uint[,] board, TextWriter textWriter)
+    public static void PrintBoardSingleLine(BoardView board, TextWriter textWriter)
     {
         int height = board.GetLength(0);
         int width = board.GetLength(1);
@@ -187,7 +187,7 @@ static class ConsoleUtility
         PrintBoard(board.Board, board.Regions, writer);
     }
 
-    public static void PrintBoard(uint[,] board, int[,] regions, TextWriter writer)
+    public static void PrintBoard(BoardView board, int[,] regions, TextWriter writer)
     {
         int HEIGHT = board.GetLength(0);
         int WIDTH = board.GetLength(1);

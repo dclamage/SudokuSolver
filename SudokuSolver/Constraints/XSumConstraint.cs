@@ -157,7 +157,6 @@ public class XSumConstraint : Constraint
             return LogicResult.None;
         }
 
-        var board = solver.Board;
         uint[] newMasks = CalcNewMasks(solver);
         if (newMasks == null)
         {
@@ -170,9 +169,9 @@ public class XSumConstraint : Constraint
         for (int cellIndex = 0; cellIndex < newMasks.Length; cellIndex++)
         {
             var (i, j) = cells[cellIndex];
-            if (!IsValueSet(board[i, j]))
+            if (!IsValueSet(solver[i, j]))
             {
-                uint elimMask = board[i, j] & ~newMasks[cellIndex];
+                uint elimMask = solver[i, j] & ~newMasks[cellIndex];
                 if (elimMask != 0)
                 {
                     if (logicalStepDescription != null)
@@ -186,7 +185,7 @@ public class XSumConstraint : Constraint
                             }
                         }
                     }
-                    board[i, j] &= newMasks[cellIndex];
+                    solver.KeepMask(i, j, newMasks[cellIndex]);
                     changed = true;
                 }
             }

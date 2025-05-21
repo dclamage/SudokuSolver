@@ -44,7 +44,6 @@ class Program
 		var fpuzzlesOut = app.Option("-u|--url", "Write solution as f-puzzles URL.", CommandOptionType.NoValue);
 		var visitURL = app.Option("-v|--visit", "Automatically visit the output URL with default browser (combine with -u).", CommandOptionType.NoValue);
 		var listen = app.Option("--listen", "Listen for websocket connections.", CommandOptionType.NoValue);
-		var listenHeadless = app.Option("--listen-headless", "Listen for websocket connections (headless).", CommandOptionType.NoValue);
 		var listenSingleThreaded = app.Option("--listen-singlethreaded", "Option to force all websocket commands to execute single threaded.", CommandOptionType.NoValue);
 		var port = app.Option<int>("--port", "Change the listen port for websocket connections (default 4545)", CommandOptionType.SingleValue)
 			.Accepts(v => v.Range(1024, 49151));
@@ -76,7 +75,6 @@ class Program
                 FpuzzlesOut = fpuzzlesOut.HasValue(),
                 VisitURL = visitURL.HasValue(),
                 Listen = listen.HasValue(),
-				ListenHeadless = listenHeadless.HasValue(),
 				ListenSingleThreaded = listenSingleThreaded.HasValue(),
 				Port = port.ParsedValue,
                 ListConstraints = listConstraints.HasValue(),
@@ -118,7 +116,6 @@ class Program
 
 	// Websocket options
     public required bool Listen { get; init; }
-    public required bool ListenHeadless { get; init; }
 	public required bool ListenSingleThreaded { get; init; }
 public required int Port { get; init; }
 
@@ -164,7 +161,7 @@ public required int Port { get; init; }
 			Console.WriteLine();
         }
 
-		if (ListConstraints)
+        if (ListConstraints)
 		{
 			Console.WriteLine("Constraints:");
 			List<string> constraintNames = ConstraintManager.ConstraintAttributes.Select(attr => $"{attr.ConsoleName} ({attr.DisplayName})").ToList();
@@ -176,7 +173,19 @@ public required int Port { get; init; }
 			return 0;
 		}
 
-		if (Listen || ListenHeadless)
+		bool defaultToListen = false;
+		bool haveFPuzzlesURL = !string.IsNullOrWhiteSpace(FpuzzlesURL);
+		bool haveGivens = !string.IsNullOrWhiteSpace(Givens);
+		bool haveBlankGridSize = BlankGridSize >= 1 && BlankGridSize <= 31;
+		bool haveCandidates = !string.IsNullOrWhiteSpace(Candidates);
+		// If no board input is specified, default to listen mode
+		if (!Listen && !haveFPuzzlesURL && !haveGivens && !haveBlankGridSize && !haveCandidates)
+		{
+			defaultToListen = true;
+			Console.WriteLine("INFO: No board input was specified, defaulting to --listen");
+		}
+
+        if (Listen || defaultToListen)
 		{
 			using WebsocketListener websocketListener = new();
 			await websocketListener.Listen("localhost", Port, Constraints, VerboseLogs, ListenSingleThreaded);
@@ -202,20 +211,6 @@ public required int Port { get; init; }
                     await Task.Delay(1000, CancellationToken.None);
                 }
 			}
-		}
-
-		bool haveFPuzzlesURL = !string.IsNullOrWhiteSpace(FpuzzlesURL);
-		bool haveGivens = !string.IsNullOrWhiteSpace(Givens);
-		bool haveBlankGridSize = BlankGridSize >= 1 && BlankGridSize <= 31;
-		bool haveCandidates = !string.IsNullOrWhiteSpace(Candidates);
-		if (!haveFPuzzlesURL && !haveGivens && !haveBlankGridSize && !haveCandidates)
-		{
-			Console.WriteLine($"ERROR: Must provide either an f-puzzles URL or a givens string or a blank grid or a candidates string, or must be run in listen mode.");
-			Console.WriteLine($"Try '{processName} --help' for more information.");
-			Console.WriteLine();
-			Console.WriteLine("Press any key to exit...");
-			Console.ReadKey(true);
-			return 0;
 		}
 
 		int numBoardsSpecified = 0;
@@ -379,21 +374,13 @@ public required int Port { get; init; }
 			object consoleLock = new();
 			if (!solver.FillRealCandidates(multiThread: MultiThread, progressEvent: (uint[] board) =>
 			{
-				uint[,] board2d = new uint[solver.HEIGHT, solver.WIDTH];
-				for (int i = 0; i < solver.HEIGHT; i++)
-				{
-					for (int j = 0; j < solver.WIDTH; j++)
-					{
-						int cellIndex = i * solver.WIDTH + j;
-						board2d[i, j] = board[cellIndex];
-					}
-				}
+				BoardView board2d = new BoardView(board, solver.HEIGHT, solver.WIDTH);
 				lock (consoleLock)
 				{
 					ConsoleUtility.PrintBoard(board2d, solver.Regions, Console.Out);
 					Console.SetCursorPosition(0, currentLineCursor);
 				}
-			}))
+			}, cancellationToken: cancellationToken))
 			{
 				Console.WriteLine($"No solutions found!");
 			}

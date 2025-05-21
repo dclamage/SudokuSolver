@@ -1,89 +1,11 @@
 ﻿//#define PROFILING
 //#define INFINITE_LOOP_CHECK
 
-using System.Reflection.Metadata.Ecma335;
+using System;
+using System.Buffers;
+using System.Numerics;
 
 namespace SudokuSolver;
-
-public enum GroupType
-{
-    Row,
-    Column,
-    Region,
-    Constraint
-}
-
-public sealed record SudokuGroup(GroupType GroupType, string Name, List<(int, int)> Cells, Constraint FromConstraint) : IComparable<SudokuGroup>
-{
-    public override string ToString() => Name;
-
-    public bool MustContain(Solver solver, int val)
-    {
-        if (Cells.Count == solver.MAX_VALUE)
-        {
-            return true;
-        }
-
-        var mustContain = FromConstraint?.CellsMustContain(solver, val);
-        return mustContain != null && mustContain.Count > 0;
-    }
-
-    public List<(int, int)> CellsMustContain(Solver solver, int val)
-    {
-        var board = solver.Board;
-        if (Cells.Count == solver.MAX_VALUE)
-        {
-            return Cells.Where(cell => HasValue(board[cell.Item1, cell.Item2], val)).ToList();
-        }
-        if (FromConstraint != null)
-        {
-            return FromConstraint.CellsMustContain(solver, val);
-        }
-        return null;
-    }
-
-    int IComparable<SudokuGroup>.CompareTo(SudokuGroup other)
-    {
-        if (ReferenceEquals(this, other))
-        {
-            return 0;
-        }
-
-        if (GroupType != other.GroupType)
-        {
-            return (int)GroupType - (int)other.GroupType;
-        }
-
-        if (Name != other.Name)
-        {
-            return Name.CompareTo(other.Name);
-        }
-
-        if (Cells.Count != other.Cells.Count)
-        {
-            return Cells.Count - other.Cells.Count;
-        }
-
-        for (int i = 0; i < Cells.Count; i++)
-        {
-            int compare = Cells[i].CompareTo(other.Cells[i]);
-            if (compare != 0)
-            {
-                return compare;
-            }
-        }
-
-        return 0;
-    }
-}
-
-public enum LogicResult
-{
-    None,
-    Changed,
-    Invalid,
-    PuzzleComplete
-}
 
 public class Solver
 {
@@ -161,13 +83,15 @@ public class Solver
         DisableContradictions = true;
     }
 
-    private uint[,] board;
+    private uint[] board;
     private int[,] regions = null;
-    private SortedSet<int>[] weakLinks;
+    private (int, int)[] candidateToCellAndValueLookup;
+    private (int, int, int)[] candidateToCoordValueLookup;
+    private List<int>[] weakLinks;
     private int totalWeakLinks = 0;
-    private SortedSet<int>[] CloneWeakLinks()
+    private List<int>[] CloneWeakLinks()
     {
-        SortedSet<int>[] newWeakLinks = new SortedSet<int>[NUM_CANDIDATES];
+        List<int>[] newWeakLinks = new List<int>[NUM_CANDIDATES];
         for (int ci = 0; ci < NUM_CANDIDATES; ci++)
         {
             newWeakLinks[ci] = new(weakLinks[ci]);
@@ -200,27 +124,39 @@ public class Solver
         }
     }
 
-    public uint[,] Board => board;
+    public BoardView Board => new(board, WIDTH, HEIGHT);
+    public uint[] BoardClone
+    {
+        get
+        {
+            uint[] boardClone = new uint[board.Length];
+            board.AsSpan().CopyTo(boardClone);
+            return boardClone;
+        }
+    }
+
     public int[,] Regions => regions;
-    public SortedSet<int>[] WeakLinks => weakLinks;
-    public Dictionary<string, object> customInfo = new();
+    public List<int>[] WeakLinks => weakLinks;
+    public Dictionary<string, object> customInfo;
     // Returns whether two cells cannot be the same value for a specific value
     // i0, j0, i1, j0, value or 0 for any value
     private bool[,,,,] seenMap;
     private bool isInSetValue = false;
-    public uint[] FlatBoard
+    public IReadOnlyList<uint> FlatBoard => board;
+
+    public uint this[int row, int col]
     {
         get
         {
-            uint[] flatBoard = new uint[NUM_CELLS];
-            for (int i = 0; i < HEIGHT; i++)
-            {
-                for (int j = 0; j < WIDTH; j++)
-                {
-                    flatBoard[i * WIDTH + j] = board[i, j];
-                }
-            }
-            return flatBoard;
+            if ((uint)row >= (uint)HEIGHT || (uint)col >= (uint)WIDTH)
+                throw new IndexOutOfRangeException();
+            return board[row * WIDTH + col];
+        }
+        private set
+        {
+            if ((uint)row >= (uint)HEIGHT || (uint)col >= (uint)WIDTH)
+                throw new IndexOutOfRangeException();
+            board[row * WIDTH + col] = value;
         }
     }
 
@@ -228,11 +164,10 @@ public class Solver
     {
         get
         {
-            var flatBoard = FlatBoard;
             int digitWidth = MAX_VALUE >= 10 ? 2 : 1;
             string nonGiven = new('0', digitWidth);
-            StringBuilder stringBuilder = new(flatBoard.Length);
-            foreach (uint mask in flatBoard)
+            StringBuilder stringBuilder = new(board.Length);
+            foreach (uint mask in board)
             {
                 if (IsValueSet(mask))
                 {
@@ -256,10 +191,9 @@ public class Solver
     {
         get
         {
-            var flatBoard = FlatBoard;
             int digitWidth = MAX_VALUE >= 10 ? 2 : 1;
-            StringBuilder stringBuilder = new(flatBoard.Length * digitWidth);
-            foreach (uint mask in flatBoard)
+            StringBuilder stringBuilder = new(board.Length * digitWidth);
+            foreach (uint mask in board)
             {
                 for (int v = 1; v <= MAX_VALUE; v++)
                 {
@@ -285,10 +219,9 @@ public class Solver
     {
         get
         {
-            var flatBoard = FlatBoard;
             int digitWidth = MAX_VALUE >= 10 ? 2 : 1;
-            StringBuilder stringBuilder = new(flatBoard.Length * digitWidth);
-            foreach (uint mask in flatBoard)
+            StringBuilder stringBuilder = new(board.Length * digitWidth);
+            foreach (uint mask in board)
             {
                 if (IsValueSet(mask))
                 {
@@ -340,7 +273,7 @@ public class Solver
     /// <summary>
     /// Maps a cell to the list of groups which contain that cell.
     /// </summary>
-    public Dictionary<(int, int), List<SudokuGroup>> CellToGroupMap { get; }
+    public Dictionary<int, List<SudokuGroup>> CellToGroupMap { get; }
 
     /// <summary>
     /// Determines if the board has all values set.
@@ -349,14 +282,11 @@ public class Solver
     {
         get
         {
-            for (int i = 0; i < WIDTH; i++)
+            for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
             {
-                for (int j = 0; j < HEIGHT; j++)
+                if (!IsValueSet(cellIndex))
                 {
-                    if (!IsValueSet(i, j))
-                    {
-                        return false;
-                    }
+                    return false;
                 }
             }
             return true;
@@ -385,24 +315,36 @@ public class Solver
         memosLock = new();
         InitCombinations();
 
-        board = new uint[HEIGHT, WIDTH];
+        board = new uint[NUM_CELLS];
+        board.AsSpan().Fill(ALL_VALUES_MASK);
+
         constraints = new();
 
-        for (int i = 0; i < HEIGHT; i++)
-        {
-            for (int j = 0; j < WIDTH; j++)
-            {
-                board[i, j] = ALL_VALUES_MASK;
-            }
-        }
         Groups = new();
         CellToGroupMap = new();
 
-        weakLinks = new SortedSet<int>[NUM_CANDIDATES];
+        weakLinks = new List<int>[NUM_CANDIDATES];
         for (int ci = 0; ci < NUM_CANDIDATES; ci++)
         {
             weakLinks[ci] = new();
         }
+
+        candidateToCellAndValueLookup = new (int, int)[NUM_CANDIDATES];
+        candidateToCoordValueLookup = new (int, int, int)[NUM_CANDIDATES];
+        for (int i = 0; i < height; i++)
+        {
+            for (int j = 0; j < WIDTH; j++)
+            {
+                for (int v = 1; v <= MAX_VALUE; v++)
+                {
+                    int candidateIndex = CandidateIndex(i, j, v);
+                    candidateToCellAndValueLookup[candidateIndex] = (CellIndex(i, j), v);
+                    candidateToCoordValueLookup[candidateIndex] = (i, j, v);
+                }
+            }
+        }
+
+        customInfo = new();
     }
 
     public Solver(Solver other, bool willRunNonSinglesLogic)
@@ -424,8 +366,11 @@ public class Solver
         DisableAIC = other.DisableAIC;
         DisableContradictions = other.DisableContradictions;
         DisableFindShortestContradiction = other.DisableFindShortestContradiction;
-        board = (uint[,])other.board.Clone();
+        board = new uint[NUM_CELLS];
+        other.board.AsSpan().CopyTo(board);
         regions = other.regions;
+        candidateToCellAndValueLookup = other.candidateToCellAndValueLookup;
+        candidateToCoordValueLookup = other.candidateToCoordValueLookup;
         seenMap = other.seenMap;
         constraints = other.constraints;
         Groups = other.Groups;
@@ -471,10 +416,10 @@ public class Solver
     {
         for (int i = 0; i < HEIGHT; i++)
         {
-            List<(int, int)> cells = new(WIDTH);
+            List<int> cells = new(WIDTH);
             for (int j = 0; j < WIDTH; j++)
             {
-                cells.Add((i, j));
+                cells.Add(CellIndex(i, j));
             }
             SudokuGroup group = new(GroupType.Row, $"Row {i + 1}", cells, null);
             Groups.Add(group);
@@ -484,10 +429,10 @@ public class Solver
         // Add col groups
         for (int j = 0; j < WIDTH; j++)
         {
-            List<(int, int)> cells = new(HEIGHT);
+            List<int> cells = new(HEIGHT);
             for (int i = 0; i < HEIGHT; i++)
             {
-                cells.Add((i, j));
+                cells.Add(CellIndex(i, j));
             }
             SudokuGroup group = new(GroupType.Column, $"Column {j + 1}", cells, null);
             Groups.Add(group);
@@ -497,14 +442,14 @@ public class Solver
         // Add regions
         for (int region = 0; region < WIDTH; region++)
         {
-            List<(int, int)> cells = new(WIDTH);
+            List<int> cells = new(WIDTH);
             for (int i = 0; i < HEIGHT; i++)
             {
                 for (int j = 0; j < WIDTH; j++)
                 {
                     if (regions[i, j] == region)
                     {
-                        cells.Add((i, j));
+                        cells.Add(CellIndex(i, j));
                     }
                 }
             }
@@ -563,21 +508,35 @@ public class Solver
 
     public void AddWeakLink(int candIndex0, int candIndex1)
     {
-        if (candIndex0 != candIndex1)
+        if (candIndex0 == candIndex1)
         {
-            var (i0, j0, v0) = CandIndexToCoord(candIndex0);
-            var (i1, j1, v1) = CandIndexToCoord(candIndex1);
-            if (HasValue(board[i0, j0], v0) && HasValue(board[i1, j1], v1))
-            {
-                if (weakLinks[candIndex0].Add(candIndex1))
-                {
-                    totalWeakLinks++;
-                }
-                if (weakLinks[candIndex1].Add(candIndex0))
-                {
-                    totalWeakLinks++;
-                }
-            }
+            return;
+        }
+
+        var (cell0, v0) = CandIndexToCellAndValue(candIndex0);
+        var (cell1, v1) = CandIndexToCellAndValue(candIndex1);
+
+        if (!HasValue(board[cell0], v0) || !HasValue(board[cell1], v1))
+        {
+            return;
+        }
+
+        // Insert into weakLinks[candIndex0]
+        var list0 = weakLinks[candIndex0];
+        int idx0 = list0.BinarySearch(candIndex1);
+        if (idx0 < 0)
+        {
+            list0.Insert(~idx0, candIndex1);
+            totalWeakLinks++;
+        }
+
+        // Insert into weakLinks[candIndex1]
+        var list1 = weakLinks[candIndex1];
+        int idx1 = list1.BinarySearch(candIndex0);
+        if (idx1 < 0)
+        {
+            list1.Insert(~idx1, candIndex0);
+            totalWeakLinks++;
         }
     }
 
@@ -686,7 +645,7 @@ public class Solver
             var cells = constraint.Group;
             if (cells != null)
             {
-                SudokuGroup group = new(GroupType.Constraint, constraint.SpecificName, cells.ToList(), constraint);
+                SudokuGroup group = new(GroupType.Constraint, constraint.SpecificName, cells.Select(CellIndex).ToList(), constraint);
                 Groups.Add(group);
                 InitMapForGroup(group);
                 addedGroup = true;
@@ -749,7 +708,7 @@ public class Solver
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetValue((int, int) cell)
     {
-        return SolverUtility.GetValue(board[cell.Item1, cell.Item2]);
+        return SolverUtility.GetValue(board[CellIndex(cell.Item1, cell.Item2)]);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -759,10 +718,13 @@ public class Solver
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool IsValueSet(int i, int j)
+    public bool IsValueSet(int cellIndex)
     {
-        return SolverUtility.IsValueSet(board[i, j]);
+        return SolverUtility.IsValueSet(board[cellIndex]);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool IsValueSet(int i, int j) => IsValueSet(CellIndex(i, j));
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsValueSet(uint mask)
@@ -792,15 +754,15 @@ public class Solver
         HashSet<(int, int)> result = null;
         foreach (var cell in cells)
         {
-            if (!CellToGroupMap.TryGetValue(cell, out var groupList) || groupList.Count == 0)
+            if (!CellToGroupMap.TryGetValue(CellIndex(cell), out var groupList) || groupList.Count == 0)
             {
                 return new HashSet<(int, int)>();
             }
 
-            HashSet<(int, int)> curSeen = new(groupList.First().Cells);
+            HashSet<(int, int)> curSeen = new(groupList.First().Cells.Select(CellIndexToCoord));
             foreach (var group in groupList.Skip(1))
             {
-                curSeen.UnionWith(group.Cells);
+                curSeen.UnionWith(group.Cells.Select(CellIndexToCoord));
             }
 
             foreach (var constraint in constraints)
@@ -838,15 +800,15 @@ public class Solver
         HashSet<(int, int)> result = null;
         foreach (var cell in cells)
         {
-            if (!CellToGroupMap.TryGetValue(cell, out var groupList) || groupList.Count == 0)
+            if (!CellToGroupMap.TryGetValue(CellIndex(cell), out var groupList) || groupList.Count == 0)
             {
                 return new HashSet<(int, int)>();
             }
 
-            HashSet<(int, int)> curSeen = new(groupList.First().Cells);
+            HashSet<(int, int)> curSeen = new(groupList.First().Cells.Select(CellIndexToCoord));
             foreach (var group in groupList.Skip(1))
             {
-                curSeen.UnionWith(group.Cells);
+                curSeen.UnionWith(group.Cells.Select(CellIndexToCoord));
             }
 
             foreach (var constraint in constraints)
@@ -918,7 +880,7 @@ public class Solver
             for (int i1 = i0 + 1; i1 < candIndexes.Count; i1++)
             {
                 int cand1 = candIndexes[i1];
-                if (cand0 != cand1 && !weakLinks0.Contains(cand1))
+                if (cand0 != cand1 && weakLinks0.BinarySearch(cand1) < 0)
                 {
                     return false;
                 }
@@ -999,7 +961,7 @@ public class Solver
         {
             var (i, j) = cells[cellIndex];
             int v = values[cellIndex];
-            if (!HasValue(board[i, j], v))
+            if (!HasValue(this[i, j], v))
             {
                 return false;
             }
@@ -1020,7 +982,7 @@ public class Solver
             var weakLinks0 = weakLinks[candidates[c0]];
             for (int c1 = c0 + 1; c1 < numCells; c1++)
             {
-                if (weakLinks0.Contains(candidates[c1]))
+                if (weakLinks0.BinarySearch(candidates[c1]) >= 0)
                 {
                     return false;
                 }
@@ -1040,7 +1002,7 @@ public class Solver
         uint combMask = 0;
         foreach (var cell in cells)
         {
-            combMask |= board[cell.Item1, cell.Item2];
+            combMask |= this[cell.Item1, cell.Item2];
         }
 
         uint needMask = 0;
@@ -1066,17 +1028,24 @@ public class Solver
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public bool ClearValue(int cellIndex, int v)
+    {
+        board[cellIndex] &= ~ValueMask(v);
+        return (board[cellIndex] & ~valueSetMask) != 0;
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool ClearValue(int i, int j, int v)
     {
-        board[i, j] &= ~ValueMask(v);
-        return (board[i, j] & ~valueSetMask) != 0;
+        int cellIndex = CellIndex(i, j);
+        return ClearValue(cellIndex, v);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool ClearCandidate(int candidate)
     {
-        var (i, j, v) = CandIndexToCoord(candidate);
-        return ClearValue(i, j, v);
+        var (cellIndex, v) = CandIndexToCellAndValue(candidate);
+        return ClearValue(cellIndex, v);
     }
 
     internal bool ClearCandidates(IEnumerable<int> candidates)
@@ -1092,47 +1061,56 @@ public class Solver
         return valid;
     }
 
-    public bool SetValue(int i, int j, int val)
+    public bool SetValue(int i, int j, int val) => SetValue(CellIndex(i, j), val);
+
+    public bool SetValue(int cellIndex, int val)
     {
         uint valMask = ValueMask(val);
-        if ((board[i, j] & valMask) == 0)
+        if ((board[cellIndex] & valMask) == 0)
         {
             return false;
         }
 
         // Check if already set
-        if ((board[i, j] & valueSetMask) != 0)
+        if ((board[cellIndex] & valueSetMask) != 0)
         {
             return true;
         }
 
         if (isInSetValue)
         {
-            board[i, j] = valMask;
+            board[cellIndex] = valMask;
             return true;
         }
 
         isInSetValue = true;
 
-        board[i, j] = valueSetMask | valMask;
+        board[cellIndex] = valueSetMask | valMask;
 
         // Apply all weak links
-        int setCandidateIndex = CandidateIndex(i, j, val);
-        foreach (int elimCandIndex in weakLinks[setCandidateIndex])
+        int setCandidateIndex = CandidateIndex(cellIndex, val);
+        var curWeakLinks = weakLinks[setCandidateIndex];
+        int curWeakLinksCount = curWeakLinks.Count;
+        for (int curWeakLinkIndex = 0; curWeakLinkIndex < curWeakLinksCount; curWeakLinkIndex++)
         {
-            var (i1, j1, v1) = CandIndexToCoord(elimCandIndex);
-            if (!ClearValue(i1, j1, v1))
+            int elimCandIndex = curWeakLinks[curWeakLinkIndex];
+            var (cellIndex1, v1) = CandIndexToCellAndValue(elimCandIndex);
+            if (!ClearValue(cellIndex1, v1))
             {
                 return false;
             }
         }
 
         // Enforce all constraints
-        foreach (var constraint in constraints)
+        if (constraints.Count > 0)
         {
-            if (!constraint.EnforceConstraint(this, i, j, val))
+            var (i, j) = CellIndexToCoord(cellIndex);
+            foreach (var constraint in constraints)
             {
-                return false;
+                if (!constraint.EnforceConstraint(this, i, j, val))
+                {
+                    return false;
+                }
             }
         }
 
@@ -1144,26 +1122,26 @@ public class Solver
     public LogicResult EvaluateSetValue(int i, int j, int val, ref string violationString)
     {
         uint valMask = ValueMask(val);
-        if ((board[i, j] & valMask) == 0)
+        if ((this[i, j] & valMask) == 0)
         {
             return LogicResult.None;
         }
 
         // Check if already set
-        if ((board[i, j] & valueSetMask) != 0)
+        if ((this[i, j] & valueSetMask) != 0)
         {
             return LogicResult.None;
         }
 
         if (isInSetValue)
         {
-            board[i, j] = valMask;
+            this[i, j] = valMask;
             return LogicResult.Changed;
         }
 
         isInSetValue = true;
 
-        board[i, j] = valueSetMask | valMask;
+        this[i, j] = valueSetMask | valMask;
 
         // Apply all weak links
         int setCandidateIndex = CandidateIndex(i, j, val);
@@ -1200,7 +1178,7 @@ public class Solver
             return false;
         }
 
-        board[i, j] = mask;
+        this[i, j] = mask;
         return true;
     }
 
@@ -1233,7 +1211,7 @@ public class Solver
         isInSetValue = true;
 
         LogicResult result = LogicResult.None;
-        uint curMask = board[i, j] & ~valueSetMask;
+        uint curMask = this[i, j] & ~valueSetMask;
         uint newMask = curMask & mask;
         if (newMask != curMask)
         {
@@ -1255,7 +1233,7 @@ public class Solver
         isInSetValue = true;
 
         LogicResult result = LogicResult.None;
-        uint curMask = board[i, j];
+        uint curMask = this[i, j];
         uint newMask = curMask & ~mask;
         if (newMask != curMask)
         {
@@ -1266,9 +1244,9 @@ public class Solver
         return result;
     }
 
-    private (int, int, int) GetLeastCandidateCell(bool[] ignoreCell = null)
+    private (int, int) GetLeastCandidateCell(bool[] ignoreCell = null)
     {
-        int i = -1, j = -1;
+        int bestCellIndex = -1;
         int numCandidates = MAX_VALUE + 1;
         if (smallGroupsBySize != null)
         {
@@ -1281,73 +1259,67 @@ public class Solver
                     break;
                 }
 
-                foreach ((int x, int y) in group.Cells)
+                foreach (int cellIndex in group.Cells)
                 {
-                    if (!IsValueSet(x, y) && (ignoreCell == null || !ignoreCell[x * WIDTH + y]))
+                    uint cellMask = board[cellIndex];
+                    if (!IsValueSet(cellMask) && (ignoreCell == null || !ignoreCell[cellIndex]))
                     {
-                        int curNumCandidates = ValueCount(board[x, y]);
+                        int curNumCandidates = ValueCount(cellMask);
                         if (curNumCandidates == 2)
                         {
-                            return (x, y, 0);
+                            return (cellIndex, 0);
                         }
                         if (curNumCandidates < numCandidates)
                         {
                             lastValidGroupSize = groupSize;
                             numCandidates = curNumCandidates;
-                            i = x;
-                            j = y;
+                            bestCellIndex = cellIndex;
                         }
                     }
                 }
             }
-            if (i != -1)
+            if (bestCellIndex != -1)
             {
-                return (i, j, 0);
+                return (bestCellIndex, 0);
             }
         }
 
         if (ignoreCell == null)
         {
-            for (int x = 0; x < HEIGHT; x++)
+            for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
             {
-                for (int y = 0; y < WIDTH; y++)
+                uint cellMask = board[cellIndex];
+                if (!IsValueSet(cellMask))
                 {
-                    if (!IsValueSet(x, y))
+                    int curNumCandidates = ValueCount(cellMask);
+                    if (curNumCandidates == 2)
                     {
-                        int curNumCandidates = ValueCount(board[x, y]);
-                        if (curNumCandidates == 2)
-                        {
-                            return (x, y, 0);
-                        }
-                        if (curNumCandidates < numCandidates)
-                        {
-                            numCandidates = curNumCandidates;
-                            i = x;
-                            j = y;
-                        }
+                        return (cellIndex, 0);
+                    }
+                    if (curNumCandidates < numCandidates)
+                    {
+                        numCandidates = curNumCandidates;
+                        bestCellIndex = cellIndex;
                     }
                 }
             }
         }
         else
         {
-            for (int x = 0; x < HEIGHT; x++)
+            for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
             {
-                for (int y = 0; y < WIDTH; y++)
+                uint cellMask = board[cellIndex];
+                if (!IsValueSet(cellMask) && !ignoreCell[cellIndex])
                 {
-                    if (!IsValueSet(x, y) && !ignoreCell[x * WIDTH + y])
+                    int curNumCandidates = ValueCount(cellMask);
+                    if (curNumCandidates == 2)
                     {
-                        int curNumCandidates = ValueCount(board[x, y]);
-                        if (curNumCandidates == 2)
-                        {
-                            return (x, y, 0);
-                        }
-                        if (curNumCandidates < numCandidates)
-                        {
-                            numCandidates = curNumCandidates;
-                            i = x;
-                            j = y;
-                        }
+                        return (cellIndex, 0);
+                    }
+                    if (curNumCandidates < numCandidates)
+                    {
+                        numCandidates = curNumCandidates;
+                        bestCellIndex = cellIndex;
                     }
                 }
             }
@@ -1355,27 +1327,27 @@ public class Solver
 
         if (numCandidates > 3)
         {
-            var (bi, bj, bval) = FindBilocalValue();
-            if (bval > 0)
+            var (bCellIndex, bVal) = FindBilocalValue();
+            if (bVal > 0)
             {
-                return (bi, bj, bval);
+                return (bCellIndex, bVal);
             }
         }
 
-        return (i, j, 0);
+        return (bestCellIndex, 0);
     }
 
-    private int CellPriority(int i, int j)
+    private int CellPriority(int cellIndex)
     {
-        if (IsValueSet(i, j))
+        if (IsValueSet(cellIndex))
         {
             return -1;
         }
 
-        int numCandidates = ValueCount(board[i, j]);
+        int numCandidates = ValueCount(board[cellIndex]);
         int invNumCandidates = MAX_VALUE - numCandidates + 1;
         int priority = invNumCandidates;
-        if (CellToGroupMap.TryGetValue((i, j), out var groups))
+        if (CellToGroupMap.TryGetValue(cellIndex, out var groups))
         {
             try
             {
@@ -1387,7 +1359,6 @@ public class Solver
         }
 
         // Within the same priority level, sort by cell order
-        int cellIndex = i * WIDTH + j;
         priority = priority * NUM_CELLS + (NUM_CELLS - cellIndex - 1);
         return priority;
     }
@@ -1474,7 +1445,7 @@ public class Solver
             bool solutionFound = FindSolutionSingleThreaded(solver, cancellationToken, isRandom);
             if (solutionFound)
             {
-                board = solver.Board;
+                board = solver.board;
             }
             return solutionFound;
         }
@@ -1505,34 +1476,40 @@ public class Solver
             var logicResult = solver.ConsolidateBoard();
             if (logicResult == LogicResult.PuzzleComplete)
             {
-                initialSolver.board = solver.board;
+                if (solver != initialSolver)
+                {
+                    initialSolver.board = solver.board;
+                }
                 return true;
             }
 
             if (logicResult != LogicResult.Invalid)
             {
-                (int i, int j, int v) = solver.GetLeastCandidateCell();
-                if (i < 0)
+                (int cellIndex, int v) = solver.GetLeastCandidateCell();
+                if (cellIndex < 0)
                 {
-                    initialSolver.board = solver.board;
+                    if (solver != initialSolver)
+                    {
+                        initialSolver.board = solver.board;
+                    }
                     return true;
                 }
 
                 // Try a possible value for this cell
-                int val = v != 0 ? v : isRandom ? GetRandomValue(solver.board[i, j]) : MinValue(solver.board[i, j]);
+                int val = v != 0 ? v : isRandom ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
                 uint valMask = ValueMask(val);
 
                 // Create a backup board in case it needs to be restored
                 Solver backupBoard = solver.Clone(willRunNonSinglesLogic: false);
                 backupBoard.isBruteForcing = true;
-                backupBoard.board[i, j] &= ~valMask;
-                if (backupBoard.board[i, j] != 0)
+                backupBoard.board[cellIndex] &= ~valMask;
+                if (backupBoard.board[cellIndex] != 0)
                 {
                     boardStack.Push(backupBoard);
                 }
 
                 // Change the board to only allow this value in the slot
-                if (solver.SetValue(i, j, val))
+                if (solver.SetValue(cellIndex, val))
                 {
                     continue;
                 }
@@ -1549,13 +1526,11 @@ public class Solver
     private class FindSolutionState : IDisposable
     {
         public CountdownEvent countdownEvent = new(1);
-        public uint[,] result = null;
+        public uint[] result = null;
         public CancellationToken cancellationToken;
-        public object locker = new();
         public bool isRandom = false;
 
         private int numRunningTasks = 0;
-        private readonly Stack<Solver> pendingSolvers = new();
         private readonly int maxRunningTasks;
 
         public FindSolutionState(bool isRandom, CancellationToken cancellationToken)
@@ -1566,36 +1541,27 @@ public class Solver
             maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
         }
 
-        public void PushSolver(Solver solver)
+        public bool PushSolver(Solver solver)
         {
-            lock (locker)
+            // bump atomically
+            int newCount = Interlocked.Increment(ref numRunningTasks);
+            if (newCount <= maxRunningTasks)
             {
-                if (numRunningTasks < maxRunningTasks)
-                {
-                    numRunningTasks++;
-                    Task.Run(() => FindSolutionMultiThreaded(solver, this), cancellationToken);
-                    countdownEvent.AddCount();
-                    return;
-                }
-
-                pendingSolvers.Push(solver);
+                // only schedule if we stayed within the limit
+                countdownEvent.AddCount();
+                Task.Run(() => FindSolutionMultiThreaded(solver, this));
+                return true;
             }
+
+            // we overshot: roll back and decline
+            Interlocked.Decrement(ref numRunningTasks);
+            return false;
         }
 
         public void TaskComplete()
         {
-            lock (locker)
-            {
-                if (pendingSolvers.TryPop(out Solver solver))
-                {
-                    Task.Run(() => FindSolutionMultiThreaded(solver, this), cancellationToken);
-                }
-                else
-                {
-                    numRunningTasks--;
-                    countdownEvent.Signal();
-                }
-            }
+            Interlocked.Decrement(ref numRunningTasks);
+            countdownEvent.Signal();
         }
 
         public void Dispose()
@@ -1605,13 +1571,7 @@ public class Solver
 
         public void ReportSolution(Solver solver)
         {
-            lock (locker)
-            {
-                if (result == null)
-                {
-                    result = solver.Board;
-                }
-            }
+            Interlocked.CompareExchange(ref result, solver.board, null);
         }
 
         public void Wait()
@@ -1622,53 +1582,71 @@ public class Solver
 
     private static void FindSolutionMultiThreaded(Solver solver, FindSolutionState state)
     {
-        while (true)
+        try
         {
-            state.cancellationToken.ThrowIfCancellationRequested();
-            if (state.result != null)
+            var boardStack = new Stack<Solver>();
+            while (state.result is null)
             {
-                break;
-            }
+                while (true)
+                {
+                    state.cancellationToken.ThrowIfCancellationRequested();
+                    if (state.result != null)
+                    {
+                        break;
+                    }
 
-            var logicResult = solver.ConsolidateBoard();
-            if (logicResult == LogicResult.PuzzleComplete)
-            {
-                state.ReportSolution(solver);
-                break;
-            }
+                    var logicResult = solver.ConsolidateBoard();
+                    if (logicResult == LogicResult.PuzzleComplete)
+                    {
+                        state.ReportSolution(solver);
+                        break;
+                    }
 
-            if (logicResult == LogicResult.Invalid)
-            {
-                break;
-            }
+                    if (logicResult == LogicResult.Invalid)
+                    {
+                        break;
+                    }
 
-            (int i, int j, int v) = solver.GetLeastCandidateCell();
-            if (i < 0)
-            {
-                state.ReportSolution(solver);
-                break;
-            }
+                    (int cellIndex, int v) = solver.GetLeastCandidateCell();
+                    if (cellIndex < 0)
+                    {
+                        state.ReportSolution(solver);
+                        break;
+                    }
 
-            // Try a possible value for this cell
-            int val = v != 0 ? v : state.isRandom ? GetRandomValue(solver.board[i, j]) : MinValue(solver.board[i, j]);
-            uint valMask = ValueMask(val);
+                    // Try a possible value for this cell
+                    int val = v != 0 ? v : state.isRandom ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
+                    uint valMask = ValueMask(val);
 
-            // Create a backup board in case it needs to be restored
-            Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
-            newSolver.isBruteForcing = true;
-            newSolver.board[i, j] &= ~valMask;
-            if (newSolver.board[i, j] != 0)
-            {
-                state.PushSolver(newSolver);
-            }
+                    // Create a backup board in case it needs to be restored
+                    Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
+                    newSolver.isBruteForcing = true;
+                    newSolver.board[cellIndex] &= ~valMask;
+                    if (newSolver.board[cellIndex] != 0)
+                    {
+                        if (!state.PushSolver(newSolver))
+                        {
+                            boardStack.Push(newSolver);
+                        }
+                    }
 
-            // Change the board to only allow this value in the slot
-            if (!solver.SetValue(i, j, val))
-            {
-                break;
+                    // Change the board to only allow this value in the slot
+                    if (!solver.SetValue(cellIndex, val))
+                    {
+                        break;
+                    }
+                }
+
+                if (!boardStack.TryPop(out solver))
+                {
+                    break;
+                }
             }
         }
-        state.TaskComplete();
+        finally
+        {
+            state.TaskComplete();
+        }
     }
 
     /// <summary>
@@ -1703,6 +1681,10 @@ public class Solver
         }
         catch (OperationCanceledException) { }
 
+        if (maxSolutions > 0 && state.numSolutions > maxSolutions)
+        {
+            return maxSolutions;
+        }
         return state.numSolutions;
     }
 
@@ -1721,9 +1703,9 @@ public class Solver
         private readonly Stopwatch eventTimer;
 
         private int numRunningTasks = 0;
-        private readonly Stack<Solver> pendingSolvers;
         private readonly int maxRunningTasks;
         private readonly bool fastIncrement;
+        private bool maxSolutionsReached;
 
         public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, Action<Solver> solutionEvent, HashSet<string> skipSolutions, CancellationToken cancellationToken)
         {
@@ -1735,17 +1717,25 @@ public class Solver
             this.cancellationToken = cancellationToken;
             eventTimer = Stopwatch.StartNew();
             countdownEvent = multiThread ? new CountdownEvent(1) : null;
-            pendingSolvers = multiThread ? new Stack<Solver>() : null;
             maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
             fastIncrement = skipSolutions == null && solutionEvent == null;
+            maxSolutionsReached = false;
         }
+
+        public bool MaxSolutionsReached => maxSolutionsReached;
 
         public void IncrementSolutions(Solver solver)
         {
             bool invokeProgress = false;
             if (fastIncrement)
             {
-                Interlocked.Increment(ref numSolutions);
+                ulong newNumSolutions = Interlocked.Increment(ref numSolutions);
+                if (maxSolutions > 0 && newNumSolutions >= maxSolutions)
+                {
+                    maxSolutionsReached = true;
+                    return;
+                }
+
                 if (eventTimer.ElapsedMilliseconds > 500)
                 {
                     lock (solutionLock)
@@ -1760,20 +1750,28 @@ public class Solver
             }
             else
             {
-                lock (solutionLock)
+                if (skipSolutions != null && skipSolutions.Contains(solver.GivenString))
                 {
-                    if (skipSolutions != null && skipSolutions.Contains(solver.GivenString))
-                    {
-                        return;
-                    }
+                    return;
+                }
 
-                    solutionEvent?.Invoke(solver);
+                ulong newNumSolutions = Interlocked.Increment(ref numSolutions);
+                if (maxSolutions > 0 && newNumSolutions >= maxSolutions)
+                {
+                    maxSolutionsReached = true;
+                    return;
+                }
 
-                    numSolutions++;
-                    if (eventTimer.ElapsedMilliseconds > 500)
+                if (solutionEvent != null || eventTimer.ElapsedMilliseconds > 500)
+                {
+                    lock (solutionLock)
                     {
-                        invokeProgress = true;
-                        eventTimer.Restart();
+                        solutionEvent?.Invoke(solver);
+                        if (eventTimer.ElapsedMilliseconds > 500)
+                        {
+                            invokeProgress = true;
+                            eventTimer.Restart();
+                        }
                     }
                 }
             }
@@ -1783,34 +1781,27 @@ public class Solver
             }
         }
 
-        public void PushSolver(Solver solver)
+        public bool PushSolver(Solver solver)
         {
-            lock (solutionLock)
+            int newNumRunningTasks = Interlocked.Increment(ref numRunningTasks);
+            if (newNumRunningTasks <= maxRunningTasks)
             {
-                if (numRunningTasks < maxRunningTasks)
-                {
-                    numRunningTasks++;
-                    Task.Run(() => CountSolutionsMultiThreaded(solver, this));
-                    countdownEvent.AddCount();
-                    return;
-                }
-
-                pendingSolvers.Push(solver);
+                Task.Run(() => CountSolutionsMultiThreaded(solver, this));
+                countdownEvent.AddCount();
+                return true;
             }
+            else
+            {
+                Interlocked.Decrement(ref numRunningTasks);
+            }
+
+            return false;
         }
 
-        public Solver TaskComplete()
+        public void TaskComplete()
         {
-            Solver solver = null;
-            lock (solutionLock)
-            {
-                if (!(maxSolutions <= 0 || numSolutions < maxSolutions) || !pendingSolvers.TryPop(out solver))
-                {
-                    numRunningTasks--;
-                    countdownEvent.Signal();
-                }
-            }
-            return solver;
+            Interlocked.Decrement(ref numRunningTasks);
+            countdownEvent.Signal();
         }
 
         public void Wait()
@@ -1842,8 +1833,8 @@ public class Solver
             }
             else if (logicResult != LogicResult.Invalid)
             {
-                (int i, int j, int v) = solver.GetLeastCandidateCell();
-                if (i < 0)
+                (int cellIndex, int v) = solver.GetLeastCandidateCell();
+                if (cellIndex < 0)
                 {
                     state.IncrementSolutions(solver);
                     if (state.maxSolutions > 0 && state.numSolutions >= state.maxSolutions)
@@ -1854,20 +1845,20 @@ public class Solver
                 else
                 {
                     // Try a possible value for this cell
-                    int val = v != 0 ? v : MinValue(solver.board[i, j]);
+                    int val = v != 0 ? v : MinValue(solver.board[cellIndex]);
                     uint valMask = ValueMask(val);
 
                     // Create a board without this value and push it to the stack
                     // for later processing.
                     Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
                     newSolver.isBruteForcing = true;
-                    newSolver.board[i, j] &= ~valMask;
-                    if (newSolver.board[i, j] != 0)
+                    newSolver.board[cellIndex] &= ~valMask;
+                    if (newSolver.board[cellIndex] != 0)
                     {
                         boardStack.Push(newSolver);
                     }
 
-                    if (solver.SetValue(i, j, val))
+                    if (solver.SetValue(cellIndex, val))
                     {
                         continue;
                     }
@@ -1884,62 +1875,66 @@ public class Solver
 
     private static void CountSolutionsMultiThreaded(Solver solver, CountSolutionsState state)
     {
-        while (true)
+        try
         {
-            while (true)
+            var boardStack = new Stack<Solver>();
+            while (!state.MaxSolutionsReached)
             {
-                // If reached max solutions, bail out
-                if (state.maxSolutions > 0 && state.numSolutions >= state.maxSolutions)
+                while (!state.MaxSolutionsReached)
                 {
-                    break;
+                    state.cancellationToken.ThrowIfCancellationRequested();
+
+                    var logicResult = solver.ConsolidateBoard();
+                    if (logicResult == LogicResult.PuzzleComplete)
+                    {
+                        state.IncrementSolutions(solver);
+                        break;
+                    }
+
+                    if (logicResult == LogicResult.Invalid)
+                    {
+                        break;
+                    }
+
+                    // Start with the cell that has the least possible candidates
+                    (int cellIndex, int v) = solver.GetLeastCandidateCell();
+                    if (cellIndex < 0)
+                    {
+                        state.IncrementSolutions(solver);
+                        break;
+                    }
+
+                    // Try a possible value for this cell
+                    int val = v != 0 ? v : state.skipSolutions != null ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
+                    uint valMask = ValueMask(val);
+
+                    // Create a solver without this value and start a task for it
+                    Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
+                    newSolver.isBruteForcing = true;
+                    newSolver.board[cellIndex] &= ~valMask;
+                    if (newSolver.board[cellIndex] != 0)
+                    {
+                        if (!state.PushSolver(newSolver))
+                        {
+                            boardStack.Push(newSolver);
+                        }
+                    }
+
+                    if (!solver.SetValue(cellIndex, val))
+                    {
+                        break;
+                    }
                 }
 
-                state.cancellationToken.ThrowIfCancellationRequested();
-
-                var logicResult = solver.ConsolidateBoard();
-                if (logicResult == LogicResult.PuzzleComplete)
-                {
-                    state.IncrementSolutions(solver);
-                    break;
-                }
-
-                if (logicResult == LogicResult.Invalid)
-                {
-                    break;
-                }
-
-                // Start with the cell that has the least possible candidates
-                (int i, int j, int v) = solver.GetLeastCandidateCell();
-                if (i < 0)
-                {
-                    state.IncrementSolutions(solver);
-                    break;
-                }
-
-                // Try a possible value for this cell
-                int val = v != 0 ? v : state.skipSolutions != null ? GetRandomValue(solver.board[i, j]) : MinValue(solver.board[i, j]);
-                uint valMask = ValueMask(val);
-
-                // Create a solver without this value and start a task for it
-                Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
-                newSolver.isBruteForcing = true;
-                newSolver.board[i, j] &= ~valMask;
-                if (newSolver.board[i, j] != 0)
-                {
-                    state.PushSolver(newSolver);
-                }
-
-                if (!solver.SetValue(i, j, val))
+                if (!boardStack.TryPop(out solver))
                 {
                     break;
                 }
             }
-
-            solver = state.TaskComplete();
-            if (solver == null)
-            {
-                break;
-            }
+        }
+        finally
+        {
+            state.TaskComplete();
         }
     }
 
@@ -2021,48 +2016,40 @@ public class Solver
 
         isBruteForcing = true;
         FillRealCandidatesState state = new(multiThread, NUM_CELLS, progressEvent, numSolutions, cancellationToken);
-        for (int i = 0; i < HEIGHT; i++)
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
-            for (int j = 0; j < WIDTH; j++)
+            uint cellMask = board[cellIndex];
+            if (IsValueSet(cellMask))
             {
-                int cellIndex = i * WIDTH + j;
-                uint cellMask = board[i, j];
-                if (IsValueSet(cellMask))
-                {
-                    state.fixedBoard[cellIndex] = cellMask;
-                    state.candidatesFixed[cellIndex] = true;
-                }
+                state.fixedBoard[cellIndex] = cellMask;
+                state.candidatesFixed[cellIndex] = true;
             }
         }
 
         int numUnsetCells = logicResult == LogicResult.PuzzleComplete ? 0 : NUM_CELLS - NumSetValues;
-        List<(int, int, int, int)> cellValuesByPriority = null;
+        List<(int, int, int)> cellValuesByPriority = null;
         if (numUnsetCells > 0)
         {
             cellValuesByPriority = new(numUnsetCells);
-            for (int i = 0; i < HEIGHT; i++)
+            for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
             {
-                for (int j = 0; j < WIDTH; j++)
+                int cellPriority = CellPriority(cellIndex);
+                if (cellPriority < 0)
                 {
-                    int cellPriority = CellPriority(i, j);
-                    if (cellPriority < 0)
+                    continue;
+                }
+
+                for (int v = 1; v <= MAX_VALUE; v++)
+                {
+                    // Don't bother trying the value if it's not a possibility
+                    uint valMask = ValueMask(v);
+                    if ((board[cellIndex] & valMask) == 0)
                     {
                         continue;
                     }
 
-                    for (int v = 1; v <= MAX_VALUE; v++)
-                    {
-                        // Don't bother trying the value if it's not a possibility
-                        uint valMask = ValueMask(v);
-                        if ((board[i, j] & valMask) == 0)
-                        {
-                            continue;
-                        }
-
-                        int cellIndex = i * WIDTH + j;
-                        state.tasksRemainingPerCell[cellIndex]++;
-                        cellValuesByPriority.Add((cellPriority, i, j, v));
-                    }
+                    state.tasksRemainingPerCell[cellIndex]++;
+                    cellValuesByPriority.Add((cellPriority, cellIndex, v));
                 }
             }
         }
@@ -2088,11 +2075,11 @@ public class Solver
 
             try
             {
-                foreach (var (p, i, j, v) in cellValuesByPriority)
+                foreach (var (p, cellIndex, v) in cellValuesByPriority)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    FillRealCandidateAction(i, j, v, state);
+                    FillRealCandidateAction(cellIndex, v, state);
                     if (state.boardInvalid)
                     {
                         break;
@@ -2111,16 +2098,12 @@ public class Solver
             }
         }
 
-        for (int i = 0; i < HEIGHT; i++)
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
-            for (int j = 0; j < WIDTH; j++)
+            uint cellMask = board[cellIndex];
+            if (IsValueSet(cellMask))
             {
-                int cellIndex = i * WIDTH + j;
-                uint cellMask = board[i, j];
-                if (IsValueSet(cellMask))
-                {
-                    state.fixedBoard[cellIndex] = cellMask;
-                }
+                state.fixedBoard[cellIndex] = cellMask;
             }
         }
 
@@ -2143,9 +2126,8 @@ public class Solver
         return true;
     }
 
-    private void FillRealCandidateAction(int i, int j, int v, FillRealCandidatesState state)
+    private void FillRealCandidateAction(int cellIndex, int v, FillRealCandidatesState state)
     {
-        int cellIndex = i * WIDTH + j;
         int numSolutionsIndex = cellIndex * MAX_VALUE + (v - 1);
         uint valMask = ValueMask(v);
 
@@ -2164,13 +2146,13 @@ public class Solver
                     int fixedCellIndex = fi * WIDTH + fj;
                     if (state.candidatesFixed[fixedCellIndex])
                     {
-                        boardCopy.board[fi, fj] = state.fixedBoard[fixedCellIndex];
+                        boardCopy[fi, fj] = state.fixedBoard[fixedCellIndex];
                     }
                 }
             }
 
             // Set the board to use this candidate's value
-            if (boardCopy.SetValue(i, j, v))
+            if (boardCopy.SetValue(cellIndex, v))
             {
                 if (state.numSolutions == null)
                 {
@@ -2180,7 +2162,7 @@ public class Solver
                         {
                             for (int sj = 0; sj < WIDTH; sj++)
                             {
-                                uint solutionValMask = boardCopy.board[si, sj] & ~valueSetMask;
+                                uint solutionValMask = boardCopy[si, sj] & ~valueSetMask;
                                 state.fixedBoard[si * WIDTH + sj] |= solutionValMask;
                             }
                         }
@@ -2202,7 +2184,7 @@ public class Solver
                             {
                                 for (int sj = 0; sj < WIDTH; sj++)
                                 {
-                                    uint solutionValMask = curSolutionBoard.board[si, sj] & ~valueSetMask;
+                                    uint solutionValMask = curSolutionBoard[si, sj] & ~valueSetMask;
                                     int cellIndex = si * WIDTH + sj;
                                     state.fixedBoard[cellIndex] |= solutionValMask;
                                     state.numSolutions[cellIndex * MAX_VALUE + GetValue(solutionValMask) - 1]++;
@@ -2263,7 +2245,7 @@ public class Solver
 #if INFINITE_LOOP_CHECK
             Solver clone = Clone();
 #endif
-            if (!IsBoardValid(logicalStepDescs))
+            if (!isBruteForcing && !IsBoardValid(logicalStepDescs))
             {
                 result = LogicResult.Invalid;
             }
@@ -2297,14 +2279,14 @@ public class Solver
         do
         {
 #if INFINITE_LOOP_CHECK
-                Solver clone = Clone();
+            Solver clone = Clone();
 #endif
             result = StepLogic(null);
 #if INFINITE_LOOP_CHECK
-                if (result == LogicResult.Changed && IsSame(clone))
-                {
-                    throw new InvalidOperationException("Logic step returned a change, but no changed to candidates occured.");
-                }
+            if (result == LogicResult.Changed && IsSame(clone))
+            {
+                throw new InvalidOperationException("Logic step returned a change, but no changed to candidates occured.");
+            }
 #endif
             changed |= result == LogicResult.Changed;
         } while (result == LogicResult.Changed);
@@ -2539,15 +2521,16 @@ public class Solver
     private bool IsBoardValid(List<LogicalStepDesc> logicalStepDescs)
     {
         // Check for empty cells
-        for (int i = 0; i < HEIGHT; i++)
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
-            for (int j = 0; j < WIDTH; j++)
+            if ((board[cellIndex] & ~valueSetMask) == 0)
             {
-                if ((board[i, j] & ~valueSetMask) == 0)
+                if (logicalStepDescs != null)
                 {
+                    var (i, j) = CellIndexToCoord(cellIndex);
                     logicalStepDescs?.Add(new($"{CellName(i, j)} has no possible values.", (i, j)));
-                    return false;
                 }
+                return false;
             }
         }
 
@@ -2562,16 +2545,16 @@ public class Solver
             }
 
             uint atLeastOnce = 0;
-            for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
+            for (int groupindex = 0; groupindex < numCells; groupindex++)
             {
-                var (i, j) = groupCells[cellIndex];
-                atLeastOnce |= board[i, j];
+                int cellIndex = groupCells[groupindex];
+                atLeastOnce |= board[cellIndex];
             }
             atLeastOnce &= ~valueSetMask;
 
             if (atLeastOnce != ALL_VALUES_MASK && numCells == MAX_VALUE)
             {
-                logicalStepDescs?.Add(new($"{group} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~atLeastOnce)}.", group.Cells));
+                logicalStepDescs?.Add(new($"{group} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~atLeastOnce)}.", group.Cells.Select(CellIndexToCoord)));
                 return false;
             }
         }
@@ -2582,18 +2565,18 @@ public class Solver
         }
 
         // Check for groups which contain too many cells with a tuple that is too small
-        List<(int, int)> unsetCells = new(MAX_VALUE);
+        List<int> unsetCells = new(MAX_VALUE);
         foreach (var group in Groups)
         {
             for (int tupleSize = 2; tupleSize < MAX_VALUE; tupleSize++)
             {
                 unsetCells.Clear();
-                foreach (var cell in group.Cells)
+                foreach (int cellIndex in group.Cells)
                 {
-                    uint cellMask = board[cell.Item1, cell.Item2];
+                    uint cellMask = board[cellIndex];
                     if (!IsValueSet(cellMask))
                     {
-                        unsetCells.Add(cell);
+                        unsetCells.Add(cellIndex);
                     }
                 }
 
@@ -2607,7 +2590,7 @@ public class Solver
                     uint tupleMask = CandidateMask(tupleCells);
                     if (ValueCount(tupleMask) < tupleSize)
                     {
-                        logicalStepDescs?.Add(new($"{CompactName(tupleCells)} in {group} are {tupleCells.Count} cells with only {ValueCount(tupleMask)} candidates available ({MaskToString(tupleMask)}).", tupleCells));
+                        logicalStepDescs?.Add(new($"{CompactName(tupleCells)} in {group} are {tupleCells.Count} cells with only {ValueCount(tupleMask)} candidates available ({MaskToString(tupleMask)}).", tupleCells.Select(CellIndexToCoord)));
                         return false;
                     }
                 }
@@ -2623,29 +2606,26 @@ public class Solver
         if (logicalStepDescs == null)
         {
             bool changed = false;
-            for (int i = 0; i < HEIGHT; i++)
+            for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
             {
-                for (int j = 0; j < WIDTH; j++)
+                uint mask = board[cellIndex];
+                if ((mask & ~valueSetMask) == 0)
                 {
-                    uint mask = board[i, j];
-                    if ((mask & ~valueSetMask) == 0)
-                    {
-                        return LogicResult.Invalid;
-                    }
+                    return LogicResult.Invalid;
+                }
 
-                    if (!IsValueSet(mask))
-                    {
-                        hasUnsetCells = true;
+                if (!IsValueSet(mask))
+                {
+                    hasUnsetCells = true;
 
-                        if (ValueCount(mask) == 1)
+                    if (ValueCount(mask) == 1)
+                    {
+                        int value = GetValue(mask);
+                        if (!SetValue(cellIndex, value))
                         {
-                            int value = GetValue(mask);
-                            if (!SetValue(i, j, value))
-                            {
-                                return LogicResult.Invalid;
-                            }
-                            changed = true;
+                            return LogicResult.Invalid;
                         }
+                        changed = true;
                     }
                 }
             }
@@ -2660,7 +2640,8 @@ public class Solver
             {
                 for (int j = 0; j < WIDTH; j++)
                 {
-                    uint mask = board[i, j];
+                    int cellIndex = CellIndex(i, j);
+                    uint mask = board[cellIndex];
                     if ((mask & ~valueSetMask) == 0)
                     {
                         logicalStepDescs.Add(new($"{CellName(i, j)} has no possible values.", (i, j)));
@@ -2703,10 +2684,10 @@ public class Solver
             uint atLeastOnce = 0;
             uint moreThanOnce = 0;
             uint setMask = 0;
-            for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
+            for (int groupIndex = 0; groupIndex < numCells; groupIndex++)
             {
-                var (i, j) = groupCells[cellIndex];
-                uint mask = board[i, j];
+                int cellIndex = groupCells[groupIndex];
+                uint mask = board[cellIndex];
                 if (IsValueSet(mask))
                 {
                     setMask |= mask;
@@ -2720,7 +2701,10 @@ public class Solver
             setMask &= ~valueSetMask;
             if (numCells == MAX_VALUE && (atLeastOnce | setMask) != ALL_VALUES_MASK)
             {
-                logicalStepDescs?.Add(new($"{group} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~(atLeastOnce | setMask))}.", group.Cells));
+                if (logicalStepDescs != null)
+                {
+                    logicalStepDescs.Add(new($"{group} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~(atLeastOnce | setMask))}.", group.Cells.Select(CellIndexToCoord)));
+                }
                 return LogicResult.Invalid;
             }
 
@@ -2728,18 +2712,16 @@ public class Solver
             if (exactlyOnce != 0)
             {
                 int val = 0;
-                int vali = -1;
-                int valj = -1;
+                int valCellIndex = -1;
                 if (numCells == MAX_VALUE)
                 {
                     val = MinValue(exactlyOnce);
                     uint valMask = ValueMask(val);
-                    foreach (var (i, j) in group.Cells)
+                    foreach (int cellIndex in group.Cells)
                     {
-                        if ((board[i, j] & valMask) != 0)
+                        if ((board[cellIndex] & valMask) != 0)
                         {
-                            vali = i;
-                            valj = j;
+                            valCellIndex = cellIndex;
                             break;
                         }
                     }
@@ -2756,22 +2738,27 @@ public class Solver
                             if (cellsMustContain != null && cellsMustContain.Count == 1)
                             {
                                 val = v;
-                                vali = cellsMustContain[0].Item1;
-                                valj = cellsMustContain[0].Item2;
+                                valCellIndex = CellIndex(cellsMustContain[0]);
                                 break;
                             }
                         }
                     }
                 }
 
-                if (vali >= 0)
+                if (valCellIndex >= 0)
                 {
-                    if (!SetValue(vali, valj, val))
+                    if (!SetValue(valCellIndex, val))
                     {
-                        logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(vali, valj)} cannot be set to {val}.", (vali, valj)));
+                        if (logicalStepDescs != null)
+                        {
+                            logicalStepDescs.Add(new($"Hidden Single in {group}: {CellName(CellIndexToCoord(valCellIndex))} cannot be set to {val}.", CellIndexToCoord(valCellIndex)));
+                        }
                         return LogicResult.Invalid;
                     }
-                    logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(vali, valj)}={val}", CandidateIndex((vali, valj), val).ToEnumerable(), null, isSingle: true));
+                    if (logicalStepDescs != null)
+                    {
+                        logicalStepDescs.Add(new($"Hidden Single in {group}: {CellName(CellIndexToCoord(valCellIndex))}={val}", CandidateIndex(valCellIndex, val).ToEnumerable(), null, isSingle: true));
+                    }
                     return LogicResult.Changed;
                 }
             }
@@ -2781,12 +2768,12 @@ public class Solver
 
     private LogicResult FindDirectCellForcing(List<LogicalStepDesc> logicalStepDescs)
     {
-        SortedSet<int> elimSet = new();
+        HashSet<int> elimSet = new();
         for (int i = 0; i < HEIGHT; i++)
         {
             for (int j = 0; j < WIDTH; j++)
             {
-                uint mask = board[i, j];
+                uint mask = this[i, j];
                 if (IsValueSet(mask))
                 {
                     continue;
@@ -2842,7 +2829,7 @@ public class Solver
         return LogicResult.None;
     }
 
-    private (int, int, int) FindBilocalValue()
+    private (int, int) FindBilocalValue()
     {
         foreach (var group in Groups)
         {
@@ -2856,10 +2843,10 @@ public class Solver
             uint atLeastOnce = 0;
             uint atLeastTwice = 0;
             uint moreThanTwice = 0;
-            for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
+            for (int groupIndex = 0; groupIndex < numCells; groupIndex++)
             {
-                var (i, j) = groupCells[cellIndex];
-                uint mask = board[i, j];
+                int cellIndex = groupCells[groupIndex];
+                uint mask = board[cellIndex];
                 moreThanTwice |= atLeastTwice & mask;
                 atLeastTwice |= atLeastOnce & mask;
                 atLeastOnce |= mask;
@@ -2870,21 +2857,21 @@ public class Solver
             {
                 int val = MinValue(exactlyTwice);
                 uint valMask = ValueMask(val);
-                foreach (var (i, j) in group.Cells)
+                foreach (int cellIndex in group.Cells)
                 {
-                    if ((board[i, j] & valMask) != 0)
+                    if ((board[cellIndex] & valMask) != 0)
                     {
-                        return (i, j, val);
+                        return (cellIndex, val);
                     }
                 }
             }
         }
-        return (-1, -1, 0);
+        return (-1, 0);
     }
 
     private LogicResult FindNakedTuplesAndPointing(List<LogicalStepDesc> logicalStepDescs)
     {
-        List<(int, int)> unsetCells = new(MAX_VALUE);
+        List<int> unsetCells = new(MAX_VALUE);
         for (int numCells = 2; numCells <= MAX_VALUE; numCells++)
         {
             if (!DisableTuples && numCells < MAX_VALUE)
@@ -2898,12 +2885,12 @@ public class Solver
 
                     // Make a list of cells which aren't already set and contain fewer candidates than the tuple size
                     unsetCells.Clear();
-                    foreach (var cell in group.Cells)
+                    foreach (int cellIndex in group.Cells)
                     {
-                        uint cellMask = board[cell.Item1, cell.Item2];
+                        uint cellMask = board[cellIndex];
                         if (!IsValueSet(cellMask) && ValueCount(cellMask) <= numCells)
                         {
-                            unsetCells.Add(cell);
+                            unsetCells.Add(cellIndex);
                         }
                     }
 
@@ -2922,7 +2909,7 @@ public class Solver
                             {
                                 logicalStepDescs?.Add(new(
                                     desc: $"Tuple: {CompactName(tupleMask, tupleCells)} in {group} => {DescribeElims(elims)}",
-                                    sourceCandidates: CandidateIndexes(tupleMask, tupleCells),
+                                    sourceCandidates: CandidateIndexes(tupleMask, tupleCells.Select(CellIndexToCoord)),
                                     elimCandidates: elims
                                 ));
                                 if (!ClearCandidates(elims))
@@ -2945,9 +2932,9 @@ public class Solver
                 {
                     uint setValuesMask = 0;
                     uint unsetValuesMask = 0;
-                    foreach (var cell in group.Cells)
+                    foreach (int cellIndex in group.Cells)
                     {
-                        uint mask = board[cell.Item1, cell.Item2] & ~valueSetMask;
+                        uint mask = board[cellIndex] & ~valueSetMask;
                         if (ValueCount(mask) == 1)
                         {
                             setValuesMask |= mask;
@@ -3047,7 +3034,7 @@ public class Solver
         {
             for (int j = 0; j < WIDTH; j++)
             {
-                uint mask = board[i, j];
+                uint mask = this[i, j];
                 int valueCount = ValueCount(mask);
                 if (!IsValueSet(mask) && valueCount > 1 && valueCount <= tupleSize)
                 {
@@ -3091,7 +3078,7 @@ public class Solver
                     for (int k = 0; k < tupleCells.Count; k++)
                     {
                         var (i, j) = tupleCells[k];
-                        if ((board[i, j] & valueMask) != 0)
+                        if ((this[i, j] & valueMask) != 0)
                         {
                             numWithCandidate++;
                         }
@@ -3115,7 +3102,7 @@ public class Solver
             for (int k = 0; k < tupleSize; k++)
             {
                 var coord = candidateCells[k];
-                accumMask |= board[coord.Item1, coord.Item2];
+                accumMask |= this[coord.Item1, coord.Item2];
                 tupleCells.Add(coord);
                 bool isValid = IsPotentiallyValidTuple(accumMask, tupleCells);
                 tupleInfoArray[k] = (k, coord, accumMask, isValid);
@@ -3195,7 +3182,7 @@ public class Solver
             // Increment to the next combination
             int nextIndex = tupleInfoArray[k0].index + 1;
             var nextCoord = candidateCells[nextIndex];
-            uint nextAccumMask = board[nextCoord.Item1, nextCoord.Item2];
+            uint nextAccumMask = this[nextCoord.Item1, nextCoord.Item2];
             if (k0 > 0)
             {
                 nextAccumMask |= tupleInfoArray[k0 - 1].accumMask;
@@ -3207,7 +3194,7 @@ public class Solver
             {
                 nextIndex = tupleInfoArray[k1 - 1].index + 1;
                 nextCoord = candidateCells[nextIndex];
-                nextAccumMask |= board[nextCoord.Item1, nextCoord.Item2];
+                nextAccumMask |= this[nextCoord.Item1, nextCoord.Item2];
                 tupleCells.Add(nextCoord);
                 tupleInfoArray[k1] = (nextIndex, nextCoord, nextAccumMask, IsPotentiallyValidTuple(nextAccumMask, tupleCells));
             }
@@ -3232,7 +3219,7 @@ public class Solver
         {
             for (int j = 0; j < MAX_VALUE; j++)
             {
-                uint mask = board[i, j] & ~valueSetMask;
+                uint mask = this[i, j] & ~valueSetMask;
                 int minVal = MinValue(mask);
                 int maxVal = MaxValue(mask);
                 for (int v = minVal; v <= maxVal; v++)
@@ -3411,7 +3398,7 @@ public class Solver
                                 }
 
                                 // Calculate the eliminations from the fish formed by these positions
-                                SortedSet<int> elims = null;
+                                HashSet<int> elims = null;
                                 foreach (int j in nonTupleRowOrCols)
                                 {
                                     uint mask = indexByValue[valueIndex, j];
@@ -3513,7 +3500,7 @@ public class Solver
         {
             for (int j = 0; j < WIDTH; j++)
             {
-                uint mask = board[i, j];
+                uint mask = this[i, j];
                 if (!IsValueSet(mask) && ValueCount(mask) == 2)
                 {
                     candidateCells.Add((i, j));
@@ -3525,11 +3512,11 @@ public class Solver
         for (int c0 = 0; c0 < candidateCells.Count - 2; c0++)
         {
             var (i0, j0) = candidateCells[c0];
-            uint mask0 = board[i0, j0];
+            uint mask0 = this[i0, j0];
             for (int c1 = c0 + 1; c1 < candidateCells.Count - 1; c1++)
             {
                 var (i1, j1) = candidateCells[c1];
-                uint mask1 = board[i1, j1];
+                uint mask1 = this[i1, j1];
                 if (mask0 == mask1 || ValueCount(mask0 | mask1) != 3)
                 {
                     continue;
@@ -3538,7 +3525,7 @@ public class Solver
                 for (int c2 = c1 + 1; c2 < candidateCells.Count; c2++)
                 {
                     var (i2, j2) = candidateCells[c2];
-                    uint mask2 = board[i2, j2];
+                    uint mask2 = this[i2, j2];
                     if (mask0 == mask2 || mask1 == mask2)
                     {
                         continue;
@@ -3556,9 +3543,9 @@ public class Solver
                         int cand02_2 = CandidateIndex((i2, j2), value02);
                         int cand12_1 = CandidateIndex((i1, j1), value12);
                         int cand12_2 = CandidateIndex((i2, j2), value12);
-                        bool weak01 = weakLinks[cand01_0].Contains(cand01_1);
-                        bool weak02 = weakLinks[cand02_0].Contains(cand02_2);
-                        bool weak12 = weakLinks[cand12_1].Contains(cand12_2);
+                        bool weak01 = weakLinks[cand01_0].BinarySearch(cand01_1) >= 0;
+                        bool weak02 = weakLinks[cand02_0].BinarySearch(cand02_2) >= 0;
+                        bool weak12 = weakLinks[cand12_1].BinarySearch(cand12_2) >= 0;
                         int weakCount = (weak01 ? 1 : 0) + (weak02 ? 1 : 0) + (weak12 ? 1 : 0);
                         if (weakCount != 2)
                         {
@@ -3659,7 +3646,7 @@ public class Solver
         {
             for (int j = 0; j < WIDTH; j++)
             {
-                uint mask = board[i, j];
+                uint mask = this[i, j];
                 int valueCount = ValueCount(mask);
                 if (!IsValueSet(mask) && valueCount > 1 && valueCount <= wingSize)
                 {
@@ -3705,7 +3692,7 @@ public class Solver
                     for (int k = 0; k < wingCells.Count; k++)
                     {
                         var (i, j) = wingCells[k];
-                        if ((board[i, j] & valueMask) != 0)
+                        if ((this[i, j] & valueMask) != 0)
                         {
                             numWithCandidate++;
                         }
@@ -3741,7 +3728,7 @@ public class Solver
             for (int k = 0; k < wingSize; k++)
             {
                 var coord = candidateCells[k];
-                accumMask |= board[coord.Item1, coord.Item2];
+                accumMask |= this[coord.Item1, coord.Item2];
                 wingCells.Add(coord);
 
                 int ungroupedValue = UngroupedValue(accumMask, wingCells, k == 0 ? 0 : wingInfoArray[k - 1].ungroupedValue);
@@ -3822,7 +3809,7 @@ public class Solver
             // Increment to the next combination
             int nextIndex = wingInfoArray[k0].index + 1;
             var nextCoord = candidateCells[nextIndex];
-            uint nextAccumMask = board[nextCoord.Item1, nextCoord.Item2];
+            uint nextAccumMask = this[nextCoord.Item1, nextCoord.Item2];
             if (k0 > 0)
             {
                 nextAccumMask |= wingInfoArray[k0 - 1].accumMask;
@@ -3834,7 +3821,7 @@ public class Solver
             {
                 nextIndex = wingInfoArray[k1 - 1].index + 1;
                 nextCoord = candidateCells[nextIndex];
-                nextAccumMask |= board[nextCoord.Item1, nextCoord.Item2];
+                nextAccumMask |= this[nextCoord.Item1, nextCoord.Item2];
                 wingCells.Add(nextCoord);
                 wingInfoArray[k1] = (nextIndex, nextCoord, nextAccumMask, UngroupedValue(nextAccumMask, wingCells, wingInfoArray[k1 - 1].ungroupedValue));
             }
@@ -3846,8 +3833,14 @@ public class Solver
     internal string ValueNames(uint mask) =>
         string.Join(MAX_VALUE <= 9 ? "" : ",", Enumerable.Range(1, MAX_VALUE).Where(v => HasValue(mask, v)));
 
+    internal string CompactName(uint mask, IReadOnlyList<int> cells) =>
+        ValueNames(mask) + CompactName([.. cells.Select(CellIndexToCoord)]);
+
     internal string CompactName(uint mask, IReadOnlyList<(int, int)> cells) =>
         ValueNames(mask) + CompactName(cells);
+
+    internal string CompactName(IReadOnlyList<int> cells) =>
+        CompactName(cells.Select(cellIndex => CellIndexToCoord(cellIndex)).ToList());
 
     internal string CompactName(IReadOnlyList<(int, int)> cells)
     {
@@ -3917,9 +3910,9 @@ public class Solver
     private readonly struct StrongLinkDesc
     {
         public readonly string humanDesc;
-        public readonly List<(int, int)> alsCells;
+        public readonly List<int> alsCells;
 
-        public StrongLinkDesc(string humanDesc, IEnumerable<(int, int)> alsCells = null)
+        public StrongLinkDesc(string humanDesc, IEnumerable<int> alsCells = null)
         {
             this.humanDesc = humanDesc;
             this.alsCells = alsCells != null ? new(alsCells) : null;
@@ -3927,194 +3920,28 @@ public class Solver
 
         public static StrongLinkDesc Empty => new(string.Empty, null);
     }
-    private Dictionary<int, StrongLinkDesc>[] FindStrongLinks()
-    {
-        Dictionary<int, StrongLinkDesc>[] strongLinks = new Dictionary<int, StrongLinkDesc>[NUM_CANDIDATES];
-        for (int candIndex = 0; candIndex < strongLinks.Length; candIndex++)
-        {
-            strongLinks[candIndex] = new();
-        }
 
-        void AddStrongLink(int cand0, int cand1, StrongLinkDesc desc)
-        {
-            if (cand0 != cand1)
-            {
-                if (!strongLinks[cand0].ContainsKey(cand1))
-                {
-                    strongLinks[cand0][cand1] = desc;
-                }
-                if (!strongLinks[cand1].ContainsKey(cand0))
-                {
-                    strongLinks[cand1][cand0] = desc;
-                }
-            }
-        }
-
-        // Add bivalue strong links
-        for (int i = 0; i < HEIGHT; i++)
-        {
-            for (int j = 0; j < WIDTH; j++)
-            {
-                uint mask = board[i, j];
-                if (!IsValueSet(mask) && ValueCount(mask) == 2)
-                {
-                    int v0 = MinValue(mask);
-                    int v1 = MaxValue(mask);
-                    int cand0 = CandidateIndex((i, j), v0);
-                    int cand1 = CandidateIndex((i, j), v1);
-                    AddStrongLink(cand0, cand1, StrongLinkDesc.Empty);
-                }
-            }
-        }
-
-        // Add bilocal strong links
-        foreach (var group in Groups)
-        {
-            if (group.Cells.Count == MAX_VALUE)
-            {
-                int[] valueCount = new int[MAX_VALUE];
-                foreach (var (i, j) in group.Cells)
-                {
-                    uint mask = board[i, j];
-                    for (int v = 1; v <= MAX_VALUE; v++)
-                    {
-                        if ((mask & ValueMask(v)) != 0)
-                        {
-                            valueCount[v - 1]++;
-                        }
-                    }
-                }
-
-                for (int v = 1; v <= MAX_VALUE; v++)
-                {
-                    if (valueCount[v - 1] == 2)
-                    {
-                        (int, int) cell0 = (-1, -1);
-                        (int, int) cell1 = (-1, -1);
-                        foreach (var (i, j) in group.Cells)
-                        {
-                            uint mask = board[i, j];
-                            if ((mask & ValueMask(v)) != 0)
-                            {
-                                if (cell0.Item1 == -1)
-                                {
-                                    cell0 = (i, j);
-                                }
-                                else
-                                {
-                                    cell1 = (i, j);
-                                    break;
-                                }
-                            }
-                        }
-
-                        int cand0 = CandidateIndex(cell0, v);
-                        int cand1 = CandidateIndex(cell1, v);
-                        AddStrongLink(cand0, cand1, StrongLinkDesc.Empty);
-                    }
-                }
-            }
-            else if (group.FromConstraint != null)
-            {
-                for (int v = 1; v <= MAX_VALUE; v++)
-                {
-                    var cells = group.FromConstraint.CellsMustContain(this, v);
-                    if (cells != null && cells.Count == 2)
-                    {
-                        int cand0 = CandidateIndex(cells[0], v);
-                        int cand1 = CandidateIndex(cells[1], v);
-                        string constraintName = group.FromConstraint.SpecificName;
-                        StrongLinkDesc strongLinkDesc = new(constraintName);
-                        AddStrongLink(cand0, cand1, strongLinkDesc);
-                    }
-                }
-            }
-        }
-
-        // Add ALS (Almost Locked Set) strong links
-        // These occur when n cells in the same group have n+1 total candidates,
-        // and two of those candidates only appear once.
-        // There is a strong link between those two candidates.
-        // (If both were missing, then there would be n-1 candidates for n cells).
-        foreach (var group in Groups)
-        {
-            var unsetCells = group.Cells.Where(cell => !IsValueSet(board[cell.Item1, cell.Item2])).ToList();
-
-            for (int alsSize = 2; alsSize < unsetCells.Count; alsSize++)
-            {
-                foreach (var combination in unsetCells.Combinations(alsSize))
-                {
-                    uint totalMask = 0;
-                    foreach (var cell in combination)
-                    {
-                        totalMask |= board[cell.Item1, cell.Item2];
-                    }
-
-                    if (ValueCount(totalMask) != alsSize + 1)
-                    {
-                        continue;
-                    }
-
-                    List<int>[] candIndexPerValue = new List<int>[MAX_VALUE];
-                    for (int v = 1; v <= MAX_VALUE; v++)
-                    {
-                        candIndexPerValue[v - 1] = new();
-                    }
-                    foreach (var (i, j) in combination)
-                    {
-                        uint mask = board[i, j];
-                        for (int v = 1; v <= MAX_VALUE; v++)
-                        {
-                            if ((mask & ValueMask(v)) != 0)
-                            {
-                                int candIndex = CandidateIndex((i, j), v);
-                                candIndexPerValue[v - 1].Add(candIndex);
-                            }
-                        }
-                    }
-
-                    List<int> singleValues = new();
-                    for (int v = 1; v <= MAX_VALUE; v++)
-                    {
-                        if (candIndexPerValue[v - 1].Count == 1)
-                        {
-                            singleValues.Add(candIndexPerValue[v - 1][0]);
-                        }
-                    }
-
-                    if (singleValues.Count > 1)
-                    {
-                        foreach (var candIndices in singleValues.Combinations(2))
-                        {
-                            int cand0 = candIndices[0];
-                            int cand1 = candIndices[1];
-
-                            string valSep = MAX_VALUE <= 9 ? string.Empty : ",";
-                            StringBuilder alsDesc = new();
-                            alsDesc.Append("ALS:");
-                            alsDesc.Append(CompactName(totalMask, combination));
-
-                            string alsDescStr = alsDesc.ToString();
-                            StrongLinkDesc strongLinkDesc = new(alsDescStr, combination);
-                            AddStrongLink(cand0, cand1, strongLinkDesc);
-                        }
-                    }
-                }
-            }
-        }
-
-        return strongLinks;
-    }
-
-    public uint CandidateMask(IEnumerable<(int, int)> cells)
+    public uint CandidateMask(IEnumerable<int> cells)
     {
         uint mask = 0;
-        foreach (var curCell in cells)
+        foreach (int curCellIndex in cells)
         {
-            mask |= board[curCell.Item1, curCell.Item2];
+            mask |= board[curCellIndex];
         }
         return mask & ~valueSetMask;
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int CellIndex(int i, int j) => (i * WIDTH + j);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int CellIndex((int, int) cell) => (cell.Item1 * WIDTH + cell.Item2);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal (int, int) CellIndexToCoord(int cellIndex) => (cellIndex / WIDTH, cellIndex % WIDTH);
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int CandidateIndex(int cellIndex, int v) => cellIndex * MAX_VALUE + v - 1;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal int CandidateIndex(int i, int j, int v) => (i * WIDTH + j) * MAX_VALUE + v - 1;
@@ -4127,7 +3954,7 @@ public class Solver
         List<int> result = new();
         foreach (var cell in cells)
         {
-            uint mask = board[cell.Item1, cell.Item2] & valueMask;
+            uint mask = this[cell.Item1, cell.Item2] & valueMask;
             if (mask != 0)
             {
                 int minVal = MinValue(mask);
@@ -4145,16 +3972,15 @@ public class Solver
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal (int, int) CandIndexToCellAndValue(int candIndex)
+    {
+        return candidateToCellAndValueLookup[candIndex];
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal (int, int, int) CandIndexToCoord(int candIndex)
     {
-        int v = (candIndex % MAX_VALUE) + 1;
-        candIndex /= MAX_VALUE;
-
-        int j = candIndex % WIDTH;
-        candIndex /= WIDTH;
-
-        int i = candIndex;
-        return (i, j, v);
+        return candidateToCoordValueLookup[candIndex];
     }
 
     internal string CandIndexDesc(int candIndex)
@@ -4166,34 +3992,102 @@ public class Solver
     internal bool IsCandIndexValid(int candIndex)
     {
         var (i, j, v) = CandIndexToCoord(candIndex);
-        uint mask = board[i, j];
+        uint mask = this[i, j];
         return !IsValueSet(mask) && HasValue(mask, v);
     }
 
-    internal IEnumerable<int> CalcElims(int candIndex0, int candIndex1) =>
-        weakLinks[candIndex0].Where(IsCandIndexValid).Intersect(weakLinks[candIndex1].Where(IsCandIndexValid));
+    internal IEnumerable<int> CalcElims(int candIndex0, int candIndex1)
+    {
+        var list0 = weakLinks[candIndex0];
+        var list1 = weakLinks[candIndex1];
+        int i = 0, j = 0;
+
+        while (i < list0.Count && j < list1.Count)
+        {
+            int v0 = list0[i], v1 = list1[j];
+
+            if (v0 < v1)
+            {
+                i++;
+            }
+            else if (v1 < v0)
+            {
+                j++;
+            }
+            else
+            {
+                // v0 == v1
+                if (IsCandIndexValid(v0))
+                {
+                    yield return v0;
+                }
+
+                i++;
+                j++;
+            }
+        }
+    }
 
     internal IEnumerable<int> CalcElims(params int[] candIndexes) => CalcElims(candIndexes);
 
     internal IEnumerable<int> CalcElims(IEnumerable<int> candIndexes)
     {
-        IEnumerable<int> result = null;
+        List<int> result = null;
+
         foreach (int candIndex in candIndexes)
         {
-            IEnumerable<int> curElims = weakLinks[candIndex].Where(IsCandIndexValid);
+            // 1) materialize the sorted, filtered weak-link list for this index
+            var raw = weakLinks[candIndex];
+            var cur = new List<int>(raw.Count);
+            for (int k = 0, n = raw.Count; k < n; k++)
+            {
+                int v = raw[k];
+                if (IsCandIndexValid(v))
+                {
+                    cur.Add(v);
+                }
+            }
+
             if (result == null)
             {
-                result = curElims;
+                // first list → seed the result
+                result = cur;
             }
             else
             {
-                result = result.Intersect(curElims);
+                // 2) merge-intersect `result` with `cur` into a new list
+                var next = new List<int>(Math.Min(result.Count, cur.Count));
+                int i = 0, j = 0;
+                while (i < result.Count && j < cur.Count)
+                {
+                    int a = result[i], b = cur[j];
+                    if (a < b) i++;
+                    else if (b < a) j++;
+                    else
+                    {
+                        // a == b
+                        next.Add(a);
+                        i++; j++;
+                    }
+                }
+
+                result = next;
+                if (result.Count == 0)
+                {
+                    // no further intersection possible
+                    break;
+                }
             }
         }
-        return result;
+
+        // if candIndexes was empty, return an empty sequence
+        return result ?? Enumerable.Empty<int>();
     }
 
-    internal HashSet<int> CalcElims(uint clearMask, List<(int, int)> cells)
+    internal HashSet<int> CalcElims(uint clearMask, List<(int, int)> cells) =>
+        CalcElims(clearMask, cells.Select(CellIndex).ToList());
+
+    internal HashSet<int> CalcElims(uint clearMask, List<int> cells)
     {
         HashSet<int> elims = null;
         for (int v = 1; v <= MAX_VALUE; v++)
@@ -4203,7 +4097,7 @@ public class Solver
                 continue;
             }
 
-            var curElims = CalcElims(cells.Where(cell => HasValue(board[cell.Item1, cell.Item2], v)).Select(cell => CandidateIndex(cell, v)));
+            var curElims = CalcElims(cells.Where(cell => HasValue(board[cell], v)).Select(cell => CandidateIndex(cell, v)));
             if (curElims != null)
             {
                 if (elims == null)
@@ -4219,7 +4113,7 @@ public class Solver
         return elims;
     }
 
-    internal void CalcElims(HashSet<int> outElims, uint clearMask, List<(int, int)> cells)
+    internal void CalcElims(HashSet<int> outElims, uint clearMask, List<int> cellIndexes)
     {
         for (int v = 1; v <= MAX_VALUE; v++)
         {
@@ -4228,7 +4122,7 @@ public class Solver
                 continue;
             }
 
-            var curElims = CalcElims(cells.Where(cell => HasValue(board[cell.Item1, cell.Item2], v)).Select(cell => CandidateIndex(cell, v)));
+            var curElims = CalcElims(cellIndexes.Where(cell => HasValue(board[cell], v)).Select(cell => CandidateIndex(cell, v)));
             if (curElims != null)
             {
                 outElims.UnionWith(curElims);
@@ -4305,7 +4199,7 @@ public class Solver
             {
                 for (int j = 0; j < WIDTH; j++)
                 {
-                    uint cellMask = board[i, j];
+                    uint cellMask = this[i, j];
                     if (!IsValueSet(cellMask) && ValueCount(cellMask) == allowedValueCount)
                     {
                         for (int v = 1; v <= MAX_VALUE; v++)
@@ -4476,7 +4370,7 @@ public class Solver
         {
             for (int j = 0; j < WIDTH; j++)
             {
-                if ((board[i, j] & ~other.board[i, j] & ALL_VALUES_MASK) != 0)
+                if ((this[i, j] & ~other[i, j] & ALL_VALUES_MASK) != 0)
                 {
                     return false;
                 }

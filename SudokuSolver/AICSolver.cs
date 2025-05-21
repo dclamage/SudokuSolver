@@ -21,8 +21,8 @@ internal class AICSolver
     private readonly int HEIGHT;
     private readonly int MAX_VALUE;
     private readonly int NUM_CANDIDATES;
-    private readonly uint[,] board;
-    private readonly SortedSet<int>[] weakLinks;
+    private readonly BoardView board;
+    private readonly List<int>[] weakLinks;
 
     // Tracking the best result so far
     private List<int> bestChain = null;
@@ -47,9 +47,9 @@ internal class AICSolver
     private readonly struct StrongLinkDesc
     {
         public readonly string humanDesc;
-        public readonly List<(int, int)> alsCells;
+        public readonly List<int> alsCells;
 
-        public StrongLinkDesc(string humanDesc, IEnumerable<(int, int)> alsCells = null)
+        public StrongLinkDesc(string humanDesc, IEnumerable<int> alsCells = null)
         {
             this.humanDesc = humanDesc;
             this.alsCells = alsCells != null ? new(alsCells) : null;
@@ -221,10 +221,7 @@ internal class AICSolver
                         {
                             if (!discoveredWeakToStrongLinks.ContainsKey((candBefore, strongIndexEnd)))
                             {
-                                List<int> weakToStrongChain = new(chain.Count + 2);
-                                weakToStrongChain.Add(candBefore);
-                                weakToStrongChain.AddRange(chain);
-                                weakToStrongChain.Add(strongIndexEnd);
+                                List<int> weakToStrongChain = [candBefore, .. chain, strongIndexEnd];
                                 discoveredWeakToStrongLinks.Add((candBefore, strongIndexEnd), weakToStrongChain);
                                 hasNewInformation = true;
                             }
@@ -285,7 +282,7 @@ internal class AICSolver
                 newChain.Add(-1);
 
                 // Check for a CNL
-                if (weakLinks[strongIndexEnd].Contains(newChain[0]))
+                if (weakLinks[strongIndexEnd].BinarySearch(newChain[0]) >= 0)
                 {
                     newChain[^1] = newChain[0];
 
@@ -453,9 +450,9 @@ internal class AICSolver
             if (group.Cells.Count == MAX_VALUE)
             {
                 int[] valueCount = new int[MAX_VALUE];
-                foreach (var (i, j) in group.Cells)
+                foreach (int cellIndex in group.Cells)
                 {
-                    uint mask = board[i, j];
+                    uint mask = board[cellIndex];
                     for (int v = 1; v <= MAX_VALUE; v++)
                     {
                         if ((mask & ValueMask(v)) != 0)
@@ -469,20 +466,20 @@ internal class AICSolver
                 {
                     if (valueCount[v - 1] == 2)
                     {
-                        (int, int) cell0 = (-1, -1);
-                        (int, int) cell1 = (-1, -1);
-                        foreach (var (i, j) in group.Cells)
+                        int cell0 = -1;
+                        int cell1 = -1;
+                        foreach (int cellIndex in group.Cells)
                         {
-                            uint mask = board[i, j];
+                            uint mask = board[cellIndex];
                             if ((mask & ValueMask(v)) != 0)
                             {
-                                if (cell0.Item1 == -1)
+                                if (cell0 == -1)
                                 {
-                                    cell0 = (i, j);
+                                    cell0 = cellIndex;
                                 }
                                 else
                                 {
-                                    cell1 = (i, j);
+                                    cell1 = cellIndex;
                                     break;
                                 }
                             }
@@ -518,16 +515,16 @@ internal class AICSolver
         // (If both were missing, then there would be n-1 candidates for n cells).
         foreach (var group in solver.Groups)
         {
-            var unsetCells = group.Cells.Where(cell => !IsValueSet(board[cell.Item1, cell.Item2])).ToList();
+            var unsetCells = group.Cells.Where(cellIndex => !IsValueSet(board[cellIndex])).ToList();
 
             for (int alsSize = 2; alsSize < unsetCells.Count; alsSize++)
             {
                 foreach (var combination in unsetCells.Combinations(alsSize))
                 {
                     uint totalMask = 0;
-                    foreach (var cell in combination)
+                    foreach (int cellIndex in combination)
                     {
-                        totalMask |= board[cell.Item1, cell.Item2];
+                        totalMask |= board[cellIndex];
                     }
 
                     if (ValueCount(totalMask) != alsSize + 1)
@@ -540,14 +537,14 @@ internal class AICSolver
                     {
                         candIndexPerValue[v - 1] = new();
                     }
-                    foreach (var (i, j) in combination)
+                    foreach (int cellIndex in combination)
                     {
-                        uint mask = board[i, j];
+                        uint mask = board[cellIndex];
                         for (int v = 1; v <= MAX_VALUE; v++)
                         {
                             if ((mask & ValueMask(v)) != 0)
                             {
-                                int candIndex = CandidateIndex((i, j), v);
+                                int candIndex = CandidateIndex(cellIndex, v);
                                 candIndexPerValue[v - 1].Add(candIndex);
                             }
                         }
@@ -797,9 +794,9 @@ internal class AICSolver
                 if (strongLinks[cand0].TryGetValue(cand1, out StrongLinkDesc strongLinkDescOut) && strongLinkDescOut.alsCells != null)
                 {
                     uint totalMask = 0;
-                    foreach (var cell in strongLinkDescOut.alsCells)
+                    foreach (int cellIndex in strongLinkDescOut.alsCells)
                     {
-                        totalMask |= board[cell.Item1, cell.Item2];
+                        totalMask |= board[cellIndex];
                     }
                     uint clearMask = totalMask & ~ValueMask(v0) & ~ValueMask(v1) & ~valueSetMask;
                     solver.CalcElims(elims, clearMask, strongLinkDescOut.alsCells);
@@ -980,6 +977,9 @@ internal class AICSolver
         uint mask = board[i, j];
         return !IsValueSet(mask) && HasValue(mask, v);
     }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int CandidateIndex(int cellIndex, int v) => cellIndex * MAX_VALUE + v - 1;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal int CandidateIndex(int i, int j, int v) => (i * WIDTH + j) * MAX_VALUE + v - 1;
