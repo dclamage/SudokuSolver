@@ -1451,7 +1451,10 @@ public class Solver
         }
 
         using FindSolutionState state = new(isRandom, cancellationToken);
-        FindSolutionMultiThreaded(solver, state);
+        if (!state.PushSolver(solver, true))
+        {
+            throw new Exception("Initial PushSolver failed!");
+        }
         state.Wait();
         if (cancellationToken.IsCancellationRequested)
         {
@@ -1541,27 +1544,35 @@ public class Solver
             maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
         }
 
-        public bool PushSolver(Solver solver)
+        public bool PushSolver(Solver solver, bool isInitialCall = false)
         {
-            // bump atomically
             int newCount = Interlocked.Increment(ref numRunningTasks);
-            if (newCount <= maxRunningTasks)
+            if (isInitialCall || newCount <= maxRunningTasks)
             {
                 // only schedule if we stayed within the limit
-                countdownEvent.AddCount();
-                Task.Run(() => FindSolutionMultiThreaded(solver, this));
+                if (!isInitialCall)
+                {
+                    // countdownEvent cannot start at 0 or it starts already signaled, so the first call to PushSolver
+                    // does not increment, since it starts at 1
+                    countdownEvent.AddCount();
+                }
+                Task.Run(() => {
+                    try
+                    {
+                        FindSolutionMultiThreaded(solver, this);
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref numRunningTasks);
+                        countdownEvent.Signal();
+                    }
+                });
                 return true;
             }
 
             // we overshot: roll back and decline
             Interlocked.Decrement(ref numRunningTasks);
             return false;
-        }
-
-        public void TaskComplete()
-        {
-            Interlocked.Decrement(ref numRunningTasks);
-            countdownEvent.Signal();
         }
 
         public void Dispose()
@@ -1582,70 +1593,63 @@ public class Solver
 
     private static void FindSolutionMultiThreaded(Solver solver, FindSolutionState state)
     {
-        try
+        var boardStack = new Stack<Solver>();
+        while (state.result is null)
         {
-            var boardStack = new Stack<Solver>();
-            while (state.result is null)
+            while (true)
             {
-                while (true)
+                state.cancellationToken.ThrowIfCancellationRequested();
+                if (state.result != null)
                 {
-                    state.cancellationToken.ThrowIfCancellationRequested();
-                    if (state.result != null)
-                    {
-                        break;
-                    }
+                    break;
+                }
 
-                    var logicResult = solver.ConsolidateBoard();
-                    if (logicResult == LogicResult.PuzzleComplete)
-                    {
-                        state.ReportSolution(solver);
-                        break;
-                    }
+                var logicResult = solver.ConsolidateBoard();
+                if (logicResult == LogicResult.PuzzleComplete)
+                {
+                    state.ReportSolution(solver);
+                    break;
+                }
 
-                    if (logicResult == LogicResult.Invalid)
-                    {
-                        break;
-                    }
+                if (logicResult == LogicResult.Invalid)
+                {
+                    break;
+                }
 
-                    (int cellIndex, int v) = solver.GetLeastCandidateCell();
-                    if (cellIndex < 0)
-                    {
-                        state.ReportSolution(solver);
-                        break;
-                    }
+                (int cellIndex, int v) = solver.GetLeastCandidateCell();
+                if (cellIndex < 0)
+                {
+                    state.ReportSolution(solver);
+                    break;
+                }
 
-                    // Try a possible value for this cell
-                    int val = v != 0 ? v : state.isRandom ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
-                    uint valMask = ValueMask(val);
+                // Try a possible value for this cell
+                int val = v != 0 ? v : state.isRandom ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
+                uint valMask = ValueMask(val);
 
-                    // Create a backup board in case it needs to be restored
-                    Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
-                    newSolver.isBruteForcing = true;
-                    newSolver.board[cellIndex] &= ~valMask;
-                    if (newSolver.board[cellIndex] != 0)
+                // Create a backup board in case it needs to be restored
+                Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
+                newSolver.isBruteForcing = true;
+                newSolver.board[cellIndex] &= ~valMask;
+                if (newSolver.board[cellIndex] != 0)
+                {
+                    if (!state.PushSolver(newSolver))
                     {
-                        if (!state.PushSolver(newSolver))
-                        {
-                            boardStack.Push(newSolver);
-                        }
-                    }
-
-                    // Change the board to only allow this value in the slot
-                    if (!solver.SetValue(cellIndex, val))
-                    {
-                        break;
+                        boardStack.Push(newSolver);
                     }
                 }
 
-                if (!boardStack.TryPop(out solver))
+                // Change the board to only allow this value in the slot
+                if (!solver.SetValue(cellIndex, val))
                 {
                     break;
                 }
             }
-        }
-        finally
-        {
-            state.TaskComplete();
+
+            if (!boardStack.TryPop(out solver))
+            {
+                break;
+            }
         }
     }
 
@@ -1671,7 +1675,10 @@ public class Solver
             boardCopy.isBruteForcing = true;
             if (state.multiThread)
             {
-                CountSolutionsMultiThreaded(boardCopy, state);
+                if (!state.PushSolver(boardCopy, isInitialCall: true))
+                {
+                    throw new Exception("Initial PushSolver failed!");
+                }
                 state.Wait();
             }
             else
@@ -1781,13 +1788,28 @@ public class Solver
             }
         }
 
-        public bool PushSolver(Solver solver)
+        public bool PushSolver(Solver solver, bool isInitialCall = false)
         {
             int newNumRunningTasks = Interlocked.Increment(ref numRunningTasks);
-            if (newNumRunningTasks <= maxRunningTasks)
+            if (isInitialCall || newNumRunningTasks <= maxRunningTasks)
             {
-                Task.Run(() => CountSolutionsMultiThreaded(solver, this));
-                countdownEvent.AddCount();
+                if (!isInitialCall)
+                {
+                    // countdownEvent cannot start at 0 or it starts already signaled, so the first call to PushSolver
+                    // does not increment, since it starts at 1
+                    countdownEvent.AddCount();
+                }
+                Task.Run(() => {
+                    try
+                    {
+                        CountSolutionsMultiThreaded(solver, this);
+                    }
+                    finally
+                    {
+                        Interlocked.Decrement(ref numRunningTasks);
+                        countdownEvent.Signal();
+                    }
+                });
                 return true;
             }
             else
@@ -1796,12 +1818,6 @@ public class Solver
             }
 
             return false;
-        }
-
-        public void TaskComplete()
-        {
-            Interlocked.Decrement(ref numRunningTasks);
-            countdownEvent.Signal();
         }
 
         public void Wait()
@@ -1875,66 +1891,59 @@ public class Solver
 
     private static void CountSolutionsMultiThreaded(Solver solver, CountSolutionsState state)
     {
-        try
+        var boardStack = new Stack<Solver>();
+        while (!state.MaxSolutionsReached)
         {
-            var boardStack = new Stack<Solver>();
             while (!state.MaxSolutionsReached)
             {
-                while (!state.MaxSolutionsReached)
+                state.cancellationToken.ThrowIfCancellationRequested();
+
+                var logicResult = solver.ConsolidateBoard();
+                if (logicResult == LogicResult.PuzzleComplete)
                 {
-                    state.cancellationToken.ThrowIfCancellationRequested();
+                    state.IncrementSolutions(solver);
+                    break;
+                }
 
-                    var logicResult = solver.ConsolidateBoard();
-                    if (logicResult == LogicResult.PuzzleComplete)
+                if (logicResult == LogicResult.Invalid)
+                {
+                    break;
+                }
+
+                // Start with the cell that has the least possible candidates
+                (int cellIndex, int v) = solver.GetLeastCandidateCell();
+                if (cellIndex < 0)
+                {
+                    state.IncrementSolutions(solver);
+                    break;
+                }
+
+                // Try a possible value for this cell
+                int val = v != 0 ? v : state.skipSolutions != null ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
+                uint valMask = ValueMask(val);
+
+                // Create a solver without this value and start a task for it
+                Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
+                newSolver.isBruteForcing = true;
+                newSolver.board[cellIndex] &= ~valMask;
+                if (newSolver.board[cellIndex] != 0)
+                {
+                    if (!state.PushSolver(newSolver))
                     {
-                        state.IncrementSolutions(solver);
-                        break;
-                    }
-
-                    if (logicResult == LogicResult.Invalid)
-                    {
-                        break;
-                    }
-
-                    // Start with the cell that has the least possible candidates
-                    (int cellIndex, int v) = solver.GetLeastCandidateCell();
-                    if (cellIndex < 0)
-                    {
-                        state.IncrementSolutions(solver);
-                        break;
-                    }
-
-                    // Try a possible value for this cell
-                    int val = v != 0 ? v : state.skipSolutions != null ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
-                    uint valMask = ValueMask(val);
-
-                    // Create a solver without this value and start a task for it
-                    Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
-                    newSolver.isBruteForcing = true;
-                    newSolver.board[cellIndex] &= ~valMask;
-                    if (newSolver.board[cellIndex] != 0)
-                    {
-                        if (!state.PushSolver(newSolver))
-                        {
-                            boardStack.Push(newSolver);
-                        }
-                    }
-
-                    if (!solver.SetValue(cellIndex, val))
-                    {
-                        break;
+                        boardStack.Push(newSolver);
                     }
                 }
 
-                if (!boardStack.TryPop(out solver))
+                if (!solver.SetValue(cellIndex, val))
                 {
                     break;
                 }
             }
-        }
-        finally
-        {
-            state.TaskComplete();
+
+            if (!boardStack.TryPop(out solver))
+            {
+                break;
+            }
         }
     }
 
