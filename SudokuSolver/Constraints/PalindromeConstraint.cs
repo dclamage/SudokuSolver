@@ -207,8 +207,13 @@ public class PalindromeConstraint : Constraint
         return LogicResult.None;
     }
 
-    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription)
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
+        if (!isInitializing)
+        {
+            return LogicResult.None;
+        }
+
         foreach (var (cell0, cell1) in cellToClone)
         {
             int cellIndex0 = FlatIndex(cell0);

@@ -102,7 +102,7 @@ namespace SudokuSolver.Constraints
             bool changed = false;
             foreach (var sumCellsHelper in sumCellsHelpers)
             {
-                LogicResult stepResult = sumCellsHelper.StepLogic(solver, possibleSums, null);
+                LogicResult stepResult = sumCellsHelper.StepLogic(solver, possibleSums, (List<LogicalStepDesc>)null);
                 if (stepResult == LogicResult.Invalid)
                 {
                     logicalStepDescription?.Add(new($"Cells {solver.CompactName(sumCellsHelper.Cells)} cannot be restricted to sum{(possibleSums.Count > 1 ? "s" : "")} {string.Join(",", possibleSums)}.", sumCellsHelper.Cells));
@@ -148,7 +148,7 @@ namespace SudokuSolver.Constraints
             return changed ? LogicResult.Changed : LogicResult.None;
         }
 
-        public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => sumCellsHelpers != null ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
+        public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => sumCellsHelpers != null ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
         
         public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumCellsHelpers != null ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
 

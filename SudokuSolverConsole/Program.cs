@@ -124,7 +124,7 @@ public required int Port { get; init; }
 	public required bool HideBanner { get; init; }
     public required bool VerboseLogs { get; init; }
 
-	public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
+    public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
 	{
 		// Useful for quickly testing a puzzle without changing commandline parameters
 #if false
@@ -372,20 +372,51 @@ public required int Port { get; init; }
 			Console.WriteLine("Finding true candidates:");
 			int currentLineCursor = Console.CursorTop;
 			object consoleLock = new();
-			if (!solver.FillRealCandidates(multiThread: MultiThread, progressEvent: (uint[] board) =>
+
+			uint[] CountsToBoard(int[] counts)
 			{
-				BoardView board2d = new BoardView(board, solver.HEIGHT, solver.WIDTH);
+				uint[] board = new uint[solver.NUM_CELLS];
+				for (int cellIndex = 0; cellIndex < solver.NUM_CELLS; cellIndex++)
+				{
+					for (int value = 1; value <= solver.MAX_VALUE; value++)
+					{
+						int candidateIndex = cellIndex * solver.MAX_VALUE + value - 1;
+						if (counts[candidateIndex] > 0)
+						{
+							board[cellIndex] |= SolverUtility.ValueMask(value);
+							break;
+                        }
+                    }
+                }
+
+				return board;
+            }
+
+			int[] trueCandidateCounts = solver.TrueCandidates(multiThread: MultiThread, numSolutionsCap: 1, progressEvent:
+				(int[] curCandidateCounts) =>
+			{
+				uint[] board = CountsToBoard(curCandidateCounts);
+                BoardView board2d = new(board, solver.HEIGHT, solver.WIDTH);
 				lock (consoleLock)
 				{
 					ConsoleUtility.PrintBoard(board2d, solver.Regions, Console.Out);
 					Console.SetCursorPosition(0, currentLineCursor);
 				}
-			}, cancellationToken: cancellationToken))
-			{
+			}, cancellationToken: cancellationToken);
+
+			uint[] board = CountsToBoard(trueCandidateCounts);
+			if (board.Any(cell => cell == 0))
+            {
 				Console.WriteLine($"No solutions found!");
 			}
 			else
 			{
+				for (int cellIndex = 0; cellIndex < solver.NUM_CELLS; cellIndex++)
+				{
+					int i = cellIndex / solver.WIDTH;
+					int j = cellIndex % solver.WIDTH;
+					solver.SetMask(i, j, board[cellIndex]);
+                }
 				solver.Print();
 
 				if (OutputPath != null)

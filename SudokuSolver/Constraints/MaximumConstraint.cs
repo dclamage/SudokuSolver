@@ -246,8 +246,13 @@ public class MaximumConstraint : Constraint
         }
     }
 
-    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription)
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
+        if (!isInitializing)
+        {
+            return LogicResult.None;
+        }
+
         foreach (var maxCell in cells)
         {
             int maxCellIndex = FlatIndex(maxCell);

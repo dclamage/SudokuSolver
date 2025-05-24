@@ -323,7 +323,7 @@ namespace SudokuSolver
             comparableData.Write(width);
 
             // Start with default regions
-            int[,] regions = DefaultRegions(height);
+            int[] regions = DefaultRegions(height);
 
             // Override regions
             for (i = 0; i < height; i++)
@@ -332,7 +332,7 @@ namespace SudokuSolver
                 {
                     if (fpuzzlesData.grid[i][j].RegionProvided)
                     {
-                        regions[i, j] = fpuzzlesData.grid[i][j].region ?? -1;
+                        regions[i * width + j] = fpuzzlesData.grid[i][j].region ?? -1;
                     }
                 }
             }
@@ -342,9 +342,9 @@ namespace SudokuSolver
             {
                 for (j = 0; j < width; j++)
                 {
-                    if (regions[i, j] >= 0 && regions[i, j] < width)
+                    if (regions[i * width + j] >= 0 && regions[i * width + j] < width)
                     {
-                        regionSanityCheck[regions[i, j]]++;
+                        regionSanityCheck[regions[i * width + j]]++;
                     }
                 }
             }
@@ -360,7 +360,7 @@ namespace SudokuSolver
             {
                 for (j = 0; j < width; j++)
                 {
-                    comparableData.Write(regions[i, j]);
+                    comparableData.Write(regions[i * width + j]);
                 }
             }
 
@@ -1098,7 +1098,8 @@ namespace SudokuSolver
                 grid[i] = new FPuzzlesGridEntry[solver.WIDTH];
                 for (int j = 0; j < solver.WIDTH; j++)
                 {
-                    uint mask = solver.Board[i, j];
+                    int cellIndex = solver.CellIndex(i, j);
+                    uint mask = solver.Board[cellIndex];
                     bool given = isGiven[i, j];
                     int value = IsValueSet(mask) ? GetValue(mask) : 0;
                     int[] centerPencilMarks = null;
@@ -1114,7 +1115,7 @@ namespace SudokuSolver
                             }
                         }
                     }
-                    int region = solver.Regions[i, j];
+                    int region = solver.Regions[cellIndex];
                     grid[i][j] = new FPuzzlesGridEntry()
                     {
                         value = value,

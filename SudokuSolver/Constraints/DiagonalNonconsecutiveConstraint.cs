@@ -387,8 +387,14 @@ public class DiagonalNonconsecutiveConstraint : Constraint
         return LogicResult.None;
     }
 
-    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription)
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
+        if (!isInitializing)
+        {
+            return LogicResult.None;
+        }
+
+        LogicResult result = LogicResult.None;
         for (int i0 = 0; i0 < HEIGHT; i0++)
         {
             for (int j0 = 0; j0 < WIDTH; j0++)
@@ -413,6 +419,6 @@ public class DiagonalNonconsecutiveConstraint : Constraint
                 }
             }
         }
-        return LogicResult.None;
+        return result;
     }
 }

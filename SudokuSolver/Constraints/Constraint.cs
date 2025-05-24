@@ -120,11 +120,16 @@ public abstract class Constraint
     /// </returns>
     public virtual LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
     {
-        StringBuilder sb = logicalStepDescription != null ? new() : null;
-        var res = StepLogic(sudokuSolver, sb, isBruteForcing);
-        if (res != LogicResult.None && (sb?.Length ?? 0) > 0)
+        if (logicalStepDescription == null)
         {
-            logicalStepDescription?.Add(new(sb.ToString(), Enumerable.Empty<int>(), Enumerable.Empty<int>()));
+            return StepLogic(sudokuSolver, (StringBuilder)null, isBruteForcing);
+        }
+
+        StringBuilder sb = new();
+        var res = StepLogic(sudokuSolver, sb, isBruteForcing);
+        if (res != LogicResult.None && sb.Length > 0)
+        {
+            logicalStepDescription.Add(new(sb.ToString(), [], []));
         }
         return res;
     }
@@ -194,7 +199,7 @@ public abstract class Constraint
     /// Add any weak or strong links that are initially known due to this constraint
     /// </summary>
     /// <param name="sudokuSolver">The solver.</param>
-    public virtual LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription) => LogicResult.None;
+    public virtual LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => LogicResult.None;
 
     /// <summary>
     /// Automatically determines weak links caused by this constraint.

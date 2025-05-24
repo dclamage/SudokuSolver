@@ -31,8 +31,13 @@ public class ModularLineConstraint : Constraint
         return true;
     }
 
-    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription)
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
+        if (!isInitializing)
+        {
+            return LogicResult.None;
+        }
+
         // Calculate the three groups
         List<List<int>> groups = new() { new(), new(), new() };
         for (int v = 1; v <= MAX_VALUE; v++)

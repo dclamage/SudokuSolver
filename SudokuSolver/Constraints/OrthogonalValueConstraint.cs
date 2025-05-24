@@ -598,8 +598,13 @@ public abstract class OrthogonalValueConstraint : Constraint
         return LogicResult.None;
     }
 
-    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription)
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
+        if (!isInitializing)
+        {
+            return LogicResult.None;
+        }
+
         var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
 
         for (int i0 = 0; i0 < HEIGHT; i0++)

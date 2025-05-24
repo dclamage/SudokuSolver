@@ -244,7 +244,7 @@ public class BetweenLineConstraint : Constraint
         return true;
     }
 
-    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => valid ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => valid ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
     public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => valid ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)

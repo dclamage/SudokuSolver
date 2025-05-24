@@ -187,7 +187,7 @@ static class ConsoleUtility
         PrintBoard(board.Board, board.Regions, writer);
     }
 
-    public static void PrintBoard(BoardView board, int[,] regions, TextWriter writer)
+    public static void PrintBoard(BoardView board, IReadOnlyList<int> regions, TextWriter writer)
     {
         int HEIGHT = board.GetLength(0);
         int WIDTH = board.GetLength(1);
@@ -227,8 +227,8 @@ static class ConsoleUtility
             {
                 for (int j = 0; j < WIDTH; j++)
                 {
-                    bool thickV = i == 0 || regions[i - 1, j] != regions[i, j];
-                    bool thickH = j == 0 || regions[i, j - 1] != regions[i, j];
+                    bool thickV = i == 0 || regions[(i - 1) * WIDTH + j] != regions[i * WIDTH + j];
+                    bool thickH = j == 0 || regions[i * WIDTH + j - 1] != regions[i * WIDTH + j];
 
                     if (line == 0)
                     {
@@ -388,7 +388,7 @@ static class ConsoleUtility
                     {
                         writer.WriteLine("╗");
                     }
-                    else if (regions[i - 1, WIDTH - 1] != regions[i, WIDTH - 1])
+                    else if (regions[(i - 1) * WIDTH + WIDTH - 1] != regions[i * WIDTH + WIDTH - 1])
                     {
                         writer.WriteLine("╣");
                     }
@@ -408,7 +408,7 @@ static class ConsoleUtility
         writer.Write(new string('═', innerCellSize));
         for (int j = 1; j < WIDTH; j++)
         {
-            if (regions[HEIGHT - 1, j - 1] != regions[HEIGHT - 1, j])
+            if (regions[(HEIGHT - 1) * j + j - 1] != regions[(HEIGHT - 1) * WIDTH + j])
             {
                 writer.Write('╩');
             }

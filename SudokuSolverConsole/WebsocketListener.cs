@@ -381,23 +381,33 @@ class WebsocketListener : IDisposable
             }
         }
 
-        int totalCandidates = solver.HEIGHT * solver.WIDTH * solver.MAX_VALUE;
-        int[] numSolutions = colored ? new int[totalCandidates] : null;
-        if (!solver.FillRealCandidates(multiThread: !singleThreaded, numSolutions: numSolutions, cancellationToken: cancellationToken))
+        int[] numSolutions = solver.TrueCandidates(
+                multiThread: !singleThreaded,
+                numSolutionsCap: colored ? 8 : 1,
+                cancellationToken: cancellationToken);
+        if (numSolutions == null || numSolutions.All(candidate => candidate == 0))
         {
             SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
             return;
         }
 
-        if (numSolutions == null)
+        int maxValue = solver.MAX_VALUE;
+        uint[] realFlatBoard = new uint[solver.NUM_CELLS];
+        for (int cellIndex = 0; cellIndex < solver.NUM_CELLS; cellIndex++)
         {
-            numSolutions = new int[totalCandidates];
+            uint mask = 0;
+            for (int valIndex = 0; valIndex < maxValue; valIndex++)
+            {
+                if (numSolutions[cellIndex * maxValue + valIndex] > 0)
+                {
+                    mask |= SolverUtility.ValueMask(valIndex + 1);
+                }
+            }
+            realFlatBoard[cellIndex] = mask;
         }
 
-        int maxValue = solver.MAX_VALUE;
-        var realFlatBoard = solver.FlatBoard;
         var logicalFlat = logicalSolver?.FlatBoard;
-        for (int i = 0; i < realFlatBoard.Count; i++)
+        for (int i = 0; i < realFlatBoard.Length; i++)
         {
             uint realMask = realFlatBoard[i];
             uint logicalMask = logicalFlat != null ? logicalFlat[i] : realMask;
