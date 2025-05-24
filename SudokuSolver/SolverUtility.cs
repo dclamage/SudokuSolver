@@ -137,14 +137,14 @@ public static class SolverUtility
         }
     }
 
-    public static int[,] DefaultRegions(int size)
+    public static int[] DefaultRegions(int size)
     {
         if (size <= 0 || size > 31)
         {
             throw new ArgumentException($"Error calculating default regions. Size must be between 1 and 31, got: {size}");
         }
 
-        int[,] regions = new int[size, size];
+        int[] regions = new int[size * size];
         int i, j;
         switch (size)
         {
@@ -165,7 +165,7 @@ public static class SolverUtility
                 {
                     for (j = 0; j < size; j++)
                     {
-                        regions[i, j] = i;
+                        regions[i * size + j] = i;
                     }
                 }
                 break;
@@ -179,7 +179,7 @@ public static class SolverUtility
                 {
                     for (j = 0; j < size; j++)
                     {
-                        regions[i, j] = (i / regionSize) * (size / regionSize) + (j / regionSize);
+                        regions[i * size + j] = (i / regionSize) * (size / regionSize) + (j / regionSize);
                     }
                 }
                 break;
@@ -196,7 +196,7 @@ public static class SolverUtility
                     {
                         for (j = 0; j < size; j++)
                         {
-                            regions[i, j] = (i / 2) * 2 + (j / regionWidth);
+                            regions[i * size + j] = (i / 2) * 2 + (j / regionWidth);
                         }
                     }
                 }
@@ -213,7 +213,7 @@ public static class SolverUtility
                     {
                         for (j = 0; j < size; j++)
                         {
-                            regions[i, j] = (i / 3) * 3 + (j / regionWidth);
+                            regions[i * size + j] = (i / 3) * 3 + (j / regionWidth);
                         }
                     }
                 }
@@ -228,7 +228,7 @@ public static class SolverUtility
                     {
                         for (j = 0; j < size; j++)
                         {
-                            regions[i, j] = (i / 4) * 4 + (j / regionWidth);
+                            regions[i * size + j] = (i / 4) * 4 + (j / regionWidth);
                         }
                     }
                 }
@@ -241,7 +241,7 @@ public static class SolverUtility
                     {
                         for (j = 0; j < size; j++)
                         {
-                            regions[i, j] = (i / 5) * 5 + (j / regionWidth);
+                            regions[i * size + j] = (i / 5) * 5 + (j / regionWidth);
                         }
                     }
                 }

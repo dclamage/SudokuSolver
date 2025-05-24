@@ -9,7 +9,6 @@ public class SkyscraperConstraint : Constraint
     private readonly HashSet<(int, int)> cellsLookup;
     private readonly string specificName;
     private bool needsLogic = true;
-    private string memoPrefix;
 
     public override string SpecificName => specificName;
 
@@ -61,7 +60,6 @@ public class SkyscraperConstraint : Constraint
         cellsLookup = new(cells);
 
         specificName = $"Skyscraper {clue} at {CellName(cellStart)}";
-        memoPrefix = $"Skyscraper|c{clue}";
     }
 
     public override LogicResult InitCandidates(Solver solver)
@@ -162,8 +160,6 @@ public class SkyscraperConstraint : Constraint
         return haveUnset && numSeen <= clue || !haveUnset && numSeen == clue;
     }
 
-    private record StepLogicMemo(uint[] KeepMasks);
-
     public override LogicResult StepLogic(Solver solver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
         if (!needsLogic)
@@ -174,8 +170,6 @@ public class SkyscraperConstraint : Constraint
         bool changed = false;
 
         var board = solver.Board;
-        StringBuilder memoKeyBuilder = new();
-        memoKeyBuilder.Append(memoPrefix);
         List<int> unsetCellIndexes = new(cells.Count);
         List<int> curVals = new(cells.Count);
         uint unsetMask = 0;
@@ -187,13 +181,11 @@ public class SkyscraperConstraint : Constraint
                 unsetCellIndexes.Add(cellIndex);
                 unsetMask |= board[i, j];
                 curVals.Add(0);
-                memoKeyBuilder.AppendFormat("|{0:x}", board[i, j]);
             }
             else
             {
                 int val = GetValue(board[i, j]);
                 curVals.Add(val);
-                memoKeyBuilder.Append("|s").Append(val);
             }
         }
         if (unsetCellIndexes.Count == 0)
@@ -202,82 +194,66 @@ public class SkyscraperConstraint : Constraint
         }
 
         uint[] keepMasks;
-        string memoKey = memoKeyBuilder.ToString();
-        var memo = solver.GetMemo<StepLogicMemo>(memoKey);
-        if (memo != null)
+        List<int> unsetVals = new(ValueCount(unsetMask));
+        int minVal = MinValue(unsetMask);
+        int maxVal = MaxValue(unsetMask);
+        for (int v = minVal; v <= maxVal; v++)
         {
-            keepMasks = memo.KeepMasks;
-            if (keepMasks == null)
+            if (HasValue(unsetMask, v))
             {
-                logicalStepDescription?.Append($"Clue value {clue} is impossible.");
-                return LogicResult.Invalid;
+                unsetVals.Add(v);
             }
         }
-        else
+
+        bool haveValidPerm = false;
+        keepMasks = new uint[cells.Count];
+        int numUnsetCells = unsetCellIndexes.Count;
+        foreach (var perm in unsetVals.Permuatations())
         {
-            List<int> unsetVals = new(ValueCount(unsetMask));
-            int minVal = MinValue(unsetMask);
-            int maxVal = MaxValue(unsetMask);
-            for (int v = minVal; v <= maxVal; v++)
+            for (int unsetCellIndex = 0; unsetCellIndex < numUnsetCells; unsetCellIndex++)
             {
-                if (HasValue(unsetMask, v))
+                int cellIndex = unsetCellIndexes[unsetCellIndex];
+                curVals[cellIndex] = perm[unsetCellIndex];
+            }
+            if (SeenCount(curVals) != clue)
+            {
+                continue;
+            }
+
+            bool needCheck = false;
+            for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
+            {
+                if ((keepMasks[cellIndex] & ValueMask(curVals[cellIndex])) == 0)
                 {
-                    unsetVals.Add(v);
+                    needCheck = true;
+                    break;
                 }
             }
 
-            bool haveValidPerm = false;
-            keepMasks = new uint[cells.Count];
-            int numUnsetCells = unsetCellIndexes.Count;
-            foreach (var perm in unsetVals.Permuatations())
+            if (!needCheck)
             {
-                for (int unsetCellIndex = 0; unsetCellIndex < numUnsetCells; unsetCellIndex++)
-                {
-                    int cellIndex = unsetCellIndexes[unsetCellIndex];
-                    curVals[cellIndex] = perm[unsetCellIndex];
-                }
-                if (SeenCount(curVals) != clue)
-                {
-                    continue;
-                }
-
-                bool needCheck = false;
-                for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
-                {
-                    if ((keepMasks[cellIndex] & ValueMask(curVals[cellIndex])) == 0)
-                    {
-                        needCheck = true;
-                        break;
-                    }
-                }
-
-                if (!needCheck)
-                {
-                    continue;
-                }
-
-                if (!solver.CanPlaceDigits(cells, curVals))
-                {
-                    continue;
-                }
-
-                for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
-                {
-                    keepMasks[cellIndex] |= ValueMask(curVals[cellIndex]);
-                }
-                haveValidPerm = true;
+                continue;
             }
 
-            if (!haveValidPerm)
+            if (!solver.CanPlaceDigits(cells, curVals))
             {
-                logicalStepDescription?.Append($"Clue value {clue} is impossible.");
-                solver.StoreMemo(memoKey, new StepLogicMemo(null));
-                return LogicResult.Invalid;
+                continue;
             }
-            else
+
+            for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
             {
-                solver.StoreMemo(memoKey, new StepLogicMemo(keepMasks));
+                keepMasks[cellIndex] |= ValueMask(curVals[cellIndex]);
             }
+            haveValidPerm = true;
+        }
+
+        if (!haveValidPerm)
+        {
+            if (logicalStepDescription != null)
+            {
+                logicalStepDescription.Append($"Clue value {clue} is impossible.");
+            }
+            return LogicResult.Invalid;
         }
 
         List<int> elims = null;
@@ -318,7 +294,7 @@ public class SkyscraperConstraint : Constraint
             }
         }
 
-        if (elims != null)
+        if (logicalStepDescription != null && elims != null)
         {
             logicalStepDescription.Append($"Re-evaluated clue {clue} => {solver.DescribeElims(elims)}");
         }

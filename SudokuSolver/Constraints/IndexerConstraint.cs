@@ -31,8 +31,13 @@ public abstract class AbstractIndexerConstraint : Constraint
     // Completely handled by weak links
     public override bool EnforceConstraint(Solver solver, int i, int j, int value) => true;
 
-    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription)
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
+        if (!isInitializing)
+        {
+            return LogicResult.None;
+        }
+
         var board = solver.Board;
         for (int i = 0; i < HEIGHT; i++)
         {
@@ -176,7 +181,7 @@ public class BoxIndexerConstraint : AbstractIndexerConstraint
     {
         for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
-            SudokuGroup region = solver.CellToGroupMap[cellIndex].Where(g => g.GroupType == GroupType.Region).FirstOrDefault();
+            SudokuGroup region = solver.CellToGroupsLookup[cellIndex].Where(g => g.GroupType == GroupType.Region).FirstOrDefault();
             if (region != null)
             {
                 regionMap[cellIndex] = region;

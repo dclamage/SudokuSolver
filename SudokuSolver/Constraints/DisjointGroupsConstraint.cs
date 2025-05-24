@@ -42,7 +42,8 @@ public class DisjointGroupConstraint : Constraint
         {
             for (int j = 0; j < WIDTH; j++)
             {
-                int region = regions[i, j];
+                int cellIndex = sudokuSolver.CellIndex(i, j);
+                int region = regions[cellIndex];
                 if (numSeen[region]++ == groupIndex)
                 {
                     group.Add((i, j));

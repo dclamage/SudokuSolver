@@ -22,8 +22,13 @@ namespace SudokuSolver.Constraints
 
         public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true;
 
-        public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription)
+        public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
         {
+            if (!isInitializing)
+            {
+                return LogicResult.None;
+            }
+
             List<(int, int)> disallowedValuePairs = new();
             for (int v0 = 1; v0 <= MAX_VALUE; v0++)
             {

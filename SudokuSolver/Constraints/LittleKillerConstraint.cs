@@ -153,7 +153,7 @@ public class LittleKillerConstraint : Constraint
         return sum == actualSum;
     }
 
-    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription) => InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription);
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription);
     public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumCells != null ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)

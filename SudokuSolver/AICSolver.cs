@@ -266,7 +266,7 @@ internal class AICSolver
                     var chainElims = CalcStrongElims(newChain);
                     if (chainElims.Count > 0)
                     {
-                        if (!CheckBestChain(newChain, chainElims.ToList(), "AIC: "))
+                        if (!CheckBestChain(newChain, chainElims.ToSortedList(), "AIC: "))
                         {
                             return ApplyBestChain();
                         }
@@ -291,7 +291,7 @@ internal class AICSolver
                     chainElims.UnionWith(CalcStrongToWeakElims(strongLinks, newChain));
                     if (chainElims.Count > 0)
                     {
-                        if (!CheckBestChain(newChain, chainElims.ToList(), "CNL: "))
+                        if (!CheckBestChain(newChain, chainElims.ToSortedList(), "CNL: "))
                         {
                             return ApplyBestChain();
                         }
@@ -743,9 +743,9 @@ internal class AICSolver
     // 2 = 5, 2 = 7, 2 = 9
     // 4 = 7, 4 = 9
     // 6 = 9
-    private SortedSet<int> CalcStrongElims(List<int> chain)
+    private HashSet<int> CalcStrongElims(List<int> chain)
     {
-        SortedSet<int> elims = new();
+        HashSet<int> elims = new();
         for (int chainIndex0 = 0; chainIndex0 < chain.Count; chainIndex0 += 2)
         {
             int cand0 = chain[chainIndex0];
@@ -780,9 +780,9 @@ internal class AICSolver
     // For CNLs, all strong links convert to also be weak links.
     // If those weak links are part of an ALS, the other candidates
     // in the ALS must be present.
-    private HashSet<int> CalcStrongToWeakElims(Dictionary<int, StrongLinkDesc>[] strongLinks, List<int> chain)
+    private List<int> CalcStrongToWeakElims(Dictionary<int, StrongLinkDesc>[] strongLinks, List<int> chain)
     {
-        HashSet<int> elims = new();
+        List<int> elims = new();
         for (int chainIndex0 = 0; chainIndex0 < chain.Count; chainIndex0 += 2)
         {
             int cand0 = chain[chainIndex0];

@@ -33,8 +33,13 @@ public class NabnerConstraint : Constraint
         return true;
     }
 
-    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription)
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
+        if (!isInitializing)
+        {
+            return LogicResult.None;
+        }
+
         for (int cellIndex0 = 0; cellIndex0 < cells.Count; cellIndex0++)
         {
             int cellCandidateBase0 = CandidateIndex(cells[cellIndex0], 1);

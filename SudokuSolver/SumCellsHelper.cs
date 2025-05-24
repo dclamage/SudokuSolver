@@ -9,7 +9,6 @@ public class SumCellsHelper
         groups = solver.SplitIntoGroups(cells).Select(g => new SumGroup(solver, g)).ToList();
 
         this.cells = cells.OrderBy(cell => cell.Item1 * solver.WIDTH + cell.Item2).ToList();
-        cellsString = CellsKey("SumCellsHelper", this.cells);
     }
 
     public LogicResult Init(Solver solver, IEnumerable<int> possibleSums)
@@ -79,47 +78,19 @@ public class SumCellsHelper
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
-    record StepLogicMemo(List<int> Elims, string LogicalStepDesc, LogicResult Result)
-    {
-        public StepLogicMemo(string logicalStepDesc, LogicResult result) : this(null, logicalStepDesc, result) { }
-        public StepLogicMemo(LogicResult result) : this(null, null, result) { }
-    }
-
-    public LogicResult StepLogic(Solver solver, IEnumerable<int> possibleSums, StringBuilder logicalStepDescription)
+    public LogicResult StepLogic(Solver solver, IEnumerable<int> possibleSums, List<LogicalStepDesc> logicalStepDescription)
     {
         var sums = possibleSums as SortedSet<int> ?? new SortedSet<int>(possibleSums);
         if (sums.Count == 0)
         {
+            if (logicalStepDescription != null)
+            {
+                logicalStepDescription.Add(new LogicalStepDesc("There are no possible sums.", cells));
+            }
             return LogicResult.Invalid;
         }
 
         var board = solver.Board;
-
-        // Check for a memo
-        string memoKey = new StringBuilder(cellsString.Length + 17 + sums.Count * 4 + cells.Count * 10)
-                .Append(cellsString)
-                .Append($"|StepLogic{(logicalStepDescription != null ? "D" : "")}|S")
-                .AppendInts(sums)
-                .Append("|M")
-                .AppendCellValueKey(solver, cells)
-                .ToString();
-        var memoData = solver.GetMemo<StepLogicMemo>(memoKey);
-        if (memoData != null)
-        {
-            if (memoData.Result == LogicResult.None)
-            {
-                return LogicResult.None;
-            }
-            if (memoData.Result == LogicResult.Invalid)
-            {
-                logicalStepDescription?.Append(memoData.LogicalStepDesc);
-                return LogicResult.Invalid;
-            }
-
-            solver.ClearCandidates(memoData.Elims);
-            logicalStepDescription?.Append(memoData.LogicalStepDesc);
-            return LogicResult.Changed;
-        }
 
         int MAX_VALUE = solver.MAX_VALUE;
         int completedSum = 0;
@@ -136,12 +107,7 @@ public class SumCellsHelper
                     if (logicalStepDescription != null)
                     {
                         string desc = $"{solver.CompactName(curGroup.Cells)} has no valid candidate combination.";
-                        logicalStepDescription.Append(desc);
-                        solver.StoreMemo(memoKey, new StepLogicMemo(desc, LogicResult.Invalid));
-                    }
-                    else
-                    {
-                        solver.StoreMemo(memoKey, new StepLogicMemo(LogicResult.Invalid));
+                        logicalStepDescription.Add(new LogicalStepDesc(desc, curGroup.Cells));
                     }
                     return LogicResult.Invalid;
                 }
@@ -170,12 +136,7 @@ public class SumCellsHelper
             if (logicalStepDescription != null)
             {
                 string desc = $"Sum is no longer possible (Between {minSum} and {maxSum}).";
-                logicalStepDescription.Append(desc);
-                solver.StoreMemo(memoKey, new StepLogicMemo(desc, LogicResult.Invalid));
-            }
-            else
-            {
-                solver.StoreMemo(memoKey, new StepLogicMemo(LogicResult.Invalid));
+                logicalStepDescription?.Add(new LogicalStepDesc(desc, cells));
             }
             return LogicResult.Invalid;
         }
@@ -183,7 +144,6 @@ public class SumCellsHelper
         if (numIncompleteGroups == 0)
         {
             // All groups complete
-            solver.StoreMemo(memoKey, new StepLogicMemo(LogicResult.None));
             return LogicResult.None;
         }
 
@@ -209,12 +169,7 @@ public class SumCellsHelper
                 if (logicalStepDescription != null)
                 {
                     string desc = $"{solver.CompactName(group.Cells)} cannot sum to the desired value(s).";
-                    logicalStepDescription.Append(desc);
-                    solver.StoreMemo(memoKey, new StepLogicMemo(desc, LogicResult.Invalid));
-                }
-                else
-                {
-                    solver.StoreMemo(memoKey, new StepLogicMemo(LogicResult.Invalid));
+                    logicalStepDescription?.Add(new LogicalStepDesc(desc, group.Cells));
                 }
                 return LogicResult.Invalid;
             }
@@ -241,12 +196,7 @@ public class SumCellsHelper
                 if (logicalStepDescription != null)
                 {
                     string desc = $"Sum re-evaluated: {solver.DescribeElims(elims)}";
-                    logicalStepDescription.Append(desc);
-                    solver.StoreMemo(memoKey, new StepLogicMemo(elims, desc, LogicResult.Changed));
-                }
-                else
-                {
-                    solver.StoreMemo(memoKey, new StepLogicMemo(elims, null, LogicResult.Changed));
+                    logicalStepDescription?.Add(new LogicalStepDesc(desc, Enumerable.Empty<int>(), elims));
                 }
                 return LogicResult.Changed;
             }
@@ -285,12 +235,7 @@ public class SumCellsHelper
                         if (logicalStepDescription != null)
                         {
                             string desc = $"{solver.CompactName(group.Cells)} cannot be restricted between {newGroupMin} and {newGroupMax}.";
-                            logicalStepDescription.Append(desc);
-                            solver.StoreMemo(memoKey, new StepLogicMemo(desc, LogicResult.Invalid));
-                        }
-                        else
-                        {
-                            solver.StoreMemo(memoKey, new StepLogicMemo(LogicResult.Invalid));
+                            logicalStepDescription?.Add(new LogicalStepDesc(desc, group.Cells));
                         }
                         return LogicResult.Invalid;
                     }
@@ -320,18 +265,27 @@ public class SumCellsHelper
                 if (logicalStepDescription != null)
                 {
                     string desc = $"Sum re-evaluated: {solver.DescribeElims(elims)}";
-                    logicalStepDescription.Append(desc);
-                    solver.StoreMemo(memoKey, new StepLogicMemo(elims, desc, LogicResult.Changed));
-                }
-                else
-                {
-                    solver.StoreMemo(memoKey, new StepLogicMemo(elims, null, LogicResult.Changed));
+                    logicalStepDescription?.Add(new LogicalStepDesc(desc, Enumerable.Empty<int>(), elims));
                 }
                 return LogicResult.Changed;
             }
         }
-        solver.StoreMemo(memoKey, new StepLogicMemo(LogicResult.None));
         return LogicResult.None;
+    }
+
+    // Overload for StringBuilder compatibility
+    public LogicResult StepLogic(Solver solver, IEnumerable<int> possibleSums, StringBuilder logicalStepDescription)
+    {
+        List<LogicalStepDesc> stepDescs = logicalStepDescription != null ? new() : null;
+        var result = StepLogic(solver, possibleSums, stepDescs);
+        if (logicalStepDescription != null && stepDescs != null)
+        {
+            foreach (var step in stepDescs)
+            {
+                logicalStepDescription.AppendLine(step.ToString());
+            }
+        }
+        return result;
     }
 
     public (int, int) SumRange(Solver solver)
@@ -355,7 +309,7 @@ public class SumCellsHelper
     public List<int> PossibleSums(Solver solver)
     {
         int completedSum = 0;
-        List<List<int>> incompleteGroupSums = new();
+        List<List<int>> incompleteGroupSums = [];
         foreach (var curGroup in groups)
         {
             List<int> possibleSums = curGroup.PossibleSums(solver);
@@ -376,7 +330,7 @@ public class SumCellsHelper
 
         if (incompleteGroupSums.Count == 0)
         {
-            return new List<int>() { completedSum };
+            return [completedSum];
         }
 
         // Limit exact results to 5 incomplete groups
@@ -424,5 +378,4 @@ public class SumCellsHelper
 
     private readonly List<SumGroup> groups;
     private readonly List<(int, int)> cells;
-    private readonly string cellsString;
 }

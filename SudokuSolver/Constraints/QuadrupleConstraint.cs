@@ -144,7 +144,7 @@ public class QuadrupleConstraint : Constraint
         return true;
     }
 
-    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription) => (cells != null && requiredMask != 0) ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => (cells != null && requiredMask != 0) ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
     public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => (cells != null && requiredMask != 0) ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)

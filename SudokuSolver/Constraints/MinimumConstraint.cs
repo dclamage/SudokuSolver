@@ -244,8 +244,13 @@ public class MinimumConstraint : Constraint
         }
     }
 
-    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription)
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
+        if (!isInitializing)
+        {
+            return LogicResult.None;
+        }
+
         foreach (var minCell in cells)
         {
             int minCellIndex = FlatIndex(minCell);

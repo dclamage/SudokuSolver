@@ -31,8 +31,13 @@ public class EntropicLineConstraint : Constraint
         return true;
     }
 
-    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription)
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
+        if (!isInitializing)
+        {
+            return LogicResult.None;
+        }
+
         // Calculate the three groups
         int smallGroupSize = MAX_VALUE / 3;
         int largeGroupSize = (MAX_VALUE + 2) / 3;

@@ -8,16 +8,12 @@ public class SumGroup
         if (excludeValue >= 1 && excludeValue <= solver.MAX_VALUE)
         {
             includeMask = solver.ALL_VALUES_MASK & ~ValueMask(excludeValue);
-            cellsString = CellsKey($"SumGroupE{excludeValue}", this.cells);
         }
         else
         {
             includeMask = solver.ALL_VALUES_MASK;
-            cellsString = CellsKey($"SumGroup", this.cells);
         }
     }
-
-    record MinMaxMemo(int Min, int Max);
 
     public (int, int) MinMaxSum(Solver solver)
     {
@@ -28,20 +24,7 @@ public class SumGroup
             return (sum, sum);
         }
 
-        // Check for a memo
-        string memoKey = new StringBuilder()
-            .Append(cellsString)
-            .Append("|MinMax")
-            .AppendCellValueKey(solver, cells)
-            .ToString();
-        var minMaxMemo = solver.GetMemo<MinMaxMemo>(memoKey);
-        if (minMaxMemo != null)
-        {
-            return (minMaxMemo.Min, minMaxMemo.Max);
-        }
-
         var minMax = CalcMinMaxSum(solver);
-        solver.StoreMemo(memoKey, new MinMaxMemo(minMax.Item1, minMax.Item2));
         return minMax;
     }
 
@@ -147,8 +130,6 @@ public class SumGroup
 
         return (min, max);
     }
-
-    record RestrictSumMemo(uint[] NewUnsetMasks);
 
     public LogicResult RestrictSum(Solver solver, int minSum, int maxSum)
     {
@@ -259,65 +240,47 @@ public class SumGroup
 
         uint[] newMasks;
 
-        // Check for a memo
-        string memoKey = new StringBuilder()
-            .Append(cellsString)
-            .Append("|RestrictSum|S")
-            .AppendInts(sums)
-            .Append("|M")
-            .AppendCellValueKey(solver, cells)
-            .ToString();
-        var memoData = solver.GetMemo<RestrictSumMemo>(memoKey);
-        if (memoData != null)
+        uint unsetMask = UnsetMask(solver);
+
+        // Check for not enough values to fill all the cells
+        if (ValueCount(unsetMask) < numUnsetCells)
         {
-            newMasks = memoData.NewUnsetMasks;
+            return LogicResult.Invalid;
         }
-        else
+
+        int minValue = MinValue(unsetMask);
+        int maxValue = MaxValue(unsetMask);
+        List<int> possibleVals = Enumerable.Range(minValue, maxValue).Where(v => HasValue(unsetMask, v)).ToList();
+
+        newMasks = new uint[numUnsetCells];
+        foreach (var combination in possibleVals.Combinations(unsetCells.Count))
         {
-            uint unsetMask = UnsetMask(solver);
-
-            // Check for not enough values to fill all the cells
-            if (ValueCount(unsetMask) < numUnsetCells)
+            int curSum = setSum + combination.Sum();
+            if (sums.Contains(curSum))
             {
-                return LogicResult.Invalid;
-            }
-
-            int minValue = MinValue(unsetMask);
-            int maxValue = MaxValue(unsetMask);
-            List<int> possibleVals = Enumerable.Range(minValue, maxValue).Where(v => HasValue(unsetMask, v)).ToList();
-
-            newMasks = new uint[numUnsetCells];
-            foreach (var combination in possibleVals.Combinations(unsetCells.Count))
-            {
-                int curSum = setSum + combination.Sum();
-                if (sums.Contains(curSum))
+                foreach (var perm in combination.Permuatations())
                 {
-                    foreach (var perm in combination.Permuatations())
+                    bool needCheck = false;
+                    for (int i = 0; i < numUnsetCells; i++)
                     {
-                        bool needCheck = false;
+                        uint valueMask = ValueMask(perm[i]);
+                        if ((newMasks[i] & valueMask) == 0)
+                        {
+                            needCheck = true;
+                            break;
+                        }
+                    }
+
+                    if (needCheck && solver.CanPlaceDigits(unsetCells, perm))
+                    {
                         for (int i = 0; i < numUnsetCells; i++)
                         {
                             uint valueMask = ValueMask(perm[i]);
-                            if ((newMasks[i] & valueMask) == 0)
-                            {
-                                needCheck = true;
-                                break;
-                            }
-                        }
-
-                        if (needCheck && solver.CanPlaceDigits(unsetCells, perm))
-                        {
-                            for (int i = 0; i < numUnsetCells; i++)
-                            {
-                                uint valueMask = ValueMask(perm[i]);
-                                newMasks[i] |= valueMask;
-                            }
+                            newMasks[i] |= valueMask;
                         }
                     }
                 }
             }
-
-            solver.StoreMemo(memoKey, new RestrictSumMemo(newMasks));
         }
 
         bool changed = false;
@@ -354,8 +317,6 @@ public class SumGroup
         }
     }
 
-    record PossibleSumsMemo(List<int> Sums);
-
     public List<int> PossibleSums(Solver solver)
     {
         int MAX_VALUE = solver.MAX_VALUE;
@@ -391,18 +352,6 @@ public class SumGroup
         }
 
         uint[] newMasks;
-
-        // Check for a memo
-        string memoKey = new StringBuilder()
-            .Append(cellsString)
-            .Append("|PossibleSums")
-            .AppendCellValueKey(solver, cells)
-            .ToString();
-        var memoData = solver.GetMemo<PossibleSumsMemo>(memoKey);
-        if (memoData != null)
-        {
-            return memoData.Sums.ToList();
-        }
 
         SortedSet<int> sumsSet = new();
         uint unsetMask = UnsetMask(solver);
@@ -444,13 +393,8 @@ public class SumGroup
             }
         }
 
-        // Calling ToList twice on purpose so that a different copy is
-        // in the memo vs the returned value (which could be changed by the caller).
-        solver.StoreMemo(memoKey, new PossibleSumsMemo(sumsSet.ToList()));
         return sumsSet.ToList();
     }
-
-    record IsSumPossibleMemo(bool IsPossible);
 
     public bool IsSumPossible(Solver solver, int sum)
     {
@@ -486,19 +430,6 @@ public class SumGroup
 
         uint[] newMasks;
 
-        // Check for a memo
-        string memoKey = new StringBuilder()
-            .Append(cellsString)
-            .Append("|IsSumPossible|")
-            .Append(sum)
-            .AppendCellValueKey(solver, cells)
-            .ToString();
-        var memoData = solver.GetMemo<IsSumPossibleMemo>(memoKey);
-        if (memoData != null)
-        {
-            return memoData.IsPossible;
-        }
-
         uint unsetMask = UnsetMask(solver);
         if (ValueCount(unsetMask) < unsetCells.Count)
         {
@@ -530,14 +461,12 @@ public class SumGroup
 
                     if (needCheck && solver.CanPlaceDigits(unsetCells, perm))
                     {
-                        solver.StoreMemo(memoKey, new IsSumPossibleMemo(true));
                         return true;
                     }
                 }
             }
         }
 
-        solver.StoreMemo(memoKey, new IsSumPossibleMemo(false));
         return false;
     }
 
@@ -582,6 +511,5 @@ public class SumGroup
 
     public IReadOnlyList<(int, int)> Cells => cells;
     private readonly List<(int, int)> cells;
-    private readonly string cellsString;
     private readonly uint includeMask;
 }
