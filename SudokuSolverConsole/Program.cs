@@ -5,7 +5,7 @@ using SudokuSolver;
 
 namespace SudokuSolverConsole;
 
-class Program
+public class Program
 {
 	private static string descriptionString = $"Version {SudokuSolverVersion.version} created by David Clamage (\"Rangsk\").\n" +
         "https://github.com/dclamage/SudokuSolver\n\n" +
@@ -51,6 +51,8 @@ class Program
         var listConstraints = app.Option("--list-constraints", "List all available constraints.", CommandOptionType.NoValue);
         var hideBanner = app.Option("--hide-banner", "Do not show the text with app version and support links.", CommandOptionType.NoValue);
         var verbose = app.Option("--verbose", "Print verbose logs.", CommandOptionType.NoValue);
+        var jsonOutput = app.Option("--json", "Output results as JSON, suppress all other output.", CommandOptionType.NoValue);
+        var jsonProgress = app.Option("--json-progress", "Output progress as JSON objects (default off).", CommandOptionType.NoValue);
 
         app.OnExecuteAsync(async cancellationToken =>
 		{
@@ -80,6 +82,8 @@ class Program
                 ListConstraints = listConstraints.HasValue(),
                 HideBanner = hideBanner.HasValue(),
                 VerboseLogs = verbose.HasValue(),
+                JsonOutput = jsonOutput.HasValue(),
+                JsonProgress = jsonProgress.HasValue(),
             };
 
             await program.OnExecuteAsync(app, cancellationToken);
@@ -117,12 +121,14 @@ class Program
 	// Websocket options
     public required bool Listen { get; init; }
 	public required bool ListenSingleThreaded { get; init; }
-public required int Port { get; init; }
+    public required int Port { get; init; }
 
 	// Help-related options
     public required bool ListConstraints { get; init; }
 	public required bool HideBanner { get; init; }
     public required bool VerboseLogs { get; init; }
+    public required bool JsonOutput { get; init; }
+    public required bool JsonProgress { get; init; }
 
     public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
 	{
@@ -147,6 +153,12 @@ public required int Port { get; init; }
 
 		Stopwatch watch = Stopwatch.StartNew();
 		string processName = Process.GetCurrentProcess().ProcessName;
+
+        if (JsonOutput)
+        {
+            JsonResultHandler.HandleJsonOutput(this, cancellationToken);
+            return 0;
+        }
 
 		if (!HideBanner)
 		{
