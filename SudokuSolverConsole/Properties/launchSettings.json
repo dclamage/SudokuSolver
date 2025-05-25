@@ -8,6 +8,11 @@
       "commandName": "Project",
       "commandLineArgs": "--listen -c=\"knightmare\"",
       "workingDirectory": "$(SolutionDir)"
+    },
+    "Nonconsecutive count": {
+      "commandName": "Project",
+      "commandLineArgs": "-b=9 -c=difference:neg1 -nt",
+      "workingDirectory": "$(SolutionDir)"
     }
   }
 }
