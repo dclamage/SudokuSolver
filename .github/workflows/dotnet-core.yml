@@ -85,7 +85,8 @@ jobs:
     - name: Set VERSION env var from job output
       run: echo "VERSION=${{ needs.build_and_test.outputs.version }}" >> $GITHUB_ENV
     - name: Debug env.VERSION
-      run: echo "DEBUG: env.VERSION is '${{ env.VERSION }}'"
+      run: |
+        echo "DEBUG: env.VERSION is '${{ env.VERSION }}'"
     - name: Cache NuGet packages
       uses: actions/cache@v4
       with:
