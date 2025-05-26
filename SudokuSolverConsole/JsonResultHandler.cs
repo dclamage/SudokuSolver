@@ -36,7 +36,7 @@ public class SolutionCountResult
     public DateTime startTimestamp { get; set; }
     public DateTime finishTimestamp { get; set; }
     public double duration { get; set; }
-    public ulong count { get; set; }
+    public long count { get; set; }
 }
 
 public class SolutionListResult
@@ -45,7 +45,7 @@ public class SolutionListResult
     public DateTime startTimestamp { get; set; }
     public DateTime finishTimestamp { get; set; }
     public double duration { get; set; }
-    public ulong count { get; set; }
+    public long count { get; set; }
     public List<string> solutions { get; set; }
 }
 
@@ -53,7 +53,7 @@ public class SolutionProgressResult
 {
     public string type { get; set; } = "solutionCountProgress";
     public bool isProgress { get; set; } = true;
-    public ulong count { get; set; }
+    public long count { get; set; }
     public DateTime timestamp { get; set; }
     public double duration { get; set; }
 }
@@ -65,7 +65,7 @@ public class TrueCandidatesResult
     public DateTime finishTimestamp { get; set; }
     public double duration { get; set; }
     public string board { get; set; }
-    public int[] candidateCounts { get; set; }
+    public long[] candidateCounts { get; set; }
 }
 
 public class TrueCandidatesProgressResult
@@ -75,7 +75,7 @@ public class TrueCandidatesProgressResult
     public DateTime timestamp { get; set; }
     public double duration { get; set; }
     public string board { get; set; }
-    public int[] candidateCounts { get; set; }
+    public long[] candidateCounts { get; set; }
 }
 
 public class LogicalStepInfo
@@ -137,7 +137,7 @@ public static class JsonResultHandler
             return;
         }
 
-        if (program.SolutionCount)
+        if (program.SolutionCount || program.Check)
         {
             OutputSolutionCount(program, solver, start, stopwatch, cancellationToken);
             return;
@@ -170,16 +170,16 @@ public static class JsonResultHandler
     private static void OutputSolutionCount(Program program, Solver solver, DateTime start, Stopwatch stopwatch, CancellationToken cancellationToken)
     {
         List<string> solutions = [];
-        ulong count = 0;
+        long count = 0;
         Action<Solver> solutionEvent = null;
         if (program.SortSolutionCount || program.OutputPath != null)
         {
             solutionEvent = (Solver s) => solutions.Add(s.GivenString);
         }
-        Action<ulong> progressEvent = null;
+        Action<long> progressEvent = null;
         if (program.JsonProgress)
         {
-            progressEvent = (ulong c) => OutputJson(new SolutionProgressResult
+            progressEvent = (long c) => OutputJson(new SolutionProgressResult
             {
                 count = c,
                 timestamp = DateTime.UtcNow,
@@ -187,7 +187,7 @@ public static class JsonResultHandler
             });
         }
         count = solver.CountSolutions(
-            maxSolutions: program.MaxSolutionCount,
+            maxSolutions: program.Check ? 2 : program.MaxSolutionCount,
             multiThread: program.MultiThread,
             progressEvent: progressEvent,
             solutionEvent: solutionEvent,
@@ -224,12 +224,11 @@ public static class JsonResultHandler
 
     private static void OutputTrueCandidates(Program program, Solver solver, DateTime start, Stopwatch stopwatch, CancellationToken cancellationToken)
     {
-        int numSolutionsCap = (int)(program.MaxSolutionCount > 0 ? program.MaxSolutionCount : 1);
-        int[] trueCandidateCounts = null;
-        Action<int[]> progressEvent = null;
+        long[] trueCandidateCounts = null;
+        Action<long[]> progressEvent = null;
         if (program.JsonProgress)
         {
-            progressEvent = (int[] curCounts) => 
+            progressEvent = (long[] curCounts) => 
             {
                 UpdateBoardFromCandidateCounts(solver, curCounts);
                 OutputJson(new TrueCandidatesProgressResult
@@ -243,7 +242,7 @@ public static class JsonResultHandler
         }
         trueCandidateCounts = solver.TrueCandidates(
             multiThread: program.MultiThread,
-            numSolutionsCap: numSolutionsCap,
+            numSolutionsCap: program.MaxSolutionCount,
             progressEvent: progressEvent,
             cancellationToken: cancellationToken);
         stopwatch.Stop();
@@ -324,7 +323,7 @@ public static class JsonResultHandler
         });
     }
 
-    private static void UpdateBoardFromCandidateCounts(Solver solver, int[] candidateCounts)
+    private static void UpdateBoardFromCandidateCounts(Solver solver, long[] candidateCounts)
     {
         // Convert to board state
         uint[] board = new uint[solver.NUM_CELLS];

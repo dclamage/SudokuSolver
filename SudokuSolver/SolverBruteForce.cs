@@ -174,19 +174,22 @@ public partial class Solver
     /// <summary>
     /// Determine how many solutions the board has.
     /// </summary>
-    /// <param name="maxSolutions">The maximum number of solutions to find. Pass 0 for no maximum.</param>
+    /// <param name="maxSolutions">The maximum number of solutions to find. Pass 0 or a negative value for no maximum.</param>
     /// <param name="multiThread">Whether to use multiple threads.</param>
     /// <param name="progressEvent">An event to receive the progress count as solutions are found.</param>
     /// <param name="cancellationToken">Pass in to support cancelling the count.</param>
     /// <returns>The solution count found.</returns>
-    public ulong CountSolutions(ulong maxSolutions = 0, bool multiThread = false, Action<ulong> progressEvent = null, Action<Solver> solutionEvent = null, HashSet<string> skipSolutions = null, CancellationToken cancellationToken = default)
+    public long CountSolutions(long maxSolutions = 0, bool multiThread = false, Action<long> progressEvent = null, Action<Solver> solutionEvent = null, CancellationToken cancellationToken = default)
     {
         if (seenMap == null)
         {
             throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
         }
 
-        using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, skipSolutions, cancellationToken);
+        // Any negative count is treated as infinite
+        maxSolutions = Math.Max(maxSolutions, 0);
+
+        using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken);
         try
         {
             Solver boardCopy = Clone(willRunNonSinglesLogic: true);
@@ -219,12 +222,11 @@ public partial class Solver
 
     private class CountSolutionsState : IDisposable
     {
-        public ulong numSolutions = 0;
+        public long numSolutions = 0;
         public readonly bool multiThread;
-        public readonly ulong maxSolutions;
-        public readonly Action<ulong> progressEvent;
+        public readonly long maxSolutions;
+        public readonly Action<long> progressEvent;
         public readonly Action<Solver> solutionEvent;
-        public readonly HashSet<string> skipSolutions;
         public readonly CancellationToken cancellationToken;
         public readonly CountdownEvent countdownEvent;
 
@@ -233,21 +235,18 @@ public partial class Solver
 
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
-        private readonly bool fastIncrement;
         private bool maxSolutionsReached;
 
-        public CountSolutionsState(ulong maxSolutions, bool multiThread, Action<ulong> progressEvent, Action<Solver> solutionEvent, HashSet<string> skipSolutions, CancellationToken cancellationToken)
+        public CountSolutionsState(long maxSolutions, bool multiThread, Action<long> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken)
         {
             this.maxSolutions = maxSolutions;
             this.multiThread = multiThread;
             this.progressEvent = progressEvent;
             this.solutionEvent = solutionEvent;
-            this.skipSolutions = skipSolutions;
             this.cancellationToken = cancellationToken;
             eventTimer = Stopwatch.StartNew();
             countdownEvent = multiThread ? new CountdownEvent(1) : null;
             maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
-            fastIncrement = skipSolutions == null && solutionEvent == null;
             maxSolutionsReached = false;
         }
 
@@ -255,58 +254,24 @@ public partial class Solver
 
         public void IncrementSolutions(Solver solver)
         {
-            bool invokeProgress = false;
-            if (fastIncrement)
+            long newNumSolutions = Interlocked.Increment(ref numSolutions);
+            if (maxSolutions > 0 && newNumSolutions >= maxSolutions)
             {
-                ulong newNumSolutions = Interlocked.Increment(ref numSolutions);
-                if (maxSolutions > 0 && newNumSolutions >= maxSolutions)
-                {
-                    maxSolutionsReached = true;
-                    return;
-                }
+                maxSolutionsReached = true;
+                return;
+            }
 
-                if (eventTimer.ElapsedMilliseconds > 500)
+            if (solutionEvent != null || eventTimer.ElapsedMilliseconds > 500)
+            {
+                lock (solutionLock)
                 {
-                    lock (solutionLock)
+                    solutionEvent?.Invoke(solver);
+                    if (eventTimer.ElapsedMilliseconds > 500)
                     {
-                        if (eventTimer.ElapsedMilliseconds > 500)
-                        {
-                            invokeProgress = true;
-                            eventTimer.Restart();
-                        }
+                        progressEvent?.Invoke(numSolutions);
+                        eventTimer.Restart();
                     }
                 }
-            }
-            else
-            {
-                if (skipSolutions != null && skipSolutions.Contains(solver.GivenString))
-                {
-                    return;
-                }
-
-                ulong newNumSolutions = Interlocked.Increment(ref numSolutions);
-                if (maxSolutions > 0 && newNumSolutions >= maxSolutions)
-                {
-                    maxSolutionsReached = true;
-                    return;
-                }
-
-                if (solutionEvent != null || eventTimer.ElapsedMilliseconds > 500)
-                {
-                    lock (solutionLock)
-                    {
-                        solutionEvent?.Invoke(solver);
-                        if (eventTimer.ElapsedMilliseconds > 500)
-                        {
-                            invokeProgress = true;
-                            eventTimer.Restart();
-                        }
-                    }
-                }
-            }
-            if (invokeProgress)
-            {
-                progressEvent?.Invoke(numSolutions);
             }
         }
 
@@ -385,7 +350,7 @@ public partial class Solver
             }
 
             // Try a possible value for this cell
-            int val = v != 0 ? v : state.skipSolutions != null ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
+            int val = v != 0 ? v : MinValue(solver.board[cellIndex]);
             uint valMask = ValueMask(val);
 
             // Create a solver without this value and start a task for it
@@ -407,12 +372,14 @@ public partial class Solver
         }
     }
 
-    public int[] TrueCandidates(bool multiThread = false, Action<int[]> progressEvent = null, int numSolutionsCap = 8, CancellationToken cancellationToken = default)
+    public long[] TrueCandidates(bool multiThread = false, Action<long[]> progressEvent = null, long numSolutionsCap = 8, CancellationToken cancellationToken = default)
     {
         if (seenMap == null)
         {
             throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
         }
+
+        numSolutionsCap = Math.Max(numSolutionsCap, 0);
 
         using TrueCandidatesState state = new(this, multiThread, progressEvent, numSolutionsCap, cancellationToken);
         try
@@ -444,10 +411,10 @@ public partial class Solver
     private class TrueCandidatesState : IDisposable
     {
         public readonly uint[] needCandidateMask;
-        public readonly int[] candidateSolutionCounts;
-        public readonly int numSolutionsCap;
+        public readonly long[] candidateSolutionCounts;
+        public readonly long numSolutionsCap;
 
-        public readonly Action<int[]> progressEvent;
+        public readonly Action<long[]> progressEvent;
         private readonly object progressLock = new();
         public readonly Stopwatch eventTimer = Stopwatch.StartNew();
 
@@ -459,14 +426,21 @@ public partial class Solver
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
 
-        public TrueCandidatesState(Solver initialSolver, bool multiThread, Action<int[]> progressEvent, int numSolutionsCap, CancellationToken cancellationToken)
+        public TrueCandidatesState(Solver initialSolver, bool multiThread, Action<long[]> progressEvent, long numSolutionsCap, CancellationToken cancellationToken)
         {
-            needCandidateMask = new uint[initialSolver.NUM_CELLS];
-            for (int i = 0; i < initialSolver.NUM_CELLS; i++)
+            if (numSolutionsCap > 0)
             {
-                needCandidateMask[i] = initialSolver.board[i] & ~valueSetMask;
+                needCandidateMask = new uint[initialSolver.NUM_CELLS];
+                for (int i = 0; i < initialSolver.NUM_CELLS; i++)
+                {
+                    needCandidateMask[i] = initialSolver.board[i] & ~valueSetMask;
+                }
             }
-            candidateSolutionCounts = new int[initialSolver.NUM_CANDIDATES];
+            else
+            {
+                needCandidateMask = null;
+            }
+            candidateSolutionCounts = new long[initialSolver.NUM_CANDIDATES];
 
             this.progressEvent = progressEvent;
             this.cancellationToken = cancellationToken;
@@ -488,8 +462,8 @@ public partial class Solver
                 uint cellMask = solver.board[cellIndex] & ~valueSetMask;
                 int value = GetValue(cellMask);
                 int candidateIndex = baseIndex + value - 1;
-                int newCount = Interlocked.Increment(ref candidateSolutionCounts[candidateIndex]);
-                if (newCount >= numSolutionsCap)
+                long newCount = Interlocked.Increment(ref candidateSolutionCounts[candidateIndex]);
+                if (needCandidateMask != null && newCount >= numSolutionsCap)
                 {
                     // Don't need this candidate anymore
                     needCandidateMask[cellIndex] &= ~cellMask;
@@ -511,6 +485,12 @@ public partial class Solver
 
         public bool IsUseful(Solver solver)
         {
+            if (needCandidateMask == null)
+            {
+                // With no solution cap, we need to visit all branches
+                return true;
+            }
+
             int numCells = solver.NUM_CELLS;
             for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
             {
@@ -603,6 +583,8 @@ public partial class Solver
 
             // Search for the next cell to try
             int cellIndex;
+            int val;
+            if (state.needCandidateMask != null)
             {
                 List<int> bestCellIndices = null;
                 int bestCellIndicesCount = int.MaxValue;
@@ -641,12 +623,26 @@ public partial class Solver
                 }
 
                 cellIndex = bestCellIndices[RandomNext(0, bestCellIndices.Count)];
+
+                // Try a possible value for this cell, preferring a value that is still needed, if possible
+                uint cellMask = solver.board[cellIndex];
+                uint neededMask = state.needCandidateMask[cellIndex] & cellMask;
+                val = MinValue(neededMask != 0 ? neededMask : cellMask);
+            }
+            else
+            {
+                // Start with the cell that has the least possible candidates
+                (cellIndex, int v) = solver.GetLeastCandidateCell();
+                if (cellIndex < 0)
+                {
+                    state.IncrementSolutions(solver);
+                    continue;
+                }
+
+                // Try a possible value for this cell
+                val = v != 0 ? v : MinValue(solver.board[cellIndex]);
             }
 
-            // Try a possible value for this cell, preferring a value that is still needed, if possible
-            uint cellMask = solver.board[cellIndex];
-            uint neededMask = state.needCandidateMask[cellIndex] & cellMask;
-            int val = GetRandomValue(neededMask != 0 ? neededMask : cellMask);
             uint valMask = ValueMask(val);
 
             // Create a solver without this value and start a task for it

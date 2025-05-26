@@ -33,12 +33,29 @@ public class Program
 		var solveBruteForce = app.Option("-s|--solve", "Provide a single brute force solution.", CommandOptionType.NoValue);
 		var solveRandomBruteForce = app.Option("-d|--random", "Provide a single random brute force solution.", CommandOptionType.NoValue);
 		var solveLogically = app.Option("-l|--logical", "Attempt to solve the puzzle logically.", CommandOptionType.NoValue);
-		var trueCandidates = app.Option("-r|--truecandidates", "Find the true candidates for the puzzle (union of all solutions).", CommandOptionType.NoValue);
-		var check = app.Option("-k|--check", "Check if there are 0, 1, or 2+ solutions.", CommandOptionType.NoValue);
-		var solutionCount = app.Option("-n|--solutioncount", "Provide an exact solution count.", CommandOptionType.NoValue);
-		var maxSolutionCount = app.Option<ulong>("-x|--maxcount", "Specify an maximum solution count.", CommandOptionType.SingleValue);
-		var multiThread = app.Option("-t|--multithread", "Use multithreading.", CommandOptionType.NoValue);
-		var outputPath = app.Option("-o|--out", "Output solution(s) to file.", CommandOptionType.SingleValue)
+        var trueCandidates = app.Option("-r|--truecandidates",
+			"Find the true candidates for the puzzle (the union of all solutions). " +
+			"Defaults to a per-candidate solution cap of 1. Use -x to set a different cap; " +
+			"0 or less disables the cap. " +
+			"Reported counts above the cap are approximate and may be heuristically useful, but not exact.",
+			CommandOptionType.NoValue);
+        var check = app.Option("-k|--check", "Check if there are 0, 1, or 2+ solutions.", CommandOptionType.NoValue);
+        var solutionCount = app.Option("-n|--solutioncount",
+            "Count the total number of solutions. " +
+            "By default, the count is uncapped. Use -x to set a limit.",
+            CommandOptionType.NoValue);
+        var maxSolutionCount = app.Option<long>("-x|--maxcount",
+			"Set a maximum number of solutions to consider. " +
+			"When used with --solutioncount, this limits the total count. " +
+			"When used with --truecandidates, this caps the count per candidate. " +
+			"Defaults: uncapped for solution count, 1 per candidate for true candidates.",
+			CommandOptionType.SingleValue);
+        var multiThread = app.Option("-t|--multithread", "Use multithreading.", CommandOptionType.NoValue);
+        var outputPath = app.Option("-o|--out",
+            "Write solution(s) to a file. " +
+            "In JSON mode, the path is ignored, but enabling this option causes solutions to be included in the JSON output. " +
+            "You must specify any valid path (e.g., -o=\"json\") when using JSON mode, though the actual path is not used.",
+            CommandOptionType.SingleValue)
 			.Accepts(v => v.LegalFilePath());
 		var sortSolutionCount = app.Option("-z|--sort", "Sort the solution count (requires reading all solutions into memory).", CommandOptionType.NoValue);
 		var fpuzzlesOut = app.Option("-u|--url", "Write solution as f-puzzles URL.", CommandOptionType.NoValue);
@@ -62,7 +79,7 @@ public class Program
                 Givens = givens.Value(),
                 Candidates = candidates.Value(),
                 FpuzzlesURL = fpuzzlesURL.Value(),
-                Constraints = constraints.Values.ToArray(),
+                Constraints = [.. constraints.Values],
 				Print = print.HasValue(),
                 SolveBruteForce = solveBruteForce.HasValue(),
                 SolveRandomBruteForce = solveRandomBruteForce.HasValue(),
@@ -70,7 +87,7 @@ public class Program
                 TrueCandidates = trueCandidates.HasValue(),
                 Check = check.HasValue(),
                 SolutionCount = solutionCount.HasValue(),
-                MaxSolutionCount = maxSolutionCount.ParsedValue,
+                MaxSolutionCount = maxSolutionCount.HasValue() || !trueCandidates.HasValue() ? maxSolutionCount.ParsedValue : 1,
                 MultiThread = multiThread.HasValue(),
                 OutputPath = outputPath.Value(),
                 SortSolutionCount = sortSolutionCount.HasValue(),
@@ -109,7 +126,7 @@ public class Program
     public required bool TrueCandidates { get; init; }
     public required bool Check { get; init; }
     public required bool SolutionCount { get; init; }
-    public required ulong MaxSolutionCount { get; init; }
+    public required long MaxSolutionCount { get; init; }
     public required bool MultiThread { get; init; }
 
 	// Post-solve options
@@ -250,6 +267,39 @@ public class Program
 			return 1;
 		}
 
+		int numSolveStepsSpecified = 0;
+		if (SolveLogically)
+		{
+			numSolveStepsSpecified++;
+		}
+		if (SolveBruteForce)
+		{
+			numSolveStepsSpecified++;
+		}
+		if (SolveRandomBruteForce)
+		{
+			numSolveStepsSpecified++;
+		}
+		if (TrueCandidates)
+		{
+			numSolveStepsSpecified++;
+		}
+		if (Check)
+		{
+			numSolveStepsSpecified++;
+		}
+		if (SolutionCount)
+		{
+			numSolveStepsSpecified++;
+		}
+
+		if (numSolveStepsSpecified == 0)
+		{
+			Console.WriteLine($"ERROR: No solve command specified (e.g. --solve, --logical, --check, --solutioncount).");
+			Console.WriteLine($"Try '{processName} --help' for more information.");
+			return 1;
+		}
+
 		Solver solver;
 		try
 		{
@@ -385,7 +435,7 @@ public class Program
 			int currentLineCursor = Console.CursorTop;
 			object consoleLock = new();
 
-			uint[] CountsToBoard(int[] counts)
+			uint[] CountsToBoard(long[] counts)
 			{
 				uint[] board = new uint[solver.NUM_CELLS];
 				for (int cellIndex = 0; cellIndex < solver.NUM_CELLS; cellIndex++)
@@ -396,25 +446,24 @@ public class Program
 						if (counts[candidateIndex] > 0)
 						{
 							board[cellIndex] |= SolverUtility.ValueMask(value);
-							break;
-                        }
+						}
                     }
                 }
-
 				return board;
             }
 
-			int[] trueCandidateCounts = solver.TrueCandidates(multiThread: MultiThread, numSolutionsCap: 1, progressEvent:
-				(int[] curCandidateCounts) =>
+			void PrintProgressBoard(long[] curCandidateCounts)
 			{
 				uint[] board = CountsToBoard(curCandidateCounts);
-                BoardView board2d = new(board, solver.HEIGHT, solver.WIDTH);
+				BoardView board2d = new(board, solver.HEIGHT, solver.WIDTH);
 				lock (consoleLock)
 				{
 					ConsoleUtility.PrintBoard(board2d, solver.Regions, Console.Out);
 					Console.SetCursorPosition(0, currentLineCursor);
 				}
-			}, cancellationToken: cancellationToken);
+			}
+
+            long[] trueCandidateCounts = solver.TrueCandidates(multiThread: MultiThread, numSolutionsCap: MaxSolutionCount, progressEvent: PrintProgressBoard, cancellationToken: cancellationToken);
 
 			uint[] board = CountsToBoard(trueCandidateCounts);
 			if (board.Any(cell => cell == 0))
@@ -429,7 +478,13 @@ public class Program
 					int j = cellIndex % solver.WIDTH;
 					solver.SetMask(i, j, board[cellIndex]);
                 }
+
+                // First display the final board
 				solver.Print();
+
+                // Then display the counts for each cell and candidate
+                Console.WriteLine("\nCandidate counts for each cell:");
+				Console.WriteLine($"[{string.Join(",", trueCandidateCounts)}]");
 
 				if (OutputPath != null)
 				{
@@ -474,7 +529,7 @@ public class Program
 					};
 				}
 
-				ulong numSolutions = solver.CountSolutions(maxSolutions: MaxSolutionCount, multiThread: MultiThread, progressEvent: (ulong count) =>
+				long numSolutions = solver.CountSolutions(maxSolutions: MaxSolutionCount, multiThread: MultiThread, progressEvent: (long count) =>
 				{
 					ReplaceLine($"(In progress) Found {count} solutions in {watch.Elapsed}.");
 				},
@@ -515,7 +570,7 @@ public class Program
 		if (Check)
 		{
 			Console.WriteLine("Checking...");
-			ulong numSolutions = solver.CountSolutions(2, MultiThread);
+			long numSolutions = solver.CountSolutions(2, MultiThread);
 			Console.WriteLine($"There are {(numSolutions <= 1 ? numSolutions.ToString() : "multiple")} solutions.");
 		}
 
