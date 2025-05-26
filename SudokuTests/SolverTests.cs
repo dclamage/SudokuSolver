@@ -95,7 +95,7 @@ public class SolverTests
                 "knight",
                 "difference:neg1",
         });
-        Assert.AreEqual(72ul, solver.CountSolutions(multiThread: true));
+        Assert.AreEqual(72, solver.CountSolutions(multiThread: true));
     }
 
     [TestMethod]
