@@ -66,11 +66,11 @@ jobs:
             archive_filename_suffix: linux-x64
           - rid: osx-x64
             os_folder: OSX
-            archive_ext: tar.gz
+            archive_ext: tar.gz # Or zip if preferred for macOS, adjust archive script accordingly
             archive_filename_suffix: osx-x64
           - rid: osx-arm64
             os_folder: OSX
-            archive_ext: tar.gz
+            archive_ext: tar.gz # Or zip if preferred for macOS, adjust archive script accordingly
             archive_filename_suffix: osx-arm64
     steps:
     - name: Download Workspace
@@ -84,15 +84,17 @@ jobs:
         dotnet-version: 8.0.x
     - name: Set VERSION env var from job output
       run: echo "VERSION=${{ needs.build_and_test.outputs.version }}" >> $GITHUB_ENV
+    - name: Debug env.VERSION
+      run: echo "DEBUG: env.VERSION is '${{ env.VERSION }}'"
     - name: Cache NuGet packages
       uses: actions/cache@v4
       with:
         path: ~/.nuget/packages
-        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}-${{ hashFiles('**/*.csproj') }} # Key might need adjustment if project files are not in root
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}-${{ hashFiles('**/*.csproj') }}
         restore-keys: |
           ${{ runner.os }}-nuget-
     - name: Restore dependencies for publish
-      run: dotnet restore # Restore dependencies in the downloaded workspace
+      run: dotnet restore
     - name: Publish ${{ matrix.rid }}
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r ${{ matrix.rid }} -p:PublishSingleFile=true --self-contained true --no-restore -o publish-${{ matrix.rid }}
     - name: Delete pdbs for ${{ matrix.rid }}
@@ -120,23 +122,33 @@ jobs:
         fi
         echo "ARCHIVE_PATH=$ARCHIVE_NAME" >> $GITHUB_ENV
     - name: Upload Artifact for ${{ matrix.rid }}
+      id: upload_artifact_step
       uses: actions/upload-artifact@v4
       with:
-        name: SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}
+        name: ${{ env.ARCHIVE_PATH }}
         path: ${{ env.ARCHIVE_PATH }}
         compression-level: 0
     - name: Update Job Summary for ${{ matrix.rid }}
-      if: always() # Ensure this step runs to update the summary
+      if: always()
+      shell: bash
       run: |
+        RID_VAL="${{ matrix.rid }}"
+        VERSION_VAL="${{ env.VERSION }}"
+        STATUS_VAL="${{ job.status }}"
+        UPLOAD_ARTIFACT_ID_VAL="${{ steps.upload_artifact_step.outputs.artifact-id }}"
+        ARCHIVE_FILENAME_SUFFIX_VAL="${{ matrix.archive_filename_suffix }}"
+
         echo "---" >> $GITHUB_STEP_SUMMARY
-        echo "### Package: `${{ matrix.rid }}`" >> $GITHUB_STEP_SUMMARY
-        echo "- **Version**: `${{ env.VERSION }}`" >> $GITHUB_STEP_SUMMARY
-        echo "- **Status**: `${{ job.status }}`" >> $GITHUB_STEP_SUMMARY
-        ARTIFACT_NAME_SUMMARY="SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}"
-        if [ "${{ job.status }}" == "success" ] && [ -n "${{ steps.upload_artifact_step.outputs.artifact-id }}" ]; then
-          ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_artifact_step.outputs.artifact-id }}"
-          echo "- **Artifact**: [$ARTIFACT_NAME_SUMMARY]($ARTIFACT_URL)" >> $GITHUB_STEP_SUMMARY
+        echo "### Package: \`$RID_VAL\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: \`$VERSION_VAL\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: \`$STATUS_VAL\`" >> $GITHUB_STEP_SUMMARY
+
+        ARTIFACT_NAME_SHELL="SudokuSolver-$VERSION_VAL-$ARCHIVE_FILENAME_SUFFIX_VAL"
+
+        if [ "$STATUS_VAL" == "success" ] && [ -n "$UPLOAD_ARTIFACT_ID_VAL" ]; then
+          ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/$UPLOAD_ARTIFACT_ID_VAL"
+          echo "- **Artifact**: [$ARTIFACT_NAME_SHELL]($ARTIFACT_URL)" >> $GITHUB_STEP_SUMMARY
         else
-          echo "- **Artifact Name**: `$ARTIFACT_NAME_SUMMARY` (Upload may have been skipped or failed if status is not success)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Name**: \`$ARTIFACT_NAME_SHELL\` (Upload may have been skipped or failed if status is not success. Artifact ID: '$UPLOAD_ARTIFACT_ID_VAL')" >> $GITHUB_STEP_SUMMARY
         fi
         echo "" >> $GITHUB_STEP_SUMMARY
