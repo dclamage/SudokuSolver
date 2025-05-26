@@ -80,7 +80,8 @@ public partial class Solver
                     // does not increment, since it starts at 1
                     countdownEvent.AddCount();
                 }
-                Task.Run(() => {
+                Task.Run(() =>
+                {
                     try
                     {
                         FindSolutionInternal(solver, this);
@@ -117,10 +118,10 @@ public partial class Solver
 
     private static void FindSolutionInternal(Solver root, FindSolutionState state)
     {
-        var stack = new Stack<Solver>();
+        Stack<Solver> stack = new();
         stack.Push(root);
 
-        while (state.result is null && stack.TryPop(out var solver))
+        while (state.result is null && stack.TryPop(out Solver solver))
         {
             state.cancellationToken.ThrowIfCancellationRequested();
             if (state.result != null)
@@ -128,7 +129,7 @@ public partial class Solver
                 continue;
             }
 
-            var logicResult = solver.StepBruteForceLogic();
+            LogicResult logicResult = solver.BruteForcePropagate();
             if (logicResult == LogicResult.PuzzleComplete)
             {
                 state.ReportSolution(solver);
@@ -213,11 +214,7 @@ public partial class Solver
         }
         catch (OperationCanceledException) { }
 
-        if (maxSolutions > 0 && state.numSolutions > maxSolutions)
-        {
-            return maxSolutions;
-        }
-        return state.numSolutions;
+        return maxSolutions > 0 && state.numSolutions > maxSolutions ? maxSolutions : state.numSolutions;
     }
 
     private class CountSolutionsState : IDisposable
@@ -235,7 +232,6 @@ public partial class Solver
 
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
-        private bool maxSolutionsReached;
 
         public CountSolutionsState(long maxSolutions, bool multiThread, Action<long> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken)
         {
@@ -247,17 +243,17 @@ public partial class Solver
             eventTimer = Stopwatch.StartNew();
             countdownEvent = multiThread ? new CountdownEvent(1) : null;
             maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
-            maxSolutionsReached = false;
+            MaxSolutionsReached = false;
         }
 
-        public bool MaxSolutionsReached => maxSolutionsReached;
+        public bool MaxSolutionsReached { get; private set; }
 
         public void IncrementSolutions(Solver solver)
         {
             long newNumSolutions = Interlocked.Increment(ref numSolutions);
             if (maxSolutions > 0 && newNumSolutions >= maxSolutions)
             {
-                maxSolutionsReached = true;
+                MaxSolutionsReached = true;
                 return;
             }
 
@@ -286,7 +282,8 @@ public partial class Solver
                     // does not increment, since it starts at 1
                     countdownEvent.AddCount();
                 }
-                Task.Run(() => {
+                Task.Run(() =>
+                {
                     try
                     {
                         CountSolutionsInternal(solver, this);
@@ -322,14 +319,14 @@ public partial class Solver
     {
         bool isMultithreaded = state.multiThread;
 
-        var stack = new Stack<Solver>();
+        Stack<Solver> stack = new();
         stack.Push(root);
 
-        while (stack.TryPop(out var solver) && !state.MaxSolutionsReached)
+        while (stack.TryPop(out Solver solver) && !state.MaxSolutionsReached)
         {
             state.cancellationToken.ThrowIfCancellationRequested();
 
-            var logicResult = solver.StepBruteForceLogic();
+            LogicResult logicResult = solver.BruteForcePropagate();
             if (logicResult == LogicResult.PuzzleComplete)
             {
                 state.IncrementSolutions(solver);
@@ -513,7 +510,8 @@ public partial class Solver
                     // does not increment, since it starts at 1
                     countdownEvent.AddCount();
                 }
-                Task.Run(() => {
+                Task.Run(() =>
+                {
                     try
                     {
                         TrueCandidatesInternal(solver, this);
@@ -548,7 +546,7 @@ public partial class Solver
     private bool TrueCandidatesSinglesPass(TrueCandidatesState state)
     {
         // Depth 0 pass to see if it's trivially invalid, solved, or useless
-        var logicResult = BruteForcePropogate();
+        LogicResult logicResult = BruteForcePropagate();
         if (logicResult == LogicResult.Invalid)
         {
             return false;
@@ -558,12 +556,7 @@ public partial class Solver
             state.IncrementSolutions(this);
             return false;
         }
-        if (!state.IsUseful(this))
-        {
-            return false;
-        }
-
-        return true;
+        return state.IsUseful(this);
     }
 
     private static void TrueCandidatesInternal(Solver root, TrueCandidatesState state)
@@ -572,7 +565,7 @@ public partial class Solver
         bool isMultithreaded = state.multiThread;
         Stack<Solver> stack = new();
         stack.Push(root);
-        while (stack.TryPop(out var solver))
+        while (stack.TryPop(out Solver solver))
         {
             state.cancellationToken.ThrowIfCancellationRequested();
 
@@ -662,5 +655,289 @@ public partial class Solver
                 stack.Push(solver);
             }
         }
+    }
+
+    /// <summary>
+    /// Estimate how many solutions the board has.
+    /// </summary>
+    /// <param name="numIterations">The number of iterations, or 0 to go until canceled.</param>
+    /// <param name="multiThread">Whether to use multiple threads.</param>
+    /// <param name="progressEvent">An event to receive the estimate as it improves plus the standard error metric.</param>
+    /// <param name="cancellationToken">Pass in to support cancelling the count.</param>
+    public void EstimateSolutions(long numIterations, Action<(double estimate, double stderr, long iterations)> progressEvent, bool multiThread = false, CancellationToken cancellationToken = default)
+    {
+        if (seenMap == null)
+        {
+            throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+        }
+
+        // Any negative count is treated as infinite
+        numIterations = Math.Max(numIterations, 0);
+        if (numIterations == 0)
+        {
+            numIterations = long.MaxValue;
+        }
+
+        EstimateSolutionsState state = new(multiThread, progressEvent, cancellationToken);
+        try
+        {
+            Solver root = Clone(willRunNonSinglesLogic: true);
+            if (root.DiscoverWeakLinks() == LogicResult.Invalid)
+            {
+                progressEvent((0, 0, 0));
+                return;
+            }
+            root.isBruteForcing = true;
+            if (state.multiThread && Environment.ProcessorCount > 1)
+            {
+                ParallelOptions options = new()
+                {
+                    CancellationToken = cancellationToken,
+                    MaxDegreeOfParallelism = Environment.ProcessorCount - 1
+                };
+
+                Parallel.For(0, numIterations, options, (_) =>
+                {
+                    Solver solver = root.Clone(willRunNonSinglesLogic: false);
+                    EstimateSolutionsInternal(solver, state);
+                });
+            }
+            else
+            {
+                for (long i = 0; i < numIterations; i++)
+                {
+                    Solver solver = root.Clone(willRunNonSinglesLogic: false);
+                    EstimateSolutionsInternal(root, state);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+
+        state.SendEvent();
+    }
+
+    private class EstimateSolutionsState
+    {
+        public readonly bool multiThread;
+        public readonly Action<(double estimate, double stderr, long iterations)> progressEvent;
+        public readonly CancellationToken cancellationToken;
+        public readonly CountdownEvent countdownEvent;
+        private readonly Stopwatch eventTimer;
+
+        private readonly object estimateLock = new();
+        private double currentEstimate = 0.0;
+        private long iterationsCompleted = 0;
+        private double m2 = 0.0; // Σ (xi-μ)²   for Welford
+
+        public EstimateSolutionsState(bool multiThread, Action<(double estimate, double stderr, long iterations)> progressEvent, CancellationToken cancellationToken)
+        {
+            this.multiThread = multiThread;
+            this.progressEvent = progressEvent;
+            this.cancellationToken = cancellationToken;
+            eventTimer = Stopwatch.StartNew();
+            countdownEvent = multiThread ? new CountdownEvent(1) : null;
+        }
+
+        public void NewSample(double sample)
+        {
+            lock (estimateLock)
+            {
+                iterationsCompleted++;
+                double delta = sample - currentEstimate;
+                currentEstimate += delta / iterationsCompleted;   // new μ
+                m2 += delta * (sample - currentEstimate);         // update Σ (xi-μ)²
+
+                if (eventTimer.ElapsedMilliseconds > 500)
+                {
+                    SendEvent();
+                    eventTimer.Restart();
+                }
+            }
+        }
+
+        public void SendEvent()
+        {
+            double stderr = iterationsCompleted > 1
+                ? Math.Sqrt(m2 / (iterationsCompleted - 1) / iterationsCompleted)
+                : double.PositiveInfinity;
+
+            progressEvent?.Invoke((currentEstimate, stderr, iterationsCompleted));
+        }
+    }
+
+    private static void EstimateSolutionsInternal(Solver root, EstimateSolutionsState state)
+    {
+        const int tinyBranchThreshold = 25;   // "exact" cut-off
+        const double uniformMix = 0.30; // α
+        Random rng = ThreadLocalRandom.Instance;
+
+        int maxVal = root.MAX_VALUE;
+        bool[] isExact = new bool[maxVal];
+        double[] heuristic = new double[maxVal];
+        double[] probCache = new double[maxVal];
+        Solver[] childSolvers = new Solver[maxVal];
+
+        Stack<EstimationFrame> stack = new(capacity: 64);
+        stack.Push(new EstimationFrame(root, PathProb: 1.0, ExactOffset: 0.0));
+
+        while (stack.Count > 0)
+        {
+            state.cancellationToken.ThrowIfCancellationRequested();
+            EstimationFrame frame = stack.Pop();
+
+            Solver solver = frame.Board;
+            double pathProb = frame.PathProb;
+            double exactCarry = frame.ExactOffset;
+
+            //------------------------------------------------------------
+            // 1.  Propagate singles
+            //------------------------------------------------------------
+            LogicResult lr = solver.BruteForcePropagate();
+            if (lr == LogicResult.Invalid)
+            {
+                state.NewSample(exactCarry); // contributes 0
+                return;
+            }
+            if (lr == LogicResult.PuzzleComplete)
+            {
+                state.NewSample(exactCarry + 1.0 / pathProb);
+                return;
+            }
+
+            //------------------------------------------------------------
+            // 2.  Choose MRV cell
+            //------------------------------------------------------------
+            (int cell, _) = solver.GetLeastCandidateCell(allowBilocals: false);
+            if (cell < 0)
+            {
+                // Defensive: treat as solved
+                state.NewSample(exactCarry + 1.0 / pathProb);
+                return;
+            }
+
+            //------------------------------------------------------------
+            // 3.  Build weights & exact subtotals
+            //------------------------------------------------------------
+            uint cellMask = solver.board[cell];
+            double H = 0.0;
+            int kOpen = 0;
+            double exactSum = 0.0;
+
+            Array.Clear(heuristic);
+            Array.Clear(childSolvers);
+
+            for (int val = 1; val <= solver.MAX_VALUE; val++)
+            {
+                int idx = val - 1;
+
+                if ((cellMask & ValueMask(val)) == 0)
+                {
+                    // digit forbidden
+                    continue;
+                }
+
+                Solver childSolver = solver.Clone(willRunNonSinglesLogic: false);
+                if (!childSolver.SetValue(cell, val))
+                {
+                    // contradiction
+                    continue;
+                }
+
+                LogicResult childResult = childSolver.BruteForcePropagate();
+                if (childResult == LogicResult.Invalid)
+                {
+                    // contradiction
+                    continue;
+                }
+                if (childResult == LogicResult.PuzzleComplete)
+                {
+                    // solved instantly
+                    exactSum += 1.0;
+                    continue;
+                }
+
+                int remaining = childSolver.CountCandidatesForNonGivens();
+                if (remaining <= tinyBranchThreshold)
+                {
+                    // exact enumeration for tiny branch
+                    long exactCnt = childSolver.CountSolutions(cancellationToken: state.cancellationToken);
+                    exactSum += exactCnt;
+                    continue;
+                }
+
+                // --- Monte-Carlo child ---
+                childSolvers[idx] = childSolver;
+                heuristic[idx] = remaining; // h_i
+                H += remaining;
+                kOpen++;
+            }
+
+            //------------------------------------------------------------
+            // 4.  If no MC children left, emit deterministic total
+            //------------------------------------------------------------
+            if (kOpen == 0)
+            {
+                state.NewSample(exactCarry + exactSum / pathProb);
+                return;
+            }
+
+            //------------------------------------------------------------
+            // 5.  Convert h_i to probabilities
+            //------------------------------------------------------------
+            for (int idx = 0; idx < maxVal; idx++)
+            {
+                if (heuristic[idx] == 0) { probCache[idx] = 0; continue; }
+
+                probCache[idx] = uniformMix / kOpen
+                               + (1.0 - uniformMix) * (heuristic[idx] / H);
+            }
+
+            //------------------------------------------------------------
+            // 6.  Roulette-wheel selection
+            //------------------------------------------------------------
+            double r = rng.NextDouble();
+            double acc = 0.0;
+            int chosenIdx = -1;
+
+            for (int idx = 0; idx < maxVal; idx++)
+            {
+                if (probCache[idx] == 0)
+                {
+                    continue;
+                }
+
+                acc += probCache[idx];
+
+                if (r <= acc || idx == maxVal - 1) // fallback on last open child
+                {
+                    chosenIdx = idx;
+                    break;
+                }
+            }
+
+            int chosenVal = chosenIdx + 1;
+
+            //------------------------------------------------------------
+            // 7.  Recurse on chosen child
+            //------------------------------------------------------------
+            double newExactCarry = exactCarry + exactSum / pathProb;
+            double newPathProb = pathProb * probCache[chosenIdx];
+            stack.Push(new EstimationFrame(childSolvers[chosenIdx], newPathProb, newExactCarry));
+        }
+    }
+
+    // Frame record used by the explicit stack
+    private readonly record struct EstimationFrame(
+        Solver Board,
+        double PathProb,
+        double ExactOffset);
+
+
+    // Simple ThreadLocal RNG to avoid Guid overhead
+    private static class ThreadLocalRandom
+    {
+        public static readonly ThreadLocal<Random> _rng =
+            new(() => new Random(unchecked(Environment.TickCount * 31 + Thread.CurrentThread.ManagedThreadId)));
+        public static Random Instance => _rng.Value!;
     }
 }

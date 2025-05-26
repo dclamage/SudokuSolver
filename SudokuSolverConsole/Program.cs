@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Text;
 using McMaster.Extensions.CommandLineUtils;
 using SudokuSolver;
 
@@ -23,13 +24,19 @@ public class Program
 
         app.HelpOption();
 
-		var blankGridSize = app.Option<int>("-b|--blank", "Use a blank grid of a square size.", CommandOptionType.SingleValue)
+        // Info
+        var listConstraints = app.Option("--list-constraints", "List all available constraints.", CommandOptionType.NoValue);
+
+        // Board input
+        var blankGridSize = app.Option<int>("-b|--blank", "Use a blank grid of a square size.", CommandOptionType.SingleValue)
 			.Accepts(v => v.Range(1, 31));
-		var givens = app.Option("-g|--givens", "Provide a digit string to represent the givens for the puzzle.", CommandOptionType.SingleValue);
+		var blankWithR1 = app.Option("--blank-with-r1", "Use a blank grid of a square size, but fill the first row with the given values.", CommandOptionType.SingleValue);
+        var givens = app.Option("-g|--givens", "Provide a digit string to represent the givens for the puzzle.", CommandOptionType.SingleValue);
 		var candidates = app.Option("-a|--candidates", "Provide a candidate string of height^3 numbers.", CommandOptionType.SingleValue);
 		var fpuzzlesURL = app.Option("-f|--fpuzzles", "Import a full f-puzzles URL (Everything after '?load=').", CommandOptionType.SingleValue);
 		var constraints = app.Option("-c|--constraint", "Provide a constraint to use.", CommandOptionType.MultipleValue);
-		var print = app.Option("-p|--print", "Print the input board.", CommandOptionType.NoValue);
+
+		// Solver actions
 		var solveBruteForce = app.Option("-s|--solve", "Provide a single brute force solution.", CommandOptionType.NoValue);
 		var solveRandomBruteForce = app.Option("-d|--random", "Provide a single random brute force solution.", CommandOptionType.NoValue);
 		var solveLogically = app.Option("-l|--logical", "Attempt to solve the puzzle logically.", CommandOptionType.NoValue);
@@ -44,12 +51,19 @@ public class Program
             "Count the total number of solutions. " +
             "By default, the count is uncapped. Use -x to set a limit.",
             CommandOptionType.NoValue);
-        var maxSolutionCount = app.Option<long>("-x|--maxcount",
-			"Set a maximum number of solutions to consider. " +
-			"When used with --solutioncount, this limits the total count. " +
-			"When used with --truecandidates, this caps the count per candidate. " +
-			"Defaults: uncapped for solution count, 1 per candidate for true candidates.",
+		var estimateCount = app.Option<long>("-e|--estimatecount",
+			"Estimate the number of solutions using a Monte-Carlo technique. " +
+			"Specify the number of iterations to do, or 0 to go forever.",
 			CommandOptionType.SingleValue);
+        var listen = app.Option("--listen", "Listen for websocket connections.", CommandOptionType.NoValue);
+
+        // Options
+        var maxSolutionCount = app.Option<long>("-x|--maxcount",
+            "Set a maximum number of solutions to consider. " +
+            "When used with --solutioncount, this limits the total count. " +
+            "When used with --truecandidates, this caps the count per candidate. " +
+            "Defaults: uncapped for solution count, 1 per candidate for true candidates.",
+            CommandOptionType.SingleValue);
         var multiThread = app.Option("-t|--multithread", "Use multithreading.", CommandOptionType.NoValue);
         var outputPath = app.Option("-o|--out",
             "Write solution(s) to a file. " +
@@ -60,13 +74,12 @@ public class Program
 		var sortSolutionCount = app.Option("-z|--sort", "Sort the solution count (requires reading all solutions into memory).", CommandOptionType.NoValue);
 		var fpuzzlesOut = app.Option("-u|--url", "Write solution as f-puzzles URL.", CommandOptionType.NoValue);
 		var visitURL = app.Option("-v|--visit", "Automatically visit the output URL with default browser (combine with -u).", CommandOptionType.NoValue);
-		var listen = app.Option("--listen", "Listen for websocket connections.", CommandOptionType.NoValue);
 		var listenSingleThreaded = app.Option("--listen-singlethreaded", "Option to force all websocket commands to execute single threaded.", CommandOptionType.NoValue);
 		var port = app.Option<int>("--port", "Change the listen port for websocket connections (default 4545)", CommandOptionType.SingleValue)
 			.Accepts(v => v.Range(1024, 49151));
 		port.DefaultValue = 4545;
-        var listConstraints = app.Option("--list-constraints", "List all available constraints.", CommandOptionType.NoValue);
         var hideBanner = app.Option("--hide-banner", "Do not show the text with app version and support links.", CommandOptionType.NoValue);
+		var print = app.Option("-p|--print", "Print the input board.", CommandOptionType.NoValue);
         var verbose = app.Option("--verbose", "Print verbose logs.", CommandOptionType.NoValue);
         var jsonOutput = app.Option("--json", "Output results as JSON, suppress all other output.", CommandOptionType.NoValue);
         var jsonProgress = app.Option("--json-progress", "Output progress as JSON objects (default off).", CommandOptionType.NoValue);
@@ -76,6 +89,7 @@ public class Program
 			Program program = new()
 			{
 				BlankGridSize = blankGridSize.ParsedValue,
+				BlankWithR1 = blankWithR1.Value(),
                 Givens = givens.Value(),
                 Candidates = candidates.Value(),
                 FpuzzlesURL = fpuzzlesURL.Value(),
@@ -89,6 +103,8 @@ public class Program
                 SolutionCount = solutionCount.HasValue(),
                 MaxSolutionCount = maxSolutionCount.HasValue() || !trueCandidates.HasValue() ? maxSolutionCount.ParsedValue : 1,
                 MultiThread = multiThread.HasValue(),
+				EstimateCount = estimateCount.HasValue(),
+				EstimateCountIterations = estimateCount.ParsedValue,
                 OutputPath = outputPath.Value(),
                 SortSolutionCount = sortSolutionCount.HasValue(),
                 FpuzzlesOut = fpuzzlesOut.HasValue(),
@@ -111,6 +127,7 @@ public class Program
 
 	// Input board options
 	public required int BlankGridSize { get; init; }
+	public required string BlankWithR1 { get; init; }
     public required string Givens { get; init; }
     public required string Candidates { get; init; }
     public required string FpuzzlesURL { get; init; }
@@ -128,8 +145,10 @@ public class Program
     public required bool SolutionCount { get; init; }
     public required long MaxSolutionCount { get; init; }
     public required bool MultiThread { get; init; }
+    public required bool EstimateCount { get; init; }
+	public required long EstimateCountIterations { get; init; }
 
-	// Post-solve options
+    // Post-solve options
     public required string OutputPath { get; init; }
     public required bool SortSolutionCount { get; init; }
     public required bool FpuzzlesOut { get; init; }
@@ -171,12 +190,6 @@ public class Program
 		Stopwatch watch = Stopwatch.StartNew();
 		string processName = Process.GetCurrentProcess().ProcessName;
 
-        if (JsonOutput)
-        {
-            JsonResultHandler.HandleJsonOutput(this, cancellationToken);
-            return 0;
-        }
-
 		if (!HideBanner)
 		{
 			Console.WriteLine("------------------------------------");
@@ -206,9 +219,10 @@ public class Program
 		bool haveFPuzzlesURL = !string.IsNullOrWhiteSpace(FpuzzlesURL);
 		bool haveGivens = !string.IsNullOrWhiteSpace(Givens);
 		bool haveBlankGridSize = BlankGridSize >= 1 && BlankGridSize <= 31;
+		bool haveBlankWithR1 = !string.IsNullOrWhiteSpace(BlankWithR1);
 		bool haveCandidates = !string.IsNullOrWhiteSpace(Candidates);
 		// If no board input is specified, default to listen mode
-		if (!Listen && !haveFPuzzlesURL && !haveGivens && !haveBlankGridSize && !haveCandidates)
+		if (!Listen && !haveFPuzzlesURL && !haveGivens && !haveBlankGridSize && !haveBlankWithR1 && !haveCandidates)
 		{
 			defaultToListen = true;
 			Console.WriteLine("INFO: No board input was specified, defaulting to --listen");
@@ -255,6 +269,10 @@ public class Program
 		{
 			numBoardsSpecified++;
 		}
+		if (haveBlankWithR1)
+		{
+			numBoardsSpecified++;
+		}
 		if (haveCandidates)
 		{
 			numBoardsSpecified++;
@@ -262,7 +280,13 @@ public class Program
 
 		if (numBoardsSpecified != 1)
 		{
-			Console.WriteLine($"ERROR: Cannot provide more than one set of givens (f-puzzles URL, given string, blank grid, candidates).");
+			string errMsg = "ERROR: Cannot provide more than one set of givens (f-puzzles URL, given string, blank grid, candidates).";
+			if (JsonOutput)
+			{
+				JsonResultHandler.OutputError(errMsg);
+				return 1;
+			}
+			Console.WriteLine(errMsg);
 			Console.WriteLine($"Try '{processName} --help' for more information.");
 			return 1;
 		}
@@ -292,10 +316,20 @@ public class Program
 		{
 			numSolveStepsSpecified++;
 		}
+		if (EstimateCount)
+		{
+            numSolveStepsSpecified++;
+		}
 
 		if (numSolveStepsSpecified == 0)
 		{
-			Console.WriteLine($"ERROR: No solve command specified (e.g. --solve, --logical, --check, --solutioncount).");
+			string errMsg = "ERROR: No solve command specified (e.g. --solve, --logical, --check, --solutioncount, --estimatecount).";
+			if (JsonOutput)
+			{
+				JsonResultHandler.OutputError(errMsg);
+				return 1;
+			}
+			Console.WriteLine(errMsg);
 			Console.WriteLine($"Try '{processName} --help' for more information.");
 			return 1;
 		}
@@ -307,7 +341,29 @@ public class Program
 			{
 				solver = SolverFactory.CreateBlank(BlankGridSize, Constraints);
 			}
-			else if (haveGivens)
+			else if (haveBlankWithR1)
+			{
+				StringBuilder givens = new();
+				givens.Append(BlankWithR1);
+				if (BlankWithR1.Length <= 9)
+				{
+					for (int i = 0; i < BlankWithR1.Length * (BlankWithR1.Length - 1); i++)
+					{
+						givens.Append('0');
+					}
+				}
+				else
+				{
+					int gridSize = BlankWithR1.Length / 2;
+                    for (int i = 0; i < gridSize * (gridSize - 1); i++)
+                    {
+                        givens.Append('0');
+                        givens.Append('0');
+                    }
+                }
+                solver = SolverFactory.CreateFromGivens(givens.ToString(), Constraints);
+            }
+            else if (haveGivens)
 			{
 				solver = SolverFactory.CreateFromGivens(Givens, Constraints);
 			}
@@ -323,11 +379,22 @@ public class Program
 		}
 		catch (Exception e)
 		{
+			if (JsonOutput)
+			{
+				JsonResultHandler.OutputError(e.Message);
+				return 1;
+			}
 			Console.WriteLine(e.Message);
 			return 1;
 		}
 
-		if (Print)
+        if (JsonOutput)
+        {
+            JsonResultHandler.HandleJsonOutput(this, solver, cancellationToken);
+            return 0;
+        }
+
+        if (Print)
 		{
 			Console.WriteLine("Input puzzle:");
 			solver.Print();
@@ -529,7 +596,7 @@ public class Program
 					};
 				}
 
-				long numSolutions = solver.CountSolutions(maxSolutions: MaxSolutionCount, multiThread: MultiThread, progressEvent: (long count) =>
+				long numSolutions = solver.CountSolutions(maxSolutions: MaxSolutionCount, multiThread: MultiThread, cancellationToken: cancellationToken, progressEvent: (long count) =>
 				{
 					ReplaceLine($"(In progress) Found {count} solutions in {watch.Elapsed}.");
 				},
@@ -567,7 +634,36 @@ public class Program
 			}
 		}
 
-		if (Check)
+        if (EstimateCount)
+        {
+            Console.WriteLine("Estimating solution count...");
+
+            try
+            {
+                solver.EstimateSolutions(numIterations: EstimateCountIterations, multiThread: MultiThread, cancellationToken: cancellationToken, progressEvent: (progressData) =>
+                {
+                    // 95% confidence multiplier for a normal distribution
+                    const double z95 = 1.96;
+
+                    double estimate = progressData.estimate;
+                    double stderr = progressData.stderr;
+					long iterations = progressData.iterations;
+
+                    double lower = estimate - z95 * stderr;
+                    double upper = estimate + z95 * stderr;
+                    double relErrPercent = 100.0 * (z95 * stderr) / estimate;
+
+					string iterationsStr = EstimateCountIterations <= 0 ? "inf" : EstimateCountIterations.ToString();
+                    Console.WriteLine($"[{watch.Elapsed}] Estimate after {iterations} / {iterationsStr} iterations: {estimate:E6}  (95% CI: {lower:E6} – {upper:E6}, ±{relErrPercent:F2}%)");
+                });
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine($"ERROR: {e.Message}");
+            }
+        }
+
+        if (Check)
 		{
 			Console.WriteLine("Checking...");
 			long numSolutions = solver.CountSolutions(2, MultiThread);
