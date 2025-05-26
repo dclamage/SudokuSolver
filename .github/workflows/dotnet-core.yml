@@ -52,25 +52,21 @@ jobs:
     strategy:
       matrix:
         include:
+          # archive_ext is no longer needed here as we always produce a .zip via the upload action
           - rid: win-x64
             os_folder: Windows
-            archive_ext: zip # For Windows
             archive_filename_suffix: win-x64
           - rid: win-arm64
             os_folder: Windows
-            archive_ext: zip # For Windows
             archive_filename_suffix: win-arm64
           - rid: linux-x64
             os_folder: Linux
-            archive_ext: tar.gz # For Linux
             archive_filename_suffix: linux-x64
           - rid: osx-x64
             os_folder: OSX
-            archive_ext: tar.gz # For macOS
             archive_filename_suffix: osx-x64
           - rid: osx-arm64
             os_folder: OSX
-            archive_ext: tar.gz # For macOS
             archive_filename_suffix: osx-arm64
     steps:
     - name: Download Workspace
@@ -100,12 +96,17 @@ jobs:
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r ${{ matrix.rid }} -p:PublishSingleFile=true --self-contained true --no-restore -o publish-${{ matrix.rid }}
     - name: Delete pdbs for ${{ matrix.rid }}
       run: rm -f ./publish-${{ matrix.rid }}/*.pdb
-    - name: Archive ${{ matrix.rid }} # Renamed and modified
+    - name: Prepare Package Directory for ${{ matrix.rid }}
       run: |
-        ARCHIVE_NAME="SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}.${{ matrix.archive_ext }}"
         PACKAGE_DIR="package-${{ matrix.rid }}"
         mkdir -p "$PACKAGE_DIR"
         
+        # Ensure execute permissions for the published app if necessary (dotnet publish usually handles this)
+        # For example, if your main executable is SudokuSolverConsole:
+        # if [ -f "./publish-${{ matrix.rid }}/SudokuSolverConsole" ] && [[ "${{ matrix.rid }}" == *"osx"* || "${{ matrix.rid }}" == *"linux"* ]]; then
+        #   chmod +x "./publish-${{ matrix.rid }}/SudokuSolverConsole"
+        # fi
+
         cp -r ./publish-${{ matrix.rid }}/* "$PACKAGE_DIR/"
         
         if [ -d "./UserScripts" ] && [ -n "$(ls -A ./UserScripts 2>/dev/null)" ]; then
@@ -115,21 +116,15 @@ jobs:
         if [ -d "./${{ matrix.os_folder }}" ] && [ -n "$(ls -A ./${{ matrix.os_folder }} 2>/dev/null)" ]; then
           cp -r ./${{ matrix.os_folder }}/* "$PACKAGE_DIR/"
         fi
-        
-        echo "Creating archive: $ARCHIVE_NAME"
-        if [ "${{ matrix.archive_ext }}" = "zip" ]; then
-          (cd "$PACKAGE_DIR" && zip -q -r "../$ARCHIVE_NAME" .)
-        else # For tar.gz
-          (cd "$PACKAGE_DIR" && tar -cpzf "../$ARCHIVE_NAME" .) # -p preserves permissions
-        fi
-        echo "ARCHIVE_PATH=$ARCHIVE_NAME" >> $GITHUB_ENV
-        echo "Archive created at $ARCHIVE_NAME"
+        echo "PACKAGE_DIR_PATH=$PACKAGE_DIR" >> $GITHUB_ENV # Output the directory path to be uploaded
+        echo "Prepared package directory: $PACKAGE_DIR"
     - name: Upload Artifact for ${{ matrix.rid }}
       id: upload_artifact_step
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.ARCHIVE_PATH }} # Use the exact archive filename
-        path: ${{ env.ARCHIVE_PATH }} # Path to the specific archive file
+        # The action will append .zip to this name as it's uploading a directory
+        name: SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}
+        path: ${{ env.PACKAGE_DIR_PATH }} # Path to the directory to be zipped by the action
         if-no-files-found: error
     - name: Update Job Summary for ${{ matrix.rid }}
       if: always()
@@ -139,9 +134,8 @@ jobs:
         VERSION_VAL="${{ env.VERSION }}"
         STATUS_VAL="${{ job.status }}"
         UPLOAD_ARTIFACT_ID_VAL="${{ steps.upload_artifact_step.outputs.artifact-id }}"
-        # Construct the artifact name as it appears in the UI
-        # This will now be the actual filename, e.g., SudokuSolver-1.2.137-linux-x64.tar.gz
-        ARTIFACT_DISPLAY_NAME="${{ env.ARCHIVE_PATH }}" # Use the actual archive path from the previous step
+        # Construct the artifact name as it will appear in the UI (action appends .zip)
+        ARTIFACT_DISPLAY_NAME="SudokuSolver-$VERSION_VAL-${{ matrix.archive_filename_suffix }}.zip"
 
         echo "---" >> $GITHUB_STEP_SUMMARY
         echo "### Package: \`$RID_VAL\`" >> $GITHUB_STEP_SUMMARY
