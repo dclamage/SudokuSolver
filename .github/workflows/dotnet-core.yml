@@ -5,10 +5,10 @@ on:
     branches: [ master, dev ]
 
 jobs:
-  build:
-
+  build_and_test:
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.set_vars.outputs.version_number }}
     steps:
     - uses: actions/checkout@v4
     - name: Setup .NET
@@ -16,77 +16,127 @@ jobs:
       with:
         dotnet-version: 8.0.x
     - name: Set variables
+      id: set_vars
       run: |
-        VER=$(cat VERSION)
-        echo "VERSION=$VER" >> $GITHUB_ENV
-    - name: Update version
+        BASE_VER=$(cat VERSION)
+        MAJOR_MINOR=$(echo "$BASE_VER" | cut -d. -f1,2)
+        VERSION_NUMBER="${MAJOR_MINOR}.${{ github.run_number }}"
+        echo "VERSION=${VERSION_NUMBER}" >> $GITHUB_ENV
+        echo "version_number=${VERSION_NUMBER}" >> $GITHUB_OUTPUT
+    - name: Update version in files
       run: |
         sed -i 's/version = .*;/version = \"${{ env.VERSION }}\";/' ./SudokuSolver/Version.cs
         find . -type f -name '*.user.js' | xargs sed -i -E 's/(@version[ \t]*).*/\1${{ env.VERSION }}/'
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
     - name: Restore dependencies
       run: dotnet restore
     - name: Build
       run: dotnet build --nologo --configuration Release --no-restore
     - name: Test
       run: dotnet test --nologo --configuration Release --no-build --verbosity normal
-    - name: Publish win-x64
-      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r win-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-win-x64
-    - name: Delete pdbs
-      run: rm ./publish-win-x64/*.pdb
-    - name: Zip win-x64
-      run: zip -q -j -r SudokuSolver-${{ env.VERSION }}-win-x64.zip publish-win-x64 UserScripts Windows
-    - name: Publish win-arm64
-      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r win-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-win-arm64
-    - name: Delete pdbs
-      run: rm ./publish-win-arm64/*.pdb
-    - name: Zip win-arm64
-      run: zip -q -j -r SudokuSolver-${{ env.VERSION }}-win-arm64.zip publish-win-arm64 UserScripts Windows
-    - name: Publish linux-x64
-      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r linux-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-linux-x64
-    - name: Delete pdbs
-      run: rm ./publish-linux-x64/*.pdb
-    - name: tar linux-x64
-      run: |
-        shopt -s dotglob
-        mkdir package-linux-x64
-        cp -r ./publish-linux-x64/* ./package-linux-x64
-        cp -r ./UserScripts/* ./package-linux-x64
-        cp -r ./Linux/* ./package-linux-x64
-        cd package-linux-x64
-        tar -cpzf ../SudokuSolver-${{ env.VERSION }}-linux-x64.tar.gz *
-        cd ..
-    - name: Publish osx-x64
-      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx-x64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-x64
-    - name: Delete pdbs
-      run: rm ./publish-osx-x64/*.pdb
-    - name: tar osx-x64
-      run: |
-        shopt -s dotglob
-        mkdir package-osx-x64
-        cp -r ./publish-osx-x64/* ./package-osx-x64
-        cp -r ./UserScripts/* ./package-osx-x64
-        cp -r ./OSX/* ./package-osx-x64
-        cd package-osx-x64
-        tar -cpzf ../SudokuSolver-${{ env.VERSION }}-osx-x64.tar.gz *
-        cd ..
-    - name: Publish osx-arm64
-      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r osx-arm64 -p:PublishSingleFile=true --self-contained true --no-restore -o publish-osx-arm64
-    - name: Delete pdbs
-      run: rm ./publish-osx-arm64/*.pdb
-    - name: tar osx-arm
-      run: |
-        shopt -s dotglob
-        mkdir package-osx-arm64
-        cp -r ./publish-osx-arm64/* ./package-osx-arm64
-        cp -r ./UserScripts/* ./package-osx-arm64
-        cp -r ./OSX/* ./package-osx-arm64
-        cd package-osx-arm64
-        tar -cpzf ../SudokuSolver-${{ env.VERSION }}-osx-arm64.tar.gz *
-        cd ..
-    - uses: actions/upload-artifact@v4
+    - name: Upload Workspace with Updated Versions
+      uses: actions/upload-artifact@v4
       with:
-        name: SudokuSolver-${{ env.VERSION }}
-        path: |
-          SudokuSolver-${{ env.VERSION }}*.zip
-          SudokuSolver-${{ env.VERSION }}*.tar.gz
+        name: workspace
+        path: . # Upload the whole workspace, including versioned files
+
+  package:
+    runs-on: ubuntu-latest
+    needs: build_and_test
+    strategy:
+      matrix:
+        include:
+          - rid: win-x64
+            os_folder: Windows
+            archive_ext: zip
+            archive_filename_suffix: win-x64
+          - rid: win-arm64
+            os_folder: Windows
+            archive_ext: zip
+            archive_filename_suffix: win-arm64
+          - rid: linux-x64
+            os_folder: Linux
+            archive_ext: tar.gz
+            archive_filename_suffix: linux-x64
+          - rid: osx-x64
+            os_folder: OSX
+            archive_ext: tar.gz
+            archive_filename_suffix: osx-x64
+          - rid: osx-arm64
+            os_folder: OSX
+            archive_ext: tar.gz
+            archive_filename_suffix: osx-arm64
+    steps:
+    - name: Download Workspace
+      uses: actions/download-artifact@v4
+      with:
+        name: workspace
+        path: .
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+    - name: Set VERSION env var from job output
+      run: echo "VERSION=${{ needs.build_and_test.outputs.version }}" >> $GITHUB_ENV
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}-${{ hashFiles('**/*.csproj') }} # Key might need adjustment if project files are not in root
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+    - name: Restore dependencies for publish
+      run: dotnet restore # Restore dependencies in the downloaded workspace
+    - name: Publish ${{ matrix.rid }}
+      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r ${{ matrix.rid }} -p:PublishSingleFile=true --self-contained true --no-restore -o publish-${{ matrix.rid }}
+    - name: Delete pdbs for ${{ matrix.rid }}
+      run: rm -f ./publish-${{ matrix.rid }}/*.pdb
+    - name: Archive ${{ matrix.rid }}
+      run: |
+        ARCHIVE_NAME="SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}.${{ matrix.archive_ext }}"
+        PACKAGE_DIR="package-${{ matrix.rid }}"
+        mkdir -p "$PACKAGE_DIR"
+        
+        cp -r ./publish-${{ matrix.rid }}/* "$PACKAGE_DIR/"
+        
+        if [ -d "./UserScripts" ] && [ -n "$(ls -A ./UserScripts 2>/dev/null)" ]; then
+          cp -r ./UserScripts/* "$PACKAGE_DIR/"
+        fi
+        
+        if [ -d "./${{ matrix.os_folder }}" ] && [ -n "$(ls -A ./${{ matrix.os_folder }} 2>/dev/null)" ]; then
+          cp -r ./${{ matrix.os_folder }}/* "$PACKAGE_DIR/"
+        fi
+        
+        if [ "${{ matrix.archive_ext }}" = "zip" ]; then
+          (cd "$PACKAGE_DIR" && zip -q -r "../$ARCHIVE_NAME" .)
+        else
+          (cd "$PACKAGE_DIR" && tar -cpzf "../$ARCHIVE_NAME" .)
+        fi
+        echo "ARCHIVE_PATH=$ARCHIVE_NAME" >> $GITHUB_ENV
+    - name: Upload Artifact for ${{ matrix.rid }}
+      uses: actions/upload-artifact@v4
+      with:
+        name: SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}
+        path: ${{ env.ARCHIVE_PATH }}
         compression-level: 0
+    - name: Update Job Summary for ${{ matrix.rid }}
+      if: always() # Ensure this step runs to update the summary
+      run: |
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        echo "### Package: `${{ matrix.rid }}`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: `${{ env.VERSION }}`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: `${{ job.status }}`" >> $GITHUB_STEP_SUMMARY
+        ARTIFACT_NAME_SUMMARY="SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}"
+        if [ "${{ job.status }}" == "success" ] && [ -n "${{ steps.upload_artifact_step.outputs.artifact-id }}" ]; then
+          ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_artifact_step.outputs.artifact-id }}"
+          echo "- **Artifact**: [$ARTIFACT_NAME_SUMMARY]($ARTIFACT_URL)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Artifact Name**: `$ARTIFACT_NAME_SUMMARY` (Upload may have been skipped or failed if status is not success)" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
