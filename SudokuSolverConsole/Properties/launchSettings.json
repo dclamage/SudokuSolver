@@ -13,6 +13,11 @@
       "commandName": "Project",
       "commandLineArgs": "-b=9 -c=difference:neg1 -nt",
       "workingDirectory": "$(SolutionDir)"
+    },
+    "Estimate Blank": {
+      "commandName": "Project",
+      "commandLineArgs": "--blank-with-r1=123456789 --hide-banner --json -t -e=10000 -c=king",
+      "workingDirectory": "$(SolutionDir)"
     }
   }
 }

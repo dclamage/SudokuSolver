@@ -4,7 +4,7 @@ namespace SudokuSolver;
 
 public partial class Solver
 {
-    private (int, int) GetLeastCandidateCell(bool[] ignoreCell = null)
+    private (int, int) GetLeastCandidateCell(bool allowBilocals = true)
     {
         int bestCellIndex = -1;
         int numCandidates = MAX_VALUE + 1;
@@ -22,7 +22,7 @@ public partial class Solver
                 foreach (int cellIndex in group.Cells)
                 {
                     uint cellMask = board[cellIndex];
-                    if (!IsValueSet(cellMask) && (ignoreCell == null || !ignoreCell[cellIndex]))
+                    if (!IsValueSet(cellMask))
                     {
                         int curNumCandidates = ValueCount(cellMask);
                         if (curNumCandidates == 2)
@@ -44,48 +44,25 @@ public partial class Solver
             }
         }
 
-        if (ignoreCell == null)
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
-            for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+            uint cellMask = board[cellIndex];
+            if (!IsValueSet(cellMask))
             {
-                uint cellMask = board[cellIndex];
-                if (!IsValueSet(cellMask))
+                int curNumCandidates = ValueCount(cellMask);
+                if (curNumCandidates == 2)
                 {
-                    int curNumCandidates = ValueCount(cellMask);
-                    if (curNumCandidates == 2)
-                    {
-                        return (cellIndex, 0);
-                    }
-                    if (curNumCandidates < numCandidates)
-                    {
-                        numCandidates = curNumCandidates;
-                        bestCellIndex = cellIndex;
-                    }
+                    return (cellIndex, 0);
                 }
-            }
-        }
-        else
-        {
-            for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
-            {
-                uint cellMask = board[cellIndex];
-                if (!IsValueSet(cellMask) && !ignoreCell[cellIndex])
+                if (curNumCandidates < numCandidates)
                 {
-                    int curNumCandidates = ValueCount(cellMask);
-                    if (curNumCandidates == 2)
-                    {
-                        return (cellIndex, 0);
-                    }
-                    if (curNumCandidates < numCandidates)
-                    {
-                        numCandidates = curNumCandidates;
-                        bestCellIndex = cellIndex;
-                    }
+                    numCandidates = curNumCandidates;
+                    bestCellIndex = cellIndex;
                 }
             }
         }
 
-        if (numCandidates > 3 && ignoreCell == null)
+        if (numCandidates > 3 && allowBilocals)
         {
             var (bCellIndex, bVal) = FindBilocalValue();
             if (bVal > 0)
@@ -178,7 +155,7 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult BruteForcePropogate()
+    private LogicResult BruteForcePropagate()
     {
         bool changed = false;
         while (true)
@@ -241,7 +218,7 @@ public partial class Solver
                     }
 
                     // Run some hand-selected logic until nothing changes
-                    LogicResult curResult = solver.BruteForcePropogate();
+                    LogicResult curResult = solver.BruteForcePropagate();
                     if (curResult == LogicResult.None)
                     {
                         continue;

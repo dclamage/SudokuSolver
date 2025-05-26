@@ -15,7 +15,12 @@ namespace SudokuSolverConsole;
 [JsonSerializable(typeof(LogicalSolveResult))]
 [JsonSerializable(typeof(LogicalStepInfo))]
 [JsonSerializable(typeof(BruteForceSolveResult))]
-[JsonSourceGenerationOptions(DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
+[JsonSerializable(typeof(EstimateResult))]
+[JsonSerializable(typeof(EstimateProgressResult))]
+[JsonSourceGenerationOptions(
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals
+)]
 internal partial class JsonResultContext : JsonSerializerContext
 {
 }
@@ -106,36 +111,54 @@ public class BruteForceSolveResult
     public string solution { get; set; }
     public bool foundSolution { get; set; }
 }
+
+public class EstimateResult
+{
+    public string type { get; set; } = "estimate";
+    public DateTime startTimestamp { get; set; }
+    public DateTime finishTimestamp { get; set; }
+    public double duration { get; set; }
+    public double estimate { get; set; }
+    public double stderr { get; set; }
+    public long iterations { get; set; }
+    public double ci95_lower { get; set; }
+    public double ci95_upper { get; set; }
+    public double relErrPercent { get; set; }
+}
+
+public class EstimateProgressResult
+{
+    public string type { get; set; } = "estimateProgress";
+    public bool isProgress { get; set; } = true;
+    public DateTime timestamp { get; set; }
+    public double duration { get; set; }
+    public double estimate { get; set; }
+    public double stderr { get; set; }
+    public long iterations { get; set; }
+    public double ci95_lower { get; set; }
+    public double ci95_upper { get; set; }
+    public double relErrPercent { get; set; }
+}
 #pragma warning restore IDE1006 // Naming Styles
 
 public static class JsonResultHandler
 {
-    public static void HandleJsonOutput(Program program, CancellationToken cancellationToken)
+    public static void OutputError(string error, DateTime? start = null)
+    {
+        var now = DateTime.UtcNow;
+        OutputJson(new ErrorResult
+        {
+            startTimestamp = start ?? now,
+            finishTimestamp = now,
+            duration = 0.0,
+            error = error
+        });
+    }
+
+    public static void HandleJsonOutput(Program program, Solver solver, CancellationToken cancellationToken)
     {
         DateTime start = DateTime.UtcNow;
         Stopwatch stopwatch = Stopwatch.StartNew();
-        Solver solver;
-        try
-        {
-            solver = program.BlankGridSize is >= 1 and <= 31
-                ? SolverFactory.CreateBlank(program.BlankGridSize, program.Constraints)
-                : !string.IsNullOrWhiteSpace(program.Givens)
-                    ? SolverFactory.CreateFromGivens(program.Givens, program.Constraints)
-                    : !string.IsNullOrWhiteSpace(program.FpuzzlesURL)
-                ? SolverFactory.CreateFromFPuzzles(program.FpuzzlesURL, program.Constraints)
-                : SolverFactory.CreateFromCandidates(program.Candidates, program.Constraints);
-        }
-        catch (Exception e)
-        {
-            OutputJson(new ErrorResult
-            {
-                startTimestamp = start,
-                finishTimestamp = DateTime.UtcNow,
-                duration = 0.0,
-                error = e.Message
-            });
-            return;
-        }
 
         if (program.SolutionCount || program.Check)
         {
@@ -155,6 +178,11 @@ public static class JsonResultHandler
         if (program.SolveBruteForce || program.SolveRandomBruteForce)
         {
             OutputBruteForceSolve(program, solver, start, stopwatch, cancellationToken);
+            return;
+        }
+        if (program.EstimateCount)
+        {
+            OutputEstimate(program, solver, start, stopwatch, cancellationToken);
             return;
         }
         // Add more as needed
@@ -320,6 +348,72 @@ public static class JsonResultHandler
             initialBoard = initialBoard,
             solution = foundSolution ? solver.OutputString : null,
             foundSolution = foundSolution
+        });
+    }
+
+    private static void OutputEstimate(Program program, Solver solver, DateTime start, Stopwatch stopwatch, CancellationToken cancellationToken)
+    {
+        double lastEstimate = 0, lastStderr = 0;
+        long lastIterations = 0;
+        const double z95 = 1.96;
+        Action<(double estimate, double stderr, long iterations)> progressEvent = null;
+        if (program.JsonProgress)
+        {
+            progressEvent = (progressData) =>
+            {
+                double estimate = progressData.estimate;
+                double stderr = progressData.stderr;
+                long iterations = progressData.iterations;
+                double lower = estimate - z95 * stderr;
+                double upper = estimate + z95 * stderr;
+                double relErrPercent = estimate != 0 ? 100.0 * (z95 * stderr) / estimate : 0.0;
+                OutputJson(new EstimateProgressResult
+                {
+                    timestamp = DateTime.UtcNow,
+                    duration = stopwatch.Elapsed.TotalSeconds,
+                    estimate = estimate,
+                    stderr = stderr,
+                    iterations = iterations,
+                    ci95_lower = lower,
+                    ci95_upper = upper,
+                    relErrPercent = relErrPercent
+                });
+                lastEstimate = estimate;
+                lastStderr = stderr;
+                lastIterations = iterations;
+            };
+        }
+        else
+        {
+            // Still capture last values for final output
+            progressEvent = (progressData) =>
+            {
+                lastEstimate = progressData.estimate;
+                lastStderr = progressData.stderr;
+                lastIterations = progressData.iterations;
+            };
+        }
+        solver.EstimateSolutions(
+            numIterations: program.EstimateCountIterations,
+            progressEvent: progressEvent,
+            multiThread: program.MultiThread,
+            cancellationToken: cancellationToken);
+        stopwatch.Stop();
+        DateTime finish = DateTime.UtcNow;
+        double lowerFinal = lastEstimate - z95 * lastStderr;
+        double upperFinal = lastEstimate + z95 * lastStderr;
+        double relErrPercentFinal = lastEstimate != 0 ? 100.0 * (z95 * lastStderr) / lastEstimate : 0.0;
+        OutputJson(new EstimateResult
+        {
+            startTimestamp = start,
+            finishTimestamp = finish,
+            duration = stopwatch.Elapsed.TotalSeconds,
+            estimate = lastEstimate,
+            stderr = lastStderr,
+            iterations = lastIterations,
+            ci95_lower = lowerFinal,
+            ci95_upper = upperFinal,
+            relErrPercent = relErrPercentFinal
         });
     }
 

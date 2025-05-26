@@ -729,4 +729,18 @@ public partial class Solver
             UnionWeakLinks(outElims, curElims);
         }
     }
+
+    internal int CountCandidatesForNonGivens()
+    {
+        int count = 0;
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+        {
+            uint mask = board[cellIndex];
+            if (!IsValueSet(mask))
+            {
+                count += ValueCount(mask);
+            }
+        }
+        return count;
+    }
 }
