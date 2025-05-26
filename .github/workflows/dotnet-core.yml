@@ -54,23 +54,18 @@ jobs:
         include:
           - rid: win-x64
             os_folder: Windows
-            archive_ext: zip
             archive_filename_suffix: win-x64
           - rid: win-arm64
             os_folder: Windows
-            archive_ext: zip
             archive_filename_suffix: win-arm64
           - rid: linux-x64
             os_folder: Linux
-            archive_ext: tar.gz
             archive_filename_suffix: linux-x64
           - rid: osx-x64
             os_folder: OSX
-            archive_ext: tar.gz # Or zip if preferred for macOS, adjust archive script accordingly
             archive_filename_suffix: osx-x64
           - rid: osx-arm64
             os_folder: OSX
-            archive_ext: tar.gz # Or zip if preferred for macOS, adjust archive script accordingly
             archive_filename_suffix: osx-arm64
     steps:
     - name: Download Workspace
@@ -100,9 +95,8 @@ jobs:
       run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r ${{ matrix.rid }} -p:PublishSingleFile=true --self-contained true --no-restore -o publish-${{ matrix.rid }}
     - name: Delete pdbs for ${{ matrix.rid }}
       run: rm -f ./publish-${{ matrix.rid }}/*.pdb
-    - name: Archive ${{ matrix.rid }}
+    - name: Prepare Package Directory for ${{ matrix.rid }}
       run: |
-        ARCHIVE_NAME="SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}.${{ matrix.archive_ext }}"
         PACKAGE_DIR="package-${{ matrix.rid }}"
         mkdir -p "$PACKAGE_DIR"
         
@@ -115,20 +109,14 @@ jobs:
         if [ -d "./${{ matrix.os_folder }}" ] && [ -n "$(ls -A ./${{ matrix.os_folder }} 2>/dev/null)" ]; then
           cp -r ./${{ matrix.os_folder }}/* "$PACKAGE_DIR/"
         fi
-        
-        if [ "${{ matrix.archive_ext }}" = "zip" ]; then
-          (cd "$PACKAGE_DIR" && zip -q -r "../$ARCHIVE_NAME" .)
-        else
-          (cd "$PACKAGE_DIR" && tar -cpzf "../$ARCHIVE_NAME" .)
-        fi
-        echo "ARCHIVE_PATH=$ARCHIVE_NAME" >> $GITHUB_ENV
+        echo "PACKAGE_DIR_PATH=$PACKAGE_DIR" >> $GITHUB_ENV # Output the directory path to be uploaded
     - name: Upload Artifact for ${{ matrix.rid }}
       id: upload_artifact_step
       uses: actions/upload-artifact@v4
       with:
-        name: ${{ env.ARCHIVE_PATH }}
-        path: ${{ env.ARCHIVE_PATH }}
-        compression-level: 0
+        name: SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }} # Artifact name (action adds .zip)
+        path: ${{ env.PACKAGE_DIR_PATH }} # Path to the directory to be zipped by the action
+        if-no-files-found: error # Optional: error out if the directory is empty or not found
     - name: Update Job Summary for ${{ matrix.rid }}
       if: always()
       shell: bash
@@ -137,19 +125,18 @@ jobs:
         VERSION_VAL="${{ env.VERSION }}"
         STATUS_VAL="${{ job.status }}"
         UPLOAD_ARTIFACT_ID_VAL="${{ steps.upload_artifact_step.outputs.artifact-id }}"
-        ARCHIVE_FILENAME_SUFFIX_VAL="${{ matrix.archive_filename_suffix }}"
+        # Construct the artifact name as it appears in the UI (before GitHub adds .zip for download)
+        ARTIFACT_DISPLAY_NAME="SudokuSolver-$VERSION_VAL-${{ matrix.archive_filename_suffix }}"
 
         echo "---" >> $GITHUB_STEP_SUMMARY
         echo "### Package: \`$RID_VAL\`" >> $GITHUB_STEP_SUMMARY
         echo "- **Version**: \`$VERSION_VAL\`" >> $GITHUB_STEP_SUMMARY
         echo "- **Status**: \`$STATUS_VAL\`" >> $GITHUB_STEP_SUMMARY
 
-        ARTIFACT_NAME_SHELL="SudokuSolver-$VERSION_VAL-$ARCHIVE_FILENAME_SUFFIX_VAL"
-
         if [ "$STATUS_VAL" == "success" ] && [ -n "$UPLOAD_ARTIFACT_ID_VAL" ]; then
           ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/$UPLOAD_ARTIFACT_ID_VAL"
-          echo "- **Artifact**: [$ARTIFACT_NAME_SHELL]($ARTIFACT_URL)" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact**: [$ARTIFACT_DISPLAY_NAME]($ARTIFACT_URL)" >> $GITHUB_STEP_SUMMARY
         else
-          echo "- **Artifact Name**: \`$ARTIFACT_NAME_SHELL\` (Upload may have been skipped or failed if status is not success. Artifact ID: '$UPLOAD_ARTIFACT_ID_VAL')" >> $GITHUB_STEP_SUMMARY
+          echo "- **Artifact Name**: \`$ARTIFACT_DISPLAY_NAME\` (Upload may have been skipped or failed if status is not success. Artifact ID: '$UPLOAD_ARTIFACT_ID_VAL')" >> $GITHUB_STEP_SUMMARY
         fi
         echo "" >> $GITHUB_STEP_SUMMARY
