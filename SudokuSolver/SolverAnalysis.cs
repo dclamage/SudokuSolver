@@ -498,6 +498,9 @@ public partial class Solver
         return true;
     }
 
+    internal bool IsWeakLink(int candIndex0, int candIndex1) =>
+        weakLinks[candIndex0].BinarySearch(candIndex1) >= 0;
+
     private List<int> InitIntersectWeakLinks(int candIndex)
     {
         List<int> srcList = weakLinks[candIndex];
