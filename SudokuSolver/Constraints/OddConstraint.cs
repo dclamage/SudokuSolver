@@ -41,6 +41,7 @@ public class OddConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true;
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing) => LogicResult.None;

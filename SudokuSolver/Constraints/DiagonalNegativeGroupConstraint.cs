@@ -14,6 +14,7 @@ public class DiagonalNegativeGroupConstraint : Constraint
         }
     }
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true;
 
     public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing) => LogicResult.None;

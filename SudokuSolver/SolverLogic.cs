@@ -281,12 +281,24 @@ public partial class Solver
 
     private LogicResult FindNakedSingles(List<LogicalStepDesc> logicalStepDescs)
     {
-        bool hasUnsetCells = false;
+        if (isInvalid)
+        {
+            return LogicResult.Invalid;
+        }
+
+        if (unsetCellsCount == 0)
+        {
+            return LogicResult.PuzzleComplete;
+        }
+
         if (logicalStepDescs == null)
         {
             bool changed = false;
-            for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+            while (pendingNakedSingles.Count > 0)
             {
+                int cellIndex = pendingNakedSingles[^1];
+                pendingNakedSingles.RemoveAt(pendingNakedSingles.Count - 1);
+
                 uint mask = board[cellIndex];
                 if ((mask & ~valueSetMask) == 0)
                 {
@@ -295,8 +307,6 @@ public partial class Solver
 
                 if (!IsValueSet(mask))
                 {
-                    hasUnsetCells = true;
-
                     if (ValueCount(mask) == 1)
                     {
                         int value = GetValue(mask);
@@ -309,11 +319,6 @@ public partial class Solver
                 }
             }
 
-            if (!hasUnsetCells)
-            {
-                return LogicResult.PuzzleComplete;
-            }
-
             if (changed)
             {
                 return LogicResult.Changed;
@@ -321,38 +326,34 @@ public partial class Solver
         }
         else
         {
-            for (int i = 0; i < HEIGHT; i++)
+            while (pendingNakedSingles.Count > 0)
             {
-                for (int j = 0; j < WIDTH; j++)
+                int cellIndex = pendingNakedSingles[^1];
+                pendingNakedSingles.RemoveAt(pendingNakedSingles.Count - 1);
+
+                var (i, j) = CellIndexToCoord(cellIndex);
+
+                uint mask = board[cellIndex];
+                if ((mask & ~valueSetMask) == 0)
                 {
-                    int cellIndex = CellIndex(i, j);
-                    uint mask = board[cellIndex];
-                    if ((mask & ~valueSetMask) == 0)
+                    logicalStepDescs.Add(new($"{CellName(i, j)} has no possible values.", (i, j)));
+                    return LogicResult.Invalid;
+                }
+
+                if (!IsValueSet(mask))
+                {
+                    int value = GetValue(mask);
+                    if (!SetValue(i, j, value))
                     {
-                        logicalStepDescs.Add(new($"{CellName(i, j)} has no possible values.", (i, j)));
+                        logicalStepDescs.Add(new($"Naked Single: {CellName(i, j)} cannot be set to {value}.", (i, j)));
                         return LogicResult.Invalid;
                     }
-
-                    if (!IsValueSet(mask))
-                    {
-                        hasUnsetCells = true;
-
-                        if (ValueCount(mask) == 1)
-                        {
-                            int value = GetValue(mask);
-                            if (!SetValue(i, j, value))
-                            {
-                                logicalStepDescs.Add(new($"Naked Single: {CellName(i, j)} cannot be set to {value}.", (i, j)));
-                                return LogicResult.Invalid;
-                            }
-                            logicalStepDescs.Add(new($"Naked Single: {CellName(i, j)}={value}", CandidateIndex((i, j), value).ToEnumerable(), null, isSingle: true));
-                            return LogicResult.Changed;
-                        }
-                    }
+                    logicalStepDescs.Add(new($"Naked Single: {CellName(i, j)}={value}", CandidateIndex((i, j), value).ToEnumerable(), null, isSingle: true));
+                    return LogicResult.Changed;
                 }
             }
         }
-        return !hasUnsetCells ? LogicResult.PuzzleComplete : LogicResult.None;
+        return LogicResult.None;
     }
 
     private LogicResult FindHiddenSingle(List<LogicalStepDesc> logicalStepDescs)
@@ -1548,7 +1549,7 @@ public partial class Solver
                                 List<LogicalStepDesc> contradictionSteps = logicalStepDescs != null ? new() : null;
 
                                 string violationString = null;
-                                if (boardCopy.EvaluateSetValue(i, j, v, ref violationString) == LogicResult.Invalid)
+                                if (boardCopy.EvaluateSetValue(CellIndex(i, j), v, ref violationString) == LogicResult.Invalid)
                                 {
                                     logicalStepDescs?.Add(new(
                                         desc: $"If {CellName(i, j)} is set to {v} then {violationString} => -{v}{CellName(i, j)}",

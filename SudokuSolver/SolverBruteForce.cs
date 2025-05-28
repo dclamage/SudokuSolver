@@ -129,7 +129,7 @@ public partial class Solver
                 continue;
             }
 
-            LogicResult logicResult = solver.BruteForcePropagate();
+            LogicResult logicResult = solver.BruteForcePropagate(false);
             if (logicResult == LogicResult.PuzzleComplete)
             {
                 state.ReportSolution(solver);
@@ -150,14 +150,12 @@ public partial class Solver
 
             // Try a possible value for this cell
             int val = v != 0 ? v : state.isRandom ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
-            uint valMask = ValueMask(val);
 
             // Create a backup board in case it needs to be restored
             Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
             newSolver.isBruteForcing = true;
-            newSolver.board[cellIndex] &= ~valMask;
-            if (newSolver.board[cellIndex] != 0)
-            {
+            if (newSolver.ClearValue(cellIndex, val))
+            { 
                 if (!state.isMultiThreaded || !state.PushSolver(newSolver))
                 {
                     stack.Push(newSolver);
@@ -326,7 +324,7 @@ public partial class Solver
         {
             state.cancellationToken.ThrowIfCancellationRequested();
 
-            LogicResult logicResult = solver.BruteForcePropagate();
+            LogicResult logicResult = solver.BruteForcePropagate(false);
             if (logicResult == LogicResult.PuzzleComplete)
             {
                 state.IncrementSolutions(solver);
@@ -348,13 +346,11 @@ public partial class Solver
 
             // Try a possible value for this cell
             int val = v != 0 ? v : MinValue(solver.board[cellIndex]);
-            uint valMask = ValueMask(val);
 
             // Create a solver without this value and start a task for it
             Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
             newSolver.isBruteForcing = true;
-            newSolver.board[cellIndex] &= ~valMask;
-            if (newSolver.board[cellIndex] != 0)
+            if (newSolver.ClearValue(cellIndex, val))
             {
                 if (!isMultithreaded || !state.PushSolver(newSolver))
                 {
@@ -543,10 +539,10 @@ public partial class Solver
         }
     }
 
-    private bool TrueCandidatesSinglesPass(TrueCandidatesState state)
+    private bool TrueCandidatesPropogate(TrueCandidatesState state)
     {
         // Depth 0 pass to see if it's trivially invalid, solved, or useless
-        LogicResult logicResult = BruteForcePropagate();
+        LogicResult logicResult = BruteForcePropagate(false);
         if (logicResult == LogicResult.Invalid)
         {
             return false;
@@ -569,7 +565,7 @@ public partial class Solver
         {
             state.cancellationToken.ThrowIfCancellationRequested();
 
-            if (!solver.TrueCandidatesSinglesPass(state))
+            if (!solver.TrueCandidatesPropogate(state))
             {
                 continue;
             }
@@ -636,13 +632,10 @@ public partial class Solver
                 val = v != 0 ? v : MinValue(solver.board[cellIndex]);
             }
 
-            uint valMask = ValueMask(val);
-
             // Create a solver without this value and start a task for it
             Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
             newSolver.isBruteForcing = true;
-            newSolver.board[cellIndex] &= ~valMask;
-            if (newSolver.board[cellIndex] != 0)
+            if (newSolver.ClearValue(cellIndex, val))
             {
                 if (!isMultithreaded || !state.PushSolver(newSolver))
                 {
@@ -792,7 +785,7 @@ public partial class Solver
             //------------------------------------------------------------
             // 1.  Propagate singles
             //------------------------------------------------------------
-            LogicResult lr = solver.BruteForcePropagate();
+            LogicResult lr = solver.BruteForcePropagate(false);
             if (lr == LogicResult.Invalid)
             {
                 state.NewSample(exactCarry); // contributes 0
@@ -843,7 +836,7 @@ public partial class Solver
                     continue;
                 }
 
-                LogicResult childResult = childSolver.BruteForcePropagate();
+                LogicResult childResult = childSolver.BruteForcePropagate(false);
                 if (childResult == LogicResult.Invalid)
                 {
                     // contradiction

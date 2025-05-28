@@ -53,42 +53,10 @@ public class MaximumConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
-        if (cells == null || cells.Count == 0)
-        {
-            return true;
-        }
-
-        var cell0 = (i, j);
-        if (cellsLookup.Contains(cell0))
-        {
-            uint clearMask = ALL_VALUES_MASK & ~((1u << (val - 1)) - 1);
-            foreach (var cell1 in ValidAdjacentCells(i, j))
-            {
-                var logicResult = sudokuSolver.ClearMask(cell1.Item1, cell1.Item2, clearMask);
-                if (logicResult == LogicResult.Invalid)
-                {
-                    return false;
-                }
-            }
-        }
-        else if (adjCellLookup.TryGetValue(cell0, out var cellList))
-        {
-            uint clearMask = (1u << val) - 1;
-            if (clearMask != 0)
-            {
-                foreach (var minCell in cellList)
-                {
-                    var logicResult = sudokuSolver.ClearMask(minCell.Item1, minCell.Item2, clearMask);
-                    if (logicResult == LogicResult.Invalid)
-                    {
-                        return false;
-                    }
-                }
-            }
-        }
-
+        // Enforced by weak links
         return true;
     }
 

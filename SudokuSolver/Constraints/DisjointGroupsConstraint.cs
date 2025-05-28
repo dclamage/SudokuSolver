@@ -54,6 +54,7 @@ public class DisjointGroupConstraint : Constraint
 
     public override string SpecificName => $"Disjoint Group {groupIndex + 1}";
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true;
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing) => LogicResult.None;

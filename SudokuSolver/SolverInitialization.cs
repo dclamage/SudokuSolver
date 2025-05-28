@@ -23,6 +23,11 @@ public partial class Solver
         board.AsSpan().Fill(ALL_VALUES_MASK);
 
         constraints = [];
+        enforceConstraints = [];
+
+        isInvalid = false;
+        unsetCellsCount = NUM_CELLS;
+        pendingNakedSingles = [];
 
         Groups = [];
         CellToGroupsLookup = new List<SudokuGroup>[NUM_CELLS];
@@ -81,6 +86,10 @@ public partial class Solver
         candidateToCoordValueLookup = other.candidateToCoordValueLookup;
         seenMap = other.seenMap;
         constraints = other.constraints;
+        enforceConstraints = other.enforceConstraints;
+        isInvalid = other.isInvalid;
+        unsetCellsCount = other.unsetCellsCount;
+        pendingNakedSingles = [.. other.pendingNakedSingles];
         Groups = other.Groups;
         smallGroupsBySize = other.smallGroupsBySize;
         maxValueGroups = other.maxValueGroups;
@@ -196,6 +205,10 @@ public partial class Solver
     public void AddConstraint(Constraint constraint)
     {
         constraints.Add(constraint);
+        if (constraint.NeedsEnforceConstraint)
+        {
+            enforceConstraints.Add(constraint);
+        }
     }
 
     public LogicResult AddWeakLink(int candIndex0, int candIndex1)

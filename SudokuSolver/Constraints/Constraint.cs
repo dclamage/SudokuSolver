@@ -32,6 +32,11 @@ public abstract class Constraint
     public virtual string SpecificName => Name;
 
     /// <summary>
+    /// Override to false if this constraint does not have any enforcement logic
+    /// </summary>
+    public virtual bool NeedsEnforceConstraint => true;
+
+    /// <summary>
     /// Gets a string that uniquely describes the constraint within the constraint type.
     /// </summary>
     public virtual string GetHash(Solver solver) => string.IsNullOrWhiteSpace(OPTIONS) ? "" : OPTIONS;

@@ -287,57 +287,6 @@ public partial class Solver
         return false;
     }
 
-    public LogicResult EvaluateSetValue(int i, int j, int val, ref string violationString)
-    {
-        uint valMask = ValueMask(val);
-        if ((this[i, j] & valMask) == 0)
-        {
-            return LogicResult.None;
-        }
-
-        // Check if already set
-        if ((this[i, j] & valueSetMask) != 0)
-        {
-            return LogicResult.None;
-        }
-
-        if (isInSetValue)
-        {
-            this[i, j] = valMask;
-            return LogicResult.Changed;
-        }
-
-        isInSetValue = true;
-
-        this[i, j] = valueSetMask | valMask;
-
-        // Apply all weak links
-        int setCandidateIndex = CandidateIndex(i, j, val);
-        foreach (int elimCandIndex in weakLinks[setCandidateIndex])
-        {
-            var (i1, j1, v1) = CandIndexToCoord(elimCandIndex);
-            if (!ClearValue(i1, j1, v1))
-            {
-                violationString = $"{CellName(i1, j1)} has no value";
-                return LogicResult.Invalid;
-            }
-        }
-
-        // Enforce all constraints
-        foreach (var constraint in constraints)
-        {
-            if (!constraint.EnforceConstraint(this, i, j, val))
-            {
-                violationString = $"{constraint.SpecificName} is violated";
-                return LogicResult.Invalid;
-            }
-        }
-
-        isInSetValue = false;
-
-        return LogicResult.Changed;
-    }
-
     public int MinimumUniqueValues(IEnumerable<(int, int)> cells)
     {
         var cellList = cells.ToList();
@@ -505,8 +454,9 @@ public partial class Solver
     {
         List<int> srcList = weakLinks[candIndex];
         List<int> destList = new(srcList.Count);
-        foreach (int weakLink in srcList)
+        for (int weakLinkIdx = 0; weakLinkIdx < srcList.Count; weakLinkIdx++)
         {
+            int weakLink = srcList[weakLinkIdx];
             if (IsCandIndexValid(weakLink))
             {
                 destList.Add(weakLink);
@@ -518,8 +468,9 @@ public partial class Solver
     private void InitIntersectWeakLinks(List<int> destList, int candIndex)
     {
         List<int> srcList = weakLinks[candIndex];
-        foreach (int weakLink in srcList)
+        for (int weakLinkIdx = 0; weakLinkIdx < srcList.Count; weakLinkIdx++)
         {
+            int weakLink = srcList[weakLinkIdx];
             if (IsCandIndexValid(weakLink))
             {
                 destList.Add(weakLink);
@@ -537,10 +488,7 @@ public partial class Solver
         {
             if (destList[i] == srcList[j])
             {
-                if (IsCandIndexValid(destList[i]))
-                {
-                    destList[writePos++] = destList[i];
-                }
+                destList[writePos++] = destList[i];
                 i++;
                 j++;
             }
@@ -664,7 +612,7 @@ public partial class Solver
         }
     }
 
-    internal IEnumerable<int> CalcElims(params int[] candIndexes) => CalcElims(candIndexes);
+    internal List<int> CalcElims(params int[] candIndexes) => CalcElims((IEnumerable<int>)candIndexes);
 
     internal List<int> CalcElims(IEnumerable<int> candIndexes)
     {
@@ -685,11 +633,20 @@ public partial class Solver
         return result ?? [];
     }
 
-    internal void CalcElims(List<int> dstElims, IEnumerable<int> candIndexes)
+    internal void CalcElims(List<int> dstList, List<int> candIndexes)
     {
+        bool isFirst = true;
         foreach (int candIndex in candIndexes)
         {
-            IntersectWeakLinks(dstElims, candIndex);
+            if (isFirst)
+            {
+                InitIntersectWeakLinks(dstList, candIndex);
+                isFirst = false;
+            }
+            else
+            {
+                IntersectWeakLinks(dstList, candIndex);
+            }
         }
     }
 
