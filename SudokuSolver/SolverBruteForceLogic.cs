@@ -1,6 +1,4 @@
-﻿using System.Threading.Channels;
-
-namespace SudokuSolver;
+﻿namespace SudokuSolver;
 
 public partial class Solver
 {
@@ -11,7 +9,7 @@ public partial class Solver
         if (smallGroupsBySize != null)
         {
             int lastValidGroupSize = MAX_VALUE + 1;
-            foreach (var group in smallGroupsBySize)
+            foreach (SudokuGroup group in smallGroupsBySize)
             {
                 int groupSize = group.Cells.Count;
                 if (lastValidGroupSize < groupSize)
@@ -64,7 +62,7 @@ public partial class Solver
 
         if (numCandidates > 3 && allowBilocals)
         {
-            var (bCellIndex, bVal) = FindBilocalValue();
+            (int bCellIndex, int bVal) = FindBilocalValue();
             if (bVal > 0)
             {
                 return (bCellIndex, bVal);
@@ -76,9 +74,9 @@ public partial class Solver
 
     private (int, int) FindBilocalValue()
     {
-        foreach (var group in Groups)
+        foreach (SudokuGroup group in Groups)
         {
-            var groupCells = group.Cells;
+            List<int> groupCells = group.Cells;
             int numCells = group.Cells.Count;
             if (numCells != MAX_VALUE)
             {
@@ -144,7 +142,7 @@ public partial class Solver
             return curResult;
         }
 
-        foreach (var constraint in constraints)
+        foreach (Constraint constraint in constraints)
         {
             curResult = constraint.StepLogic(this, (List<LogicalStepDesc>)null, true);
             if (curResult != LogicResult.None)
@@ -161,7 +159,7 @@ public partial class Solver
         while (true)
         {
             LogicResult curResult = StepBruteForceLogic();
-            if (curResult == LogicResult.Invalid || curResult == LogicResult.PuzzleComplete)
+            if (curResult is LogicResult.Invalid or LogicResult.PuzzleComplete)
             {
                 return curResult;
             }
@@ -260,7 +258,7 @@ public partial class Solver
                                 elimMask &= ~ValueMask(elimValue);
 
                                 int elimCandidate = CandidateIndex(curCellIndex, elimValue);
-                                AddWeakLink(setCandidate, elimCandidate);
+                                _ = AddWeakLink(setCandidate, elimCandidate);
                             }
                         }
                     }
@@ -271,120 +269,211 @@ public partial class Solver
         return result;
     }
 
+    private LogicResult FastFindPairs()
+    {
+        // Gather a list of all bivalue cells
+        List<(int cellIndex, uint mask)> bivalueCells = [];
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+        {
+            uint mask = board[cellIndex];
+            if (ValueCount(mask) == 2)
+            {
+                bivalueCells.Add((cellIndex, mask));
+            }
+        }
+        bivalueCells.Sort((a, b) =>
+        {
+            int compareMask = a.mask.CompareTo(b.mask);
+            return compareMask != 0 ? compareMask : a.cellIndex.CompareTo(b.cellIndex);
+        });
+
+        for (int i0 = 0; i0 < bivalueCells.Count; i0++)
+        {
+            (int cellIndex0, uint mask0) = bivalueCells[i0];
+            List<int> weakLinks0 = weakLinks[cellIndex0];
+            int valueA = MinValue(mask0);
+            int valueB = MaxValue(mask0);
+            int candidate0a = CandidateIndex(cellIndex0, valueA);
+            int candidate0b = CandidateIndex(cellIndex0, valueB);
+            for (int i1 = i0 + 1; i1 < bivalueCells.Count; i1++)
+            {
+                (int cellIndex1, uint mask1) = bivalueCells[i1];
+                if (mask0 != mask1)
+                {
+                    break;
+                }
+
+                int candidate1a = CandidateIndex(cellIndex1, valueA);
+                int candidate1b = CandidateIndex(cellIndex1, valueB);
+                if (!IsWeakLink(candidate0a, candidate1a) || !IsWeakLink(candidate0b, candidate1b))
+                {
+                    continue;
+                }
+
+                List<int> elims = CalcElims(mask0, [cellIndex0, cellIndex1]);
+                if (elims.Count > 0)
+                {
+                    return !ClearCandidates(elims) ? LogicResult.Invalid : LogicResult.Changed;
+                }
+            }
+        }
+
+        return LogicResult.None;
+    }
+
+    // Helper struct for FastFindTriples
+    private readonly record struct PotentialTripleParticipant(int CellIndex, uint ActualCellMask, uint TargetTripleMask);
+
+    private LogicResult FastFindTriples()
+    {
+        List<PotentialTripleParticipant> participants = [];
+
+        // Populate the list of potential triple participants
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+        {
+            uint actualMask = board[cellIndex];
+            if (IsValueSet(actualMask))
+            {
+                continue;
+            }
+
+            int numActualCandidates = ValueCount(actualMask);
+
+            if (numActualCandidates == 2) // Cell has 2 candidates, e.g., {A,B}
+            {
+                for (int valX = 1; valX <= MAX_VALUE; valX++)
+                {
+                    uint maskValX = ValueMask(valX);
+                    if ((actualMask & maskValX) != 0)
+                    {
+                        continue;
+                    }
+                    uint targetTripleMask = actualMask | maskValX;
+                    participants.Add(new PotentialTripleParticipant(cellIndex, actualMask, targetTripleMask));
+                }
+            }
+            else if (numActualCandidates == 3) // Cell has 3 candidates, e.g., {A,B,C}
+            {
+                participants.Add(new PotentialTripleParticipant(cellIndex, actualMask, actualMask));
+            }
+        }
+
+        if (participants.Count < 3)
+        {
+            return LogicResult.None;
+        }
+
+        participants.Sort((a, b) =>
+        {
+            int compareMask = a.TargetTripleMask.CompareTo(b.TargetTripleMask);
+            return compareMask != 0 ? compareMask : a.CellIndex.CompareTo(b.CellIndex);
+        });
+
+        for (int i = 0; i < participants.Count - 2; i++)
+        {
+            PotentialTripleParticipant p_i = participants[i];
+            int c0 = p_i.CellIndex;
+
+            for (int j = i + 1; j < participants.Count - 1; j++)
+            {
+                PotentialTripleParticipant p_j = participants[j];
+                int c1 = p_j.CellIndex;
+
+                if (p_j.TargetTripleMask != p_i.TargetTripleMask)
+                {
+                    break;
+                }
+
+                if (c1 == c0)
+                {
+                    continue;
+                }
+
+                // Extract values from the target triple mask
+                uint tempMask = p_i.TargetTripleMask;
+                int vA = MinValue(tempMask);
+                tempMask &= ~ValueMask(vA);
+                int vB = MinValue(tempMask);
+                tempMask &= ~ValueMask(vB);
+                int vC = MinValue(tempMask);
+
+                // Check non-repeat property between p_i and p_j for all three values
+                bool p_i_j_nonrepeat =
+                    (!HasValue(p_i.ActualCellMask, vA) || !HasValue(p_j.ActualCellMask, vA) || IsWeakLink(CandidateIndex(c0, vA), CandidateIndex(c1, vA))) &&
+                    (!HasValue(p_i.ActualCellMask, vB) || !HasValue(p_j.ActualCellMask, vB) || IsWeakLink(CandidateIndex(c0, vB), CandidateIndex(c1, vB))) &&
+                    (!HasValue(p_i.ActualCellMask, vC) || !HasValue(p_j.ActualCellMask, vC) || IsWeakLink(CandidateIndex(c0, vC), CandidateIndex(c1, vC)));
+
+                if (!p_i_j_nonrepeat)
+                {
+                    continue; // p_i and p_j can repeat digits, so this cannot form a triple
+                }
+
+                for (int k = j + 1; k < participants.Count; k++)
+                {
+                    PotentialTripleParticipant p_k = participants[k];
+                    int c2 = p_k.CellIndex;
+
+                    if (p_k.TargetTripleMask != p_i.TargetTripleMask)
+                    {
+                        break;
+                    }
+
+                    if (c2 == c0 || c2 == c1)
+                    {
+                        continue;
+                    }
+
+                    uint combinedActualMask = p_i.ActualCellMask | p_j.ActualCellMask | p_k.ActualCellMask;
+
+                    if (combinedActualMask == p_i.TargetTripleMask)
+                    {
+                        // p_i and p_j already confirmed to not repeat digits.
+                        // Now check p_k's non-repeat with p_i and p_j.
+                        bool p_k_links_nonrepeat =
+                            (!HasValue(p_i.ActualCellMask, vA) || !HasValue(p_k.ActualCellMask, vA) || IsWeakLink(CandidateIndex(c0, vA), CandidateIndex(c2, vA))) &&
+                            (!HasValue(p_j.ActualCellMask, vA) || !HasValue(p_k.ActualCellMask, vA) || IsWeakLink(CandidateIndex(c1, vA), CandidateIndex(c2, vA))) &&
+                            (!HasValue(p_i.ActualCellMask, vB) || !HasValue(p_k.ActualCellMask, vB) || IsWeakLink(CandidateIndex(c0, vB), CandidateIndex(c2, vB))) &&
+                            (!HasValue(p_j.ActualCellMask, vB) || !HasValue(p_k.ActualCellMask, vB) || IsWeakLink(CandidateIndex(c1, vB), CandidateIndex(c2, vB))) &&
+                            (!HasValue(p_i.ActualCellMask, vC) || !HasValue(p_k.ActualCellMask, vC) || IsWeakLink(CandidateIndex(c0, vC), CandidateIndex(c2, vC))) &&
+                            (!HasValue(p_j.ActualCellMask, vC) || !HasValue(p_k.ActualCellMask, vC) || IsWeakLink(CandidateIndex(c1, vC), CandidateIndex(c2, vC)));
+
+                        if (!p_k_links_nonrepeat)
+                        {
+                            continue;
+                        }
+
+                        List<int> tripleCellIndices = [c0, c1, c2];
+                        List<int> elims = CalcElims(p_i.TargetTripleMask, tripleCellIndices);
+                        if (elims.Count > 0)
+                        {
+                            return !ClearCandidates(elims) ? LogicResult.Invalid : LogicResult.Changed;
+                        }
+                    }
+                }
+            }
+        }
+        return LogicResult.None;
+    }
+
     private LogicResult FastFindNakedTuplesAndPointing()
     {
         // --- 1. Naked Pairs ---
-        // Reusable list for cells eligible for tuple formation within a group.
-        // Capacity can be MAX_VALUE as it's per group.
-        List<int> tempUnsetCells = new List<int>(MAX_VALUE);
-
-        foreach (var group in Groups)
+        LogicResult pairsResult = FastFindPairs();
+        if (pairsResult != LogicResult.None)
         {
-            if (group.Cells.Count < 2)
-            {
-                continue;
-            }
-
-            tempUnsetCells.Clear();
-            foreach (int cellIndex in group.Cells)
-            {
-                uint cellMask = board[cellIndex];
-                if (!IsValueSet(cellMask) && ValueCount(cellMask) <= 2)
-                {
-                    tempUnsetCells.Add(cellIndex);
-                }
-            }
-
-            if (tempUnsetCells.Count < 2)
-            {
-                // Not enough eligible cells found
-                continue;
-            }
-
-            for (int i = 0; i < tempUnsetCells.Count; i++)
-            {
-                for (int j = i + 1; j < tempUnsetCells.Count; j++)
-                {
-                    int cell1_idx = tempUnsetCells[i];
-                    int cell2_idx = tempUnsetCells[j];
-
-                    // Combine candidates from the two cells
-                    uint tupleMask = board[cell1_idx] | board[cell2_idx];
-
-                    if (ValueCount(tupleMask) == 2) // Found a Naked Pair
-                    {
-                        List<int> elims = CalcElims(tupleMask, [cell1_idx, cell2_idx]);
-                        if (elims.Count > 0)
-                        {
-                            if (!ClearCandidates(elims))
-                            {
-                                return LogicResult.Invalid;
-                            }
-                            return LogicResult.Changed;
-                        }
-                    }
-                }
-            }
+            return pairsResult;
         }
 
         // --- 2. Naked Triples ---
-        // tempUnsetCells is reused
-        foreach (var group in Groups)
+        LogicResult triplesResult = FastFindTriples();
+        if (triplesResult != LogicResult.None)
         {
-            if (group.Cells.Count < 3)
-            {
-                // Not enough cells for a triple
-                continue;
-            }
-
-            tempUnsetCells.Clear();
-            foreach (int cellIndex in group.Cells)
-            {
-                uint cellMask = board[cellIndex];
-                if (!IsValueSet(cellMask) && ValueCount(cellMask) <= 3)
-                {
-                    tempUnsetCells.Add(cellIndex);
-                }
-            }
-
-            if (tempUnsetCells.Count < 3)
-            {
-                // Not enough eligible cells
-                continue;
-            }
-
-            for (int i = 0; i < tempUnsetCells.Count; i++)
-            {
-                for (int j = i + 1; j < tempUnsetCells.Count; j++)
-                {
-                    for (int k = j + 1; k < tempUnsetCells.Count; k++)
-                    {
-                        int cell1_idx = tempUnsetCells[i];
-                        int cell2_idx = tempUnsetCells[j];
-                        int cell3_idx = tempUnsetCells[k];
-
-                        uint tupleMask = board[cell1_idx] | board[cell2_idx] | board[cell3_idx];
-
-                        if (ValueCount(tupleMask) == 3) // Found a Naked Triple
-                        {
-                            List<int> elims = CalcElims(tupleMask, [cell1_idx, cell2_idx, cell3_idx]);
-                            if (elims.Count > 0)
-                            {
-                                if (!ClearCandidates(elims))
-                                {
-                                    return LogicResult.Invalid;
-                                }
-                                return LogicResult.Changed;
-                            }
-                        }
-                    }
-                }
-            }
+            return triplesResult;
         }
 
-        // --- 3 & 4. Pointing (Locked Candidates Type 1 / Claiming) ---
+        // --- 3 & 4. Pointing ---
         // For 2 or 3 candidates restricted to cells within a group.
-        foreach (var group in maxValueGroups)
+        foreach (SudokuGroup group in maxValueGroups)
         {
             uint groupSpecific_SetValuesMask = 0;    // Mask of values already SET within this group
             uint groupSpecific_CandidatePoolMask = 0; // Mask of all candidates in UNSET cells of this group
@@ -428,16 +517,12 @@ public partial class Solver
                     }
                 }
 
-                if (pointingCandidates.Count == 2 || pointingCandidates.Count == 3)
+                if (pointingCandidates.Count is 2 or 3)
                 {
                     List<int> elims = CalcElims(pointingCandidates);
                     if (elims.Count > 0)
                     {
-                        if (!ClearCandidates(elims))
-                        {
-                            return LogicResult.Invalid;
-                        }
-                        return LogicResult.Changed;
+                        return !ClearCandidates(elims) ? LogicResult.Invalid : LogicResult.Changed;
                     }
                 }
             }
