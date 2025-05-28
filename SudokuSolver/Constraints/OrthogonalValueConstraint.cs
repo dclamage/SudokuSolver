@@ -245,6 +245,7 @@ public abstract class OrthogonalValueConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         // Enforced by weak links

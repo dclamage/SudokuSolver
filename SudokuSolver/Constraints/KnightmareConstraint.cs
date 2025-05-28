@@ -20,6 +20,7 @@ namespace SudokuSolver.Constraints
             }
         }
 
+        public override bool NeedsEnforceConstraint => false;
         public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true;
 
         public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)

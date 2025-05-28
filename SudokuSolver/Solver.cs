@@ -32,10 +32,14 @@ public partial class Solver
     private List<int>[] weakLinks;
     private int totalWeakLinks = 0;
     private readonly List<Constraint> constraints;
+    private readonly List<Constraint> enforceConstraints;
 
     // Private state
     private bool isInSetValue = false;
     private bool isBruteForcing = false;
+    private bool isInvalid;
+    private int unsetCellsCount;
+    private readonly List<int> pendingNakedSingles;
 
     // Private lookups
     private (int, int)[] candidateToCellAndValueLookup;

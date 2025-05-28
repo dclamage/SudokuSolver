@@ -27,6 +27,7 @@ public class NabnerConstraint : Constraint
         }
     }
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         // Fully enforced by weak links

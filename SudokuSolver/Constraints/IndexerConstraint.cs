@@ -29,6 +29,7 @@ public abstract class AbstractIndexerConstraint : Constraint
     }
 
     // Completely handled by weak links
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver solver, int i, int j, int value) => true;
 
     public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)

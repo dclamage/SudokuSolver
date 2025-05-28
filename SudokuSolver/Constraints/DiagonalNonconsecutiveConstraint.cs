@@ -7,30 +7,10 @@ public class DiagonalNonconsecutiveConstraint : Constraint
     {
     }
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
-        if (val > 1)
-        {
-            int adjVal = val - 1;
-            foreach (var pair in DiagonalCells(i, j))
-            {
-                if (!sudokuSolver.ClearValue(pair.Item1, pair.Item2, adjVal))
-                {
-                    return false;
-                }
-            }
-        }
-        if (val < MAX_VALUE)
-        {
-            int adjVal = val + 1;
-            foreach (var pair in DiagonalCells(i, j))
-            {
-                if (!sudokuSolver.ClearValue(pair.Item1, pair.Item2, adjVal))
-                {
-                    return false;
-                }
-            }
-        }
+        // Enforced by weak links
         return true;
     }
 

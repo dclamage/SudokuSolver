@@ -25,6 +25,7 @@ public class ModularLineConstraint : Constraint
 
     public override string SpecificName => $"Modular Line {CellName(cells[0])} - {CellName(cells[^1])}";
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         // Handled entirely by weak links

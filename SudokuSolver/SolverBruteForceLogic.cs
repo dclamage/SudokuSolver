@@ -116,7 +116,7 @@ public partial class Solver
     /// Run some hand-selected logic until nothing changes
     /// </summary>
     /// <returns></returns>
-    private LogicResult StepBruteForceLogic()
+    private LogicResult StepBruteForceLogic(bool doAdvancedStrategies)
     {
         LogicResult curResult = FindNakedSingles(null);
         if (curResult != LogicResult.None)
@@ -130,16 +130,13 @@ public partial class Solver
             return curResult;
         }
 
-        curResult = FastFindNakedTuplesAndPointing();
-        if (curResult != LogicResult.None)
+        if (doAdvancedStrategies)
         {
-            return curResult;
-        }
-
-        curResult = FindDirectCellForcing(null);
-        if (curResult != LogicResult.None)
-        {
-            return curResult;
+            curResult = FastAdvancedStrategies();
+            if (curResult != LogicResult.None)
+            {
+                return curResult;
+            }
         }
 
         foreach (Constraint constraint in constraints)
@@ -150,15 +147,16 @@ public partial class Solver
                 return curResult;
             }
         }
+
         return LogicResult.None;
     }
 
-    private LogicResult BruteForcePropagate()
+    private LogicResult BruteForcePropagate(bool doAdvancedStrategies)
     {
         bool changed = false;
         while (true)
         {
-            LogicResult curResult = StepBruteForceLogic();
+            LogicResult curResult = StepBruteForceLogic(doAdvancedStrategies);
             if (curResult is LogicResult.Invalid or LogicResult.PuzzleComplete)
             {
                 return curResult;
@@ -184,7 +182,12 @@ public partial class Solver
     /// <returns></returns>
     private LogicResult DiscoverWeakLinks()
     {
-        LogicResult result = LogicResult.None;
+        // Run logic on the base solver first
+        LogicResult result = BruteForcePropagate(true);
+        if (result == LogicResult.PuzzleComplete || result == LogicResult.Invalid)
+        {
+            return result;
+        }
 
         LogicResult innerResult;
         do
@@ -216,7 +219,7 @@ public partial class Solver
                     }
 
                     // Run some hand-selected logic until nothing changes
-                    LogicResult curResult = solver.BruteForcePropagate();
+                    LogicResult curResult = solver.BruteForcePropagate(true);
                     if (curResult == LogicResult.None)
                     {
                         continue;
@@ -455,24 +458,10 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FastFindNakedTuplesAndPointing()
+    private LogicResult FastFindPointing()
     {
-        // --- 1. Naked Pairs ---
-        LogicResult pairsResult = FastFindPairs();
-        if (pairsResult != LogicResult.None)
-        {
-            return pairsResult;
-        }
-
-        // --- 2. Naked Triples ---
-        LogicResult triplesResult = FastFindTriples();
-        if (triplesResult != LogicResult.None)
-        {
-            return triplesResult;
-        }
-
-        // --- 3 & 4. Pointing ---
-        // For 2 or 3 candidates restricted to cells within a group.
+        List<int> pointingCandidates = new(4);
+        List<int> elims = [];
         foreach (SudokuGroup group in maxValueGroups)
         {
             uint groupSpecific_SetValuesMask = 0;    // Mask of values already SET within this group
@@ -507,19 +496,23 @@ public partial class Solver
                 actualCandidatesForPointing &= ~valueMask;
 
                 // Find all cells in 'group' where 'v' is a candidate.
-                List<int> pointingCandidates = new(group.Cells.Count);
+                pointingCandidates.Clear();
                 foreach (int cellIndex in group.Cells)
                 {
                     uint currentCellMask = board[cellIndex];
                     if ((currentCellMask & valueMask) != 0)
                     {
                         pointingCandidates.Add(CandidateIndex(cellIndex, value));
+                        if (pointingCandidates.Count > 3)
+                        {
+                            break;
+                        }
                     }
                 }
 
                 if (pointingCandidates.Count is 2 or 3)
                 {
-                    List<int> elims = CalcElims(pointingCandidates);
+                    CalcElims(elims, pointingCandidates);
                     if (elims.Count > 0)
                     {
                         return !ClearCandidates(elims) ? LogicResult.Invalid : LogicResult.Changed;
@@ -528,7 +521,89 @@ public partial class Solver
             }
         }
 
-        // No changes made by these techniques
+        return LogicResult.None;
+    }
+
+    private LogicResult FastFindCellForcing()
+    {
+        List<int> elims = [];
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+        {
+            uint mask = board[cellIndex];
+            if (IsValueSet(mask) || ValueCount(mask) > 3)
+            {
+                continue;
+            }
+
+            elims.Clear();
+            int candBase = cellIndex * MAX_VALUE - 1;
+            bool isFirst = true;
+
+            uint remainingMask = mask;
+            while (remainingMask != 0)
+            {
+                int v = MinValue(remainingMask);
+                remainingMask &= ~ValueMask(v);
+
+                int candIndex = candBase + v;
+
+                if (isFirst)
+                {
+                    InitIntersectWeakLinks(elims, candIndex);
+                    isFirst = false;
+                }
+                else
+                {
+                    // Subsequent candidates: keep only common elements
+                    IntersectWeakLinks(elims, candIndex);
+                }
+
+                if (elims.Count == 0)
+                {
+                    break;
+                }
+            }
+
+            if (elims.Count > 0)
+            {
+                if (!ClearCandidates(elims))
+                {
+                    return LogicResult.Invalid;
+                }
+                return LogicResult.Changed;
+            }
+        }
+        return LogicResult.None;
+    }
+
+    private LogicResult FastAdvancedStrategies()
+    {
+        LogicResult result;
+
+        result = FastFindPairs();
+        if (result != LogicResult.None)
+        {
+            return result;
+        }
+
+        result = FastFindPointing();
+        if (result != LogicResult.None)
+        {
+            return result;
+        }
+
+        result = FastFindCellForcing();
+        if (result != LogicResult.None)
+        {
+            return result;
+        }
+
+        result = FastFindTriples();
+        if (result != LogicResult.None)
+        {
+            return result;
+        }
+
         return LogicResult.None;
     }
 }

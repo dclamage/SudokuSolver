@@ -68,12 +68,6 @@ public partial class Solver
                 throw new IndexOutOfRangeException();
             return board[row * WIDTH + col];
         }
-        private set
-        {
-            if ((uint)row >= (uint)HEIGHT || (uint)col >= (uint)WIDTH)
-                throw new IndexOutOfRangeException();
-            board[row * WIDTH + col] = value;
-        }
     }
     
     public IEnumerable<T> Constraints<T>() where T : Constraint => constraints.Select(c => c as T).Where(c => c != null);

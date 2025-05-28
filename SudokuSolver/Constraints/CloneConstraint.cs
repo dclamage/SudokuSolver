@@ -38,8 +38,10 @@ public class CloneConstraint : Constraint
         return LogicResult.None;
     }
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
+        // Enforced by weak links
         return true;
     }
 

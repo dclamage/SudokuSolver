@@ -93,23 +93,10 @@ public class PalindromeConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
-        if (cells.Count == 0)
-        {
-            return true;
-        }
-
-        (int, int) cloneCell;
-        if (cellToClone.TryGetValue((i, j), out cloneCell))
-        {
-            uint clearMask = ALL_VALUES_MASK & ~ValueMask(val);
-            var clearResult = sudokuSolver.ClearMask(cloneCell.Item1, cloneCell.Item2, clearMask);
-            if (clearResult == LogicResult.Invalid)
-            {
-                return false;
-            }
-        }
+        // Enforced by weak links
         return true;
     }
 
