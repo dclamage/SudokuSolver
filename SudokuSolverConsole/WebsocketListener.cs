@@ -371,6 +371,13 @@ internal class WebsocketListener : IDisposable
                 multiThread: !singleThreaded,
                 numSolutionsCap: colored ? 8 : 1,
                 cancellationToken: cancellationToken);
+
+        if (cancellationToken.IsCancellationRequested)
+        {
+            SendMessage(ipPort, new CanceledResponse(nonce));
+            return;
+        }
+
         if (numSolutions == null || numSolutions.All(candidate => candidate == 0))
         {
             SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
