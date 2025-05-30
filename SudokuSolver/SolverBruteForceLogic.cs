@@ -269,11 +269,6 @@ public partial class Solver
             }
         } while (innerResult == LogicResult.Changed);
 
-        if (result == LogicResult.None || result == LogicResult.Changed)
-        {
-            CleanWeakLinks();
-        }
-
         return result;
     }
 

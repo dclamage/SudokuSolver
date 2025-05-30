@@ -328,41 +328,6 @@ public partial class Solver
         return result;
     }
 
-    private void CleanWeakLinks()
-    {
-        for (int cand = 0; cand < NUM_CANDIDATES; cand++)
-        {
-            var links = weakLinks[cand];
-            if (links.Count == 0)
-            {
-                continue;
-            }
-
-            int writeIndex = 0;
-            for (int readIndex = 0; readIndex < links.Count; readIndex++)
-            {
-                int otherCand = links[readIndex];
-                if (IsCandIndexValid(cand) && IsCandIndexValid(otherCand))
-                {
-                    if (writeIndex != readIndex)
-                    {
-                        links[writeIndex] = otherCand;
-                    }
-                    writeIndex++;
-                }
-                else
-                {
-                    totalWeakLinks--; // Decrement for each removed link
-                }
-            }
-
-            if (writeIndex < links.Count)
-            {
-                links.RemoveRange(writeIndex, links.Count - writeIndex);
-            }
-        }
-    }
-
     private void InitSeenMap()
     {
         // Create the seen map
@@ -504,9 +469,6 @@ public partial class Solver
         }
 
         maxValueGroups = Groups.Where(g => g.Cells.Count == MAX_VALUE).ToList();
-
-        // Clean up any weak links that cannot occur
-        CleanWeakLinks();
 
         return true;
     }
