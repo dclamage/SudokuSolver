@@ -49,6 +49,16 @@ internal class CountResponse(int nonce) : BaseResponse(nonce, "count")
     public bool inProgress { get; set; }
 }
 
+internal class EstimateResponse(int nonce) : BaseResponse(nonce, "estimate")
+{
+    public double estimate { get; set; }
+    public double stderr { get; set; }
+    public long iterations { get; set; }
+    public double ci95_lower { get; set; }
+    public double ci95_upper { get; set; }
+    public double relErrPercent { get; set; }
+}
+
 internal class ResponseCacheItem
 {
     public Solver request { get; set; }
@@ -76,6 +86,7 @@ internal class LogicalResponse(int nonce) : BaseResponse(nonce, "logical")
 [JsonSerializable(typeof(SolvedResponse))]
 [JsonSerializable(typeof(CountResponse))]
 [JsonSerializable(typeof(LogicalResponse))]
+[JsonSerializable(typeof(EstimateResponse))]
 internal partial class WebsocketsJsonContext : JsonSerializerContext
 {
 }
@@ -194,6 +205,9 @@ internal class WebsocketListener : IDisposable
                         case "count":
                             SendCount(ipPort, message.nonce, solver, 0, cancellationToken);
                             break;
+                        case "estimate":
+                            SendEstimate(ipPort, message.nonce, solver, cancellationToken);
+                            break;
                         case "solvepath":
                             SendSolvePath(ipPort, message.nonce, solver);
                             break;
@@ -233,6 +247,7 @@ internal class WebsocketListener : IDisposable
             SolvedResponse solvedResponse => JsonSerializer.Serialize(solvedResponse, WebsocketsJsonContext.Default.SolvedResponse),
             CountResponse countResponse => JsonSerializer.Serialize(countResponse, WebsocketsJsonContext.Default.CountResponse),
             LogicalResponse logicalResponse => JsonSerializer.Serialize(logicalResponse, WebsocketsJsonContext.Default.LogicalResponse),
+            EstimateResponse estimateResponse => JsonSerializer.Serialize(estimateResponse, WebsocketsJsonContext.Default.EstimateResponse),
             _ => throw new NotImplementedException($"Unknown response type: {response.type}"),
         };
         lock (serverLock)
@@ -551,6 +566,36 @@ internal class WebsocketListener : IDisposable
             message = description.ToString().TrimStart(),
             isValid = logicResult != LogicResult.Invalid
         });
+    }
+
+    private void SendEstimate(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
+    {
+        const double z95 = 1.96;
+        solver.EstimateSolutions(
+            numIterations: 0, // 0 = go forever (until cancel)
+            progressEvent: (progressData) =>
+            {
+                double estimate = progressData.estimate;
+                double stderr = progressData.stderr;
+                long iterations = progressData.iterations;
+                double lower = estimate - z95 * stderr;
+                double upper = estimate + z95 * stderr;
+                double relErrPercent = estimate != 0 ? 100.0 * (z95 * stderr) / estimate : 0.0;
+                if (!cancellationToken.IsCancellationRequested)
+                {
+                    SendMessage(ipPort, new EstimateResponse(nonce)
+                    {
+                        estimate = estimate,
+                        stderr = stderr,
+                        iterations = iterations,
+                        ci95_lower = lower,
+                        ci95_upper = upper,
+                        relErrPercent = relErrPercent
+                    });
+                }
+            },
+            multiThread: !singleThreaded,
+            cancellationToken: cancellationToken);
     }
 
     public void Dispose()
