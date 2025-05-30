@@ -326,7 +326,16 @@ internal class WebsocketListener : IDisposable
 
     private void SendTrueCandidates(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
     {
-        bool colored = GetBooleanOption(solver, "truecandidatescolored");
+        // Accepts an integer option for number of solutions to cap (was previously 'truecandidatescolored' boolean)
+        long numSolutionsCap = 1;
+        if (solver.customInfo.TryGetValue("truecandidatesnumsolutions", out object numSolutionsObj) && numSolutionsObj is long n)
+        {
+            numSolutionsCap = n;
+        }
+        else if (GetBooleanOption(solver, "truecandidatescolored"))
+        {
+            numSolutionsCap = 8; // fallback for legacy boolean
+        }
         bool logical = GetBooleanOption(solver, "truecandidateslogical");
 
         // Save the state of the solver with the initial grid (before applying any logic to the puzzle)
@@ -384,7 +393,7 @@ internal class WebsocketListener : IDisposable
 
         long[] numSolutions = solver.TrueCandidates(
                 multiThread: !singleThreaded,
-                numSolutionsCap: colored ? 8 : 1,
+                numSolutionsCap: numSolutionsCap,
                 cancellationToken: cancellationToken);
 
         if (cancellationToken.IsCancellationRequested)
@@ -397,6 +406,11 @@ internal class WebsocketListener : IDisposable
         {
             SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
             return;
+        }
+
+        for (int i = 0; i < numSolutions.Length; i++)
+        {
+            numSolutions[i] = Math.Min(numSolutions[i], numSolutionsCap);
         }
 
         int maxValue = solver.MAX_VALUE;
@@ -429,7 +443,7 @@ internal class WebsocketListener : IDisposable
                 {
                     numSolutions[solutionIndex] = -1;
                 }
-                else if (haveValueReal && !colored)
+                else if (haveValueReal && numSolutionsCap == 1)
                 {
                     numSolutions[solutionIndex] = 1;
                 }
