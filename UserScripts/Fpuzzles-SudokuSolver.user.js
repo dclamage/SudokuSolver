@@ -47,9 +47,9 @@
     allowCommandWhenUndo["count"] = true;
     // "estimate" is ongoing, so undo might not be directly relevant to aborting server-side, but good to allow response processing.
     allowCommandWhenUndo["estimate"] = true;
-
     let extraSettingsNames = [];
     extraSettingsNames.push("TrueCandidates");
+    extraSettingsNames.push("SolutionCap");
 
     let solverSocket = null;
     let commandIsComplete = false;
@@ -62,6 +62,22 @@
     let initialConsoleSection0Y = 0;
     let prevConsoleOutputTop = 0;
     let prevConsoleOutputHeight = 0;
+
+    // Check if SolutionCap is an integer
+    const isInteger = function (value) {
+        return Number.isInteger(value) || (typeof value === "number" && value % 1 === 0);
+    };
+    // Ensure SolutionCap is a valid integer
+    const validateSolutionCap = function (value) {
+        if (isInteger(value) && value >= 1) {
+            return value;
+        } else {
+            return 1; // Default value
+        }
+    };
+    const getSolutionCap = function () {
+        return validateSolutionCap(boolSettings["SolutionCap"]);
+    };
 
     const handleSocketSendError = function (operationName = "send", error) {
       console.error(
@@ -106,8 +122,10 @@
         }
       }
       puzzle.truecandidatesoptions = [];
-      if (boolSettings["ColoredCandidates"])
-        puzzle.truecandidatesoptions.push("colored");
+      if (getSolutionCap() > 1)
+        puzzle.truecandidatesoptions.push(
+          `truecandidatesnumsolutions=${getSolutionCap()}`
+        );
       if (boolSettings["LogicalCandidates"])
         puzzle.truecandidatesoptions.push("logical");
       return compressor.compressToBase64(JSON.stringify(puzzle));
@@ -199,7 +217,6 @@
     };
 
     const clearPencilmarkColors = function () {
-      /* ... same ... */
       for (let i = 0; i < size; i++)
         for (let j = 0; j < size; j++) {
           const cell = grid[i][j];
@@ -210,7 +227,6 @@
         }
     };
     const clearTCError = function () {
-      /* ... same ... */
       for (let i = 0; i < size; i++)
         for (let j = 0; j < size; j++) {
           const cell = grid[i][j];
@@ -497,7 +513,6 @@
     };
 
     const lerpColor = function (a, b, amount) {
-      /* ... same ... */
       const ar = a >> 16,
         ag = (a >> 8) & 0xff,
         ab = a & 0xff,
@@ -516,26 +531,58 @@
       oneSolutionColor = "#299b20";
     const twoSolutionColor = 0xafafff,
       eightSolutionColor = 0x0000ff;
-    const setCenterMarkColor = function (cell, numSols, candIdx) {
-      /* ... same ... */
+    const setCenterMarkColor = function (cell, numSols, candIdx, solutionCap) {
       if (!cell.centerPencilMarkColors) cell.centerPencilMarkColors = [];
       let curCol = baseSolutionColor;
+      const realSolutionCap = getSolutionCap();
+
       if (numSols < 0) curCol = logicalSolutionColor;
+      else if (realSolutionCap === 1)
+        curCol = baseSolutionColor; // All black if cap is 1
       else if (numSols === 1) curCol = oneSolutionColor;
-      else if (numSols > 1)
+      else if (numSols > 1) {
+        // Clamp to the cap and adjust gradient
+        const clampedSols = Math.min(numSols, solutionCap);
+        const normalizedAmount =
+          Math.min(solutionCap - 2, clampedSols - 2) /
+          Math.max(1, solutionCap - 2);
         curCol = lerpColor(
           twoSolutionColor,
           eightSolutionColor,
-          Math.min(6, numSols - 2) / 6
+          normalizedAmount
         );
+      }
       cell.centerPencilMarkColors[candIdx + 1] = curCol;
     };
     const importCandidates = function (response) {
-      /* ... same ... */
       clearPencilmarkColors();
       if (response.type === "truecandidates") {
         const sols = response.solutionsPerCandidate;
-        const col = boolSettings["ColoredCandidates"];
+        const showColors = getSolutionCap() > 1;
+
+        let maxSols = 0;
+        for (let i = 0; i < size; i++) {
+          for (let j = 0; j < size; j++) {
+            const cel = grid[i][j];
+            if (!cel || cel.given) continue;
+            const ci = i * size + j;
+            let numCands = 0;
+            for (let cidx = 0; cidx < size; cidx++) {
+              let ns = sols[ci * size + cidx];
+              if (ns !== 0) {
+                numCands++;
+              }
+            }
+
+            if (numCands > 1) {
+              for (let cidx = 0; cidx < size; cidx++) {
+                let ns = sols[ci * size + cidx];
+                maxSols = Math.max(maxSols, ns);
+              }
+            }
+          }
+        }
+
         for (let i = 0; i < size; i++)
           for (let j = 0; j < size; j++) {
             const cel = grid[i][j];
@@ -546,8 +593,8 @@
               let ns = sols[ci * size + cidx];
               if (ns !== 0) {
                 cands.push(cidx + 1);
-                if (!col && ns > 0) ns = 0;
-                setCenterMarkColor(cel, ns, cidx);
+                if (!showColors && ns > 0) ns = 0;
+                setCenterMarkColor(cel, ns, cidx, maxSols);
               }
             }
             if (
@@ -586,7 +633,6 @@
       onInputEnd();
     };
     const importGivens = function (response) {
-      /* ... same ... */
       if (response.type === "solved") {
         const sol = response.solution;
         for (let i = 0; i < size; i++)
@@ -604,7 +650,6 @@
       onInputEnd();
     };
     const clearCandidates = function () {
-      /* ... same ... */
       for (let i = 0; i < size; i++)
         for (let j = 0; j < size; j++) {
           const cel = grid[i][j];
@@ -616,7 +661,6 @@
         }
     };
     const handleInvalid = function (response) {
-      /* ... same ... */
       if (response.type === "invalid") {
         if (response.message && response.message.length > 0)
           log(response.message);
@@ -626,12 +670,10 @@
       return false;
     };
     const handleTrueCandidates = function (response) {
-      /* ... same ... */
       if (handleInvalid(response)) clearCandidates();
       else importCandidates(response);
     };
     const handleSolve = function (response) {
-      /* ... same ... */
       if (handleInvalid(response)) clearCandidates();
       else importGivens(response);
       if (cancelButton && cancelButton.solverCommand === "solve") {
@@ -640,7 +682,6 @@
       }
     };
     const handleCheck = function (response) {
-      /* ... same ... */
       let compl = false;
       if (response.type === "count") {
         if (!response.inProgress) {
@@ -657,7 +698,6 @@
       }
     };
     const handleCount = function (response) {
-      /* ... same ... */
       let compl = false;
       if (response.type === "count") {
         const ct = response.count;
@@ -683,14 +723,12 @@
       }
     };
     const handlePath = function (response) {
-      /* ... same ... */
       if (!handleInvalid(response)) {
         importCandidates(response);
         log(response.message, { newLine: false });
       }
     };
     const handleStep = function (response) {
-      /* ... same ... */
       if (!handleInvalid(response)) {
         importCandidates(response);
         log(response.message, { newLine: false });
@@ -847,7 +885,6 @@
 
     const origDrawPopups = drawPopups;
     const trueCandidatesOptionChanged = function () {
-      /* ... same ... */
       if (!this.hovering()) return;
       this.origClickSS();
       if (boolSettings["TrueCandidates"]) {
@@ -856,8 +893,34 @@
       }
       return true;
     };
+
+    const solutionCapButtonClick = function () {
+      if (!this.hovering()) return;
+      const currentCap = getSolutionCap();
+      const newCap = prompt(
+        `Enter solution cap (minimum 1):`,
+        currentCap.toString()
+      );
+      if (newCap !== null) {
+        const parsedCap = parseInt(newCap, 10);
+        if (isNaN(parsedCap) || parsedCap < 1) {
+          alert("Please enter a valid number >= 1");
+          return false;
+        }
+        boolSettings["SolutionCap"] = parsedCap;
+        this.title = `Solution Cap: ${parsedCap}`;
+        this.value = parsedCap;
+        if (boolSettings["TrueCandidates"]) {
+          clearPencilmarkColors();
+          sendPuzzle("truecandidates");
+        }
+
+        saveSettings();
+      }
+      return true;
+    };
     const settingsButtons = [
-      /* ... same ... */ { heading: "Logical Solve Settings" },
+      { heading: "Logical Solve Settings" },
       {
         id: "EnableLogicTuples",
         label: "Tuples",
@@ -896,10 +959,11 @@
       },
       { heading: "True Candidates Settings" },
       {
-        id: "ColoredCandidates",
-        label: "Solution Count",
-        default: false,
-        click: trueCandidatesOptionChanged,
+        id: "SolutionCap",
+        label: "Solution Cap: 1",
+        default: 1,
+        custom: true,
+        click: solutionCapButtonClick,
       },
       {
         id: "LogicalCandidates",
@@ -911,9 +975,20 @@
       { id: "EditGivenMarks", label: "Edit Given Pencilmarks", default: false },
     ];
     drawPopups = function (overlapSidebars) {
-      /* ... same ... */
       origDrawPopups(overlapSidebars);
       if (overlapSidebars && popup === "solversettings") {
+        // Update SolutionCap button title to show current value
+        const solutionCapButton = buttons.find(
+          (b) =>
+            b.modes &&
+            b.modes.includes("solversettings") &&
+            b.id === "SolutionCap"
+        );
+        if (solutionCapButton) {
+          const currentCap = getSolutionCap();
+          solutionCapButton.title = `Solution Cap: ${currentCap}`;
+        }
+
         const box = popups[cID(popup)];
         ctx.lineWidth = lineWW;
         ctx.fillStyle = boolSettings["Dark Mode"] ? "#404040" : "#E0E0E0";
@@ -955,7 +1030,6 @@
       }
     };
     settingsButton.click = function () {
-      /* ... same ... */
       if (!this.hovering()) return;
       togglePopup("solversettings");
       return true;
@@ -977,7 +1051,6 @@
     buttons.push(closeSettingsButton);
     let numSettingsButtons = 0;
     for (let buttonData of settingsButtons) {
-      /* ... same ... */
       if (!buttonData.heading) {
         const newButton = new button(
           canvas.width / 2 - (buttonSH + buttonGap) / 2,
@@ -998,10 +1071,25 @@
           )
         ) {
           boolSettings.push(buttonData.id);
-          defaultSettings.push(buttonData.default ? true : false);
+          if (buttonData.custom) {
+            // For custom buttons like SolutionCap, store the default value directly
+            defaultSettings.push(buttonData.default);
+            boolSettings[buttonData.id] = buttonData.default;
+          } else {
+            defaultSettings.push(buttonData.default ? true : false);
+            boolSettings[buttonData.id] = buttonData.default ? true : false;
+          }
           extraSettingsNames.push(buttonData.id);
+        } else if (!buttonData.custom) {
+          boolSettings[buttonData.id] = buttonData.default ? true : false;
         }
-        boolSettings[buttonData.id] = buttonData.default ? true : false;
+
+        // Update button label for SolutionCap to show current value
+        if (buttonData.id === "SolutionCap") {
+          const currentCap = getSolutionCap();
+          newButton.title = `Solution Cap: ${currentCap}`;
+        }
+
         buttons.push(newButton);
         if (buttonData.click) {
           newButton.origClickSS = newButton.click;
@@ -1065,7 +1153,6 @@
     );
     let origCreateOtherButtons = createOtherButtons;
     createOtherButtons = function () {
-      /* ... same, careful with settings mutation ... */
       const tempRem = {};
       for (let name of extraSettingsNames) {
         let idx = boolSettings.indexOf(name);
@@ -1086,7 +1173,13 @@
         if (!boolSettings.includes(name)) {
           boolSettings.push(name);
           const sDef = settingsButtons.find((sb) => sb.id === name);
-          const dVal = sDef ? (sDef.default ? true : false) : false;
+          let dVal;
+          if (sDef && sDef.custom) {
+            // For custom settings like SolutionCap, use the actual default value
+            dVal = sDef.default;
+          } else {
+            dVal = sDef ? (sDef.default ? true : false) : false;
+          }
           defaultSettings.push(dVal);
           boolSettings[name] = tempRem.hasOwnProperty(name)
             ? tempRem[name]
@@ -1131,7 +1224,6 @@
 
     const origCell = cell;
     cell = function (i, j, outside) {
-      /* ... same cell rendering ... */
       const c = new origCell(i, j, outside);
       c.origEnterSS = c.enter;
       c.enter = function (val, forced, isLast) {
@@ -1265,7 +1357,6 @@
     const enableLogicPrefix = "enablelogic";
     const origExportPuzzle = exportPuzzle;
     exportPuzzle = function (includeCands) {
-      /* ... same ... */
       const comp = origExportPuzzle(includeCands);
       const puz = JSON.parse(compressor.decompressFromBase64(comp));
       for (let i = 0; i < size; i++)
@@ -1279,7 +1370,6 @@
     };
     const origImportPuzzle = importPuzzle;
     importPuzzle = function (str, clearHist) {
-      /* ... same ... */
       origImportPuzzle(str, clearHist);
       const puz = JSON.parse(compressor.decompressFromBase64(str));
       for (let i = 0; i < size; i++)

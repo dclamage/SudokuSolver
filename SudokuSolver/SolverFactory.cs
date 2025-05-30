@@ -400,20 +400,34 @@ namespace SudokuSolver
             comparableData.Write(solver.DisabledLogicFlags);
 
             uint trueCandidatesOptionFlags = 0;
+            long trueCandidatesNumSolutions = 0;
             if (fpuzzlesData.truecandidatesoptions != null)
             {
-                if (fpuzzlesData.truecandidatesoptions.Contains("colored"))
+                foreach (var opt in fpuzzlesData.truecandidatesoptions)
                 {
-                    solver.customInfo.Add("truecandidatescolored", true);
-                    trueCandidatesOptionFlags |= (1u << 0);
-                }
-                if (fpuzzlesData.truecandidatesoptions.Contains("logical"))
-                {
-                    solver.customInfo.Add("truecandidateslogical", true);
-                    trueCandidatesOptionFlags |= (1u << 1);
+                    if (opt.StartsWith("truecandidatesnumsolutions=", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var parts = opt.Split('=');
+                        if (parts.Length == 2 && long.TryParse(parts[1], out long n) && n > 0)
+                        {
+                            solver.customInfo["truecandidatesnumsolutions"] = n;
+                            trueCandidatesNumSolutions = n;
+                        }
+                    }
+                    else if (opt.Equals("colored", StringComparison.OrdinalIgnoreCase))
+                    {
+                        solver.customInfo["truecandidatescolored"] = true;
+                        trueCandidatesOptionFlags |= (1u << 0);
+                    }
+                    else if (opt.Equals("logical", StringComparison.OrdinalIgnoreCase))
+                    {
+                        solver.customInfo["truecandidateslogical"] = true;
+                        trueCandidatesOptionFlags |= (1u << 1);
+                    }
                 }
             }
             comparableData.Write(trueCandidatesOptionFlags);
+            comparableData.Write(trueCandidatesNumSolutions);
 
             solver.SetRegions(regions);
 
