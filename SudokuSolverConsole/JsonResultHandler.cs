@@ -296,7 +296,7 @@ public static class JsonResultHandler
         {
             List<LogicalStepDesc> stepDescs = [];
             string beforeState = solver.OutputString;
-            LogicResult result = solver.StepLogic(stepDescs);
+            LogicResult result = solver.StepLogic(stepDescs, cancellationToken);
             
             if (result == LogicResult.None || result == LogicResult.PuzzleComplete)
             {
