@@ -333,15 +333,32 @@ public partial class Solver
         for (int cand = 0; cand < NUM_CANDIDATES; cand++)
         {
             var links = weakLinks[cand];
-            // Remove in reverse to avoid index shifting
-            for (int i = links.Count - 1; i >= 0; i--)
+            if (links.Count == 0)
             {
-                int otherCand = links[i];
-                if (!IsCandIndexValid(cand) || !IsCandIndexValid(otherCand))
+                continue;
+            }
+
+            int writeIndex = 0;
+            for (int readIndex = 0; readIndex < links.Count; readIndex++)
+            {
+                int otherCand = links[readIndex];
+                if (IsCandIndexValid(cand) && IsCandIndexValid(otherCand))
                 {
-                    links.RemoveAt(i);
-                    totalWeakLinks--;
+                    if (writeIndex != readIndex)
+                    {
+                        links[writeIndex] = otherCand;
+                    }
+                    writeIndex++;
                 }
+                else
+                {
+                    totalWeakLinks--; // Decrement for each removed link
+                }
+            }
+
+            if (writeIndex < links.Count)
+            {
+                links.RemoveRange(writeIndex, links.Count - writeIndex);
             }
         }
     }
