@@ -735,6 +735,39 @@
       }
     };
 
+    const safeHandleNotNumber = function (num) {
+        // If it's already a string, return it as is
+        if (typeof num === "string") return num;
+        // Convert to string
+        if (num === null || num === undefined) return "null";
+        if (num === true) return "true";
+        if (num === false) return "false";
+        // If it's an object or array, convert to string
+        if (typeof num === "object") return JSON.stringify(num);
+        // If it's a function, return its name or a placeholder
+        if (typeof num === "function") return num.name || "Function";
+        // For any other type, just return the string representation
+        if (num.toString) return num.toString();
+        // If toString is not available, return a generic string
+        return String(num);
+    }
+
+    const safeToFixed = function (num, digits) {
+      if (typeof num !== "number") return safeHandleNotNumber(num);
+      if (isNaN(num)) return "NaN";
+      if (num === Infinity) return "Infinity";
+      if (num === -Infinity) return "-Infinity";
+      return num.toFixed(digits);
+    }
+
+    const safeToExp = function (num, digits) {
+      if (typeof num !== "number") return safeHandleNotNumber(num);
+      if (isNaN(num)) return "NaN";
+      if (num === Infinity) return "Infinity";
+      if (num === -Infinity) return "-Infinity";
+      return num.toExponential(digits);
+    }
+
     const handleEstimate = function (response) {
       if (handleInvalid(response)) {
         // Should not happen for estimate type, but good practice
@@ -745,20 +778,23 @@
         }
         return;
       }
+
+      response.estimate = safeToExp(response.estimate, 3);
+      response.relErrPercent = safeToFixed(response.relErrPercent, 2);
+      response.stderr = safeToExp(response.stderr, 3);
+      response.ci95_lower = safeToExp(response.ci95_lower, 3);
+      response.ci95_upper = safeToExp(response.ci95_upper, 3);
+
       clearConsole(); // Clear previous estimate message
       log(
         `Solution Estimate (after ${response.iterations.toLocaleString()} iterations):`
       );
       log(
-        `  ~ ${response.estimate.toExponential(
-          3
-        )} (Rel.Err: ${response.relErrPercent.toFixed(2)}%)`
+        `  ~ ${response.estimate} (Rel.Err: ${response.relErrPercent}%)`
       );
-      log(`  Stderr: ${response.stderr.toExponential(3)}`);
+      log(`  Stderr: ${response.stderr}`);
       log(
-        `  95% CI: [${response.ci95_lower.toExponential(
-          3
-        )}, ${response.ci95_upper.toExponential(3)}]`
+        `  95% CI: [${response.ci95_lower}, ${response.ci95_upper}]`
       );
       commandIsComplete = false; // Indicate that more updates are expected
     };
@@ -845,11 +881,11 @@
               }
             } catch (e) {
               console.error("Error processing message from solver:", e);
+              log("Error processing message from solver: " + e.message);
               if (solverSocket) connectButton.title = "Disconnect";
               else connectButton.title = "Connect";
               if (cancelButton) {
-                cancelButton.title = cancelButton.origTitle;
-                cancelButton = null;
+                cancelButton.click(true); // Force cancel button to reset
               }
               commandIsComplete = true;
             } finally {
