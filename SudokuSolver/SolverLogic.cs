@@ -17,7 +17,7 @@ public partial class Solver
     /// </summary>
     /// <param name="stepsDescription">Get a full description of all logical steps taken.</param>
     /// <returns></returns>
-    public LogicResult ConsolidateBoard(List<LogicalStepDesc> logicalStepDescs = null)
+    public LogicResult ConsolidateBoard(List<LogicalStepDesc> logicalStepDescs = null, CancellationToken cancellationToken = default)
     {
         if (seenMap == null)
         {
@@ -28,6 +28,8 @@ public partial class Solver
         LogicResult result;
         do
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (!isBruteForcing && !IsBoardValid(logicalStepDescs))
             {
                 result = LogicResult.Invalid;
@@ -76,7 +78,7 @@ public partial class Solver
     /// </summary>
     /// <param name="stepDescription"></param>
     /// <returns></returns>
-    public LogicResult StepLogic(List<LogicalStepDesc> logicalStepDescs)
+    public LogicResult StepLogic(List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken = default)
     {
         if (seenMap == null)
         {
@@ -127,6 +129,8 @@ public partial class Solver
             return LogicResult.None;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         // Re-evaluate weak links
         foreach (var constraint in constraints)
         {
@@ -135,11 +139,15 @@ public partial class Solver
             {
                 return logicResult;
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
         }
 
         if (!DisableTuples || !DisablePointing)
         {
-            result = FindNakedTuplesAndPointing(!DisableTuples, !DisablePointing, logicalStepDescs);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            result = FindNakedTuplesAndPointing(!DisableTuples, !DisablePointing, logicalStepDescs, cancellationToken);
             if (result != LogicResult.None)
             {
                 return result;
@@ -148,7 +156,9 @@ public partial class Solver
 
         if (!DisablePointing)
         {
-            result = FindDirectCellForcing(logicalStepDescs);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            result = FindDirectCellForcing(logicalStepDescs, cancellationToken);
             if (result != LogicResult.None)
             {
                 return result;
@@ -157,13 +167,17 @@ public partial class Solver
 
         if (!DisableFishes)
         {
-            result = FindFishes(logicalStepDescs);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            result = FindFishes(logicalStepDescs, cancellationToken);
             if (result != LogicResult.None)
             {
                 return result;
             }
 
-            result = FindFinnedFishes(logicalStepDescs);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            result = FindFinnedFishes(logicalStepDescs, cancellationToken);
             if (result != LogicResult.None)
             {
                 return result;
@@ -172,7 +186,9 @@ public partial class Solver
 
         if (!DisableWings)
         {
-            result = FindWings(logicalStepDescs);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            result = FindWings(logicalStepDescs, cancellationToken);
             if (result != LogicResult.None)
             {
                 return result;
@@ -181,14 +197,18 @@ public partial class Solver
 
         if (!DisableAIC)
         {
-            result = FindAIC(logicalStepDescs);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            result = FindAIC(logicalStepDescs, cancellationToken);
             if (result != LogicResult.None)
             {
                 return result;
             }
         }
 
-        result = FindSimpleContradictions(logicalStepDescs);
+        cancellationToken.ThrowIfCancellationRequested();
+
+        result = FindSimpleContradictions(logicalStepDescs, cancellationToken);
         if (result != LogicResult.None)
         {
             return result;
@@ -452,7 +472,7 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FindDirectCellForcing(List<LogicalStepDesc> logicalStepDescs)
+    private LogicResult FindDirectCellForcing(List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken)
     {
         List<int> elims = [];
         for (int i = 0; i < HEIGHT; i++)
@@ -517,7 +537,7 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FindNakedTuplesAndPointing(bool isTuplesEnabled, bool isPointingEnabled, List<LogicalStepDesc> logicalStepDescs)
+    private LogicResult FindNakedTuplesAndPointing(bool isTuplesEnabled, bool isPointingEnabled, List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken)
     {
         List<int> unsetCells = new(MAX_VALUE);
         for (int numCells = 2; numCells <= MAX_VALUE; numCells++)
@@ -526,6 +546,8 @@ public partial class Solver
             {
                 foreach (var group in Groups)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     if (group.Cells.Count < numCells)
                     {
                         continue;
@@ -581,6 +603,8 @@ public partial class Solver
                 // but prefers 2 cells pointing over a triple.
                 foreach (var group in Groups.Where(g => g.Cells.Count == MAX_VALUE || g.FromConstraint != null))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     uint setValuesMask = 0;
                     uint unsetValuesMask = 0;
                     foreach (int cellIndex in group.Cells)
@@ -684,7 +708,7 @@ public partial class Solver
         return LogicResult.Changed;
     }
 
-    private LogicResult FindUnorthodoxTuple(List<LogicalStepDesc> logicalStepDescs, int tupleSize)
+    private LogicResult FindUnorthodoxTuple(List<LogicalStepDesc> logicalStepDescs, int tupleSize, CancellationToken cancellationToken)
     {
         List<(int, int)> candidateCells = new();
         for (int i = 0; i < HEIGHT; i++)
@@ -860,7 +884,7 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FindFishes(List<LogicalStepDesc> logicalStepDescs)
+    private LogicResult FindFishes(List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken)
     {
         if (WIDTH != MAX_VALUE || HEIGHT != MAX_VALUE)
         {
@@ -896,6 +920,8 @@ public partial class Solver
         {
             for (int rowOrCol = 0; rowOrCol < 2; rowOrCol++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 uint[,] indexByValue = rowcolIndexByValue[rowOrCol];
 
                 for (int valueIndex = 0; valueIndex < MAX_VALUE; valueIndex++)
@@ -997,7 +1023,7 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FindFinnedFishes(List<LogicalStepDesc> logicalStepDescs)
+    private LogicResult FindFinnedFishes(List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken)
     {
         if (WIDTH != MAX_VALUE || HEIGHT != MAX_VALUE)
         {
@@ -1033,6 +1059,8 @@ public partial class Solver
         {
             for (int rowOrCol = 0; rowOrCol < 2; rowOrCol++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 uint[,] indexByValue = rowcolIndexByValue[rowOrCol];
 
                 for (int valueIndex = 0; valueIndex < MAX_VALUE; valueIndex++)
@@ -1179,7 +1207,7 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FindWings(List<LogicalStepDesc> logicalStepDescs)
+    private LogicResult FindWings(List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken)
     {
         if (isBruteForcing)
         {
@@ -1205,6 +1233,8 @@ public partial class Solver
         // Look for Y-Wings
         for (int c0 = 0; c0 < candidateCells.Count - 2; c0++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             var (i0, j0) = candidateCells[c0];
             uint mask0 = this[i0, j0];
             for (int c1 = c0 + 1; c1 < candidateCells.Count - 1; c1++)
@@ -1283,13 +1313,13 @@ public partial class Solver
 
         // Look for XYZ-wings
         // Look for unorthodox tuples of this size before looking for wings
-        LogicResult logicResult = FindUnorthodoxTuple(logicalStepDescs, 3);
+        LogicResult logicResult = FindUnorthodoxTuple(logicalStepDescs, 3, cancellationToken);
         if (logicResult != LogicResult.None)
         {
             return logicResult;
         }
 
-        logicResult = FindNWing(logicalStepDescs, 3);
+        logicResult = FindNWing(logicalStepDescs, 3, cancellationToken);
         if (logicResult != LogicResult.None)
         {
             return logicResult;
@@ -1298,13 +1328,13 @@ public partial class Solver
         // TODO: W-Wing
 
         // Look for WXYZ-Wings
-        logicResult = FindUnorthodoxTuple(logicalStepDescs, 4);
+        logicResult = FindUnorthodoxTuple(logicalStepDescs, 4, cancellationToken);
         if (logicResult != LogicResult.None)
         {
             return logicResult;
         }
 
-        logicResult = FindNWing(logicalStepDescs, 4);
+        logicResult = FindNWing(logicalStepDescs, 4, cancellationToken);
         if (logicResult != LogicResult.None)
         {
             return logicResult;
@@ -1317,13 +1347,13 @@ public partial class Solver
         for (int wingSize = 5; wingSize <= MAX_VALUE; wingSize++)
         {
             // Look for unorthodox tuples of this size before looking for wings
-            logicResult = FindUnorthodoxTuple(logicalStepDescs, wingSize);
+            logicResult = FindUnorthodoxTuple(logicalStepDescs, wingSize, cancellationToken);
             if (logicResult != LogicResult.None)
             {
                 return logicResult;
             }
 
-            logicResult = FindNWing(logicalStepDescs, wingSize);
+            logicResult = FindNWing(logicalStepDescs, wingSize, cancellationToken);
             if (logicResult != LogicResult.None)
             {
                 return logicResult;
@@ -1333,7 +1363,7 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FindNWing(List<LogicalStepDesc> logicalStepDescs, int wingSize)
+    private LogicResult FindNWing(List<LogicalStepDesc> logicalStepDescs, int wingSize, CancellationToken cancellationToken)
     {
         List<(int, int)> candidateCells = new();
         for (int i = 0; i < HEIGHT; i++)
@@ -1432,6 +1462,8 @@ public partial class Solver
 
         while (true)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             // Check if this wing info is valid and performs eliminations
             var (_, _, accumMask, ungroupedValue) = wingInfoArray[wingSize - 1];
             if (ValueCount(accumMask) == wingSize && ungroupedValue > 0)
@@ -1524,9 +1556,9 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FindAIC(List<LogicalStepDesc> logicalStepDescs) => new AICSolver(this, logicalStepDescs).FindAIC();
+    private LogicResult FindAIC(List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken) => new AICSolver(this, logicalStepDescs, cancellationToken).FindAIC();
 
-    private LogicResult FindSimpleContradictions(List<LogicalStepDesc> logicalStepDescs)
+    private LogicResult FindSimpleContradictions(List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken)
     {
         for (int allowedValueCount = 2; allowedValueCount <= MAX_VALUE; allowedValueCount++)
         {
@@ -1543,6 +1575,8 @@ public partial class Solver
                             uint valueMask = ValueMask(v);
                             if ((cellMask & valueMask) != 0)
                             {
+                                cancellationToken.ThrowIfCancellationRequested();
+
                                 Solver boardCopy = Clone(willRunNonSinglesLogic: false);
                                 boardCopy.isBruteForcing = true;
 
