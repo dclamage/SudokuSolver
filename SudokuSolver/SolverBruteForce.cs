@@ -1,4 +1,6 @@
-﻿namespace SudokuSolver;
+﻿using System.Threading;
+
+namespace SudokuSolver;
 
 public partial class Solver
 {
@@ -18,7 +20,7 @@ public partial class Solver
         }
 
         Solver solver = Clone(willRunNonSinglesLogic: true);
-        if (solver.DiscoverWeakLinks() == LogicResult.Invalid)
+        if (solver.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
         {
             return false;
         }
@@ -129,7 +131,7 @@ public partial class Solver
                 continue;
             }
 
-            LogicResult logicResult = solver.BruteForcePropagate(false);
+            LogicResult logicResult = solver.BruteForcePropagate(false, state.cancellationToken);
             if (logicResult == LogicResult.PuzzleComplete)
             {
                 state.ReportSolution(solver);
@@ -192,7 +194,7 @@ public partial class Solver
         try
         {
             Solver boardCopy = Clone(willRunNonSinglesLogic: true);
-            if (boardCopy.DiscoverWeakLinks() == LogicResult.Invalid)
+            if (boardCopy.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
             {
                 return 0;
             }
@@ -324,7 +326,7 @@ public partial class Solver
         {
             state.cancellationToken.ThrowIfCancellationRequested();
 
-            LogicResult logicResult = solver.BruteForcePropagate(false);
+            LogicResult logicResult = solver.BruteForcePropagate(false, state.cancellationToken);
             if (logicResult == LogicResult.PuzzleComplete)
             {
                 state.IncrementSolutions(solver);
@@ -378,7 +380,7 @@ public partial class Solver
         try
         {
             Solver boardCopy = Clone(willRunNonSinglesLogic: false);
-            if (boardCopy.DiscoverWeakLinks() == LogicResult.Invalid)
+            if (boardCopy.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
             {
                 return state.candidateSolutionCounts;
             }
@@ -542,7 +544,7 @@ public partial class Solver
     private bool TrueCandidatesPropogate(TrueCandidatesState state)
     {
         // Depth 0 pass to see if it's trivially invalid, solved, or useless
-        LogicResult logicResult = BruteForcePropagate(false);
+        LogicResult logicResult = BruteForcePropagate(false, state.cancellationToken);
         if (logicResult == LogicResult.Invalid)
         {
             return false;
@@ -675,7 +677,7 @@ public partial class Solver
         try
         {
             Solver root = Clone(willRunNonSinglesLogic: true);
-            if (root.DiscoverWeakLinks() == LogicResult.Invalid)
+            if (root.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
             {
                 progressEvent((0, 0, 0));
                 return;
@@ -785,7 +787,7 @@ public partial class Solver
             //------------------------------------------------------------
             // 1.  Propagate singles
             //------------------------------------------------------------
-            LogicResult lr = solver.BruteForcePropagate(false);
+            LogicResult lr = solver.BruteForcePropagate(false, state.cancellationToken);
             if (lr == LogicResult.Invalid)
             {
                 state.NewSample(exactCarry); // contributes 0
@@ -836,7 +838,7 @@ public partial class Solver
                     continue;
                 }
 
-                LogicResult childResult = childSolver.BruteForcePropagate(false);
+                LogicResult childResult = childSolver.BruteForcePropagate(false, state.cancellationToken);
                 if (childResult == LogicResult.Invalid)
                 {
                     // contradiction

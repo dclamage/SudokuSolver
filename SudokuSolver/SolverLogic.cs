@@ -36,7 +36,7 @@ public partial class Solver
             }
             else
             {
-                result = StepLogic(logicalStepDescs);
+                result = StepLogic(logicalStepDescs, cancellationToken);
             }
             changed |= result == LogicResult.Changed;
         } while (result == LogicResult.Changed);
@@ -78,7 +78,7 @@ public partial class Solver
     /// </summary>
     /// <param name="stepDescription"></param>
     /// <returns></returns>
-    public LogicResult StepLogic(List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken = default)
+    public LogicResult StepLogic(List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken)
     {
         if (seenMap == null)
         {
@@ -101,6 +101,8 @@ public partial class Solver
 
         foreach (var constraint in constraints)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             result = constraint.StepLogic(this, logicalStepDescs, isBruteForcing);
             if (result != LogicResult.None)
             {
@@ -1598,7 +1600,7 @@ public partial class Solver
                                     return LogicResult.Changed;
                                 }
 
-                                if (boardCopy.ConsolidateBoard(contradictionSteps) == LogicResult.Invalid)
+                                if (boardCopy.ConsolidateBoard(contradictionSteps, cancellationToken) == LogicResult.Invalid)
                                 {
                                     bool isTrivial = contradictionSteps != null && contradictionSteps.Count == 0;
                                     if (isTrivial)

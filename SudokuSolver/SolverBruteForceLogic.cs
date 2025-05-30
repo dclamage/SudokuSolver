@@ -116,7 +116,7 @@ public partial class Solver
     /// Run some hand-selected logic until nothing changes
     /// </summary>
     /// <returns></returns>
-    private LogicResult StepBruteForceLogic(bool doAdvancedStrategies)
+    private LogicResult StepBruteForceLogic(bool doAdvancedStrategies, CancellationToken cancellationToken)
     {
         LogicResult curResult = FindNakedSingles(null);
         if (curResult != LogicResult.None)
@@ -124,15 +124,19 @@ public partial class Solver
             return curResult;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         curResult = FindHiddenSingle(null);
         if (curResult != LogicResult.None)
         {
             return curResult;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (doAdvancedStrategies)
         {
-            curResult = FastAdvancedStrategies();
+            curResult = FastAdvancedStrategies(cancellationToken);
             if (curResult != LogicResult.None)
             {
                 return curResult;
@@ -141,6 +145,8 @@ public partial class Solver
 
         foreach (Constraint constraint in constraints)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             curResult = constraint.StepLogic(this, (List<LogicalStepDesc>)null, true);
             if (curResult != LogicResult.None)
             {
@@ -151,12 +157,14 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult BruteForcePropagate(bool doAdvancedStrategies)
+    private LogicResult BruteForcePropagate(bool doAdvancedStrategies, CancellationToken cancellationToken)
     {
         bool changed = false;
         while (true)
         {
-            LogicResult curResult = StepBruteForceLogic(doAdvancedStrategies);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            LogicResult curResult = StepBruteForceLogic(doAdvancedStrategies, cancellationToken);
             if (curResult is LogicResult.Invalid or LogicResult.PuzzleComplete)
             {
                 return curResult;
@@ -180,10 +188,10 @@ public partial class Solver
     /// be a lot of "magical" eliminations during logical stepping.
     /// </summary>
     /// <returns></returns>
-    private LogicResult DiscoverWeakLinks()
+    private LogicResult DiscoverWeakLinks(CancellationToken cancellationToken)
     {
         // Run logic on the base solver first
-        LogicResult result = BruteForcePropagate(true);
+        LogicResult result = BruteForcePropagate(true, cancellationToken);
         if (result == LogicResult.PuzzleComplete || result == LogicResult.Invalid)
         {
             return result;
@@ -192,6 +200,8 @@ public partial class Solver
         LogicResult innerResult;
         do
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             innerResult = LogicResult.None;
 
             for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
@@ -219,7 +229,7 @@ public partial class Solver
                     }
 
                     // Run some hand-selected logic until nothing changes
-                    LogicResult curResult = solver.BruteForcePropagate(true);
+                    LogicResult curResult = solver.BruteForcePropagate(true, cancellationToken);
                     if (curResult == LogicResult.None)
                     {
                         continue;
@@ -272,7 +282,7 @@ public partial class Solver
         return result;
     }
 
-    private LogicResult FastFindPairs()
+    private LogicResult FastFindPairs(CancellationToken cancellationToken)
     {
         // Gather a list of all bivalue cells
         List<(int cellIndex, uint mask)> bivalueCells = [];
@@ -292,6 +302,8 @@ public partial class Solver
 
         for (int i0 = 0; i0 < bivalueCells.Count; i0++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             (int cellIndex0, uint mask0) = bivalueCells[i0];
             List<int> weakLinks0 = weakLinks[cellIndex0];
             int valueA = MinValue(mask0);
@@ -327,7 +339,7 @@ public partial class Solver
     // Helper struct for FastFindTriples
     private readonly record struct PotentialTripleParticipant(int CellIndex, uint ActualCellMask, uint TargetTripleMask);
 
-    private LogicResult FastFindTriples()
+    private LogicResult FastFindTriples(CancellationToken cancellationToken)
     {
         List<PotentialTripleParticipant> participants = [];
 
@@ -374,6 +386,8 @@ public partial class Solver
 
         for (int i = 0; i < participants.Count - 2; i++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             PotentialTripleParticipant p_i = participants[i];
             int c0 = p_i.CellIndex;
 
@@ -458,12 +472,14 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FastFindPointing()
+    private LogicResult FastFindPointing(CancellationToken cancellationToken)
     {
         List<int> pointingCandidates = new(4);
         List<int> elims = [];
         foreach (SudokuGroup group in maxValueGroups)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             uint groupSpecific_SetValuesMask = 0;    // Mask of values already SET within this group
             uint groupSpecific_CandidatePoolMask = 0; // Mask of all candidates in UNSET cells of this group
 
@@ -524,11 +540,13 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FastFindCellForcing()
+    private LogicResult FastFindCellForcing(CancellationToken cancellationToken)
     {
         List<int> elims = [];
         for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             uint mask = board[cellIndex];
             if (IsValueSet(mask) || ValueCount(mask) > 3)
             {
@@ -576,29 +594,35 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    private LogicResult FastAdvancedStrategies()
+    private LogicResult FastAdvancedStrategies(CancellationToken cancellationToken)
     {
         LogicResult result;
 
-        result = FastFindPairs();
+        result = FastFindPairs(cancellationToken);
         if (result != LogicResult.None)
         {
             return result;
         }
 
-        result = FastFindPointing();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        result = FastFindPointing(cancellationToken);
         if (result != LogicResult.None)
         {
             return result;
         }
 
-        result = FastFindCellForcing();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        result = FastFindCellForcing(cancellationToken);
         if (result != LogicResult.None)
         {
             return result;
         }
 
-        result = FastFindTriples();
+        cancellationToken.ThrowIfCancellationRequested();
+
+        result = FastFindTriples(cancellationToken);
         if (result != LogicResult.None)
         {
             return result;

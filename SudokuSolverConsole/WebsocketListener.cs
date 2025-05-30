@@ -379,7 +379,7 @@ internal class WebsocketListener : IDisposable
                 }
             }
 
-            if (logicalSolver.ConsolidateBoard() == LogicResult.Invalid)
+            if (logicalSolver.ConsolidateBoard(cancellationToken: cancellationToken) == LogicResult.Invalid)
             {
                 SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
                 return;
