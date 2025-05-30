@@ -87,6 +87,10 @@ internal class LogicalResponse(int nonce) : BaseResponse(nonce, "logical")
 [JsonSerializable(typeof(CountResponse))]
 [JsonSerializable(typeof(LogicalResponse))]
 [JsonSerializable(typeof(EstimateResponse))]
+[JsonSourceGenerationOptions(
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
+    NumberHandling = JsonNumberHandling.AllowNamedFloatingPointLiterals
+)]
 internal partial class WebsocketsJsonContext : JsonSerializerContext
 {
 }
