@@ -209,16 +209,16 @@ internal class WebsocketListener : IDisposable
                             SendEstimate(ipPort, message.nonce, solver, cancellationToken);
                             break;
                         case "solvepath":
-                            SendSolvePath(ipPort, message.nonce, solver);
+                            SendSolvePath(ipPort, message.nonce, solver, cancellationToken);
                             break;
                         case "step":
-                            SendStep(ipPort, message.nonce, solver);
+                            SendStep(ipPort, message.nonce, solver, cancellationToken);
                             break;
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    // Do nothing, no response expected
+                    SendMessage(ipPort, new CanceledResponse(message.nonce));
                 }
                 catch (Exception e)
                 {
@@ -396,11 +396,7 @@ internal class WebsocketListener : IDisposable
                 numSolutionsCap: numSolutionsCap,
                 cancellationToken: cancellationToken);
 
-        if (cancellationToken.IsCancellationRequested)
-        {
-            SendMessage(ipPort, new CanceledResponse(nonce));
-            return;
-        }
+        cancellationToken.ThrowIfCancellationRequested();
 
         if (numSolutions == null || numSolutions.All(candidate => candidate == 0))
         {
@@ -501,14 +497,14 @@ internal class WebsocketListener : IDisposable
         return sb;
     }
 
-    private void SendSolvePath(string ipPort, int nonce, Solver solver)
+    private void SendSolvePath(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
     {
         List<LogicalStepDesc> logicalStepDescs = [];
-        LogicResult logicResult = solver.ConsolidateBoard(logicalStepDescs);
+        LogicResult logicResult = solver.ConsolidateBoard(logicalStepDescs, cancellationToken);
         SendLogicResponse(ipPort, nonce, solver, logicResult, StepsDescription(logicalStepDescs));
     }
 
-    private void SendStep(string ipPort, int nonce, Solver solver)
+    private void SendStep(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
     {
         if (solver.customInfo["OriginalCenterMarks"] is uint[,] originalCenterMarks)
         {
@@ -531,7 +527,7 @@ internal class WebsocketListener : IDisposable
         }
 
         List<LogicalStepDesc> logicalStepDescs = [];
-        LogicResult logicResult = solver.StepLogic(logicalStepDescs);
+        LogicResult logicResult = solver.StepLogic(logicalStepDescs, cancellationToken);
         SendLogicResponse(ipPort, nonce, solver, logicResult, StepsDescription(logicalStepDescs));
     }
 

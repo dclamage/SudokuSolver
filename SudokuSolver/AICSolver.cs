@@ -1,7 +1,4 @@
-﻿using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-
-namespace SudokuSolver;
+﻿namespace SudokuSolver;
 
 /// <summary>
 /// Container for computing Alternating Inference Chain logic
@@ -16,7 +13,8 @@ internal class AICSolver
 {
     // From the parent solver
     private readonly Solver solver;
-    private List<LogicalStepDesc> logicalStepDescs;
+    private readonly List<LogicalStepDesc> logicalStepDescs;
+    private readonly CancellationToken cancellationToken;
     private readonly int WIDTH;
     private readonly int HEIGHT;
     private readonly int MAX_VALUE;
@@ -36,11 +34,11 @@ internal class AICSolver
     // Discovered links
     private readonly Dictionary<int, StrongLinkDesc>[] strongLinks;
     // a - b = c - d: If a is true, then d is false
-    private readonly Dictionary<(int, int), List<int>> discoveredWeakLinks = new();
+    private readonly Dictionary<(int, int), List<int>> discoveredWeakLinks = [];
     // a = b - c = d: If a is false then d is true
-    private readonly Dictionary<(int, int), List<int>> discoveredStrongLinks = new();
+    private readonly Dictionary<(int, int), List<int>> discoveredStrongLinks = [];
     // a - b = c: If a is true then c is true
-    private readonly Dictionary<(int, int), List<int>> discoveredWeakToStrongLinks = new();
+    private readonly Dictionary<(int, int), List<int>> discoveredWeakToStrongLinks = [];
     private SortedSet<int>[] discoveredWeakLinksLookup = null;
     private SortedSet<int>[] discoveredWeakToStrongLinksLookup = null;
 
@@ -58,10 +56,11 @@ internal class AICSolver
         public static StrongLinkDesc Empty => new(string.Empty, null);
     }
 
-    public AICSolver(Solver solver, List<LogicalStepDesc> logicalStepDescs)
+    public AICSolver(Solver solver, List<LogicalStepDesc> logicalStepDescs, CancellationToken cancellationToken)
     {
         this.solver = solver;
         this.logicalStepDescs = logicalStepDescs;
+        this.cancellationToken = cancellationToken;
         WIDTH = solver.WIDTH;
         HEIGHT = solver.HEIGHT;
         MAX_VALUE = solver.MAX_VALUE;
@@ -82,7 +81,7 @@ internal class AICSolver
             {
                 if (IsCandIndexValid(cand1))
                 {
-                    discoveredWeakLinks.Add((cand0, cand1), new() { cand0, cand1 });
+                    discoveredWeakLinks.Add((cand0, cand1), [cand0, cand1]);
                 }
             }
 
@@ -90,7 +89,7 @@ internal class AICSolver
             {
                 if (IsCandIndexValid(cand1))
                 {
-                    discoveredStrongLinks.Add((cand0, cand1), new() { cand0, cand1 });
+                    discoveredStrongLinks.Add((cand0, cand1), [cand0, cand1]);
                 }
             }
         }
@@ -111,6 +110,8 @@ internal class AICSolver
         {
             for (int j = 0; j < WIDTH; j++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 uint mask = board[i, j];
                 if (IsValueSet(mask) || ValueCount(mask) <= 1)
                 {
@@ -135,18 +136,20 @@ internal class AICSolver
         }
 
         // Find region forcing chains
-        foreach (var group in solver.Groups)
+        foreach (SudokuGroup group in solver.Groups)
         {
             for (int v = 1; v <= MAX_VALUE; v++)
             {
-                var cellsMustContain = group.CellsMustContain(solver, v);
+                cancellationToken.ThrowIfCancellationRequested();
+
+                List<(int, int)> cellsMustContain = group.CellsMustContain(solver, v);
                 if (cellsMustContain == null || cellsMustContain.Count <= 1)
                 {
                     continue;
                 }
 
                 List<int> srcCandidates = new(cellsMustContain.Count);
-                foreach (var cell in cellsMustContain)
+                foreach ((int, int) cell in cellsMustContain)
                 {
                     srcCandidates.Add(CandidateIndex(cell, v));
                 }
@@ -171,7 +174,7 @@ internal class AICSolver
         {
             if (IsCandIndexValid(candIndex) && strongLinks[candIndex].Count > 0)
             {
-                chainQueue.Enqueue(new() { candIndex });
+                chainQueue.Enqueue([candIndex]);
             }
         }
 
@@ -183,11 +186,13 @@ internal class AICSolver
         // Find AIC, DNL, CNL
         while (chainQueue.Count > 0)
         {
-            var chain = chainQueue.Dequeue();
+            List<int> chain = chainQueue.Dequeue();
 
             // Append a strong link to each weak link and see if this causes eliminations.
             foreach (int strongIndexEnd in strongLinks[chain[^1]].Keys)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (!IsCandIndexValid(strongIndexEnd))
                 {
                     continue;
@@ -233,6 +238,8 @@ internal class AICSolver
                     }
                 }
 
+                cancellationToken.ThrowIfCancellationRequested();
+
                 List<int> newChain = new(chain.Count + 2);
                 newChain.AddRange(chain);
                 newChain.Add(strongIndexEnd);
@@ -240,11 +247,11 @@ internal class AICSolver
                 if (isDNL)
                 {
                     // Eliminate all candidates except strongIndexEnd from the cell
-                    var (i, j, v) = CandIndexToCoord(strongIndexEnd);
+                    (int i, int j, int v) = CandIndexToCoord(strongIndexEnd);
                     uint elimMask = board[i, j] & ~ValueMask(v);
                     if (elimMask != 0)
                     {
-                        List<int> chainElims = new();
+                        List<int> chainElims = [];
                         int minVal = MinValue(elimMask);
                         int maxVal = MaxValue(elimMask);
                         for (int curVal = minVal; curVal <= maxVal; curVal++)
@@ -263,7 +270,7 @@ internal class AICSolver
                 }
                 else
                 {
-                    var chainElims = CalcStrongElims(newChain);
+                    HashSet<int> chainElims = CalcStrongElims(newChain);
                     if (chainElims.Count > 0)
                     {
                         if (!CheckBestChain(newChain, chainElims.ToSortedList(), "AIC: "))
@@ -272,6 +279,8 @@ internal class AICSolver
                         }
                     }
                 }
+
+                cancellationToken.ThrowIfCancellationRequested();
 
                 if (isDNL)
                 {
@@ -286,7 +295,7 @@ internal class AICSolver
                 {
                     newChain[^1] = newChain[0];
 
-                    var chainElims = CalcStrongElims(newChain);
+                    HashSet<int> chainElims = CalcStrongElims(newChain);
                     chainElims.UnionWith(CalcWeakToStrongElims(newChain));
                     chainElims.UnionWith(CalcStrongToWeakElims(strongLinks, newChain));
                     if (chainElims.Count > 0)
@@ -297,10 +306,13 @@ internal class AICSolver
                         }
                     }
                 }
+                cancellationToken.ThrowIfCancellationRequested();
 
                 // Add all chain continuations
                 foreach (int weakIndexEnd in weakLinks[strongIndexEnd])
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     if (IsCandIndexValid(weakIndexEnd) && !newChain.Contains(weakIndexEnd))
                     {
                         newChain[^1] = weakIndexEnd;
@@ -316,9 +328,7 @@ internal class AICSolver
                                 {
                                     if (!discoveredWeakLinks.ContainsKey((candBefore, weakIndexEnd)))
                                     {
-                                        List<int> weakChain = new(newChain.Count + 1);
-                                        weakChain.Add(candBefore);
-                                        weakChain.AddRange(newChain);
+                                        List<int> weakChain = [candBefore, .. newChain];
                                         discoveredWeakLinks.Add((candBefore, weakIndexEnd), weakChain);
                                     }
                                 }
@@ -346,7 +356,9 @@ internal class AICSolver
         Solver directSinglesSolver = solver.Clone(willRunNonSinglesLogic: false);
         foreach (int elimCandIndex in chainElims)
         {
-            var (i, j, v) = solver.CandIndexToCoord(elimCandIndex);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            (int i, int j, int v) = solver.CandIndexToCoord(elimCandIndex);
             if (!directSinglesSolver.ClearValue(i, j, v))
             {
                 bestChain = new(chain);
@@ -370,6 +382,7 @@ internal class AICSolver
             bestChainDescPrefix = chainDescPrefix;
             return false;
         }
+        cancellationToken.ThrowIfCancellationRequested();
 
         Solver singlesAfterBasicsSolver = directSinglesSolver.Clone(willRunNonSinglesLogic: true);
         singlesAfterBasicsSolver.SetToBasicsOnly();
@@ -384,6 +397,7 @@ internal class AICSolver
             bestChainDescPrefix = chainDescPrefix;
             return false;
         }
+        cancellationToken.ThrowIfCancellationRequested();
 
         int difficulty = forcingChains != null ? forcingChains.Sum(l => l.Count) : chain.Count;
         int numDirectSingles = directSinglesSolver.NumSetValues;
@@ -409,7 +423,7 @@ internal class AICSolver
         Dictionary<int, StrongLinkDesc>[] strongLinks = new Dictionary<int, StrongLinkDesc>[NUM_CANDIDATES];
         for (int candIndex = 0; candIndex < strongLinks.Length; candIndex++)
         {
-            strongLinks[candIndex] = new();
+            strongLinks[candIndex] = [];
         }
 
         void AddStrongLink(int cand0, int cand1, StrongLinkDesc desc)
@@ -443,10 +457,13 @@ internal class AICSolver
                 }
             }
         }
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Add bilocal strong links
-        foreach (var group in solver.Groups)
+        foreach (SudokuGroup group in solver.Groups)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (group.Cells.Count == MAX_VALUE)
             {
                 int[] valueCount = new int[MAX_VALUE];
@@ -495,7 +512,7 @@ internal class AICSolver
             {
                 for (int v = 1; v <= MAX_VALUE; v++)
                 {
-                    var cells = group.FromConstraint.CellsMustContain(solver, v);
+                    List<(int, int)> cells = group.FromConstraint.CellsMustContain(solver, v);
                     if (cells != null && cells.Count == 2)
                     {
                         int cand0 = CandidateIndex(cells[0], v);
@@ -507,20 +524,23 @@ internal class AICSolver
                 }
             }
         }
+        cancellationToken.ThrowIfCancellationRequested();
 
         // Add ALS (Almost Locked Set) strong links
         // These occur when n cells in the same group have n+1 total candidates,
         // and two of those candidates only appear once.
         // There is a strong link between those two candidates.
         // (If both were missing, then there would be n-1 candidates for n cells).
-        foreach (var group in solver.Groups)
+        foreach (SudokuGroup group in solver.Groups)
         {
-            var unsetCells = group.Cells.Where(cellIndex => !IsValueSet(board[cellIndex])).ToList();
+            List<int> unsetCells = group.Cells.Where(cellIndex => !IsValueSet(board[cellIndex])).ToList();
 
             for (int alsSize = 2; alsSize < unsetCells.Count; alsSize++)
             {
-                foreach (var combination in unsetCells.Combinations(alsSize))
+                foreach (List<int> combination in unsetCells.Combinations(alsSize))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+
                     uint totalMask = 0;
                     foreach (int cellIndex in combination)
                     {
@@ -535,7 +555,7 @@ internal class AICSolver
                     List<int>[] candIndexPerValue = new List<int>[MAX_VALUE];
                     for (int v = 1; v <= MAX_VALUE; v++)
                     {
-                        candIndexPerValue[v - 1] = new();
+                        candIndexPerValue[v - 1] = [];
                     }
                     foreach (int cellIndex in combination)
                     {
@@ -550,7 +570,7 @@ internal class AICSolver
                         }
                     }
 
-                    List<int> singleValues = new();
+                    List<int> singleValues = [];
                     for (int v = 1; v <= MAX_VALUE; v++)
                     {
                         if (candIndexPerValue[v - 1].Count == 1)
@@ -561,7 +581,7 @@ internal class AICSolver
 
                     if (singleValues.Count > 1)
                     {
-                        foreach (var candIndices in singleValues.Combinations(2))
+                        foreach (List<int> candIndices in singleValues.Combinations(2))
                         {
                             int cand0 = candIndices[0];
                             int cand1 = candIndices[1];
@@ -593,9 +613,9 @@ internal class AICSolver
         discoveredWeakLinksLookup = new SortedSet<int>[NUM_CANDIDATES];
         for (int cand = 0; cand < NUM_CANDIDATES; cand++)
         {
-            discoveredWeakLinksLookup[cand] = new();
+            discoveredWeakLinksLookup[cand] = [];
         }
-        foreach (var ((cand0, cand1), chain) in discoveredWeakLinks)
+        foreach (((int cand0, int cand1), List<int> chain) in discoveredWeakLinks)
         {
             discoveredWeakLinksLookup[cand0].Add(cand1);
         }
@@ -604,9 +624,9 @@ internal class AICSolver
         discoveredWeakToStrongLinksLookup = new SortedSet<int>[NUM_CANDIDATES];
         for (int cand = 0; cand < NUM_CANDIDATES; cand++)
         {
-            discoveredWeakToStrongLinksLookup[cand] = new();
+            discoveredWeakToStrongLinksLookup[cand] = [];
         }
-        foreach (var ((cand0, cand1), chain) in discoveredWeakToStrongLinks)
+        foreach (((int cand0, int cand1), List<int> chain) in discoveredWeakToStrongLinks)
         {
             discoveredWeakToStrongLinksLookup[cand0].Add(cand1);
         }
@@ -620,6 +640,8 @@ internal class AICSolver
         SortedSet<int> truths = null;
         foreach (int cand0 in srcCandidates)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             if (canHaveElims)
             {
                 SortedSet<int> curElims = discoveredWeakLinksLookup[cand0];
@@ -688,13 +710,15 @@ internal class AICSolver
             {
                 foreach (int elim in chainElims)
                 {
-                    List<List<int>> forcingChains = new();
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    List<List<int>> forcingChains = [];
                     foreach (int cand0 in srcCandidates)
                     {
                         forcingChains.Add(discoveredWeakLinks[(cand0, elim)]);
                     }
 
-                    if (!CheckBestChain(srcCandidates, new() { elim }, desc, forcingChains))
+                    if (!CheckBestChain(srcCandidates, [elim], desc, forcingChains))
                     {
                         return ApplyBestChain();
                     }
@@ -709,13 +733,15 @@ internal class AICSolver
             {
                 foreach (int truth in chainTruths)
                 {
-                    List<List<int>> forcingChains = new();
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    List<List<int>> forcingChains = [];
                     foreach (int cand0 in srcCandidates)
                     {
                         forcingChains.Add(discoveredWeakToStrongLinks[(cand0, truth)]);
                     }
 
-                    var (ti, tj, tv) = CandIndexToCoord(truth);
+                    (int ti, int tj, int tv) = CandIndexToCoord(truth);
                     uint tmask = board[ti, tj];
                     List<int> cellElims = new(ValueCount(tmask) - 1);
                     int tminVal = MinValue(tmask);
@@ -745,7 +771,7 @@ internal class AICSolver
     // 6 = 9
     private HashSet<int> CalcStrongElims(List<int> chain)
     {
-        HashSet<int> elims = new();
+        HashSet<int> elims = [];
         for (int chainIndex0 = 0; chainIndex0 < chain.Count; chainIndex0 += 2)
         {
             int cand0 = chain[chainIndex0];
@@ -764,7 +790,7 @@ internal class AICSolver
     // 5 - 0
     private HashSet<int> CalcWeakToStrongElims(List<int> chain)
     {
-        HashSet<int> elims = new();
+        HashSet<int> elims = [];
         for (int chainIndex0 = 1; chainIndex0 < chain.Count; chainIndex0 += 2)
         {
             int cand0 = chain[chainIndex0];
@@ -782,15 +808,15 @@ internal class AICSolver
     // in the ALS must be present.
     private List<int> CalcStrongToWeakElims(Dictionary<int, StrongLinkDesc>[] strongLinks, List<int> chain)
     {
-        List<int> elims = new();
+        List<int> elims = [];
         for (int chainIndex0 = 0; chainIndex0 < chain.Count; chainIndex0 += 2)
         {
             int cand0 = chain[chainIndex0];
             for (int chainIndex1 = chainIndex0 + 1; chainIndex1 < chain.Count; chainIndex1 += 2)
             {
                 int cand1 = chain[chainIndex1];
-                var (_, _, v0) = CandIndexToCoord(cand0);
-                var (_, _, v1) = CandIndexToCoord(cand1);
+                (int _, int _, int v0) = CandIndexToCoord(cand0);
+                (int _, int _, int v1) = CandIndexToCoord(cand1);
                 if (strongLinks[cand0].TryGetValue(cand1, out StrongLinkDesc strongLinkDescOut) && strongLinkDescOut.alsCells != null)
                 {
                     uint totalMask = 0;
@@ -837,8 +863,8 @@ internal class AICSolver
             {
                 int candIndex0 = chain[ci];
                 int candIndex1 = chain[ci + 1];
-                var (i0, j0, v0) = CandIndexToCoord(candIndex0);
-                var (i1, j1, v1) = CandIndexToCoord(candIndex1);
+                (int i0, int j0, int v0) = CandIndexToCoord(candIndex0);
+                (int i1, int j1, int v1) = CandIndexToCoord(candIndex1);
                 if (i0 == i1 && j0 == j1)
                 {
                     chainDesc.Append($"({v0}{(strong ? "-" : $"=")}{v1}){CellName(i0, j0)}");
@@ -852,8 +878,8 @@ internal class AICSolver
             {
                 int candIndex0 = chain[ci - 1];
                 int candIndex1 = chain[ci];
-                var (i0, j0, v0) = CandIndexToCoord(candIndex0);
-                var (i1, j1, v1) = CandIndexToCoord(candIndex1);
+                (int i0, int j0, int v0) = CandIndexToCoord(candIndex0);
+                (int i1, int j1, int v1) = CandIndexToCoord(candIndex1);
 
                 if (v0 == v1)
                 {
@@ -879,11 +905,11 @@ internal class AICSolver
         {
             if (bestChainForcingChains != null)
             {
-                var stepDescription = new StringBuilder()
+                StringBuilder stepDescription = new StringBuilder()
                     .Append(bestChainDescPrefix);
 
                 List<(int i, int j, int v)> cells = bestChain.Select(CandIndexToCoord).ToList();
-                var (ci, cj, cv) = cells[0];
+                (int ci, int cj, int cv) = cells[0];
                 if (cells.All(x => x.i == ci && x.j == cj))
                 {
                     stepDescription.Append(solver.ValueNames(board[ci, cj]) + CellName(ci, cj));
@@ -895,7 +921,7 @@ internal class AICSolver
                 else
                 {
                     bool first = true;
-                    foreach (var (i, j, v) in cells)
+                    foreach ((int i, int j, int v) in cells)
                     {
                         if (!first)
                         {
@@ -910,8 +936,8 @@ internal class AICSolver
                     .Append(" => ")
                     .Append(solver.DescribeElims(bestChainElims));
 
-                List<LogicalStepDesc> subSteps = new();
-                foreach (var chain in bestChainForcingChains)
+                List<LogicalStepDesc> subSteps = [];
+                foreach (List<int> chain in bestChainForcingChains)
                 {
                     subSteps.Add(new(
                         desc: DescribeChain(chain, false),
@@ -928,7 +954,7 @@ internal class AICSolver
             }
             else
             {
-                var stepDescription = new StringBuilder()
+                StringBuilder stepDescription = new StringBuilder()
                     .Append(bestChainDescPrefix)
                     .Append(DescribeChain(bestChain))
                     .Append(" => ")
@@ -945,7 +971,7 @@ internal class AICSolver
         // Perform the eliminations
         foreach (int elimCandIndex in bestChainElims)
         {
-            var (i, j, v) = CandIndexToCoord(elimCandIndex);
+            (int i, int j, int v) = CandIndexToCoord(elimCandIndex);
             if (!solver.ClearValue(i, j, v))
             {
                 return LogicResult.Invalid;
@@ -960,7 +986,7 @@ internal class AICSolver
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private (int, int, int) CandIndexToCoord(int candIndex)
     {
-        int v = (candIndex % MAX_VALUE) + 1;
+        int v = candIndex % MAX_VALUE + 1;
         candIndex /= MAX_VALUE;
 
         int j = candIndex % WIDTH;
@@ -973,17 +999,26 @@ internal class AICSolver
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool IsCandIndexValid(int candIndex)
     {
-        var (i, j, v) = CandIndexToCoord(candIndex);
+        (int i, int j, int v) = CandIndexToCoord(candIndex);
         uint mask = board[i, j];
         return !IsValueSet(mask) && HasValue(mask, v);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal int CandidateIndex(int cellIndex, int v) => cellIndex * MAX_VALUE + v - 1;
+    internal int CandidateIndex(int cellIndex, int v)
+    {
+        return cellIndex * MAX_VALUE + v - 1;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal int CandidateIndex(int i, int j, int v) => (i * WIDTH + j) * MAX_VALUE + v - 1;
+    internal int CandidateIndex(int i, int j, int v)
+    {
+        return (i * WIDTH + j) * MAX_VALUE + v - 1;
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    internal int CandidateIndex((int, int) cell, int v) => (cell.Item1 * WIDTH + cell.Item2) * MAX_VALUE + v - 1;
+    internal int CandidateIndex((int, int) cell, int v)
+    {
+        return (cell.Item1 * WIDTH + cell.Item2) * MAX_VALUE + v - 1;
+    }
 }
