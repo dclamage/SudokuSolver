@@ -665,6 +665,17 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.slowthermometer != null)
+            {
+                foreach (var thermo in fpuzzlesData.slowthermometer)
+                {
+                    foreach (var line in thermo.lines)
+                    {
+                        solver.AddConstraint(typeof(SlowThermometerConstraint), ToOptions(line));
+                    }
+                }
+            }
+
             if (fpuzzlesData.palindrome != null)
             {
                 foreach (var palindrome in fpuzzlesData.palindrome)
@@ -1414,6 +1425,13 @@ namespace SudokuSolver
                 ziperline.Add(new() { lines = [cells] });
             }
 
+            List<FPuzzlesLines> slowthermometer = [];
+            foreach (var c in solver.Constraints<SlowThermometerConstraint>())
+            {
+                string[] cells = c.cells.Select(CN).ToArray();
+                slowthermometer.Add(new() { lines = [cells] });
+            }
+
             static T[] ToArray<T>(List<T> list) => list.Count > 0 ? list.ToArray() : null;
 
             FPuzzlesBoard fp = new()
@@ -1460,6 +1478,7 @@ namespace SudokuSolver
                 nabner = ToArray(nabner),
                 doublearrow = ToArray(doublearrow),
                 zipperline = ToArray(ziperline),
+                slowthermometer = ToArray(slowthermometer),
             };
 
             string fpuzzlesJson = JsonSerializer.Serialize(fp, FpuzzlesJsonContext.Default.FPuzzlesBoard);

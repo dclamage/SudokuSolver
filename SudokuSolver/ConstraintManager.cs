@@ -120,6 +120,7 @@ public static class ConstraintManager
         { typeof(ThermometerConstraint), (solver, options) => new ThermometerConstraint(solver, options) },
         { typeof(WhispersConstraint), (solver, options) => new WhispersConstraint(solver, options) },
         { typeof(ZipperLineConstraint), (solver, options) => new ZipperLineConstraint(solver, options) },
+        { typeof(SlowThermometerConstraint), (solver, options) => new SlowThermometerConstraint(solver, options) },
     };
 
     private static readonly Dictionary<Type, Func<Solver, string, IConstraintGroup>> constraintGroupTypeConstructors = new()
