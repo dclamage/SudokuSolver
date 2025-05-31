@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.14
+// @version      1.15
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -162,6 +162,34 @@
                 "Click and drag to draw a zipper line.",
                 "Click on a zipper line to remove it.",
                 "Shift click and drag to draw overlapping zipper line.",
+            ],
+        },
+        {
+            name: "Slow Thermometer",
+            type: "line",
+            // Colors for drawing the actual constraint:
+            outerColor: "#6495ED",      // CornflowerBlue (light mode)
+            outerColorDark: "#4682B4",  // SteelBlue (dark mode)
+            innerColor: "#B0E0E6",      // PowderBlue (light mode)
+            innerColorDark: "#87CEEB",  // SkyBlue (dark mode, but lighter than outer dark)
+            // lineWidths for drawing:
+            outerLineWidth: 0.3,
+            innerLineWidth: 0.12, // slightly thicker for better visibility
+            // bulbRadii for drawing:
+            outerBulbRadiusFactor: 0.4,
+            innerBulbRadiusFactor: 0.28, // slightly larger inner bulb
+            // For cosmetic export (simpler representation):
+            exportLineColor: "#6495ED", // CornflowerBlue
+            exportLineWidth: 0.3,
+            exportBulbColor: "#6495ED", // CornflowerBlue
+            exportBulbSize: 0.8, // (diameter factor)
+            tooltip: [
+                "Digits on a slow thermometer must not decrease as they move away from the bulb.",
+                "Digits may repeat.",
+                "",
+                "Click and drag to draw a slow thermometer.",
+                "Click on a slow thermometer to remove it.",
+                "Shift click and drag to draw overlapping slow thermometers.",
             ],
         },
         {
@@ -348,6 +376,7 @@
     }
 
     const drawSolidCage = function(cells, colorLight, colorDark) {
+        if (cells.length === 0) return;
         const color = boolSettings['Dark Mode'] ? colorDark : colorLight;
         const lineOffset = 1.0 / 32.0;
         const lineWidth = cellSL * lineOffset * 2.0;
@@ -403,37 +432,39 @@
                             puzzle.line = [];
                         }
                         for (let instance of puzzleEntry) {
-                            puzzle.line.push({
+                             puzzle.line.push({
                                 lines: instance.lines,
-                                outlineC: constraintInfo.color,
-                                width: constraintInfo.lineWidth,
+                                outlineC: constraintInfo.exportLineColor || constraintInfo.color,
+                                width: constraintInfo.exportLineWidth || constraintInfo.lineWidth,
                                 fromConstraint: constraintInfo.name,
                             });
                         }
-                        if (constraintInfo.endpoints === "circle") {
+                        if (constraintInfo.endpoints === "circle" || constraintInfo.name === "Slow Thermometer") {
                             if (!puzzle.circle) {
                                 puzzle.circle = [];
                             }
 
                             for (let instance of puzzleEntry) {
                                 puzzle.circle.push({
-                                    cells: [instance.lines[0][0]],
-                                    baseC: "#EAEAEAFF",
-                                    outlineC: constraintInfo.color,
-                                    width: 0.85,
-                                    height: 0.85,
+                                    cells: [instance.lines[0][0]], // Bulb is always the first cell of the first line segment
+                                    baseC: constraintInfo.exportBulbColor || constraintInfo.color,
+                                    outlineC: constraintInfo.exportBulbColor || constraintInfo.color,
+                                    width: constraintInfo.exportBulbSize || 0.85,
+                                    height: constraintInfo.exportBulbSize || 0.85,
                                     fromConstraint: constraintInfo.name,
                                 });
 
-                                const lastIndex = instance.lines[0].length - 1;
-                                puzzle.circle.push({
-                                    cells: [instance.lines[0][lastIndex]],
-                                    baseC: "#EAEAEAFF",
-                                    outlineC: constraintInfo.color,
-                                    width: 0.85,
-                                    height: 0.85,
-                                    fromConstraint: constraintInfo.name,
-                                });
+                                if (constraintInfo.endpoints === "circle") { // Only for Double Arrow type endpoints
+                                    const lastIndex = instance.lines[0].length - 1;
+                                    puzzle.circle.push({
+                                        cells: [instance.lines[0][lastIndex]],
+                                        baseC: constraintInfo.exportBulbColor || constraintInfo.color,
+                                        outlineC: constraintInfo.exportBulbColor || constraintInfo.color,
+                                        width: constraintInfo.exportBulbSize || 0.85,
+                                        height: constraintInfo.exportBulbSize || 0.85,
+                                        fromConstraint: constraintInfo.name,
+                                    });
+                                }
                             }
                         }
                     } else if (constraintInfo.type === "cage") {
@@ -453,7 +484,7 @@
                         }
 
                         for (let instance of puzzleEntry) {
-                            puzzle.text.push({
+                             puzzle.text.push({
                                 cells: [instance.cell],
                                 value: constraintInfo.symbol,
                                 fontC: "#000000",
@@ -509,7 +540,7 @@
                 for (let line of puzzle.line) {
                     // Upgrade from old boolean
                     if (line.isNewConstraint) {
-                        line.fromConstraint = line.outlineC === "#C060C0" ? "Renban" : line.outlineC === "#67F067" ? "German Whispers" : "Entropic";
+                        line.fromConstraint = line.outlineC === "#C060C0" ? "Renban" : line.outlineC === "#67F067" ? "German Whispers" : line.outlineC === "#6495ED" ? "Slow Thermometer" : "Entropic";
                         delete line.isNewConstraint;
                     }
 
@@ -614,7 +645,9 @@
                             }
                         } else {
                             let cells = constraint.flatMap((inst) => inst.cells).filter((cell) => cell);
-                            drawSolidCage(cells, info.color, info.colorDark);
+                            if (cells.length > 0) {
+                                drawSolidCage(cells, info.color, info.colorDark);
+                            }
                         }
                     }
                 }
@@ -660,7 +693,7 @@
                             }
                             if (minValue !== -1 && maxValue !== -1) {
                                 if (n - minValue > line.length - 1 || maxValue - n > line.length - 1) {
-                                    return false;
+                                     return false;
                                 }
                             }
                         }
@@ -705,7 +738,7 @@
                     for (let line of whispers.lines) {
                         const index = line.indexOf(cell);
                         if (index > -1) {
-                            if (n - whispersDiff <= 0 && n + whispersDiff > size) {
+                             if (n - whispersDiff <= 0 && n + whispersDiff > size) {
                                 return false;
                             }
 
@@ -831,10 +864,10 @@
                                     const value = lineIndex === index ? n : lineCell.value;
                                     if (value) {
                                         currentSum += value;
-                                    } else {
+                                } else {
                                         currentIsComplete = false;
-                                    }
                                 }
+                            }
                                 lastRegion = region;
                             }
 
@@ -844,7 +877,7 @@
                             }
 
                             if (completedSums.length > 1 && !completedSums.every((sum) => sum === completedSums[0])) {
-                                return false;
+                                    return false;
                             }
                         }
                     }
@@ -933,13 +966,43 @@
                                         if (sum == -1) {
                                             sum = value0;
                                         } else if (sum != value0) {
-                                            return false;
-                                        }
+                                        return false;
+                                    }
                                     } else if (sum == -1) {
                                         sum = value0 + value1;
                                     } else if (sum != value0 + value1) {
-                                        return false;
-                                    }
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+            
+            // Slow Thermometer
+            const constraintsSlowThermo = constraints[cID("Slow Thermometer")];
+            if (constraintsSlowThermo && constraintsSlowThermo.length > 0) {
+                for (let slowThermo of constraintsSlowThermo) {
+                    for (let line of slowThermo.lines) {
+                        const index = line.indexOf(cell);
+                        if (index > -1) {
+                            // Check against previous cell
+                            if (index > 0) {
+                                const prevCell = line[index - 1];
+                                if (prevCell.value !== 0) {
+                                    if (n < prevCell.value) return false;
+                                } else { // prevCell is unsolved
+                                    if (prevCell.candidates.every(pc => n < pc)) return false;
+                                }
+                            }
+                            // Check against next cell
+                            if (index < line.length - 1) {
+                                const nextCell = line[index + 1];
+                                if (nextCell.value !== 0) {
+                                    if (n > nextCell.value) return false;
+                                } else { // nextCell is unsolved
+                                    if (nextCell.candidates.every(nc => n > nc)) return false;
                                 }
                             }
                         }
@@ -947,13 +1010,14 @@
                 }
             }
 
+
             // Row Indexer
             const constraintsRowIndexer = constraints[cID("Row Indexer")];
             if (constraintsRowIndexer && constraintsRowIndexer.some((rowIndexer) => rowIndexer.cells.indexOf(cell) > -1)) {
-                let targetCell = grid[n - 1][cell.j];
-                if (targetCell !== cell && targetCell.value) {
-                    if (targetCell.value > 0 && targetCell.value !== cell.i + 1) {
-                        return false;
+                            let targetCell = grid[n - 1][cell.j];
+                            if (targetCell !== cell && targetCell.value) {
+                                if (targetCell.value > 0 && targetCell.value !== cell.i + 1) {
+                                    return false;
                     }
                 }
             }
@@ -961,10 +1025,10 @@
             // Column Indexer
             const constraintsColumnIndexer = constraints[cID("Column Indexer")];
             if (constraintsColumnIndexer && constraintsColumnIndexer.some((columnIndexer) => columnIndexer.cells.indexOf(cell) > -1)) {
-                let targetCell = grid[cell.i][n - 1];
-                if (targetCell !== cell && targetCell.value) {
-                    if (targetCell.value > 0 && targetCell.value !== cell.j + 1) {
-                        return false;
+                            let targetCell = grid[cell.i][n - 1];
+                            if (targetCell !== cell && targetCell.value) {
+                                if (targetCell.value > 0 && targetCell.value !== cell.j + 1) {
+                                    return false;
                     }
                 }
             }
@@ -972,22 +1036,22 @@
             // Box Indexer
             const constraintsBoxIndexer = constraints[cID("Box Indexer")];
             if (constraintsBoxIndexer && constraintsBoxIndexer.some((boxIndexer) => boxIndexer.cells.indexOf(cell) > -1)) {
-                let region = cell.region;
-                if (region >= 0) {
-                    let regionCells = [];
+                        let region = cell.region;
+                        if (region >= 0) {
+                            let regionCells = [];
                     for (let i = 0; i < size; i++) {
                         for (let j = 0; j < size; j++) {
                             if (grid[i][j].region === region) {
                                 regionCells.push(grid[i][j]);
+                                    }
+                                }
                             }
-                        }
-                    }
                     if (regionCells.length == size) {
                         let cellRegionIndex = regionCells.indexOf(cell);
                         let targetCell = regionCells[n - 1];
-                        if (targetCell !== cell && targetCell.value) {
+                                    if (targetCell !== cell && targetCell.value) {
                             if (targetCell.value > 0 && targetCell.value !== cellRegionIndex + 1) {
-                                return false;
+                                            return false;
                             }
                         }
                     }
@@ -1233,7 +1297,7 @@
 
                     ctx.fillStyle = boolSettings["Dark Mode"] ? "#888888" : "#EAEAEA";
                     for (let j = 0, k = 0; j < this.lines[i].length && (this.lines[i].length > 1 || !k); j += this.lines[i].length - 1, k++) {
-                        ctx.beginPath();
+                    ctx.beginPath();
                         ctx.arc(this.lines[i][j].x + cellSL / 2, this.lines[i][j].y + cellSL / 2, cellSL / 2 - ctx.lineWidth / 2, 0, Math.PI * 2);
                         ctx.fill();
                         ctx.stroke();
@@ -1262,6 +1326,56 @@
                 this.lines[this.lines.length - 1].push(cell);
             };
         };
+
+        // Slow Thermometer
+        window.slowthermometer = function (cell) {
+            this.lines = [[cell]]; // Each sub-array is a segment of the thermometer
+
+            this.show = function () {
+                const thermoInfo = newConstraintInfo.filter((c) => c.name === "Slow Thermometer")[0];
+                for (let i = 0; i < 2; i++) { // Two passes for double line
+                    for (let a = 0; a < this.lines.length; a++) {
+                        const currentLine = this.lines[a];
+                        if (currentLine.length === 0) continue;
+
+                        ctx.lineWidth = cellSL * (i ? thermoInfo.innerLineWidth : thermoInfo.outerLineWidth);
+                        const bulbRadiusFactor = i ? thermoInfo.innerBulbRadiusFactor : thermoInfo.outerBulbRadiusFactor;
+                        
+                        if (i) { // Inner line color
+                            ctx.fillStyle = boolSettings['Dark Mode'] ? thermoInfo.innerColorDark : thermoInfo.innerColor;
+                            ctx.strokeStyle = boolSettings['Dark Mode'] ? thermoInfo.innerColorDark : thermoInfo.innerColor;
+                        } else { // Outer line color
+                            ctx.fillStyle = boolSettings['Dark Mode'] ? thermoInfo.outerColorDark : thermoInfo.outerColor;
+                            ctx.strokeStyle = boolSettings['Dark Mode'] ? thermoInfo.outerColorDark : thermoInfo.outerColor;
+                        }
+                        
+                        // Bulb
+                        ctx.beginPath();
+                        ctx.arc(currentLine[0].x + cellSL / 2, currentLine[0].y + cellSL / 2, cellSL * bulbRadiusFactor, 0, Math.PI * 2);
+                        ctx.fill();
+
+                        // Line
+                        if (currentLine.length > 1) {
+                            ctx.beginPath();
+                            ctx.moveTo(currentLine[0].x + cellSL / 2, currentLine[0].y + cellSL / 2);
+                            for (let b = 1; b < currentLine.length; b++) {
+                                ctx.lineTo(currentLine[b].x + cellSL / 2, currentLine[b].y + cellSL / 2);
+                            }
+                            ctx.stroke();
+                            // End cap for the line itself (not a second bulb)
+                            ctx.beginPath();
+                            ctx.arc(currentLine[currentLine.length - 1].x + cellSL / 2, currentLine[currentLine.length - 1].y + cellSL / 2, ctx.lineWidth / 2, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                    }
+                }
+            };
+
+            this.addCellToLine = function (cell) {
+                this.lines[this.lines.length - 1].push(cell);
+            };
+        };
+
 
         // Row Indexer
         window.rowindexer = function (cell) {
@@ -1429,31 +1543,41 @@
             origCategorizeTools();
 
             let toolLineIndex = toolConstraints.indexOf("Palindrome");
-            let toolPerCellIndex = toolConstraints.indexOf("Maximum");
+            let toolPerCellIndex = toolConstraints.indexOf("Maximum"); // "Cage" type constraints will go after this group
             let toolOutsideIndex = toolConstraints.indexOf("Sandwich Sum");
+
             for (let info of newConstraintInfo) {
+                const name_cID = cID(info.name);
                 if (info.type === "line") {
-                    if (toolLineIndex < toolPerCellIndex) toolPerCellIndex++;
-                    if (toolLineIndex < toolOutsideIndex) toolOutsideIndex++;
-                    toolConstraints.splice(++toolLineIndex, 0, info.name);
-                    lineConstraints.push(info.name);
+                    if (!toolConstraints.includes(info.name)) {
+                         // Adjust indices if inserting before them
+                        if (toolLineIndex < toolPerCellIndex) toolPerCellIndex++;
+                        if (toolLineIndex < toolOutsideIndex) toolOutsideIndex++;
+                        toolConstraints.splice(++toolLineIndex, 0, info.name);
+                    }
+                    if (!lineConstraints.includes(info.name)) lineConstraints.push(info.name);
                 } else if (info.type === "cage") {
-                    if (toolPerCellIndex < toolLineIndex) toolLineIndex++;
-                    if (toolPerCellIndex < toolOutsideIndex) toolOutsideIndex++;
-                    toolConstraints.splice(++toolPerCellIndex, 0, info.name);
-                    regionConstraints.push(info.name);
+                     if (!toolConstraints.includes(info.name)) {
+                        if (toolPerCellIndex < toolLineIndex) toolLineIndex++;
+                        if (toolPerCellIndex < toolOutsideIndex) toolOutsideIndex++;
+                        toolConstraints.splice(++toolPerCellIndex, 0, info.name);
+                     }
+                    // For 'cage' type like Indexers, they behave like perCellConstraints for placement
+                    if (!perCellConstraints.includes(info.name)) perCellConstraints.push(info.name);
                 } else if (info.type === "outside") {
-                    if (toolOutsideIndex < toolLineIndex) toolLineIndex++;
-                    if (toolOutsideIndex < toolPerCellIndex) toolPerCellIndex++;
-                    toolConstraints.splice(++toolOutsideIndex, 0, info.name);
-                    outsideConstraints.push(info.name);
-                    typableConstraints.push(info.name);
+                    if (!toolConstraints.includes(info.name)) {
+                        if (toolOutsideIndex < toolLineIndex) toolLineIndex++;
+                        if (toolOutsideIndex < toolPerCellIndex) toolPerCellIndex++;
+                        toolConstraints.splice(++toolOutsideIndex, 0, info.name);
+                    }
+                    if (!outsideConstraints.includes(info.name)) outsideConstraints.push(info.name);
+                    if (!typableConstraints.includes(info.name)) typableConstraints.push(info.name);
                 }
             }
 
             draggableConstraints = [...new Set([...lineConstraints, ...regionConstraints])];
-            multicellConstraints = [...new Set([...lineConstraints, ...regionConstraints, ...borderConstraints, ...cornerConstraints])];
-            betweenCellConstraints = [...borderConstraints, ...cornerConstraints];
+            multicellConstraints = [...new Set([...lineConstraints, ...regionConstraints, ...borderConstraints, ...cornerConstraints, ...perCellConstraints.filter(name => newConstraintInfo.find(info => info.name === name && info.type === "cage"))])]; // Add cage-type to multicell
+            betweenCellConstraints = [...borderConstraints, ...cornerConstraints]; // cage-type are not between cells
             allConstraints = [...boolConstraints, ...toolConstraints];
 
             tools = [...toolConstraints, ...toolCosmetics];
@@ -1463,7 +1587,8 @@
             diagonalRegionTools = [...diagonalRegionConstraints, ...diagonalRegionCosmetics];
             outsideTools = [...outsideConstraints, ...outsideCosmetics];
             outsideCornerTools = [...outsideCornerConstraints, ...outsideCornerCosmetics];
-            oneCellAtATimeTools = [...perCellConstraints, ...draggableConstraints, ...draggableCosmetics];
+             // Add new cage-type perCell to oneCellAtATime
+            oneCellAtATimeTools = [...perCellConstraints, ...draggableConstraints, ...draggableCosmetics, ...newConstraintInfo.filter(info => info.type === "cage").map(info => info.name)];
             draggableTools = [...draggableConstraints, ...draggableCosmetics];
             multicellTools = [...multicellConstraints, ...multicellCosmetics];
         };
@@ -1574,26 +1699,26 @@
                 for (let i = 0; i < constraintButtons.length; i++) {
                     let button = constraintButtons[i];
                     if (button.modes.indexOf("Constraint Tools") > -1 && button.title !== "-") {
-                        button.x = currentX;
-                        button.y = currentY;
-                        button.w = buttonW;
-                        button.h = buttonSH;
+                    button.x = currentX;
+                    button.y = currentY;
+                    button.w = buttonW;
+                    button.h = buttonSH;
 
                         if (i + 1 < constraintButtons.length) {
                             let bm = constraintButtons[i + 1];
                             if (bm.title === "-") {
                                 bm.x = currentX + buttonW / 2 + buttonGap + buttonSH / 2;
                                 bm.y = currentY;
-                            }
+                    }
                         }
 
                         if (i < constraintButtons.length - 1) {
-                            currentY += buttonSH + buttonGap;
-                            if (currentY + buttonSH + buttonGap > gridY + gridSL) {
-                                currentY = baseY;
-                                currentX += columnWidth;
-                            }
-                        }
+                     currentY += buttonSH + buttonGap;
+                     if (currentY + buttonSH + buttonGap > gridY + gridSL) {
+                         currentY = baseY;
+                         currentX += columnWidth;
+                     }
+                }
                     }
                 }
 
@@ -1623,7 +1748,7 @@
                     sidebars[sidebars.findIndex((a) => a.title === "Constraints")].buttons[
                         sidebars[sidebars.findIndex((a) => a.title === "Constraints")].buttons.findIndex((a) => a.id === "ConstraintTools")
                     ];
-                if (
+                     if (
                     (mouseX < hoveredButton.x - hoveredButton.w / 2 - buttonMargin ||
                         mouseX > hoveredButton.x + hoveredButton.w / 2 + buttonMargin ||
                         mouseY < hoveredButton.y - buttonMargin ||
@@ -1632,9 +1757,9 @@
                         mouseX > gridX - sidebarDist + constraintSidebarWidth ||
                         mouseY < gridY ||
                         mouseY > gridY + gridSL)
-                ) {
-                    closePopups();
-                }
+                    ) {
+                        closePopups();
+                    }
             } else {
                 prevonmousemove(e);
             }
@@ -1648,7 +1773,7 @@
                 buttons.push(prevButtons[i]);
             }
         }
-    }
+    } // end of doShim
 
     let intervalId = setInterval(() => {
         if (typeof grid === 'undefined' ||
