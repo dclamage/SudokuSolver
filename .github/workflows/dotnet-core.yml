@@ -45,14 +45,12 @@ jobs:
       with:
         name: workspace
         path: . # Upload the whole workspace, including versioned files
-
-  package:
+  package-windows-linux:
     runs-on: ubuntu-latest
     needs: build_and_test
     strategy:
       matrix:
         include:
-          # archive_ext is no longer needed here as we always produce a .zip via the upload action
           - rid: win-x64
             os_folder: Windows
             archive_filename_suffix: win-x64
@@ -62,12 +60,6 @@ jobs:
           - rid: linux-x64
             os_folder: Linux
             archive_filename_suffix: linux-x64
-          - rid: osx-x64
-            os_folder: OSX
-            archive_filename_suffix: osx-x64
-          - rid: osx-arm64
-            os_folder: OSX
-            archive_filename_suffix: osx-arm64
     steps:
     - name: Download Workspace
       uses: actions/download-artifact@v4
@@ -149,3 +141,170 @@ jobs:
           echo "- **Artifact Name**: \`$ARTIFACT_DISPLAY_NAME\` (Upload may have been skipped or failed if status is not success. Artifact ID: '$UPLOAD_ARTIFACT_ID_VAL')" >> $GITHUB_STEP_SUMMARY
         fi
         echo "" >> $GITHUB_STEP_SUMMARY
+
+  package-macos:
+    runs-on: macos-latest
+    needs: build_and_test
+    strategy:
+      matrix:
+        include:
+          - rid: osx-x64
+            os_folder: OSX
+            archive_filename_suffix: osx-x64
+          - rid: osx-arm64
+            os_folder: OSX
+            archive_filename_suffix: osx-arm64
+    steps:
+    - name: Download Workspace
+      uses: actions/download-artifact@v4
+      with:
+        name: workspace
+        path: .
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 8.0.x
+    - name: Set VERSION env var from job output
+      run: echo "VERSION=${{ needs.build_and_test.outputs.version }}" >> $GITHUB_ENV
+    - name: Debug env.VERSION
+      run: |
+        echo "DEBUG: env.VERSION is '${{ env.VERSION }}'"
+    - name: Cache NuGet packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/packages.lock.json') }}-${{ hashFiles('**/*.csproj') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+    - name: Restore dependencies for publish
+      run: dotnet restore
+    - name: Publish ${{ matrix.rid }}
+      run: dotnet publish ./SudokuSolverConsole/SudokuSolverConsole.csproj --nologo -c Release -r ${{ matrix.rid }} -p:PublishSingleFile=true --self-contained true --no-restore -o publish-${{ matrix.rid }}
+    - name: Delete pdbs for ${{ matrix.rid }}
+      run: rm -f ./publish-${{ matrix.rid }}/*.pdb
+    
+    # macOS Code Signing and Notarization
+    - name: Import Code Signing Certificate
+      env:
+        MACOS_CERT_APPLICATION_ID: ${{ secrets.MACOS_CERT_APPLICATION_ID }}
+        MACOS_CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+      run: |
+        # Create keychain and import certificate
+        security create-keychain -p "$MACOS_CERT_PASSWORD" build.keychain
+        security default-keychain -s build.keychain
+        security unlock-keychain -p "$MACOS_CERT_PASSWORD" build.keychain
+        security set-keychain-settings -t 3600 -l build.keychain
+        
+        # Import application certificate
+        echo "$MACOS_CERT_APPLICATION_ID" | base64 --decode > certificate.p12
+        security import certificate.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
+        security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_CERT_PASSWORD" build.keychain
+        rm certificate.p12
+    
+    - name: Sign macOS Binary
+      run: |
+        # Find the main executable (assuming it's named SudokuSolverConsole)
+        APP_PATH="./publish-${{ matrix.rid }}/SudokuSolverConsole"
+        
+        if [ -f "$APP_PATH" ]; then
+          echo "Signing $APP_PATH"
+          # Sign with hardened runtime and timestamp
+          codesign --force --verify --verbose --sign "Developer ID Application" --options runtime --timestamp "$APP_PATH"
+          
+          # Verify the signature
+          codesign --verify --verbose=2 "$APP_PATH"
+          spctl --assess --verbose=2 "$APP_PATH"
+        else
+          echo "Warning: Main executable not found at $APP_PATH"
+          ls -la "./publish-${{ matrix.rid }}/"
+        fi
+    
+    - name: Create API Key for Notarization
+      env:
+        MACOS_API_KEY: ${{ secrets.MACOS_API_KEY }}
+      run: |
+        mkdir -p ~/private_keys
+        echo "$MACOS_API_KEY" | base64 --decode > ~/private_keys/AuthKey_${{ secrets.MACOS_API_KEY_ID }}.p8
+    
+    - name: Create ZIP for Notarization
+      run: |
+        cd "./publish-${{ matrix.rid }}"
+        zip -r "../SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}-notarize.zip" .
+        cd ..
+    
+    - name: Notarize macOS Binary
+      env:
+        MACOS_API_ISSUER_ID: ${{ secrets.MACOS_API_ISSUER_ID }}
+        MACOS_API_KEY_ID: ${{ secrets.MACOS_API_KEY_ID }}
+      run: |
+        # Submit for notarization
+        xcrun notarytool submit "SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}-notarize.zip" \
+          --key ~/private_keys/AuthKey_${{ secrets.MACOS_API_KEY_ID }}.p8 \
+          --key-id "$MACOS_API_KEY_ID" \
+          --issuer "$MACOS_API_ISSUER_ID" \
+          --wait \
+          --timeout 30m
+        
+        # Clean up the notarization zip
+        rm "SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}-notarize.zip"
+    
+    - name: Prepare Package Directory for ${{ matrix.rid }}
+      run: |
+        PACKAGE_DIR="package-${{ matrix.rid }}"
+        mkdir -p "$PACKAGE_DIR"
+        
+        # Copy the signed binaries
+        cp -r ./publish-${{ matrix.rid }}/* "$PACKAGE_DIR/"
+        
+        # Ensure execute permissions for the main app
+        if [ -f "$PACKAGE_DIR/SudokuSolverConsole" ]; then
+          chmod +x "$PACKAGE_DIR/SudokuSolverConsole"
+        fi
+        
+        if [ -d "./UserScripts" ] && [ -n "$(ls -A ./UserScripts 2>/dev/null)" ]; then
+          cp -r ./UserScripts/* "$PACKAGE_DIR/"
+        fi
+        
+        if [ -d "./${{ matrix.os_folder }}" ] && [ -n "$(ls -A ./${{ matrix.os_folder }} 2>/dev/null)" ]; then
+          cp -r ./${{ matrix.os_folder }}/* "$PACKAGE_DIR/"
+        fi
+        echo "PACKAGE_DIR_PATH=$PACKAGE_DIR" >> $GITHUB_ENV
+        echo "Prepared package directory: $PACKAGE_DIR"
+    
+    - name: Upload Artifact for ${{ matrix.rid }}
+      id: upload_artifact_step
+      uses: actions/upload-artifact@v4
+      with:
+        name: SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}
+        path: ${{ env.PACKAGE_DIR_PATH }}
+        if-no-files-found: error
+    
+    - name: Update Job Summary for ${{ matrix.rid }}
+      if: always()
+      shell: bash
+      run: |
+        RID_VAL="${{ matrix.rid }}"
+        VERSION_VAL="${{ env.VERSION }}"
+        STATUS_VAL="${{ job.status }}"
+        UPLOAD_ARTIFACT_ID_VAL="${{ steps.upload_artifact_step.outputs.artifact-id }}"
+        ARTIFACT_DISPLAY_NAME="SudokuSolver-$VERSION_VAL-${{ matrix.archive_filename_suffix }}.zip"
+
+        echo "---" >> $GITHUB_STEP_SUMMARY
+        echo "### Package: \`$RID_VAL\` (Signed & Notarized)" >> $GITHUB_STEP_SUMMARY
+        echo "- **Version**: \`$VERSION_VAL\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Status**: \`$STATUS_VAL\`" >> $GITHUB_STEP_SUMMARY
+
+        if [ "$STATUS_VAL" == "success" ] && [ -n "$UPLOAD_ARTIFACT_ID_VAL" ]; then
+          ARTIFACT_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/$UPLOAD_ARTIFACT_ID_VAL"
+          echo "- **Artifact**: [$ARTIFACT_DISPLAY_NAME]($ARTIFACT_URL)" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "- **Artifact Name**: \`$ARTIFACT_DISPLAY_NAME\` (Upload may have been skipped or failed if status is not success. Artifact ID: '$UPLOAD_ARTIFACT_ID_VAL')" >> $GITHUB_STEP_SUMMARY
+        fi
+        echo "" >> $GITHUB_STEP_SUMMARY
+    
+    - name: Cleanup
+      if: always()
+      run: |
+        # Clean up keychain and API key
+        security delete-keychain build.keychain || true
+        rm -f ~/private_keys/AuthKey_${{ secrets.MACOS_API_KEY_ID }}.p8 || true
