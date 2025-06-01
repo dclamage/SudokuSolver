@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver.Constraints;
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Minimum", ConsoleName = "min")]
 public class MinimumConstraint : Constraint
@@ -62,7 +62,7 @@ public class MinimumConstraint : Constraint
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
-        if (cells == null || cells.Count == 0)
+        if (isBruteForcing || cells == null || cells.Count == 0)
         {
             return LogicResult.None;
         }

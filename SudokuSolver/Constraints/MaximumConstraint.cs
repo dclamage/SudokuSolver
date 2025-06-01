@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver.Constraints;
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Maximum", ConsoleName = "max")]
 public class MaximumConstraint : Constraint
@@ -62,7 +62,7 @@ public class MaximumConstraint : Constraint
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
-        if (cells == null || cells.Count == 0)
+        if (isBruteForcing || cells == null || cells.Count == 0)
         {
             return LogicResult.None;
         }

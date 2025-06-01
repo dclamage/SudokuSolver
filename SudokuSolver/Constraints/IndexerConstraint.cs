@@ -97,6 +97,12 @@ public abstract class AbstractIndexerConstraint : Constraint
 
     public override LogicResult StepLogic(Solver solver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
+        if (isBruteForcing)
+        {
+            // Just let weak links handle it when brute forcing
+            return LogicResult.None;
+        }
+
         var board = solver.Board;
 
         bool changed = false;
