@@ -44,7 +44,7 @@ public class SlowThermometerConstraint : Constraint
         int[] forcedIncrementsCache = new int[n]; // forcedIncrementsCache[i] = 1 if cells[i-1] and cells[i] must be different, 0 otherwise.
         for (int i = 1; i < n; i++)
         {
-            forcedIncrementsCache[i] = sudokuSolver.SeenCells(cells[i - 1]).Contains(cells[i]) ? 1 : 0;
+            forcedIncrementsCache[i] = sudokuSolver.IsSeen(cells[i - 1], cells[i]) ? 1 : 0;
         }
 
         for (int k = 0; k < n; k++)
@@ -148,7 +148,7 @@ public class SlowThermometerConstraint : Constraint
                                 mustIncrement = true;
                             }
                         }
-                        else if (solver.SeenCells(cellK_coords).Contains(cellK_plus_1_coords))
+                        else if (solver.IsSeen(cellK_coords, cellK_plus_1_coords))
                         {
                             // If they are in the same house, they must be different,
                             // so if cellK is currentPathMinVal, cellK+1 must be > currentPathMinVal

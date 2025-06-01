@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver;
+namespace SudokuSolver;
 
 public partial class Solver
 {
@@ -44,9 +44,8 @@ public partial class Solver
     // Private lookups
     private (int, int)[] candidateToCellAndValueLookup;
     private (int, int, int)[] candidateToCoordValueLookup;
-    // Returns whether two cells cannot be the same value for a specific value
-    // i0, j0, i1, j0, value or 0 for any value
-    private bool[,,,,] seenMap;
+    // Returns whether two cells cannot be the same value
+    private bool[] seenMap;
 
     /// <summary>
     /// Groups which cannot contain more than one of the same digit.

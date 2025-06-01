@@ -1,110 +1,17 @@
-﻿namespace SudokuSolver;
+namespace SudokuSolver;
 
 public partial class Solver
 {
-    /// <summary>
-    /// Returns which cells must be distinct from the all the inputted cells.
-    /// </summary>
-    /// <param name="cells"></param>
-    /// <returns></returns>
-    public HashSet<(int, int)> SeenCells(params (int, int)[] cells)
-    {
-        HashSet<(int, int)> result = null;
-        foreach (var cell in cells)
-        {
-            var groupList = CellToGroupsLookup[CellIndex(cell)];
-            if (groupList.Count == 0)
-            {
-                return new HashSet<(int, int)>();
-            }
-
-            HashSet<(int, int)> curSeen = new(groupList.First().Cells.Select(CellIndexToCoord));
-            foreach (var group in groupList.Skip(1))
-            {
-                curSeen.UnionWith(group.Cells.Select(CellIndexToCoord));
-            }
-
-            foreach (var constraint in constraints)
-            {
-                curSeen.UnionWith(constraint.SeenCells(cell));
-            }
-
-            if (result == null)
-            {
-                result = curSeen;
-            }
-            else
-            {
-                result.IntersectWith(curSeen);
-            }
-        }
-        if (result != null)
-        {
-            foreach (var cell in cells)
-            {
-                result.Remove(cell);
-            }
-        }
-        return result ?? new HashSet<(int, int)>();
-    }
-
-    /// <summary>
-    /// Returns which cells must be distinct from the all the inputted cells for a specific set of values.
-    /// </summary>
-    /// <param name="value"></param>
-    /// <param name="cells"></param>
-    /// <returns></returns>
-    public HashSet<(int, int)> SeenCellsByValueMask(uint mask, params (int, int)[] cells)
-    {
-        HashSet<(int, int)> result = null;
-        foreach (var cell in cells)
-        {
-            var groupList = CellToGroupsLookup[CellIndex(cell)];
-            if (groupList.Count == 0)
-            {
-                return new HashSet<(int, int)>();
-            }
-
-            HashSet<(int, int)> curSeen = new(groupList.First().Cells.Select(CellIndexToCoord));
-            foreach (var group in groupList.Skip(1))
-            {
-                curSeen.UnionWith(group.Cells.Select(CellIndexToCoord));
-            }
-
-            foreach (var constraint in constraints)
-            {
-                curSeen.UnionWith(constraint.SeenCellsByValueMask(cell, mask));
-            }
-
-            if (result == null)
-            {
-                result = curSeen;
-            }
-            else
-            {
-                result.IntersectWith(curSeen);
-            }
-        }
-        if (result != null)
-        {
-            foreach (var cell in cells)
-            {
-                result.Remove(cell);
-            }
-        }
-        return result ?? new HashSet<(int, int)>();
-    }
-
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool IsSeen((int, int) cell0, (int, int) cell1)
     {
-        return seenMap[cell0.Item1, cell0.Item2, cell1.Item1, cell1.Item2, 0];
+        return IsSeen(CellIndex(cell0), CellIndex(cell1));
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool IsSeenByValue((int, int) cell0, (int, int) cell1, int value)
+    public bool IsSeen(int cellIndex0, int cellIndex1)
     {
-        return seenMap[cell0.Item1, cell0.Item2, cell1.Item1, cell1.Item2, value];
+        return seenMap[cellIndex0 * NUM_CELLS + cellIndex1];
     }
 
     public bool IsGroup(List<(int, int)> cells)
@@ -112,11 +19,10 @@ public partial class Solver
         for (int i0 = 0; i0 < cells.Count - 1; i0++)
         {
             var cell0 = cells[i0];
-            var seen0 = SeenCells(cell0);
             for (int i1 = i0 + 1; i1 < cells.Count; i1++)
             {
                 var cell1 = cells[i1];
-                if (cell0 != cell1 && !seen0.Contains(cell1))
+                if (cell0 != cell1 && !IsSeen(cell0, cell1))
                 {
                     return false;
                 }
@@ -147,24 +53,6 @@ public partial class Solver
             }
         }
 
-        return true;
-    }
-
-    public bool IsGroupByValueMask(List<(int, int)> cells, uint valueMask)
-    {
-        for (int i0 = 0; i0 < cells.Count - 1; i0++)
-        {
-            var cell0 = cells[i0];
-            var seen0 = SeenCellsByValueMask(valueMask, cell0);
-            for (int i1 = i0 + 1; i1 < cells.Count; i1++)
-            {
-                var cell1 = cells[i1];
-                if (cell0 != cell1 && !seen0.Contains(cell1))
-                {
-                    return false;
-                }
-            }
-        }
         return true;
     }
 
@@ -305,11 +193,10 @@ public partial class Solver
         for (int i0 = 0; i0 < numCells - 1; i0++)
         {
             var curCell = cellList[i0];
-            var seen = SeenCells(curCell);
             for (int i1 = i0 + 1; i1 < numCells; i1++)
             {
                 var otherCell = cellList[i1];
-                if (seen.Contains(otherCell))
+                if (IsSeen(curCell, otherCell))
                 {
                     connections.Add((i0, i1));
                     connectionCount[i0]++;

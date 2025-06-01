@@ -110,58 +110,6 @@ public class SelfTaxicabConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
-
-    public override IEnumerable<(int, int)> SeenCellsByValueMask((int, int) cell, uint mask)
-    {
-        // This method defines which cells are "seen" by 'cell' if 'cell' contains a value from 'mask'.
-        // For SelfTaxicab, if 'mask' represents a single value 'd', then 'seen' cells are those
-        // at taxicab distance 'd'.
-        if (ValueCount(mask) == 1)
-        {
-            int distance = GetValue(mask);
-            if (distance == 0)
-            {
-                yield break;
-            }
-
-            (int i0, int j0) = cell;
-
-            for (int dR = -distance; dR <= distance; dR++)
-            {
-                int dC_abs = distance - Math.Abs(dR);
-                if (dC_abs < 0)
-                {
-                    continue;
-                }
-
-                int[] dC_values = dC_abs == 0 ? [0] : [dC_abs, -dC_abs];
-                foreach (int dC in dC_values)
-                {
-                    if (dR == 0 && dC == 0)
-                    {
-                        continue; // No offset means same cell, not "seen" in this context
-                    }
-
-                    int i1 = i0 + dR;
-                    int j1 = j0 + dC;
-
-                    if (i1 >= 0 && i1 < HEIGHT && j1 >= 0 && j1 < WIDTH)
-                    {
-                        // Double check the condition, though the loop structure should ensure it.
-                        if (TaxicabDistance(i0, j0, i1, j1) == distance)
-                        {
-                            yield return (i1, j1);
-                        }
-                    }
-                }
-            }
-        }
-        // If mask has multiple values, the concept of "seen cells" becomes ambiguous
-        // for SelfTaxicab as the distance changes with the value.
-        // The base implementation or specific handling might be needed if this scenario is critical.
-        // For now, it's most clearly defined for a single value in the mask.
-    }
-
     public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
     {
         // The primary logic is handled by weak links and general solver mechanisms.

@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver.Constraints;
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Palindrome", ConsoleName = "palindrome")]
 public class PalindromeConstraint : Constraint
@@ -40,7 +40,7 @@ public class PalindromeConstraint : Constraint
         {
             var (i0, j0) = cells[cellIndex];
             var (i1, j1) = cells[^(cellIndex + 1)];
-            if (sudokuSolver.SeenCells((i0, j0)).Contains((i1, j1)))
+            if (sudokuSolver.IsSeen((i0, j0), (i1, j1)))
             {
                 return LogicResult.Invalid;
             }

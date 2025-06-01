@@ -181,42 +181,4 @@ public class ChessConstraint : Constraint
         }
         return changed ? LogicResult.Changed : LogicResult.None;
     }
-
-    public override IEnumerable<(int, int)> SeenCells((int, int) cell)
-    {
-        if (values == ALL_VALUES_MASK)
-        {
-            foreach (var offset in offsets)
-            {
-                int i = cell.Item1 + offset.Item1;
-                int j = cell.Item2 + offset.Item2;
-                if (i >= 0 && i < HEIGHT && j >= 0 && j < WIDTH)
-                {
-                    if (cellsLookup == null || cellsLookup.Contains((i, j)) || cellsLookup.Contains(cell))
-                    {
-                        yield return (i, j);
-                    }
-                }
-            }
-        }
-    }
-
-    public override IEnumerable<(int, int)> SeenCellsByValueMask((int, int) cell, uint mask)
-    {
-        if ((values & mask) != 0)
-        {
-            foreach (var offset in offsets)
-            {
-                int i = cell.Item1 + offset.Item1;
-                int j = cell.Item2 + offset.Item2;
-                if (i >= 0 && i < HEIGHT && j >= 0 && j < WIDTH)
-                {
-                    if (cellsLookup == null || cellsLookup.Contains((i, j)) || cellsLookup.Contains(cell))
-                    {
-                        yield return (i, j);
-                    }
-                }
-            }
-        }
-    }
 }
