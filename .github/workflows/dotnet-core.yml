@@ -192,14 +192,16 @@ jobs:
         # Create keychain and import certificate
         security create-keychain -p "$MACOS_CERT_PASSWORD" build.keychain
         security default-keychain -s build.keychain
-        security unlock-keychain -p "$MACOS_CERT_PASSWORD" build.keychain
-        security set-keychain-settings -t 3600 -l build.keychain
-        
-        # Import application certificate
+        security unlock-keychain -p "$MACOS_CERT_PASSWORD" build.keychain        security set-keychain-settings -t 3600 -l build.keychain
+          # Import application certificate
         echo "$MACOS_CERT_APPLICATION_ID" | base64 --decode > certificate.p12
         security import certificate.p12 -k build.keychain -P "$MACOS_CERT_PASSWORD" -T /usr/bin/codesign
         security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$MACOS_CERT_PASSWORD" build.keychain
         rm certificate.p12
+        
+        # List available certificates for debugging
+        echo "Available certificates:"
+        security find-identity -v -p codesigning build.keychain
     
     - name: Sign macOS Binary
       run: |
@@ -211,9 +213,9 @@ jobs:
           # Sign with hardened runtime and timestamp
           codesign --force --verify --verbose --sign "Developer ID Application" --options runtime --timestamp "$APP_PATH"
           
-          # Verify the signature
+          # Verify the signature (but don't assess with spctl yet - that needs notarization)
           codesign --verify --verbose=2 "$APP_PATH"
-          spctl --assess --verbose=2 "$APP_PATH"
+          echo "Code signing completed successfully"
         else
           echo "Warning: Main executable not found at $APP_PATH"
           ls -la "./publish-${{ matrix.rid }}/"
@@ -236,8 +238,7 @@ jobs:
       env:
         MACOS_API_ISSUER_ID: ${{ secrets.MACOS_API_ISSUER_ID }}
         MACOS_API_KEY_ID: ${{ secrets.MACOS_API_KEY_ID }}
-      run: |
-        # Submit for notarization
+      run: |        # Submit for notarization
         xcrun notarytool submit "SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}-notarize.zip" \
           --key ~/private_keys/AuthKey_${{ secrets.MACOS_API_KEY_ID }}.p8 \
           --key-id "$MACOS_API_KEY_ID" \
@@ -247,6 +248,26 @@ jobs:
         
         # Clean up the notarization zip
         rm "SudokuSolver-${{ env.VERSION }}-${{ matrix.archive_filename_suffix }}-notarize.zip"
+    
+    - name: Verify Notarized Binary
+      run: |
+        # Verify the signed and notarized binary
+        APP_PATH="./publish-${{ matrix.rid }}/SudokuSolverConsole"
+        
+        if [ -f "$APP_PATH" ]; then
+          echo "Verifying notarized binary at $APP_PATH"
+          
+          # Verify code signature
+          codesign --verify --verbose=2 "$APP_PATH"
+          
+          # Check notarization status with spctl
+          spctl --assess --verbose=2 "$APP_PATH"
+          
+          echo "Binary is properly signed and notarized!"
+        else
+          echo "Error: Binary not found for verification"
+          exit 1
+        fi
     
     - name: Prepare Package Directory for ${{ matrix.rid }}
       run: |
