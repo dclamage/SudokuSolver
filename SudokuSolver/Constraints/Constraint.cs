@@ -1,4 +1,4 @@
-﻿using System.Text.Json.Serialization;
+using System.Text.Json.Serialization;
 
 namespace SudokuSolver.Constraints;
 
@@ -586,6 +586,9 @@ public abstract class Constraint
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     protected uint MaskBetweenExclusive(int v0, int v1) => ALL_VALUES_MASK & ~(MaskValAndLower(v0) | MaskValAndHigher(v1));
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal int CandidateIndex(int cellIndex, int v) => cellIndex * MAX_VALUE + v - 1;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal int CandidateIndex(int i, int j, int v) => (i * WIDTH + j) * MAX_VALUE + v - 1;

@@ -1,28 +1,35 @@
-﻿using System.Collections.Generic;
-
 namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Renban", ConsoleName = "renban")]
 public class RenbanConstraint : Constraint
 {
     public readonly List<(int, int)> cells;
-    private readonly HashSet<(int, int)> cellsSet;
+    public readonly List<int> cellIndices;
+    private List<uint> rangeMasks; // Assuming this is mutable during InitCandidates as per prior discussion
 
     public RenbanConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
-        var cellGroups = ParseCells(options);
+        List<List<(int, int)>> cellGroups = ParseCells(options);
         if (cellGroups.Count != 1)
         {
             throw new ArgumentException($"Renban constraint expects 1 cell group, got {cellGroups.Count}.");
         }
 
         cells = cellGroups[0];
-        cellsSet = new(cells);
+        cellIndices = [.. cells.Select(sudokuSolver.CellIndex)];
 
-        if (cells.Count > MAX_VALUE)
+        if (cellIndices.Count > MAX_VALUE) // MAX_VALUE is from base Constraint class
         {
-            throw new ArgumentException($"Renban can only contain up to {MAX_VALUE} cells, but {cells.Count} were provided.");
+            throw new ArgumentException($"Renban can only contain up to {MAX_VALUE} cells, but {cellIndices.Count} were provided.");
         }
+
+        List<uint> initialRangeMasks = [];
+        int numCells = cells.Count;
+        for (int s = 1; s <= MAX_VALUE - numCells + 1; s++)
+        {
+            initialRangeMasks.Add(CreateRangeMask(s, s + numCells - 1));
+        }
+        rangeMasks = initialRangeMasks;
     }
 
     public override string SpecificName => $"Renban from {CellName(cells[0])} - {CellName(cells[^1])}";
@@ -30,94 +37,63 @@ public class RenbanConstraint : Constraint
     // Digits cannot repeat on a renban line
     public override List<(int, int)> Group => cells;
 
-    public override LogicResult InitCandidates(Solver sudokuSolver)
+    // Helper to create a mask for a range of values, now using SolverUtility.ValueMask
+    private uint CreateRangeMask(int startVal, int endVal)
     {
-        int numCells = cells.Count;
-        if (numCells <= 1 || numCells >= MAX_VALUE)
+        uint mask = 0;
+        for (int v = startVal; v <= endVal; v++)
         {
-            return LogicResult.None;
-        }
-
-        var board = sudokuSolver.Board;
-        uint allValsMask = 0;
-        foreach (var cell in cells)
-        {
-            allValsMask |= board[cell.Item1, cell.Item2];
-        }
-        allValsMask &= ~valueSetMask;
-
-        uint[] newCellMasks = new uint[numCells];
-        int maxStartVal = MAX_VALUE - numCells + 1;
-        for (int startVal = 1; startVal <= maxStartVal; startVal++)
-        {
-            int endVal = startVal + numCells - 1;
-            uint rangeMask = MaskBetweenInclusive(startVal, endVal);
-            if ((rangeMask & allValsMask) != rangeMask)
+            if (v >= 1 && v <= MAX_VALUE) // Ensure v is within valid Sudoku range
             {
-                continue;
-            }
-
-            for (int i = 0; i < numCells; i++)
-            {
-                newCellMasks[i] |= rangeMask;
+                mask |= ValueMask(v); // From SolverUtility
             }
         }
-
-        bool changed = false;
-        for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
-        {
-            var cell = cells[cellIndex];
-            var keepResult = sudokuSolver.KeepMask(cell.Item1, cell.Item2, newCellMasks[cellIndex]);
-            if (keepResult == LogicResult.Invalid)
-            {
-                return LogicResult.Invalid;
-            }
-            changed |= keepResult == LogicResult.Changed;
-        }
-        return changed ? LogicResult.Changed : LogicResult.None;
+        return mask;
     }
 
-    public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
+    // Helper to get bitmasks for the cells on the renban
+    private (uint allCellsCandidateUnion, uint allSetValuesUnion) GetCellMasks(BoardView board)
     {
-        int numCells = cells.Count;
-        if (numCells <= 1 || numCells >= MAX_VALUE)
+        uint allCellsCandidateUnion = 0;
+        uint allSetValuesUnion = 0;
+        foreach (int cellIndex in cellIndices)
         {
-            return true;
+            uint cellMask = board[cellIndex];
+            if (IsValueSet(cellMask))
+            {
+                uint valueBit = cellMask & ~valueSetMask;
+                allSetValuesUnion |= valueBit;
+                allCellsCandidateUnion |= valueBit; // Set value is part of the available "candidates"
+            }
+            else
+            {
+                allCellsCandidateUnion |= cellMask; // Add candidates from unset cells
+            }
+        }
+        return (allCellsCandidateUnion, allSetValuesUnion);
+    }
+
+    private bool IsRangeMaskValid(uint rangeSequenceMask, uint allCellsCandidateUnion, uint allSetValuesUnion, BoardView board)
+    {
+        // Overall Check 1: All set values on the line must be part of the current renban sequence.
+        if ((allSetValuesUnion & ~rangeSequenceMask) != 0)
+        {
+            return false;
         }
 
-        if (cellsSet.Contains((i, j)))
+        // Overall Check 2: The renban sequence must be entirely coverable by the candidates/set values present on the line.
+        if ((rangeSequenceMask & ~allCellsCandidateUnion) != 0)
         {
-            var board = sudokuSolver.Board;
-            uint setValsMask = 0;
-            for (int cellIndex = 0; cellIndex < numCells; cellIndex++)
-            {
-                var curCell = cells[cellIndex];
-                uint mask = board[curCell.Item1, curCell.Item2];
-                if (ValueCount(mask) == 1)
-                {
-                    setValsMask |= mask;
-                }
-            }
-            setValsMask &= ~valueSetMask;
+            return false;
+        }
 
-            int minVal = MinValue(setValsMask);
-            int maxVal = MaxValue(setValsMask);
-            int rangeUsed = maxVal - minVal + 1;
-            if (rangeUsed > numCells)
+        // Per-Cell Check: Each individual cell must be able to accommodate a value from this sequence.
+        foreach (int cellIndex in cellIndices)
+        {
+            uint cellBoardMask = board[cellIndex];
+            if (!IsValueSet(cellBoardMask))
             {
-                return false;
-            }
-
-            int numCellsRemaining = numCells - rangeUsed;
-            int minAllowed = Math.Max(minVal - numCellsRemaining, 1);
-            int maxAllowed = Math.Min(maxVal + numCellsRemaining, MAX_VALUE);
-            uint keepMask = MaskBetweenInclusive(minAllowed, maxAllowed);
-
-            for (int ti = 0; ti < numCells; ti++)
-            {
-                var cell = cells[ti];
-                var keepResult = sudokuSolver.KeepMask(cell.Item1, cell.Item2, keepMask);
-                if (keepResult == LogicResult.Invalid)
+                if ((cellBoardMask & rangeSequenceMask) == 0)
                 {
                     return false;
                 }
@@ -126,156 +102,368 @@ public class RenbanConstraint : Constraint
         return true;
     }
 
-    public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
+    public override LogicResult InitCandidates(Solver sudokuSolver)
     {
-        int numCells = cells.Count;
-        if (numCells <= 1 || numCells >= MAX_VALUE)
+        int numCells = cellIndices.Count;
+        if (numCells <= 2)
         {
             return LogicResult.None;
         }
 
-        var board = sudokuSolver.Board;
+        BoardView board = sudokuSolver.Board;
+        (uint allCellsCandidateUnionFromBoard, uint allSetValuesUnionFromBoard) = GetCellMasks(board);
 
-        uint allValsMask = 0;
-        uint setValsMask = 0;
-        foreach (var cell in cells)
+        List<uint> currentlyPossibleRangeMasks = [];
+        uint unionOfCurrentlyPossibleRangeMasks = 0;
+
+        foreach (uint theoreticalRangeMask in rangeMasks)
         {
-            uint mask = board[cell.Item1, cell.Item2];
-            if (ValueCount(mask) == 1)
+            if (IsRangeMaskValid(theoreticalRangeMask, allCellsCandidateUnionFromBoard, allSetValuesUnionFromBoard, board))
             {
-                setValsMask |= mask;
+                currentlyPossibleRangeMasks.Add(theoreticalRangeMask);
+                unionOfCurrentlyPossibleRangeMasks |= theoreticalRangeMask;
             }
-            allValsMask |= mask;
         }
-        setValsMask &= ~valueSetMask;
-        allValsMask &= ~valueSetMask;
-        int minAllVal = MinValue(allValsMask);
-        int maxAllVal = MaxValue(allValsMask);
 
-        uint[] clearedMasks = null;
-        List<(int, int)> unsetCells = cells.Where(cell => ValueCount(board[cell.Item1, cell.Item2]) > 1).ToList();
-        int numUnsetCells = unsetCells.Count;
-        if (numUnsetCells > 0)
+        bool boardChanged = false;
+
+        if (currentlyPossibleRangeMasks.Count == 0 && allCellsCandidateUnionFromBoard != 0)
         {
-            // Ensure candidates are in range of the known values
-            if (setValsMask != 0)
+            for (int i = 0; i < numCells; i++)
             {
-                int minVal = MinValue(setValsMask);
-                int maxVal = MaxValue(setValsMask);
-                int rangeUsed = maxVal - minVal + 1;
-                if (rangeUsed > numCells)
+                int cellIndex = cellIndices[i];
+                if ((board[cellIndex] & ~valueSetMask) != 0)
                 {
-                    logicalStepDescription?.Append($"Value range of set values {minVal} to {maxVal} is too large.");
+                    LogicResult emptyResult = sudokuSolver.KeepMask(cellIndex, 0);
+                    if (emptyResult == LogicResult.Invalid)
+                    {
+                        return LogicResult.Invalid;
+                    }
+
+                    if (emptyResult == LogicResult.Changed)
+                    {
+                        boardChanged = true;
+                    }
+                }
+            }
+            return LogicResult.Invalid;
+        }
+
+        for (int i = 0; i < numCells; i++)
+        {
+            int cellIndex = cellIndices[i];
+            uint currentCellCandidates = board[cellIndex] & ~valueSetMask;
+            uint newCellCandidates = currentCellCandidates & unionOfCurrentlyPossibleRangeMasks;
+
+            if (newCellCandidates != currentCellCandidates)
+            {
+                LogicResult keepResult = sudokuSolver.KeepMask(cellIndex, newCellCandidates);
+                if (keepResult == LogicResult.Invalid)
+                {
+                    return LogicResult.Invalid;
+                }
+                if (keepResult == LogicResult.Changed)
+                {
+                    boardChanged = true;
+                }
+            }
+        }
+
+        (uint finalAllCellsCandidateUnion, uint finalAllSetValuesUnion) = GetCellMasks(board);
+
+        List<uint> newFilteredRangeMasks = [];
+        foreach (uint theoreticalRangeMask in rangeMasks)
+        {
+            if (IsRangeMaskValid(theoreticalRangeMask, finalAllCellsCandidateUnion, finalAllSetValuesUnion, board))
+            {
+                newFilteredRangeMasks.Add(theoreticalRangeMask);
+            }
+        }
+
+        bool constraintStateChanged = false;
+        if (newFilteredRangeMasks.Count != rangeMasks.Count)
+        {
+            rangeMasks = newFilteredRangeMasks;
+            constraintStateChanged = true;
+        }
+        else
+        {
+            for (int i = 0; i < newFilteredRangeMasks.Count; ++i)
+            {
+                if (newFilteredRangeMasks[i] != rangeMasks[i])
+                {
+                    rangeMasks = newFilteredRangeMasks;
+                    constraintStateChanged = true;
+                    break;
+                }
+            }
+        }
+
+        return boardChanged ? LogicResult.Changed : constraintStateChanged ? LogicResult.Changed : LogicResult.None;
+    }
+
+    public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
+    {
+        return true;
+    }
+
+    public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
+    {
+        int numCells = cellIndices.Count;
+        if (numCells <= 2)
+        {
+            return LogicResult.None;
+        }
+
+        BoardView board = sudokuSolver.Board;
+        (uint allCellsCandidateUnion, uint allSetValuesUnion) = GetCellMasks(board);
+
+        uint unionOfCurrentlyValidRangeMasks = 0;
+        int validRangesFound = 0;
+
+        foreach (uint currentRangeSequenceMask in rangeMasks)
+        {
+            if (IsRangeMaskValid(currentRangeSequenceMask, allCellsCandidateUnion, allSetValuesUnion, board))
+            {
+                unionOfCurrentlyValidRangeMasks |= currentRangeSequenceMask;
+                validRangesFound++;
+            }
+        }
+
+        if (validRangesFound == 0)
+        {
+            // For "source", we can highlight all cells in the Renban.
+            logicalStepDescription?.Add(new LogicalStepDesc(
+                desc: "No valid Renban sequence is possible with the current candidates.",
+                highlightCells: cells // Use the cells of this Renban as the highlight/source
+            ));
+            return LogicResult.Invalid;
+        }
+
+        bool overallBoardChanged = false;
+        List<int> allEliminatedCandidateIndicesThisStep = logicalStepDescription != null ? [] : null;
+        List<int> sourceCandidatesForSummary = logicalStepDescription != null ? [] : null;
+
+        if (logicalStepDescription != null)
+        {
+            // Populate sourceCandidatesForSummary with all candidates in the Renban cells before changes
+            foreach (int cellIdx in cellIndices)
+            {
+                uint currentMask = board[cellIdx]; // Includes set bit if set
+                if (IsValueSet(currentMask))
+                {
+                    sourceCandidatesForSummary.Add(CandidateIndex(cellIdx, GetValue(currentMask)));
+                }
+                else
+                {
+                    for (int v = 1; v <= MAX_VALUE; ++v)
+                    {
+                        if (HasValue(currentMask, v))
+                        {
+                            sourceCandidatesForSummary.Add(CandidateIndex(cellIdx, v));
+                        }
+                    }
+                }
+            }
+        }
+
+        for (int i = 0; i < numCells; i++)
+        {
+            int cellIndex = cellIndices[i];
+            uint currentCellBoardMask = board[cellIndex];
+
+            if (IsValueSet(currentCellBoardMask))
+            {
+                continue;
+            }
+
+            uint existingCandidates = currentCellBoardMask;
+            uint newPotentialCandidates = existingCandidates & unionOfCurrentlyValidRangeMasks;
+
+            if (newPotentialCandidates != existingCandidates)
+            {
+                uint eliminatedThisCellMask = existingCandidates & ~newPotentialCandidates;
+
+                LogicResult keepResult = sudokuSolver.KeepMask(cellIndex, newPotentialCandidates);
+
+                if (keepResult == LogicResult.Invalid)
+                {
+                    if (logicalStepDescription != null)
+                    {
+                        List<int> eliminatedInThisCellIndices = [];
+                        for (int v_elim = 1; v_elim <= MAX_VALUE; v_elim++)
+                        {
+                            if (HasValue(eliminatedThisCellMask, v_elim))
+                            {
+                                eliminatedInThisCellIndices.Add(CandidateIndex(cellIndex, v_elim));
+                            }
+                        }
+                        // If newPotentialCandidates is 0, all existing were eliminated.
+                        if (newPotentialCandidates == 0 && existingCandidates != 0)
+                        {
+                            eliminatedInThisCellIndices.Clear(); // Repopulate with all original candidates of this cell
+                            for (int v_elim = 1; v_elim <= MAX_VALUE; v_elim++)
+                            {
+                                if (HasValue(existingCandidates, v_elim))
+                                {
+                                    eliminatedInThisCellIndices.Add(CandidateIndex(cellIndex, v_elim));
+                                }
+                            }
+                        }
+
+                        List<int> sourceForThisCell = [];
+                        for (int v_source = 1; v_source <= MAX_VALUE; ++v_source)
+                        {
+                            if (HasValue(existingCandidates, v_source))
+                            {
+                                sourceForThisCell.Add(CandidateIndex(cellIndex, v_source));
+                            }
+                        }
+
+                        string desc = newPotentialCandidates == 0 && existingCandidates != 0 ?
+                            $"Restricting candidates in {CellName(cells[i])} to fit possible Renban sequences removed all its candidates (eliminated {sudokuSolver.DescribeElims(eliminatedInThisCellIndices)})." :
+                            $"Applying Renban union mask to {CellName(cells[i])} (eliminated {sudokuSolver.DescribeElims(eliminatedInThisCellIndices)}) made the board invalid.";
+
+                        logicalStepDescription.Add(new LogicalStepDesc(
+                            desc: desc,
+                            sourceCandidates: sourceForThisCell,
+                            elimCandidates: eliminatedInThisCellIndices
+                        ));
+                    }
                     return LogicResult.Invalid;
                 }
 
-                int numCellsRemaining = numCells - rangeUsed;
-                int minAllowed = Math.Max(minVal - numCellsRemaining, 1);
-                int maxAllowed = Math.Min(maxVal + numCellsRemaining, MAX_VALUE);
-                uint keepMask = MaskBetweenInclusive(minAllowed, maxAllowed);
-                uint clearMask = ~keepMask & ALL_VALUES_MASK;
-                if ((allValsMask & clearMask) != 0)
+                if (keepResult == LogicResult.Changed)
                 {
-                    for (int cellIndex = 0; cellIndex < numUnsetCells; cellIndex++)
+                    overallBoardChanged = true;
+                    if (allEliminatedCandidateIndicesThisStep != null)
                     {
-                        var cell = unsetCells[cellIndex];
-                        uint cellMask = board[cell.Item1, cell.Item2];
-                        uint curClearMask = cellMask & clearMask;
-                        if (curClearMask != 0)
+                        for (int v_elim = 1; v_elim <= MAX_VALUE; v_elim++)
                         {
-                            var clearResult = sudokuSolver.ClearMask(cell.Item1, cell.Item2, curClearMask);
-                            if (clearResult == LogicResult.Invalid)
+                            if (HasValue(eliminatedThisCellMask, v_elim))
                             {
-                                logicalStepDescription?.Append($"{CellName(cell)} has no more valid candidates.");
-                                return LogicResult.Invalid;
-                            }
-                            if (clearResult == LogicResult.Changed)
-                            {
-                                if (clearedMasks == null)
-                                {
-                                    clearedMasks = new uint[numUnsetCells];
-                                }
-                                clearedMasks[cellIndex] |= curClearMask;
+                                allEliminatedCandidateIndicesThisStep.Add(CandidateIndex(cellIndex, v_elim));
                             }
                         }
                     }
                 }
             }
+        }
 
-            // Look for missing values
-            uint[] newCellMasks = new uint[numUnsetCells];
-            int maxStartVal = maxAllVal - numCells + 1;
-            for (int startVal = minAllVal; startVal <= maxStartVal; startVal++)
-            {
-                int endVal = startVal + numCells - 1;
-                uint rangeMask = MaskBetweenInclusive(startVal, endVal);
-                if ((rangeMask & allValsMask) != rangeMask)
-                {
-                    continue;
-                }
-                rangeMask &= ~setValsMask;
-                if (ValueCount(rangeMask) != unsetCells.Count)
-                {
-                    continue;
-                }
-
-                for (int i = 0; i < numUnsetCells; i++)
-                {
-                    newCellMasks[i] |= rangeMask;
-                }
-            }
-
-            for (int cellIndex = 0; cellIndex < numUnsetCells; cellIndex++)
-            {
-                var cell = unsetCells[cellIndex];
-                uint cellMask = board[cell.Item1, cell.Item2];
-                uint clearMask = ~newCellMasks[cellIndex] & ALL_VALUES_MASK & cellMask;
-                if (clearMask != 0)
-                {
-                    var clearResult = sudokuSolver.ClearMask(cell.Item1, cell.Item2, clearMask);
-                    if (clearResult == LogicResult.Invalid)
-                    {
-                        logicalStepDescription?.Append($"{CellName(cell)} has no more valid candidates.");
-                        return LogicResult.Invalid;
-                    }
-                    if (clearResult == LogicResult.Changed)
-                    {
-                        if (clearedMasks == null)
-                        {
-                            clearedMasks = new uint[numUnsetCells];
-                        }
-                        clearedMasks[cellIndex] |= clearMask;
-                    }
-                }
-            }
-
-            if (clearedMasks != null)
-            {
-                if (logicalStepDescription != null)
-                {
-                    logicalStepDescription.Append($"Cleared values");
-                    bool first = true;
-                    for (int cellIndex = 0; cellIndex < numUnsetCells; cellIndex++)
-                    {
-                        if (clearedMasks[cellIndex] != 0)
-                        {
-                            var cell = unsetCells[cellIndex];
-                            if (!first)
-                            {
-                                logicalStepDescription.Append(';');
-                            }
-                            logicalStepDescription.Append($" {MaskToString(clearedMasks[cellIndex])} from {CellName(cell)}");
-                            first = false;
-                        }
-                    }
-                }
-                return LogicResult.Changed;
-            }
+        if (overallBoardChanged)
+        {
+            logicalStepDescription?.Add(new LogicalStepDesc(
+                    desc: $"Candidates restricted in Renban cells to fit only possible sequences => {sudokuSolver.DescribeElims(allEliminatedCandidateIndicesThisStep)}.",
+                    sourceCandidates: sourceCandidatesForSummary.Distinct(),
+                    elimCandidates: allEliminatedCandidateIndicesThisStep.Distinct()
+                ));
+            return LogicResult.Changed;
         }
 
         return LogicResult.None;
     }
 
-    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => InitLinksByRunningLogic(solver, cells, logicalStepDescription);
-    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => CellsMustContainByRunningLogic(sudokuSolver, cells, value);
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
+    {
+        int numCells = cellIndices.Count;
+        if (numCells <= 1)
+        {
+            return LogicResult.None;
+        }
+
+        bool changed = false;
+        for (int i0 = 0; i0 < numCells; i0++)
+        {
+            int cell0Index = cellIndices[i0];
+            for (int i1 = 0; i1 < numCells; i1++)
+            {
+                if (i0 == i1)
+                {
+                    continue;
+                }
+
+                int cell1Index = cellIndices[i1];
+                for (int v0 = 1; v0 <= MAX_VALUE; v0++)
+                {
+                    int cand0 = CandidateIndex(cell0Index, v0);
+                    for (int v1 = 1; v1 <= MAX_VALUE; v1++)
+                    {
+                        if (Math.Abs(v0 - v1) >= numCells)
+                        {
+                            LogicResult linkResult = solver.AddWeakLink(cand0, CandidateIndex(cell1Index, v1));
+                            if (linkResult == LogicResult.Invalid)
+                            {
+                                logicalStepDescription?.Add(new LogicalStepDesc(
+                                        $"Linking candidates too far apart for Renban ({CellName(cells[i0])}={v0}, {CellName(cells[i1])}={v1}) caused invalid state.",
+                                        [cand0, CandidateIndex(cell1Index, v1)],
+                                        []
+                                    ));
+                                return LogicResult.Invalid;
+                            }
+                            if (linkResult == LogicResult.Changed)
+                            {
+                                changed = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return changed ? LogicResult.Changed : LogicResult.None;
+    }
+
+    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int valueToTest)
+    {
+        int numCells = cellIndices.Count;
+        if (numCells <= 2)
+        {
+            return null;
+        }
+
+        BoardView board = sudokuSolver.Board;
+        (uint allCellsCandidateUnion, uint allSetValuesUnion) = GetCellMasks(board);
+
+        if ((allSetValuesUnion & ValueMask(valueToTest)) != 0)
+        {
+            return null;
+        }
+
+        uint validStartValuesMask = 0;
+        foreach (uint currentRangeSequenceMask in rangeMasks)
+        {
+            if (IsRangeMaskValid(currentRangeSequenceMask, allCellsCandidateUnion, allSetValuesUnion, board))
+            {
+                validStartValuesMask |= ValueMask(MinValue(currentRangeSequenceMask));
+            }
+        }
+
+        if (validStartValuesMask == 0)
+        {
+            return null;
+        }
+
+        int min_s_overall = MinValue(validStartValuesMask);
+        int max_s_overall = MaxValue(validStartValuesMask);
+
+        int mustContainLowerBound = max_s_overall;
+        int mustContainUpperBound = min_s_overall + numCells - 1;
+
+        if (valueToTest >= mustContainLowerBound && valueToTest <= mustContainUpperBound)
+        {
+            List<(int, int)> resultCells = [];
+            for (int i = 0; i < cells.Count; ++i)
+            {
+                (int r, int c) cellCoord = cells[i];
+                int cellIndex = cellIndices[i];
+                uint cellBoardMask = board[cellIndex];
+
+                if (!IsValueSet(cellBoardMask) && HasValue(cellBoardMask, valueToTest))
+                {
+                    resultCells.Add(cellCoord);
+                }
+            }
+            return resultCells.Count > 0 ? resultCells : null;
+        }
+        return null;
+    }
 }
