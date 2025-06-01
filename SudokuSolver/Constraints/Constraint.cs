@@ -309,26 +309,6 @@ public abstract class Constraint
         return elims != null ? LogicResult.Changed : LogicResult.None;
     }
 
-    /// <summary>
-    /// Useful for constraints that just need to enforce seen cells.
-    /// </summary>
-    /// <param name="sudokuSolver"></param>
-    /// <param name="i"></param>
-    /// <param name="j"></param>
-    /// <param name="val"></param>
-    /// <returns></returns>
-    protected bool EnforceConstraintBasedOnSeenCells(Solver sudokuSolver, int i, int j, int val)
-    {
-        foreach (var cell in SeenCells((i, j)))
-        {
-            if (!sudokuSolver.ClearValue(cell.Item1, cell.Item2, val))
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
     public List<List<(int, int)>> ParseCells(string cellString)
     {
         List<List<(int, int)>> cellGroups = new();
