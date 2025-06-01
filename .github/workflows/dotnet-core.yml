@@ -53,19 +53,24 @@ jobs:
       matrix:
         include:
           # archive_ext is no longer needed here as we always produce a .zip via the upload action
-          - rid: win-x64
+          - os: ubuntu-latest
+            rid: win-x64
             os_folder: Windows
             archive_filename_suffix: win-x64
-          - rid: win-arm64
+          - os: ubuntu-latest
+            rid: win-arm64
             os_folder: Windows
             archive_filename_suffix: win-arm64
-          - rid: linux-x64
+          - os: ubuntu-latest
+            rid: linux-x64
             os_folder: Linux
             archive_filename_suffix: linux-x64
-          - rid: osx-x64
+          - os: macos-latest
+            rid: osx-x64
             os_folder: OSX
             archive_filename_suffix: osx-x64
-          - rid: osx-arm64
+          - os: macos-latest
+            rid: osx-arm64
             os_folder: OSX
             archive_filename_suffix: osx-arm64
     steps:
@@ -100,7 +105,7 @@ jobs:
       run: |
         PACKAGE_DIR="package-${{ matrix.rid }}"
         mkdir -p "$PACKAGE_DIR"
-        
+
         # Ensure execute permissions for the published app if necessary (dotnet publish usually handles this)
         # For example, if your main executable is SudokuSolverConsole:
         # if [ -f "./publish-${{ matrix.rid }}/SudokuSolverConsole" ] && [[ "${{ matrix.rid }}" == *"osx"* || "${{ matrix.rid }}" == *"linux"* ]]; then
@@ -108,16 +113,69 @@ jobs:
         # fi
 
         cp -r ./publish-${{ matrix.rid }}/* "$PACKAGE_DIR/"
-        
+
         if [ -d "./UserScripts" ] && [ -n "$(ls -A ./UserScripts 2>/dev/null)" ]; then
           cp -r ./UserScripts/* "$PACKAGE_DIR/"
         fi
-        
+
         if [ -d "./${{ matrix.os_folder }}" ] && [ -n "$(ls -A ./${{ matrix.os_folder }} 2>/dev/null)" ]; then
           cp -r ./${{ matrix.os_folder }}/* "$PACKAGE_DIR/"
         fi
         echo "PACKAGE_DIR_PATH=$PACKAGE_DIR" >> $GITHUB_ENV # Output the directory path to be uploaded
         echo "Prepared package directory: $PACKAGE_DIR"
+    - name: Notarize for ${{ matrix.rid }}
+      if: startsWith(matrix.rid, 'osx-')
+      run: |
+        # macOS notarization
+
+        # TODO install certificates from secrets
+
+        API_KEY_PATH="${RUNNER_TEMP}/AuthKey_${{ secrets.MACOS_API_KEY_ID }}.p8"
+        echo "${{ secrets.MACOS_API_KEY }}" | base64 --decode > "${API_KEY_PATH}"
+        APP_PATH="./publish-${{ matrix.rid }}/SudokuSolverConsole"
+
+        if [ ! -f "${APP_PATH}" ]; then
+          echo "Failed to find the executable at ${APP_PATH}!"
+          exit 1
+        fi
+
+        xcrun atool \
+        --validate-app \
+        --file "${APP_PATH}" \
+        --type macos \
+        --apiKey "${API_KEY_PATH}" \
+        --apiIssuer "${{ secrets.MACOS_API_ISSUER_ID }}" \
+        --verbose \
+        --output-format json
+
+        if [ $? -ne 0 ]; then
+          echo "Notarization validation failed for ${{ matrix.rid }}"
+          exit 1
+        fi
+
+        xcrun notarytool submit \
+          --key "${API_KEY_PATH}" \
+          --key-id "${{ secrets.MACOS_API_KEY_ID }}" \
+          --issuer "${{ secrets.MACOS_API_ISSUER_ID }}" \
+          --verbose \
+          --wait \
+          --output-format json \
+          "${APP_PATH}"
+
+        if [ $? -ne 0 ]; then
+          echo "Notarization submission failed for ${{ matrix.rid }}"
+          exit 1
+        fi
+
+        xcrun stapler staple \
+          --verbose \
+          "${APP_PATH}"
+
+        if [ $? -ne 0 ]; then
+          echo "Stapling notarization failed for ${{ matrix.rid }}"
+          exit 1
+        fi
+
     - name: Upload Artifact for ${{ matrix.rid }}
       id: upload_artifact_step
       uses: actions/upload-artifact@v4
