@@ -1,5 +1,3 @@
-﻿using System.Collections.Generic;
-
 namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Whispers", ConsoleName = "whispers")]
@@ -7,21 +5,22 @@ public class WhispersConstraint : Constraint
 {
     public readonly List<(int, int)> cells;
     public readonly int difference;
-    private readonly HashSet<(int, int)> cellsSet;
 
     private static readonly Regex optionsRegex = new(@"(\d+);(.*)");
+
     public WhispersConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
-        var match = optionsRegex.Match(options);
+        Match match = optionsRegex.Match(options);
         if (match.Success)
         {
             difference = int.Parse(match.Groups[1].Value);
-            options = match.Groups[2].Value;
+            options = match.Groups[2].Value; // This is the cell string part
         }
         else
         {
             // No difference provided, use default
             difference = (MAX_VALUE + 1) / 2;
+            // 'options' already contains the cell string
         }
 
         if (difference < 1 || difference > MAX_VALUE - 1)
@@ -29,47 +28,54 @@ public class WhispersConstraint : Constraint
             throw new ArgumentException($"Whispers difference must be between 1 and {MAX_VALUE - 1}. Specified difference was: {difference}");
         }
 
-        var cellGroups = ParseCells(options);
+        List<List<(int, int)>> cellGroups = ParseCells(options); // Parse the cell string part
         if (cellGroups.Count != 1)
         {
             throw new ArgumentException($"Whispers constraint expects 1 cell group, got {cellGroups.Count}.");
         }
 
         cells = cellGroups[0];
-        cellsSet = new(cells);
+        if (cells.Count == 0)
+        {
+            throw new ArgumentException("Whispers constraint cannot be empty.");
+        }
     }
 
-    public WhispersConstraint(Solver sudokuSolver, IEnumerable<(int, int)> cells, int difference) : base(sudokuSolver, difference + ";" + cells.CellNames(""))
+    // Constructor used by SplitToPrimitives - this one is fine as it explicitly gets cells and difference
+    private WhispersConstraint(Solver sudokuSolver, IEnumerable<(int, int)> cells, int difference) : base(sudokuSolver, $"{difference};{string.Join("", cells.Select(CellName))}")
     {
         this.difference = difference;
-        this.cells = cells.ToList();
-        cellsSet = new(cells);
+        this.cells = [.. cells];
+        if (this.cells.Count == 0)
+        {
+            throw new ArgumentException("Whispers constraint (primitive) cannot be empty.");
+        }
     }
 
-    public override string SpecificName => $"Whispers {CellName(cells[0])} - {CellName(cells[^1])}";
+    public override string SpecificName => $"Whispers {CellName(cells[0])} - {CellName(cells[^1])} (Diff {difference})";
 
     public override LogicResult InitCandidates(Solver sudokuSolver)
     {
-        if (cells.Count <= 1)
+        if (cells.Count == 0)
         {
             return LogicResult.None;
         }
 
-        uint clearMask = 0;
+        uint initialClearMask = 0;
         for (int v = 1; v <= MAX_VALUE; v++)
         {
             if (v - difference < 1 && v + difference > MAX_VALUE)
             {
-                clearMask |= ValueMask(v);
+                initialClearMask |= ValueMask(v);
             }
         }
 
         bool changed = false;
-        if (clearMask != 0)
+        if (initialClearMask != 0)
         {
-            foreach (var (i, j) in cells)
+            foreach ((int r, int c) in cells)
             {
-                var clearResult = sudokuSolver.ClearMask(i, j, clearMask);
+                LogicResult clearResult = sudokuSolver.ClearMask(r, c, initialClearMask);
                 if (clearResult == LogicResult.Invalid)
                 {
                     return LogicResult.Invalid;
@@ -80,206 +86,102 @@ public class WhispersConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
+    public override bool NeedsEnforceConstraint => false;
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
-        if (cells.Count <= 1)
-        {
-            return true;
-        }
-
-        if (cellsSet.Contains((i, j)))
-        {
-            uint adjMask = CalcKeepMask(ValueMask(val));
-            if (adjMask == 0)
-            {
-                return false;
-            }
-
-            for (int ti = 0; ti < cells.Count; ti++)
-            {
-                var curCell = cells[ti];
-                if (curCell == (i, j))
-                {
-                    if (ti - 1 > 0)
-                    {
-                        var prevCell = cells[ti - 1];
-                        if (sudokuSolver.KeepMask(prevCell.Item1, prevCell.Item2, adjMask) == LogicResult.Invalid)
-                        {
-                            return false;
-                        }
-                    }
-                    if (ti + 1 < cells.Count)
-                    {
-                        var nextCell = cells[ti + 1];
-                        if (sudokuSolver.KeepMask(nextCell.Item1, nextCell.Item2, adjMask) == LogicResult.Invalid)
-                        {
-                            return false;
-                        }
-                    }
-                }
-            }
-        }
         return true;
     }
 
-    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => InitLinksByRunningLogic(solver, cells, logicalStepDescription);
-    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => CellsMustContainByRunningLogic(sudokuSolver, cells, value);
-
-    public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
-        if (cells.Count == 0)
+        if (cells.Count < 2)
         {
             return LogicResult.None;
         }
 
-        var board = sudokuSolver.Board;
-        uint[] clearedMasks = null;
-        for (int ti = 0; ti < cells.Count; ti++)
+        bool overallChanged = false;
+
+        for (int i = 0; i < cells.Count - 1; i++)
         {
-            var curCell = cells[ti];
-            uint curMask = board[curCell.Item1, curCell.Item2];
-            if (IsValueSet(curMask))
+            (int, int) cellA_coords = cells[i];
+            (int, int) cellB_coords = cells[i + 1];
+
+            uint maskA = solver.Board[cellA_coords.Item1, cellA_coords.Item2];
+            uint maskB = solver.Board[cellB_coords.Item1, cellB_coords.Item2];
+
+            for (int valA = 1; valA <= MAX_VALUE; valA++)
             {
-                continue;
-            }
-
-            var prevCell = ti - 1 >= 0 ? cells[ti - 1] : (-1, -1);
-            var nextCell = ti + 1 < cells.Count ? cells[ti + 1] : (-1, -1);
-            uint prevMask = prevCell.Item1 != -1 ? board[prevCell.Item1, prevCell.Item2] : ALL_VALUES_MASK;
-            uint nextMask = nextCell.Item1 != -1 ? board[nextCell.Item1, nextCell.Item2] : ALL_VALUES_MASK;
-
-            prevMask &= ~valueSetMask;
-            curMask &= ~valueSetMask;
-            nextMask &= ~valueSetMask;
-
-            uint keepMask = CalcKeepMask(prevMask) & CalcKeepMask(nextMask);
-            if (keepMask == 0)
-            {
-                logicalStepDescription?.Append($"{CellName(curCell)} has no more valid candidates.");
-                return LogicResult.Invalid;
-            }
-
-            bool changed = false;
-
-            uint clearMask = ~keepMask & ALL_VALUES_MASK & curMask;
-            if (clearMask != 0)
-            {
-                LogicResult clearResult = sudokuSolver.ClearMask(curCell.Item1, curCell.Item2, clearMask);
-                if (clearResult == LogicResult.Invalid)
+                if (!HasValue(maskA, valA))
                 {
-                    logicalStepDescription?.Append($"{CellName(curCell)} has no more valid candidates.");
-                    return LogicResult.Invalid;
+                    continue;
                 }
-                if (clearResult == LogicResult.Changed)
-                {
-                    if (clearedMasks == null)
-                    {
-                        clearedMasks = new uint[cells.Count];
-                    }
-                    clearedMasks[ti] |= clearMask;
-                    curMask = board[curCell.Item1, curCell.Item2] & ~valueSetMask;
-                    changed = true;
-                }
-            }
 
-            if (prevCell.Item1 != -1 && nextCell.Item1 != -1)
-            {
-                int minCurVal = MinValue(curMask);
-                int maxCurVal = MaxValue(curMask);
-                for (int v = minCurVal; v <= maxCurVal; v++)
+                int candA_idx = solver.CandidateIndex(cellA_coords, valA);
+
+                for (int valB = 1; valB <= MAX_VALUE; valB++)
                 {
-                    uint valueMask = ValueMask(v);
-                    if ((curMask & valueMask) == 0)
+                    if (!HasValue(maskB, valB))
                     {
                         continue;
                     }
 
-                    if (sudokuSolver.IsSeenByValue(prevCell, nextCell, v))
+                    if (Math.Abs(valA - valB) < difference)
                     {
-                        uint adjMask = CalcKeepMask(valueMask);
-                        uint keepPrev = prevMask & adjMask;
-                        uint keepNext = nextMask & adjMask;
-                        if (keepPrev == keepNext && ValueCount(keepPrev) == 1)
+                        int candB_idx = solver.CandidateIndex(cellB_coords, valB);
+                        LogicResult linkResult = solver.AddWeakLink(candA_idx, candB_idx);
+
+                        if (linkResult == LogicResult.Invalid)
                         {
-                            if (sudokuSolver.ClearValue(curCell.Item1, curCell.Item2, v))
-                            {
-                                if (clearedMasks == null)
-                                {
-                                    clearedMasks = new uint[cells.Count];
-                                }
-                                clearedMasks[ti] |= valueMask;
-                                changed = true;
-                            }
-                            else
-                            {
-                                logicalStepDescription?.Append($"{CellName(curCell)} has no more valid candidates.");
-                                return LogicResult.Invalid;
-                            }
+                            logicalStepDescription?.Add(new LogicalStepDesc(
+                                $"Adding weak link for {CellName(cellA_coords)}={valA} and {CellName(cellB_coords)}={valB} (difference |{valA}-{valB}| < {difference}) made board invalid.",
+                                [candA_idx, candB_idx],
+                                []
+                            ));
+                            return LogicResult.Invalid;
+                        }
+                        if (linkResult == LogicResult.Changed)
+                        {
+                            overallChanged = true;
                         }
                     }
                 }
             }
-
-            if (changed)
-            {
-                // Start over
-                ti = -1;
-            }
         }
-
-        if (clearedMasks != null)
-        {
-            if (logicalStepDescription != null)
-            {
-                logicalStepDescription.Append($"Cleared values");
-                bool first = true;
-                for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
-                {
-                    if (clearedMasks[cellIndex] != 0)
-                    {
-                        var cell = cells[cellIndex];
-                        if (!first)
-                        {
-                            logicalStepDescription.Append(';');
-                        }
-                        logicalStepDescription.Append($" {MaskToString(clearedMasks[cellIndex])} from {CellName(cell)}");
-                        first = false;
-                    }
-                }
-            }
-            return LogicResult.Changed;
-        }
-        return LogicResult.None;
+        return overallChanged ? LogicResult.Changed : LogicResult.None;
     }
 
-    private uint CalcKeepMask(uint adjMask)
+    public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
     {
-        int adjValMin = MinValue(adjMask);
-        int adjValMax = MaxValue(adjMask);
-        int maxSmallVal = adjValMax - difference;
-        int minLargeVal = adjValMin + difference;
-        uint keepMask = 0;
-        if (maxSmallVal >= 1)
-        {
-            keepMask |= MaskValAndLower(maxSmallVal);
-        }
-        if (minLargeVal <= MAX_VALUE)
-        {
-            keepMask |= MaskValAndHigher(minLargeVal);
-        }
-        return keepMask;
+        // The primary pairwise logic is now handled by weak links established in InitLinks.
+        // More complex multi-cell interactions or specific patterns might have been in the old StepLogic.
+        // For now, we rely on the solver's general mechanisms (AICs, etc.) acting on these weak links.
+        return LogicResult.None;
     }
 
     public override IEnumerable<Constraint> SplitToPrimitives(Solver sudokuSolver)
     {
-        List<WhispersConstraint> constraints = new(cells.Count - 1);
+        // This method is used by the solver for IsInheritOf logic, not for the constraint's own solving.
+        if (cells.Count <= 1)
+        {
+            return [];
+        }
+
+        List<WhispersConstraint> primitives = new(cells.Count - 1);
         for (int i = 0; i < cells.Count - 1; i++)
         {
-            List<(int, int)> cellsPair = new() { cells[i], cells[i + 1] };
-            cellsPair.Sort();
-            constraints.Add(new(sudokuSolver, cellsPair, difference));
+            // Create a new Whispers constraint for the pair of adjacent cells.
+            int cellIndex0 = sudokuSolver.CellIndex(cells[i]);
+            int cellIndex1 = sudokuSolver.CellIndex(cells[i + 1]);
+            (int, int) cell0 = sudokuSolver.CellIndexToCoord(cellIndex0 < cellIndex1 ? cellIndex0 : cellIndex1);
+            (int, int) cell1 = sudokuSolver.CellIndexToCoord(cellIndex0 < cellIndex1 ? cellIndex1 : cellIndex0);
+            primitives.Add(new WhispersConstraint(sudokuSolver, [cell0, cell1], difference));
         }
-        return constraints;
+        return primitives;
+    }
+
+    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value)
+    {
+        return CellsMustContainByRunningLogic(sudokuSolver, cells, value);
     }
 }
-

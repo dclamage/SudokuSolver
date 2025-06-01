@@ -202,6 +202,7 @@ public class RenbanConstraint : Constraint
         return boardChanged ? LogicResult.Changed : constraintStateChanged ? LogicResult.Changed : LogicResult.None;
     }
 
+    public override bool NeedsEnforceConstraint => false;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         return true;
