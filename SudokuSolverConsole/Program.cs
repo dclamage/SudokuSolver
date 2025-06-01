@@ -17,6 +17,8 @@ public class Program
 
     public static async Task<int> Main(string[] args)
 	{
+		Console.OutputEncoding = Encoding.UTF8;
+
         var app = new CommandLineApplication();
 		app.Name = "SudokuSolver";
 		app.FullName = "Sudoku Solver";
@@ -654,7 +656,7 @@ public class Program
                     double relErrPercent = 100.0 * (z95 * stderr) / estimate;
 
 					string iterationsStr = EstimateCountIterations <= 0 ? "inf" : EstimateCountIterations.ToString();
-                    Console.WriteLine($"[{watch.Elapsed}] Estimate after {iterations} / {iterationsStr} iterations: {estimate:E6}  (95% CI: {lower:E6} – {upper:E6}, ±{relErrPercent:F2}%)");
+                    Console.WriteLine($"[{watch.Elapsed}] Estimate after {iterations} / {iterationsStr} iterations: {estimate:E6}  (95% CI: {lower:E6} - {upper:E6}, Â±{relErrPercent:F2}%)");
                 });
             }
             catch (Exception e)
