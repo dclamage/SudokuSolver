@@ -1,11 +1,11 @@
-﻿namespace SudokuSolver.Constraints;
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Chess", ConsoleName = "chess")]
 public class ChessConstraint : Constraint
 {
     private readonly List<(int, int)> offsets;
-    private readonly uint values;
-    private readonly SortedSet<(int, int)> cellsLookup;
+    private readonly uint values; // Mask of values to which this constraint applies
+    private readonly HashSet<(int, int)> cellsLookup; // If not null, constraint applies only involving these cells
 
     public ChessConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
@@ -98,9 +98,89 @@ public class ChessConstraint : Constraint
     }
 
     public override bool NeedsEnforceConstraint => false;
-    public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val) => true; // Enforced by weak links
+    public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
+    {
+        return true; // Enforced by weak links
+    }
 
-    public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing) => LogicResult.None;
+    public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
+    {
+        return LogicResult.None;
+    }
+
+    public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
+    {
+        bool changed = false;
+
+        for (int rA = 0; rA < HEIGHT; rA++)
+        {
+            for (int cA = 0; cA < WIDTH; cA++)
+            {
+                (int rA, int cA) cellA_coords = (rA, cA);
+                int cellA_idx = solver.CellIndex(rA, cA);
+                uint boardMaskA = solver.Board[cellA_idx];
+
+                foreach ((int, int) offset in offsets) // Use this.offsets
+                {
+                    int rB = rA + offset.Item1;
+                    int cB = cA + offset.Item2;
+
+                    if (rB >= 0 && rB < HEIGHT && cB >= 0 && cB < WIDTH)
+                    {
+                        (int rB, int cB) cellB_coords = (rB, cB);
+                        int cellB_idx = solver.CellIndex(rB, cB);
+
+                        if (cellA_idx >= cellB_idx)
+                        {
+                            continue;
+                        }
+
+                        bool constraintAppliesToPair = cellsLookup == null ||
+                                                        cellsLookup.Contains(cellA_coords) ||
+                                                        cellsLookup.Contains(cellB_coords);
+                        if (!constraintAppliesToPair)
+                        {
+                            continue;
+                        }
+
+                        uint boardMaskB = solver.Board[cellB_idx];
+                        uint commonCandidates = boardMaskA & boardMaskB;
+
+                        if (commonCandidates == 0)
+                        {
+                            continue;
+                        }
+
+                        for (int val = 1; val <= MAX_VALUE; val++)
+                        {
+                            uint valueMask = ValueMask(val);
+                            if ((commonCandidates & valueMask) != 0 && (values & valueMask) != 0) // Use this.values
+                            {
+                                int candA_idx = solver.CandidateIndex(cellA_coords, val);
+                                int candB_idx = solver.CandidateIndex(cellB_coords, val);
+
+                                LogicResult linkResult = solver.AddWeakLink(candA_idx, candB_idx);
+                                if (linkResult == LogicResult.Invalid)
+                                {
+                                    logicalStepDescription?.Add(new LogicalStepDesc(
+                                        desc: $"{SpecificName}: Link between {solver.CandIndexDesc(candA_idx)} and {solver.CandIndexDesc(candB_idx)} invalidates board.",
+                                        [candA_idx, candB_idx],
+                                        []
+                                    ));
+                                    return LogicResult.Invalid;
+                                }
+                                if (linkResult == LogicResult.Changed)
+                                {
+                                    changed = true;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return changed ? LogicResult.Changed : LogicResult.None;
+    }
 
     public override IEnumerable<(int, int)> SeenCells((int, int) cell)
     {
