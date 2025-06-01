@@ -48,25 +48,6 @@ public abstract class Constraint
     public virtual IEnumerable<Constraint> SplitToPrimitives(Solver sudokuSolver) => new Constraint[] { this };
 
     /// <summary>
-    /// Return an enumerable of cells which cannot be the same digit as this cell.
-    /// Only need to return cells which wouldn't be seen by normal sudoku rules.
-    /// Also no need to return any cells if the Group property is used.
-    /// </summary>
-    /// <param name="cell">The cell which is seeing other cells.</param>
-    /// <returns>All cells which are seen by this cell.</returns>
-    public virtual IEnumerable<(int, int)> SeenCells((int, int) cell) => Enumerable.Empty<(int, int)>();
-
-    /// <summary>
-    /// Return an enumerable of cells which cannot be the same digit as this cell when
-    /// this cell is set to a specific value.
-    /// Only need to return cells which wouldn't be seen by normal sudoku rules.
-    /// </summary>
-    /// <param name="cell">The cell which is seeing other cells.</param>
-    /// <param name="mask">The value mask to consider for the cell.</param>
-    /// <returns>All cells which are seen by this cell.</returns>
-    public virtual IEnumerable<(int, int)> SeenCellsByValueMask((int, int) cell, uint mask) => SeenCells(cell);
-
-    /// <summary>
     /// Called once all constraints are finalized on the board.
     /// This is the initial opportunity to remove candidates from the empty board before any values are set to it.
     /// For example, a two cell killer cage with sum of 10 might remove the 9 candidate from its two cells.

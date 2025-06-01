@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver;
+namespace SudokuSolver;
 
 public partial class Solver
 {
@@ -181,6 +181,19 @@ public partial class Solver
         {
             CellToGroupsLookup[cellIndex].Add(group);
         }
+
+        for (int groupIndex0 = 0; groupIndex0 < group.Cells.Count - 1; groupIndex0++)
+        {
+            int cellIndex0 = group.Cells[groupIndex0];
+            for (int groupIndex1 = groupIndex0 + 1; groupIndex1 < group.Cells.Count; groupIndex1++)
+            {
+                int cellIndex1 = group.Cells[groupIndex1];
+                for (int v = 1; v <= MAX_VALUE; v++)
+                {
+                    AddWeakLink(CandidateIndex(cellIndex0, v), CandidateIndex(cellIndex1, v));
+                }
+            }
+        }
     }
 
     /// <summary>
@@ -328,57 +341,112 @@ public partial class Solver
         return result;
     }
 
-    private void InitSeenMap()
+    private List<int> SeenCells(int cellIndex)
     {
-        // Create the seen map
-        seenMap = new bool[HEIGHT, WIDTH, HEIGHT, WIDTH, MAX_VALUE + 1];
-        for (int i0 = 0; i0 < HEIGHT; i0++)
+        List<int> result = null;
+
+        for (int v = 1; v <= MAX_VALUE; v++)
         {
-            for (int j0 = 0; j0 < WIDTH; j0++)
+            int candidateIndex = CandidateIndex(cellIndex, v);
+            List<int> curWeakLinks = weakLinks[candidateIndex];
+
+            if (result == null)
             {
-                foreach (var (i1, j1) in SeenCells((i0, j0)))
+                // First pass (v == 1): initialize result to all oCell with oValue == 1
+                result = new(curWeakLinks.Count);
+
+                foreach (int otherCandidateIndex in curWeakLinks)
                 {
-                    seenMap[i0, j0, i1, j1, 0] = true;
-                }
-                for (int v = 1; v <= MAX_VALUE; v++)
-                {
-                    uint mask = ValueMask(v);
-                    foreach (var (i1, j1) in SeenCellsByValueMask(mask, (i0, j0)))
+                    var (oCell, oValue) = CandIndexToCellAndValue(otherCandidateIndex);
+                    if (oValue == v)
                     {
-                        seenMap[i0, j0, i1, j1, v] = true;
+                        result.Add(oCell);
                     }
+                }
+
+                if (result.Count == 0)
+                {
+                    return [];
+                }
+            }
+            else
+            {
+                // Subsequent passes: do an in-place intersection with cellsSeenThisV (sorted)
+                int writeIdx = 0;
+                int rIdx = 0;
+
+                int candidatePtr = 0;
+                int currentCellSeen = -1;
+                bool hasNext = false;
+
+                // advanceCell() lands the next (sorted) oCell where oValue == v into currentCellSeen
+                void advanceCell()
+                {
+                    hasNext = false;
+                    while (candidatePtr < curWeakLinks.Count)
+                    {
+                        int ocand = curWeakLinks[candidatePtr++];
+                        var (oCell, oValue) = CandIndexToCellAndValue(ocand);
+                        if (oValue == v)
+                        {
+                            currentCellSeen = oCell;
+                            hasNext = true;
+                            return;
+                        }
+                    }
+                }
+
+                // prime the first cellSeenThisV
+                advanceCell();
+
+                // merge “result” (sorted list of cells) with “cellsSeenThisV” (on-the-fly) 
+                while (rIdx < result.Count && hasNext)
+                {
+                    int rc = result[rIdx];
+                    if (rc == currentCellSeen)
+                    {
+                        // match ⇒ keep it
+                        result[writeIdx++] = rc;
+                        rIdx++;
+                        advanceCell(); // get the next cellSeenThisV
+                    }
+                    else if (rc < currentCellSeen)
+                    {
+                        // result[rIdx] is too small ⇒ skip it
+                        rIdx++;
+                    }
+                    else
+                    {
+                        // currentCellSeen < result[rIdx], so advance in curWeakLinks to catch up
+                        advanceCell();
+                    }
+                }
+
+                // Trim off everything after writeIdx
+                if (writeIdx < result.Count)
+                {
+                    result.RemoveRange(writeIdx, result.Count - writeIdx);
+                }
+
+                if (result.Count == 0)
+                {
+                    return [];
                 }
             }
         }
 
-        // Add the weak links
-        for (int i0 = 0; i0 < HEIGHT; i0++)
+        return result ?? [];
+    }
+
+    private void InitSeenMap()
+    {
+        // Create the seen map
+        seenMap = new bool[NUM_CELLS * NUM_CELLS];
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
-            for (int j0 = 0; j0 < WIDTH; j0++)
+            foreach (int seenCellIndex in SeenCells(cellIndex))
             {
-                int cellIndex = i0 * WIDTH + j0;
-                for (int v = 1; v <= MAX_VALUE; v++)
-                {
-                    uint mask = ValueMask(v);
-                    int candIndex0 = cellIndex * MAX_VALUE + v - 1;
-
-                    // Add weak links to all seen cells
-                    foreach (var (i1, j1) in SeenCellsByValueMask(mask, (i0, j0)))
-                    {
-                        int candIndex1 = CandidateIndex((i1, j1), v);
-                        AddWeakLink(candIndex0, candIndex1);
-                    }
-
-                    // Add weak links to all other candidates within the same cell
-                    for (int v1 = 1; v1 <= MAX_VALUE; v1++)
-                    {
-                        if (v != v1)
-                        {
-                            int candIndex1 = CandidateIndex((i0, j0), v1);
-                            AddWeakLink(candIndex0, candIndex1);
-                        }
-                    }
-                }
+                seenMap[cellIndex * NUM_CELLS + seenCellIndex] = true;
             }
         }
     }
@@ -399,6 +467,8 @@ public partial class Solver
         // Create an initial seen map based on the standard groups only
         InitSeenMap();
 
+        int prevNumLinks = totalWeakLinks;
+
         // Do a single pass on intializing constraints.
         foreach (var constraint in constraints)
         {
@@ -410,7 +480,6 @@ public partial class Solver
         }
 
         // Get the groups from the constraints
-        bool addedGroup = false;
         foreach (var constraint in constraints)
         {
             var cells = constraint.Group;
@@ -419,20 +488,19 @@ public partial class Solver
                 SudokuGroup group = new(GroupType.Constraint, constraint.SpecificName, cells.Select(CellIndex).ToList(), constraint);
                 Groups.Add(group);
                 InitMapForGroup(group);
-                addedGroup = true;
             }
-        }
-
-        // Re-create the seen map if any new groups were added
-        if (addedGroup)
-        {
-            InitSeenMap();
         }
 
         // Add any weak links from constraints
         foreach (var constraint in constraints)
         {
             constraint.InitLinks(this, null, true);
+        }
+
+        if (prevNumLinks < totalWeakLinks)
+        {
+            // Re-initialize the seen map based on these updated groups / weak links.
+            InitSeenMap();
         }
 
         // Initialize the constraints again in a loop until there are no more changes
@@ -453,10 +521,11 @@ public partial class Solver
                     haveChange = true;
                 }
 
-                int prevNumLinks = totalWeakLinks;
+                prevNumLinks = totalWeakLinks;
                 constraint.InitLinks(this, null, true);
                 if (prevNumLinks < totalWeakLinks)
                 {
+                    InitSeenMap();
                     haveChange = true;
                 }
             }

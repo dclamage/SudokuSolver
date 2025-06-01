@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver.Constraints;
+namespace SudokuSolver.Constraints;
 
 public abstract class OrthogonalValueConstraint : Constraint
 {
@@ -579,8 +579,8 @@ public abstract class OrthogonalValueConstraint : Constraint
                     {
                         uint mustHaveMask = ValueMask(mustHaveVal);
 
-                        elims ??= new();
-                        elims.AddRange(sudokuSolver.CandidateIndexes(mustHaveMask, sudokuSolver.SeenCellsByValueMask(mustHaveMask, cellA, cellB)));
+                        elims ??= [];
+                        elims.AddRange(sudokuSolver.CalcElims(CandidateIndex(cellA, mustHaveVal), CandidateIndex(cellB, mustHaveVal)));
                     }
 
                     if (elims != null && elims.Count > 0)

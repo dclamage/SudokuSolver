@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace SudokuSolver.Constraints;
 
@@ -41,31 +41,6 @@ public class BetweenLineConstraint : Constraint
     }
 
     public override string SpecificName => $"Between Line {CellName(outerCell0)}-{CellName(outerCell1)}";
-
-    public override IEnumerable<(int, int)> SeenCells((int, int) cell)
-    {
-        if (innerCellsLookup.Contains(cell))
-        {
-            yield return outerCell0;
-            yield return outerCell1;
-        }
-        else if (cell == outerCell0)
-        {
-            foreach (var innerCell in innerCells)
-            {
-                yield return innerCell;
-            }
-            yield return outerCell1;
-        }
-        else if (cell == outerCell1)
-        {
-            foreach (var innerCell in innerCells)
-            {
-                yield return innerCell;
-            }
-            yield return outerCell0;
-        }
-    }
 
     public override LogicResult InitCandidates(Solver sudokuSolver)
     {

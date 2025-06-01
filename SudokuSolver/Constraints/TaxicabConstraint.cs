@@ -115,20 +115,6 @@ public class TaxicabConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
-    public override IEnumerable<(int, int)> SeenCells((int, int) cell)
-    {
-        (int i0, int j0) = cell;
-        foreach ((int offseti, int offsetj) in offsets)
-        {
-            int i1 = i0 + offseti;
-            int j1 = j0 + offsetj;
-            if (i1 >= 0 && i1 < WIDTH && j1 >= 0 && j1 < HEIGHT) // Corrected WIDTH to HEIGHT for j1 boundary
-            {
-                yield return (i1, j1);
-            }
-        }
-    }
-
     public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
     {
         // The primary logic is handled by weak links and general solver mechanisms.

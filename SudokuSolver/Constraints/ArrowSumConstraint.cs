@@ -1,4 +1,4 @@
-﻿using SudokuSolver.Constraints.Strategies;
+using SudokuSolver.Constraints.Strategies;
 
 namespace SudokuSolver.Constraints;
 
@@ -11,7 +11,7 @@ public class ArrowSumConstraint : Constraint
     public readonly List<(int, int)> circleCells;
     public readonly List<(int, int)> arrowCells;
     private readonly HashSet<(int, int)> _allCells;
-    private readonly SumCellsHelper _arrowSumHelperInstance;
+    private SumCellsHelper _arrowSumHelperInstance;
     private readonly Solver _solverInstanceRef; // To pass to strategy methods that might need solver context
     private readonly bool _isDegenerate;
     private readonly bool _isClone;
@@ -34,7 +34,6 @@ public class ArrowSumConstraint : Constraint
         if (!_isDegenerate)
         {
             _allCells = [.. circleCells.Concat(arrowCells)];
-            _arrowSumHelperInstance = new SumCellsHelper(sudokuSolver, arrowCells);
 
             if (circleCells.Count == 1)
             {
@@ -56,20 +55,6 @@ public class ArrowSumConstraint : Constraint
     // it would either be a different constraint type or require an additional GroupConstraint.
     public override List<(int, int)> Group => null;
 
-    public override IEnumerable<(int, int)> SeenCells((int, int) cell)
-    {
-        // The original ArrowSumConstraint had a complex SeenCells implementation for a very specific
-        // interpretation (1 circle sees all arrow cells, 1 arrow cell sees circle cell if arrow_count > 1 and circle_count == 1).
-        // This kind of "visibility" for candidate elimination is largely handled by the interaction logic
-        // (e.g., if circle is 5, arrow candidates are adjusted).
-        // Standard arrow constraints usually don't add extra "seen" cells for basic Sudoku propagation rules
-        // beyond what their sum logic implies. If there's a specific scenario where this is needed
-        // (e.g., "an arrow cell cannot contain the same digit as the circle cell if they are different cells"),
-        // that would be a specific rule variant.
-        // For now, defaulting to no extra seen cells, relying on the sum logic.
-        return [];
-    }
-
     public override LogicResult InitCandidates(Solver sudokuSolver)
     {
         if (_isDegenerate || _isClone)
@@ -77,6 +62,7 @@ public class ArrowSumConstraint : Constraint
             return LogicResult.None;
         }
 
+        _arrowSumHelperInstance = new SumCellsHelper(sudokuSolver, arrowCells);
         return _logicStrategy.InitCandidates(sudokuSolver, circleCells, arrowCells, _arrowSumHelperInstance);
     }
 

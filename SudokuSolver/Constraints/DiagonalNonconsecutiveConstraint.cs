@@ -1,4 +1,6 @@
-﻿namespace SudokuSolver.Constraints;
+using System.Threading.Tasks;
+
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Diagonal Nonconsecutive", ConsoleName = "dnc")]
 public class DiagonalNonconsecutiveConstraint : Constraint
@@ -319,47 +321,18 @@ public class DiagonalNonconsecutiveConstraint : Constraint
                     {
                         mustHaveVal = valA;
                     }
-                    bool haveChanges = false;
                     if (mustHaveVal != 0)
                     {
-                        uint mustHaveMask = ValueMask(mustHaveVal);
-                        foreach (var otherCell in sudokuSolver.SeenCells(cellA, cellB))
+                        List<int> elims = sudokuSolver.CalcElims(CandidateIndex(cellA, mustHaveVal), CandidateIndex(cellB, mustHaveVal)).ToList();
+                        if (elims.Count > 0)
                         {
-                            uint otherMask = board[otherCell.Item1, otherCell.Item2];
-                            if (IsValueSet(otherMask))
+                            if (!sudokuSolver.ClearCandidates(elims))
                             {
-                                continue;
-                            }
-                            LogicResult findResult = sudokuSolver.ClearMask(otherCell.Item1, otherCell.Item2, mustHaveMask);
-                            if (findResult == LogicResult.Invalid)
-                            {
-                                if (logicalStepDescription != null)
-                                {
-                                    logicalStepDescription.Clear();
-                                    logicalStepDescription.Append($"{CellName(i, j)} and {CellName(cellB)} have combined candidates {MaskToString(combinedMask)}, removing all candidates from {CellName(otherCell)}");
-                                }
-                                return LogicResult.Invalid;
-                            }
-                            if (findResult == LogicResult.Changed)
-                            {
-                                if (logicalStepDescription != null)
-                                {
-                                    if (!haveChanges)
-                                    {
-                                        logicalStepDescription.Append($"{CellName(i, j)} and {CellName(cellB)} have combined candidates {MaskToString(combinedMask)}, removing {mustHaveVal} from {CellName(otherCell)}");
-                                    }
-                                    else
-                                    {
-                                        logicalStepDescription.Append($", {CellName(otherCell)}");
-                                    }
-                                }
-                                haveChanges = true;
+                                bool invalid = !sudokuSolver.ClearCandidates(elims);
+                                logicalStepDescription?.Append($"{mustHaveVal}{sudokuSolver.CompactName([cellA, cellB])} => {sudokuSolver.DescribeElims(elims)}");
+                                return invalid ? LogicResult.Invalid : LogicResult.Changed;
                             }
                         }
-                    }
-                    if (haveChanges)
-                    {
-                        return LogicResult.Changed;
                     }
                 }
             }
