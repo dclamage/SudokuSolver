@@ -399,13 +399,20 @@ jobs:
     
     - name: Upload Release Assets
       run: |
-        # Find all artifact directories and upload their contents
+        # Find all artifact directories and upload their contents (excluding workspace)
         for artifact_dir in artifacts/*/; do
           if [ -d "$artifact_dir" ]; then
+            artifact_name=$(basename "$artifact_dir")
+            
+            # Skip the workspace artifact - it's only for internal CI use
+            if [ "$artifact_name" = "workspace" ]; then
+              echo "Skipping workspace artifact (internal CI use only)"
+              continue
+            fi
+            
             echo "Processing artifact directory: $artifact_dir"
             
             # Create a zip file for this artifact if it contains files
-            artifact_name=$(basename "$artifact_dir")
             if [ -n "$(ls -A "$artifact_dir" 2>/dev/null)" ]; then
               cd "$artifact_dir"
               zip -r "../../${artifact_name}.zip" .
