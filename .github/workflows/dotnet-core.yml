@@ -3,6 +3,9 @@ name: Build, Test, and Publish
 on:
   push:
     branches: [ master, dev ]
+  pull_request:
+    branches: [ master ]
+    types: [ closed ]
 
 jobs:
   build_and_test:
@@ -341,3 +344,63 @@ jobs:
         # Clean up keychain and API key
         security delete-keychain build.keychain || true
         rm -f ~/private_keys/AuthKey_${{ secrets.MACOS_API_KEY_ID }}.p8 || true
+  create-release:
+    runs-on: ubuntu-latest
+    needs: [build_and_test, package-windows-linux, package-macos]
+    if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master'
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+    
+    - name: Download all artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+    
+    - name: Create Release
+      run: |
+        # Create release notes from PR body
+        cat > release_notes.md << 'EOF'
+        ## Release Notes
+        
+        ${{ github.event.pull_request.body }}
+        
+        ## Artifacts
+        
+        This release includes builds for the following platforms:
+        - Windows (x64, ARM64)
+        - Linux (x64)
+        - macOS (x64, ARM64) - Signed and Notarized
+        
+        Download the appropriate package for your platform from the Assets section below.
+        EOF
+        
+        # Create the release
+        gh release create "v${{ needs.build_and_test.outputs.version }}" \
+          --title "Release v${{ needs.build_and_test.outputs.version }}" \
+          --notes-file release_notes.md \
+          --target master
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    
+    - name: Upload Release Assets
+      run: |
+        # Find all artifact directories and upload their contents
+        for artifact_dir in artifacts/*/; do
+          if [ -d "$artifact_dir" ]; then
+            echo "Processing artifact directory: $artifact_dir"
+            
+            # Create a zip file for this artifact if it contains files
+            artifact_name=$(basename "$artifact_dir")
+            if [ -n "$(ls -A "$artifact_dir" 2>/dev/null)" ]; then
+              cd "$artifact_dir"
+              zip -r "../../${artifact_name}.zip" .
+              cd ../../
+              
+              echo "Uploading ${artifact_name}.zip"
+              gh release upload "v${{ needs.build_and_test.outputs.version }}" "${artifact_name}.zip" --clobber
+            fi
+          fi
+        done
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
