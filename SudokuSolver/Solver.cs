@@ -34,6 +34,10 @@ public partial class Solver
     private readonly List<Constraint> constraints;
     private readonly List<Constraint> enforceConstraints;
 
+    // Hidden single tracking fields
+    private int[] _candidateCountsPerGroupValue;
+    private bool[] _checkGroupForHiddens;
+
     // Private state
     private bool isInSetValue = false;
     private bool isBruteForcing = false;

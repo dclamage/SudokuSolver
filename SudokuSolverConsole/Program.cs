@@ -585,38 +585,93 @@ public class Program
 			double estimate = 0, stderr = 0;
 			bool useEstimate = EstimateProgress;
 			const double z95 = 1.96;
-			if (useEstimate)
-			{
-				Console.WriteLine("Estimating total solution count for progress/ETA (10% accuracy)...");
-				long iterations = 0;
-				double relErr = 1.0;
-				using var estCts = new CancellationTokenSource();
-				var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, estCts.Token);
-				solver.EstimateSolutions(0, progressData =>
-				{
-					estimate = progressData.estimate;
-					stderr = progressData.stderr;
-					iterations = progressData.iterations;
-					relErr = estimate != 0 ? (z95 * stderr) / estimate : 1.0;
-					Console.Write($"\rEstimate: {estimate:E6} ±{relErr * 100:F2}% after {iterations} iterations");
-					if (relErr <= 0.10 && iterations > 10)
-					{
-						estCts.Cancel();
-					}
-				}, MultiThread, linkedCts.Token);
-				Console.WriteLine();
-				if (estimate <= 0)
-				{
-					Console.WriteLine("Could not estimate solution count (likely unsolvable). Progress/ETA will not be shown.");
-					useEstimate = false;
-				}
-				else
-				{
-					Console.WriteLine($"Estimated total solutions: {estimate:E6} (±{z95 * stderr:E6}, 95% CI)");
-				}
-			}
+            if (useEstimate)
+            {
+                // --- Configuration for estimation ---
+                const double DESIRED_REL_ERR = 0.10; // Target 10% relative error
+                const double STRETCH_REL_ERR = 0.02; // Try for 2% if 10% is met
+                const double MAX_TOTAL_ESTIMATION_SECONDS = 30.0; // Max 30s for this whole estimation phase
+                const double EXTRA_SECONDS_FOR_STRETCH = 5.0;  // Run up to 5s more after hitting 10%
+                const int MIN_ITERATIONS_FOR_TARGET = 100; // Min iterations before considering a target met
 
-			try
+                Console.WriteLine($"Estimating solution count for ETA (aiming for {DESIRED_REL_ERR * 100:F0}% error, stretch to {STRETCH_REL_ERR * 100:F0}%, max {MAX_TOTAL_ESTIMATION_SECONDS:F0}s)...");
+
+                long currentIterations = 0;
+                double currentRelErr = 1.0;
+
+                Stopwatch estStopwatch = Stopwatch.StartNew();
+                bool desiredRelErrMetFlag = false;
+                TimeSpan timeDesiredRelErrMet = TimeSpan.Zero;
+
+                using var estCts = new CancellationTokenSource();
+                var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, estCts.Token);
+
+                solver.EstimateSolutions(0, progressData =>
+                {
+                    estimate = progressData.estimate;
+                    stderr = progressData.stderr;
+                    currentIterations = progressData.iterations;
+                    currentRelErr = estimate != 0 ? (z95 * stderr) / estimate : 1.0;
+
+                    Console.Write($"\rEstimate: {estimate:E6} ±{currentRelErr * 100:F2}% ({currentIterations} iter, {estStopwatch.Elapsed.TotalSeconds:F1}s)");
+
+                    bool cancelEstimation = false;
+                    TimeSpan currentTimeElapsed = estStopwatch.Elapsed;
+
+                    if (currentTimeElapsed.TotalSeconds > MAX_TOTAL_ESTIMATION_SECONDS)
+                    {
+                        cancelEstimation = true; // Overall timeout
+                    }
+                    else
+                    {
+                        if (!desiredRelErrMetFlag) // If we haven't met the 10% (DESIRED_REL_ERR) target yet
+                        {
+                            if (currentRelErr <= DESIRED_REL_ERR && currentIterations > MIN_ITERATIONS_FOR_TARGET)
+                            {
+                                desiredRelErrMetFlag = true;
+                                timeDesiredRelErrMet = currentTimeElapsed;
+                                // Continue to see if STRETCH_REL_ERR can be met or EXTRA_SECONDS_FOR_STRETCH runs out
+                            }
+                        }
+
+                        if (desiredRelErrMetFlag) // If 10% (DESIRED_REL_ERR) has been met
+                        {
+                            if (currentRelErr <= STRETCH_REL_ERR)
+                            {
+                                cancelEstimation = true; // Hit stretch goal (2%)
+                            }
+                            else if (currentTimeElapsed.TotalSeconds > timeDesiredRelErrMet.TotalSeconds + EXTRA_SECONDS_FOR_STRETCH)
+                            {
+                                cancelEstimation = true; // Extra time for stretch goal expired
+                            }
+                        }
+                    }
+
+                    if (cancelEstimation)
+                    {
+                        estCts.Cancel();
+                    }
+                }, MultiThread, linkedCts.Token);
+
+                estStopwatch.Stop();
+                Console.WriteLine(); // Newline after progress updates
+
+                long finalIterations = currentIterations;
+                double finalRelErr = currentRelErr;
+
+                if (estimate <= 0)
+                {
+                    Console.WriteLine("Could not estimate solution count (likely unsolvable). Progress/ETA will not be shown.");
+                    useEstimate = false;
+                }
+                else
+                {
+                    Console.WriteLine($"Final estimate for ETA: {estimate:E6} (±{finalRelErr * 100:F2}% relative error, {finalIterations} iterations, {estStopwatch.Elapsed.TotalSeconds:F1}s).");
+                    Console.WriteLine($"Estimated total solutions (95% CI): {estimate:E6} ± {z95 * stderr:E6}");
+                }
+            }
+
+            try
 			{
 				Action<Solver> solutionEvent = null;
 				using StreamWriter file = (OutputPath != null) ? new(OutputPath) : null;
@@ -642,17 +697,41 @@ public class Program
 					solver.CountSolutions(
 						maxSolutions: MaxSolutionCount,
 						multiThread: MultiThread,
-						progressEvent: (long count) =>
-						{
-							var elapsed = countWatch.Elapsed;
-							double percent = estimate > 0 ? Math.Min(100.0, 100.0 * count / estimate) : 0.0;
-							double rate = count / Math.Max(1, elapsed.TotalSeconds);
-							double etaSec = rate > 0 && estimate > 0 ? (estimate - count) / rate : double.NaN;
-							string etaStr = double.IsNaN(etaSec) || double.IsInfinity(etaSec) ? "?" : TimeSpan.FromSeconds(etaSec).ToString(@"hh\:mm\:ss");
-							ReplaceLine($"(In progress) Found {count} / ~{estimate:E6} ({percent:F2}%), ETA: {etaStr}");
-							lastCount = count;
-						},
-						solutionEvent: solutionEvent,
+                        progressEvent: (long count) =>
+                        {
+							const double SECONDS_PER_YEAR = 365.25 * 24 * 60 * 60;
+
+                            var elapsed = countWatch.Elapsed;
+                            double percent = estimate > 0 ? Math.Min(100.0, 100.0 * count / estimate) : 0.0;
+                            double rate = count / Math.Max(1, elapsed.TotalSeconds);
+                            double etaSec = rate > 0 && estimate > 0 ? (estimate - count) / rate : double.NaN;
+                            string etaStr;
+
+                            if (double.IsNaN(etaSec) || double.IsInfinity(etaSec) || etaSec < 0)
+                            {
+                                etaStr = "?";
+                            }
+                            else if (etaSec >= 2.0 * SECONDS_PER_YEAR)
+                            {
+                                double years = etaSec / SECONDS_PER_YEAR;
+                                etaStr = $"~{years:N0} years";
+                            }
+                            else
+                            {
+                                TimeSpan etaTimeSpan = TimeSpan.FromSeconds(etaSec);
+                                if (etaTimeSpan.TotalDays >= 1)
+                                {
+                                    etaStr = etaTimeSpan.ToString(@"d\.hh\:mm\:ss");
+                                }
+                                else
+                                {
+                                    etaStr = etaTimeSpan.ToString(@"hh\:mm\:ss");
+                                }
+                            }
+                            ReplaceLine($"(In progress) Found {count} / ~{estimate:E6} ({percent:F2}%), ETA: {etaStr}");
+                            lastCount = count;
+                        },
+                        solutionEvent: solutionEvent,
 						cancellationToken: cancellationToken
 					);
 					Console.WriteLine();

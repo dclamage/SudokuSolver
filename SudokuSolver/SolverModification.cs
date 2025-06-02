@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver;
+namespace SudokuSolver;
 
 public partial class Solver
 {
@@ -12,29 +12,34 @@ public partial class Solver
             return true;
         }
 
-        cellMask &= ~valueMask;
-        board[cellIndex] = cellMask;
+        uint newCellMask = cellMask & ~valueMask;
+        board[cellIndex] = newCellMask;
 
-        if ((cellMask & ~valueSetMask) == 0)
+        if ((newCellMask & ~valueSetMask) == 0)
         {
             isInvalid = true;
             return false;
         }
 
-        if (ValueCount(cellMask) == 1)
+        if (ValueCount(newCellMask) == 1)
         {
             pendingNakedSingles.Add(cellIndex);
         }
+
+        TrackHiddenSingles(cellIndex, cellMask, newCellMask);
         return true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool ClearValue(int i, int j, int v) => ClearValue(CellIndex(i, j), v);
+    public bool ClearValue(int i, int j, int v)
+    {
+        return ClearValue(CellIndex(i, j), v);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool ClearCandidate(int candidate)
     {
-        var (cellIndex, v) = CandIndexToCellAndValue(candidate);
+        (int cellIndex, int v) = CandIndexToCellAndValue(candidate);
         return ClearValue(cellIndex, v);
     }
 
@@ -50,10 +55,14 @@ public partial class Solver
         return true;
     }
 
-    public bool SetValue(int i, int j, int val) => SetValue(CellIndex(i, j), val);
+    public bool SetValue(int i, int j, int val)
+    {
+        return SetValue(CellIndex(i, j), val);
+    }
 
     public bool SetValue(int cellIndex, int val)
     {
+;       uint prevMask = board[cellIndex];
         uint valMask = ValueMask(val);
         if ((board[cellIndex] & valMask) == 0)
         {
@@ -68,10 +77,11 @@ public partial class Solver
 
         if (isInSetValue)
         {
-            if (board[cellIndex] != valMask)
+            if (prevMask != valMask)
             {
                 board[cellIndex] = valMask;
                 pendingNakedSingles.Add(cellIndex);
+                TrackHiddenSingles(cellIndex, prevMask, valMask);
             }
             return true;
         }
@@ -81,14 +91,16 @@ public partial class Solver
         board[cellIndex] = valueSetMask | valMask;
         unsetCellsCount--;
 
+        TrackHiddenSingles(cellIndex, prevMask, valMask);
+
         // Apply all weak links
         int setCandidateIndex = CandidateIndex(cellIndex, val);
-        var curWeakLinks = weakLinks[setCandidateIndex];
+        List<int> curWeakLinks = weakLinks[setCandidateIndex];
         int curWeakLinksCount = curWeakLinks.Count;
         for (int curWeakLinkIndex = 0; curWeakLinkIndex < curWeakLinksCount; curWeakLinkIndex++)
         {
             int elimCandIndex = curWeakLinks[curWeakLinkIndex];
-            var (cellIndex1, v1) = CandIndexToCellAndValue(elimCandIndex);
+            (int cellIndex1, int v1) = CandIndexToCellAndValue(elimCandIndex);
             if (!ClearValue(cellIndex1, v1))
             {
                 isInvalid = true;
@@ -99,8 +111,8 @@ public partial class Solver
         // Enforce all constraints
         if (enforceConstraints.Count > 0)
         {
-            var (i, j) = CellIndexToCoord(cellIndex);
-            foreach (var constraint in enforceConstraints)
+            (int i, int j) = CellIndexToCoord(cellIndex);
+            foreach (Constraint constraint in enforceConstraints)
             {
                 if (!constraint.EnforceConstraint(this, i, j, val))
                 {
@@ -117,6 +129,7 @@ public partial class Solver
 
     public LogicResult EvaluateSetValue(int cellIndex, int val, ref string violationString)
     {
+;       uint prevMask = board[cellIndex];
         uint valMask = ValueMask(val);
         if ((board[cellIndex] & valMask) == 0)
         {
@@ -131,10 +144,11 @@ public partial class Solver
 
         if (isInSetValue)
         {
-            if (board[cellIndex] != valMask)
+            if (prevMask != valMask)
             {
                 board[cellIndex] = valMask;
                 pendingNakedSingles.Add(cellIndex);
+                TrackHiddenSingles(cellIndex, prevMask, valMask);
             }
             return LogicResult.Changed;
         }
@@ -144,11 +158,13 @@ public partial class Solver
         board[cellIndex] = valueSetMask | valMask;
         unsetCellsCount--;
 
+        TrackHiddenSingles(cellIndex, prevMask, valMask);
+
         // Apply all weak links
         int setCandidateIndex = CandidateIndex(cellIndex, val);
         foreach (int elimCandIndex in weakLinks[setCandidateIndex])
         {
-            var (i1, j1, v1) = CandIndexToCoord(elimCandIndex);
+            (int i1, int j1, int v1) = CandIndexToCoord(elimCandIndex);
             if (!ClearValue(i1, j1, v1))
             {
                 violationString = $"{CellName(i1, j1)} has no value";
@@ -158,8 +174,8 @@ public partial class Solver
         }
 
         // Enforce all constraints
-        var (i, j) = CellIndexToCoord(cellIndex);
-        foreach (var constraint in constraints)
+        (int i, int j) = CellIndexToCoord(cellIndex);
+        foreach (Constraint constraint in constraints)
         {
             if (!constraint.EnforceConstraint(this, i, j, val))
             {
@@ -175,11 +191,15 @@ public partial class Solver
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool SetMask(int i, int j, uint mask) => SetMask(CellIndex(i, j), mask);
+    public bool SetMask(int i, int j, uint mask)
+    {
+        return SetMask(CellIndex(i, j), mask);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private bool SetMask(int cellIndex, uint mask)
     {
+        uint prevMask = board[cellIndex];
         board[cellIndex] = mask;
         if ((mask & ~valueSetMask) == 0)
         {
@@ -191,17 +211,23 @@ public partial class Solver
         {
             pendingNakedSingles.Add(cellIndex);
         }
+
+        TrackHiddenSingles(cellIndex, prevMask, mask);
+
         return true;
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool SetMask(int i, int j, params int[] values) => SetMask(CellIndex(i,j), values);
+    public bool SetMask(int i, int j, params int[] values)
+    {
+        return SetMask(CellIndex(i, j), values);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool SetMask(int cellIndex, params int[] values)
     {
         uint mask = 0;
-        for (int i = 0; i <  values.Length; i++)
+        for (int i = 0; i < values.Length; i++)
         {
             mask |= ValueMask(values[i]);
         }
@@ -209,13 +235,22 @@ public partial class Solver
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool SetMask(int i, int j, IEnumerable<int> values) => SetMask(CellIndex(i, j), [.. values]);
+    public bool SetMask(int i, int j, IEnumerable<int> values)
+    {
+        return SetMask(CellIndex(i, j), [.. values]);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public bool SetMask(int cellIndex, IEnumerable<int> values) => SetMask(cellIndex, [.. values]);
+    public bool SetMask(int cellIndex, IEnumerable<int> values)
+    {
+        return SetMask(cellIndex, [.. values]);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LogicResult KeepMask(int i, int j, uint mask) => KeepMask(CellIndex(i, j), mask);
+    public LogicResult KeepMask(int i, int j, uint mask)
+    {
+        return KeepMask(CellIndex(i, j), mask);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public LogicResult KeepMask(int cellIndex, uint mask)
@@ -238,7 +273,10 @@ public partial class Solver
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public LogicResult ClearMask(int i, int j, uint mask) => ClearMask(CellIndex(i, j), mask);
+    public LogicResult ClearMask(int i, int j, uint mask)
+    {
+        return ClearMask(CellIndex(i, j), mask);
+    }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public LogicResult ClearMask(int cellIndex, uint mask)
@@ -258,5 +296,49 @@ public partial class Solver
         }
 
         return result;
+    }
+
+    // Hidden single tracking: update candidate counts
+    private void TrackHiddenSingles(int cellIndex, uint oldMask, uint newMask)
+    {
+        if (_candidateCountsPerGroupValue == null)
+        {
+            return;
+        }
+
+        uint diffMask = oldMask & ~newMask & ~valueSetMask;
+        if (diffMask == 0)
+        {
+            return;
+        }
+
+        foreach (SudokuGroup group in CellToGroupsLookup[cellIndex])
+        {
+            int groupIndex = group.Index;
+            uint curDiffMask = diffMask;
+            while (curDiffMask != 0)
+            {
+                int v = MinValue(curDiffMask);
+                curDiffMask &= ~ValueMask(v);
+                int newCount = --_candidateCountsPerGroupValue[groupIndex * MAX_VALUE + (v - 1)];
+                if (newCount <= 1)
+                {
+                    _checkGroupForHiddens[groupIndex] = true;
+                }
+            }
+
+            if (!_checkGroupForHiddens[groupIndex] && group.Cells.Count < MAX_VALUE && group.FromConstraint != null)
+            {
+                // This group has changed, so its idea of whether it may need a value may also have changed
+                for (int v = 1; v <= MAX_VALUE; v++)
+                {
+                    if (_candidateCountsPerGroupValue[groupIndex * MAX_VALUE + (v - 1)] <= 1)
+                    {
+                        _checkGroupForHiddens[groupIndex] = true;
+                        break;
+                    }
+                }
+            }
+        }
     }
 }

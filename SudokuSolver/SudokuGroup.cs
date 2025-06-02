@@ -1,6 +1,6 @@
-﻿namespace SudokuSolver;
+namespace SudokuSolver;
 
-public sealed record SudokuGroup(GroupType GroupType, string Name, List<int> Cells, Constraint FromConstraint) : IComparable<SudokuGroup>
+public sealed record SudokuGroup(GroupType GroupType, string Name, List<int> Cells, Constraint FromConstraint, int Index) : IComparable<SudokuGroup>
 {
     public override string ToString() => Name;
 

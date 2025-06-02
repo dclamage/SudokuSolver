@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver;
+namespace SudokuSolver;
 
 public partial class Solver
 {
@@ -245,6 +245,11 @@ public partial class Solver
                 continue;
             }
 
+            if (!_checkGroupForHiddens[group.Index])
+            {
+                continue;
+            }
+
             uint atLeastOnce = 0;
             for (int groupindex = 0; groupindex < numCells; groupindex++)
             {
@@ -382,94 +387,94 @@ public partial class Solver
     {
         foreach (var group in Groups)
         {
-            var groupCells = group.Cells;
-            int numCells = group.Cells.Count;
-            if (numCells != MAX_VALUE && (isBruteForcing || group.FromConstraint == null))
+            int groupIndex = group.Index;
+            if (!_checkGroupForHiddens[groupIndex])
             {
                 continue;
             }
 
-            uint atLeastOnce = 0;
-            uint moreThanOnce = 0;
-            uint setMask = 0;
-            for (int groupIndex = 0; groupIndex < numCells; groupIndex++)
+            int numCells = group.Cells.Count;
+            if (numCells != MAX_VALUE && group.FromConstraint == null)
             {
-                int cellIndex = groupCells[groupIndex];
-                uint mask = board[cellIndex];
-                if (IsValueSet(mask))
-                {
-                    setMask |= mask;
-                }
-                else
-                {
-                    moreThanOnce |= atLeastOnce & mask;
-                    atLeastOnce |= mask;
-                }
-            }
-            setMask &= ~valueSetMask;
-            if (numCells == MAX_VALUE && (atLeastOnce | setMask) != ALL_VALUES_MASK)
-            {
-                if (logicalStepDescs != null)
-                {
-                    logicalStepDescs.Add(new($"{group} has nowhere to place {MaskToString(ALL_VALUES_MASK & ~(atLeastOnce | setMask))}.", group.Cells.Select(CellIndexToCoord)));
-                }
-                return LogicResult.Invalid;
+                continue;
             }
 
-            uint exactlyOnce = atLeastOnce & ~moreThanOnce;
-            if (exactlyOnce != 0)
+            // Get a mask of set values for this group
+            uint setMask = 0;
+            foreach (int cellIndex in group.Cells)
             {
-                int val = 0;
-                int valCellIndex = -1;
-                if (numCells == MAX_VALUE)
+                uint cellMask = board[cellIndex];
+                if (IsValueSet(cellMask))
                 {
-                    val = MinValue(exactlyOnce);
-                    uint valMask = ValueMask(val);
-                    foreach (int cellIndex in group.Cells)
-                    {
-                        if ((board[cellIndex] & valMask) != 0)
-                        {
-                            valCellIndex = cellIndex;
-                            break;
-                        }
-                    }
+                    setMask |= board[cellIndex];
                 }
-                else
+            }
+
+            int groupValueIndexBaseline = groupIndex * MAX_VALUE - 1;
+            for (int val = 1; val <= MAX_VALUE; val++)
+            {
+                uint valMask = ValueMask(val);
+                if ((valMask & setMask) != 0)
                 {
-                    int minValue = MinValue(exactlyOnce);
-                    int maxValue = MaxValue(exactlyOnce);
-                    for (int v = minValue; v <= maxValue; v++)
+                    // No need to check for this value if the group already has it set
+                    continue;
+                }
+
+                int groupValueIndex = groupValueIndexBaseline + val;
+                int groupValueCount = _candidateCountsPerGroupValue[groupValueIndex];
+                if (groupValueCount <= 1)
+                {
+                    int valCellIndex = -1;
+                    if (numCells == MAX_VALUE)
                     {
-                        if ((exactlyOnce & v) != 0)
+                        if (groupValueCount == 0)
                         {
-                            List<(int, int)> cellsMustContain = group.FromConstraint?.CellsMustContain(this, val);
-                            if (cellsMustContain != null && cellsMustContain.Count == 1)
+                            logicalStepDescs?.Add(new(
+                                $"{group} must contain the value {val} but has nowhere to place it.",
+                                group.Cells.Select(cellIndex => CellIndexToCoord(cellIndex))
+                            ));
+                            return LogicResult.Invalid;
+                        }
+
+                        foreach (int cellIndex in group.Cells)
+                        {
+                            if ((board[cellIndex] & valMask) != 0)
                             {
-                                val = v;
-                                valCellIndex = CellIndex(cellsMustContain[0]);
+                                valCellIndex = cellIndex;
                                 break;
                             }
                         }
                     }
-                }
-
-                if (valCellIndex >= 0)
-                {
-                    if (!SetValue(valCellIndex, val))
+                    else if (groupValueCount == 1)
                     {
-                        if (logicalStepDescs != null)
+                        List<(int, int)> cellsMustContain = group.FromConstraint?.CellsMustContain(this, val);
+                        if (cellsMustContain != null && cellsMustContain.Count == 1)
                         {
-                            logicalStepDescs.Add(new($"Hidden Single in {group}: {CellName(CellIndexToCoord(valCellIndex))} cannot be set to {val}.", CellIndexToCoord(valCellIndex)));
+                            int cellIndex = CellIndex(cellsMustContain[0]);
+                            if ((board[cellIndex] & valMask) != 0)
+                            {
+                                valCellIndex = cellIndex;
+                            }
                         }
-                        return LogicResult.Invalid;
                     }
-                    if (logicalStepDescs != null)
+
+                    if (valCellIndex >= 0)
                     {
-                        logicalStepDescs.Add(new($"Hidden Single in {group}: {CellName(CellIndexToCoord(valCellIndex))}={val}", CandidateIndex(valCellIndex, val).ToEnumerable(), null, isSingle: true));
+                        if (!SetValue(valCellIndex, val))
+                        {
+                            logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(CellIndexToCoord(valCellIndex))} cannot be set to {val}.", CellIndexToCoord(valCellIndex)));
+                            return LogicResult.Invalid;
+                        }
+                        logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(CellIndexToCoord(valCellIndex))}={val}", CandidateIndex(valCellIndex, val).ToEnumerable(), null, isSingle: true));
+                        return LogicResult.Changed;
                     }
-                    return LogicResult.Changed;
                 }
             }
+
+            // This only resets the group to false if no hiddens were found.
+            // This accounts for the case where there were multiple hiddens to find.
+            // It does mean we always check one extra time, but in the long run that's not a problem.
+            _checkGroupForHiddens[groupIndex] = false;
         }
         return LogicResult.None;
     }
