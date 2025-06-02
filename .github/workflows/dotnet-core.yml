@@ -210,17 +210,31 @@ jobs:
     
     - name: Sign macOS Binary
       run: |
+        # Create entitlements.plist with JIT and unsigned-executable-memory entitlements
+        cat > entitlements.plist <<'EOF'
+        <?xml version="1.0" encoding="UTF-8"?>
+        <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+        <plist version="1.0">
+        <dict>
+          <key>com.apple.security.cs.allow-jit</key>
+          <true/>
+          <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+          <true/>
+        </dict>
+        </plist>
+        EOF
+
         # Find the main executable (assuming it's named SudokuSolverConsole)
         APP_PATH="./publish-${{ matrix.rid }}/SudokuSolverConsole"
-        
+
         if [ -f "$APP_PATH" ]; then
-          echo "Signing $APP_PATH"
-          # Sign with hardened runtime and timestamp
-          codesign --force --verify --verbose --sign "Developer ID Application" --options runtime --timestamp "$APP_PATH"
-          
+          echo "Signing $APP_PATH with JIT entitlements"
+          # Sign with hardened runtime, timestamp, and entitlements
+          codesign --force --verify --verbose --sign "Developer ID Application" --options runtime --timestamp --entitlements entitlements.plist "$APP_PATH"
+
           # Verify the signature (but don't assess with spctl yet - that needs notarization)
           codesign --verify --verbose=2 "$APP_PATH"
-          echo "Code signing completed successfully"
+          echo "Code signing with entitlements completed successfully"
         else
           echo "Warning: Main executable not found at $APP_PATH"
           ls -la "./publish-${{ matrix.rid }}/"
