@@ -58,6 +58,7 @@ public class Program
 			"Specify the number of iterations to do, or 0 to go forever.",
 			CommandOptionType.SingleValue);
         var listen = app.Option("--listen", "Listen for websocket connections.", CommandOptionType.NoValue);
+        var estimateProgress = app.Option("--estimate-progress", "Estimate the total solution count for progress/ETA during --solutioncount.", CommandOptionType.NoValue);
 
         // Options
         var maxSolutionCount = app.Option<long>("-x|--maxcount",
@@ -119,6 +120,7 @@ public class Program
                 VerboseLogs = verbose.HasValue(),
                 JsonOutput = jsonOutput.HasValue(),
                 JsonProgress = jsonProgress.HasValue(),
+                EstimateProgress = estimateProgress.HasValue(),
             };
 
             await program.OnExecuteAsync(app, cancellationToken);
@@ -167,6 +169,7 @@ public class Program
     public required bool VerboseLogs { get; init; }
     public required bool JsonOutput { get; init; }
     public required bool JsonProgress { get; init; }
+    public required bool EstimateProgress { get; init; }
 
     public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
 	{
@@ -579,6 +582,40 @@ public class Program
 		{
 			Console.WriteLine("Finding solution count...");
 
+			double estimate = 0, stderr = 0;
+			bool useEstimate = EstimateProgress;
+			const double z95 = 1.96;
+			if (useEstimate)
+			{
+				Console.WriteLine("Estimating total solution count for progress/ETA (10% accuracy)...");
+				long iterations = 0;
+				double relErr = 1.0;
+				using var estCts = new CancellationTokenSource();
+				var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, estCts.Token);
+				solver.EstimateSolutions(0, progressData =>
+				{
+					estimate = progressData.estimate;
+					stderr = progressData.stderr;
+					iterations = progressData.iterations;
+					relErr = estimate != 0 ? (z95 * stderr) / estimate : 1.0;
+					Console.Write($"\rEstimate: {estimate:E6} ±{relErr * 100:F2}% after {iterations} iterations");
+					if (relErr <= 0.10 && iterations > 10)
+					{
+						estCts.Cancel();
+					}
+				}, MultiThread, linkedCts.Token);
+				Console.WriteLine();
+				if (estimate <= 0)
+				{
+					Console.WriteLine("Could not estimate solution count (likely unsolvable). Progress/ETA will not be shown.");
+					useEstimate = false;
+				}
+				else
+				{
+					Console.WriteLine($"Estimated total solutions: {estimate:E6} (±{z95 * stderr:E6}, 95% CI)");
+				}
+			}
+
 			try
 			{
 				Action<Solver> solutionEvent = null;
@@ -598,12 +635,47 @@ public class Program
 					};
 				}
 
-				long numSolutions = solver.CountSolutions(maxSolutions: MaxSolutionCount, multiThread: MultiThread, cancellationToken: cancellationToken, progressEvent: (long count) =>
+				Stopwatch countWatch = Stopwatch.StartNew();
+				long lastCount = 0;
+				if (useEstimate)
 				{
-					ReplaceLine($"(In progress) Found {count} solutions in {watch.Elapsed}.");
-				},
-				solutionEvent: solutionEvent);
+					solver.CountSolutions(
+						maxSolutions: MaxSolutionCount,
+						multiThread: MultiThread,
+						progressEvent: (long count) =>
+						{
+							var elapsed = countWatch.Elapsed;
+							double percent = estimate > 0 ? Math.Min(100.0, 100.0 * count / estimate) : 0.0;
+							double rate = count / Math.Max(1, elapsed.TotalSeconds);
+							double etaSec = rate > 0 && estimate > 0 ? (estimate - count) / rate : double.NaN;
+							string etaStr = double.IsNaN(etaSec) || double.IsInfinity(etaSec) ? "?" : TimeSpan.FromSeconds(etaSec).ToString(@"hh\:mm\:ss");
+							ReplaceLine($"(In progress) Found {count} / ~{estimate:E6} ({percent:F2}%), ETA: {etaStr}");
+							lastCount = count;
+						},
+						solutionEvent: solutionEvent,
+						cancellationToken: cancellationToken
+					);
+					Console.WriteLine();
+				}
+				else
+				{
+					solver.CountSolutions(
+						maxSolutions: MaxSolutionCount,
+						multiThread: MultiThread,
+						progressEvent: (long count) =>
+						{
+							ReplaceLine($"(In progress) Found {count} solutions in {countWatch.Elapsed}.");
+							lastCount = count;
+						},
+						solutionEvent: solutionEvent,
+						cancellationToken: cancellationToken
+					);
+					Console.WriteLine();
+				}
 
+				countWatch.Stop();
+
+				long numSolutions = lastCount;
 				if (MaxSolutionCount > 0)
 				{
 					numSolutions = Math.Min(numSolutions, MaxSolutionCount);
@@ -629,6 +701,14 @@ public class Program
 					await File.WriteAllLinesAsync(OutputPath, lines);
 					Console.WriteLine("Done.");
 				}
+
+				// Print how far off the estimate was, if used
+                if (EstimateProgress && estimate > 0)
+                {
+                    double absError = Math.Abs(numSolutions - estimate);
+                    double pctError = estimate != 0 ? 100.0 * absError / estimate : 0.0;
+                    Console.WriteLine($"Estimate was {estimate:E6}, actual count was {numSolutions}. Error: {absError:E6} ({pctError:F2}% off)");
+                }
 			}
 			catch (Exception e)
 			{
@@ -649,13 +729,13 @@ public class Program
 
                     double estimate = progressData.estimate;
                     double stderr = progressData.stderr;
-					long iterations = progressData.iterations;
+                    long iterations = progressData.iterations;
 
                     double lower = estimate - z95 * stderr;
                     double upper = estimate + z95 * stderr;
                     double relErrPercent = 100.0 * (z95 * stderr) / estimate;
 
-					string iterationsStr = EstimateCountIterations <= 0 ? "inf" : EstimateCountIterations.ToString();
+                    string iterationsStr = EstimateCountIterations <= 0 ? "inf" : EstimateCountIterations.ToString();
                     Console.WriteLine($"[{watch.Elapsed}] Estimate after {iterations} / {iterationsStr} iterations: {estimate:E6}  (95% CI: {lower:E6} - {upper:E6}, ±{relErrPercent:F2}%)");
                 });
             }
@@ -666,13 +746,13 @@ public class Program
         }
 
         if (Check)
-		{
-			Console.WriteLine("Checking...");
-			long numSolutions = solver.CountSolutions(2, MultiThread);
-			Console.WriteLine($"There are {(numSolutions <= 1 ? numSolutions.ToString() : "multiple")} solutions.");
-		}
+        {
+            Console.WriteLine("Checking...");
+            long numSolutions = solver.CountSolutions(2, MultiThread);
+            Console.WriteLine($"There are {(numSolutions <= 1 ? numSolutions.ToString() : "multiple")} solutions.");
+        }
 
-		watch.Stop();
+        watch.Stop();
 		Console.WriteLine($"Took {watch.Elapsed}");
 		return 0;
 	}
