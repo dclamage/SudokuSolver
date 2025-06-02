@@ -125,8 +125,6 @@ public class RenbanConstraint : Constraint
             }
         }
 
-        bool boardChanged = false;
-
         if (currentlyPossibleRangeMasks.Count == 0 && allCellsCandidateUnionFromBoard != 0)
         {
             for (int i = 0; i < numCells; i++)
@@ -139,16 +137,12 @@ public class RenbanConstraint : Constraint
                     {
                         return LogicResult.Invalid;
                     }
-
-                    if (emptyResult == LogicResult.Changed)
-                    {
-                        boardChanged = true;
-                    }
                 }
             }
             return LogicResult.Invalid;
         }
 
+        bool boardChanged = false;
         for (int i = 0; i < numCells; i++)
         {
             int cellIndex = cellIndices[i];

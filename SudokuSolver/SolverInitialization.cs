@@ -29,6 +29,10 @@ public partial class Solver
         unsetCellsCount = NUM_CELLS;
         pendingNakedSingles = [];
 
+        // Hidden single tracking
+        _candidateCountsPerGroupValue = null;
+        _checkGroupForHiddens = null;
+
         Groups = [];
         CellToGroupsLookup = new List<SudokuGroup>[NUM_CELLS];
         for (int ci = 0; ci < NUM_CELLS; ci++)
@@ -90,6 +94,22 @@ public partial class Solver
         isInvalid = other.isInvalid;
         unsetCellsCount = other.unsetCellsCount;
         pendingNakedSingles = [.. other.pendingNakedSingles];
+
+        // Hidden single tracking
+        if (other._candidateCountsPerGroupValue != null)
+        {
+            _candidateCountsPerGroupValue = new int[other._candidateCountsPerGroupValue.Length];
+            other._candidateCountsPerGroupValue.AsSpan().CopyTo(_candidateCountsPerGroupValue);
+
+            _checkGroupForHiddens = new bool[other._checkGroupForHiddens.Length];
+            other._checkGroupForHiddens.AsSpan().CopyTo(_checkGroupForHiddens);
+        }
+        else
+        {
+            _candidateCountsPerGroupValue = null;
+            _checkGroupForHiddens = null;
+        }
+
         Groups = other.Groups;
         smallGroupsBySize = other.smallGroupsBySize;
         maxValueGroups = other.maxValueGroups;
@@ -136,7 +156,7 @@ public partial class Solver
             {
                 cells.Add(CellIndex(i, j));
             }
-            SudokuGroup group = new(GroupType.Row, $"Row {i + 1}", cells, null);
+            SudokuGroup group = new(GroupType.Row, $"Row {i + 1}", cells, null, Groups.Count);
             Groups.Add(group);
             InitMapForGroup(group);
         }
@@ -149,7 +169,7 @@ public partial class Solver
             {
                 cells.Add(CellIndex(i, j));
             }
-            SudokuGroup group = new(GroupType.Column, $"Column {j + 1}", cells, null);
+            SudokuGroup group = new(GroupType.Column, $"Column {j + 1}", cells, null, Groups.Count);
             Groups.Add(group);
             InitMapForGroup(group);
         }
@@ -169,7 +189,7 @@ public partial class Solver
                     }
                 }
             }
-            SudokuGroup group = new(GroupType.Region, $"Region {region + 1}", cells, null);
+            SudokuGroup group = new(GroupType.Region, $"Region {region + 1}", cells, null, Groups.Count);
             Groups.Add(group);
             InitMapForGroup(group);
         }
@@ -485,7 +505,7 @@ public partial class Solver
             var cells = constraint.Group;
             if (cells != null)
             {
-                SudokuGroup group = new(GroupType.Constraint, constraint.SpecificName, cells.Select(CellIndex).ToList(), constraint);
+                SudokuGroup group = new(GroupType.Constraint, constraint.SpecificName, cells.Select(CellIndex).ToList(), constraint, Groups.Count);
                 Groups.Add(group);
                 InitMapForGroup(group);
             }
@@ -538,6 +558,36 @@ public partial class Solver
         }
 
         maxValueGroups = Groups.Where(g => g.Cells.Count == MAX_VALUE).ToList();
+
+        // Initialize hidden single tracking array
+        if (Groups.Count > 0)
+        {
+            _candidateCountsPerGroupValue = new int[Groups.Count * MAX_VALUE];
+            _checkGroupForHiddens = new bool[Groups.Count];
+            for (int groupIdx = 0; groupIdx < Groups.Count; groupIdx++)
+            {
+                var group = Groups[groupIdx];
+                foreach (int v in Enumerable.Range(1, MAX_VALUE))
+                {
+                    int count = 0;
+                    uint valMask = ValueMask(v);
+                    foreach (int cell in group.Cells)
+                    {
+                        if ((board[cell] & valMask) != 0)
+                        {
+                            count++;
+                        }
+                    }
+                    _candidateCountsPerGroupValue[groupIdx * MAX_VALUE + (v - 1)] = count;
+                    _checkGroupForHiddens[groupIdx] = count <= 1;
+                }
+            }
+        }
+        else
+        {
+            _candidateCountsPerGroupValue = null;
+            _checkGroupForHiddens = null;
+        }
 
         return true;
     }
