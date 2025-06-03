@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver.Constraints;
+namespace SudokuSolver.Constraints;
 
 [Constraint(DisplayName = "Skyscraper", ConsoleName = "skyscraper")]
 public class SkyscraperConstraint : Constraint
@@ -208,7 +208,7 @@ public class SkyscraperConstraint : Constraint
         bool haveValidPerm = false;
         keepMasks = new uint[cells.Count];
         int numUnsetCells = unsetCellIndexes.Count;
-        foreach (var perm in unsetVals.Permuatations())
+        foreach (var perm in unsetVals.Permutations())
         {
             for (int unsetCellIndex = 0; unsetCellIndex < numUnsetCells; unsetCellIndex++)
             {

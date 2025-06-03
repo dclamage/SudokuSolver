@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver;
+namespace SudokuSolver;
 
 public static class Extensions
 {
@@ -44,7 +44,7 @@ public static class Extensions
         }
     }
 
-    public static IEnumerable<List<T>> Permuatations<T>(this IEnumerable<T> c)
+    public static IEnumerable<List<T>> Permutations<T>(this IEnumerable<T> c)
     {
         var clist = c.ToList();
         return PermutationsHelper(clist, 0);
