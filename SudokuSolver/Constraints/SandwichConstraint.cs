@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 
 namespace SudokuSolver.Constraints;
 
@@ -319,7 +319,7 @@ public class SandwichConstraint : Constraint
                     continue;
                 }
 
-                foreach (var permuatation in combination.Permuatations())
+                foreach (var permuatation in combination.Permutations())
                 {
                     if (sudokuSolver.CanPlaceDigits(unsetCells, permuatation))
                     {
@@ -423,7 +423,7 @@ public class SandwichConstraint : Constraint
                                         continue;
                                     }
 
-                                    foreach (var permuatation in combination.Permuatations())
+                                    foreach (var permuatation in combination.Permutations())
                                     {
                                         if (sudokuSolver.CanPlaceDigits(unsetCells, permuatation))
                                         {
@@ -548,7 +548,7 @@ public class SandwichConstraint : Constraint
                                         continue;
                                     }
 
-                                    foreach (var permuatation in combination.Permuatations())
+                                    foreach (var permuatation in combination.Permutations())
                                     {
                                         if (sudokuSolver.CanPlaceDigits(unsetCells, permuatation))
                                         {

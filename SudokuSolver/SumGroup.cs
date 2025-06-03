@@ -1,4 +1,4 @@
-﻿namespace SudokuSolver;
+namespace SudokuSolver;
 
 public class SumGroup
 {
@@ -258,7 +258,7 @@ public class SumGroup
             int curSum = setSum + combination.Sum();
             if (sums.Contains(curSum))
             {
-                foreach (var perm in combination.Permuatations())
+                foreach (var perm in combination.Permutations())
                 {
                     bool needCheck = false;
                     for (int i = 0; i < numUnsetCells; i++)
@@ -371,7 +371,7 @@ public class SumGroup
             if (!sumsSet.Contains(curSum))
             {
                 // Find if any permutation fits into the cells
-                foreach (var perm in combination.Permuatations())
+                foreach (var perm in combination.Permutations())
                 {
                     bool needCheck = false;
                     for (int i = 0; i < numUnsetCells; i++)
@@ -446,7 +446,7 @@ public class SumGroup
             if (setSum + combination.Sum() == sum)
             {
                 // Find if any permutation fits into the cells
-                foreach (var perm in combination.Permuatations())
+                foreach (var perm in combination.Permutations())
                 {
                     bool needCheck = false;
                     for (int i = 0; i < numUnsetCells; i++)

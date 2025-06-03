@@ -164,7 +164,7 @@ public partial class Solver
             return false;
         }
 
-        foreach (var perm in values.Permuatations())
+        foreach (var perm in values.Permutations())
         {
             if (CanPlaceDigits(cells, perm))
             {
