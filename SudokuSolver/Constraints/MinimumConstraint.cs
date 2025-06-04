@@ -137,7 +137,7 @@ public class MinimumConstraint : Constraint
             int minUniqueValues = minUniqueValuesLookup[(i0, j0)];
 
             int numRemoved = 0;
-            for (int v = MAX_VALUE; numRemoved < minUniqueValues && v >= 0; v--)
+            for (int v = MAX_VALUE; numRemoved < minUniqueValues && v >= 1; v--)
             {
                 uint valMask = ValueMask(v);
                 if ((adjCellsMask & valMask) != 0)
