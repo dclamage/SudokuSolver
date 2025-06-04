@@ -1,4 +1,4 @@
-﻿namespace SudokuTests;
+namespace SudokuTests;
 
 [TestClass]
 public class ArrowTests
@@ -47,7 +47,7 @@ public class ArrowTests
     }
 
     [TestMethod]
-    public void ArrowCellsConstainedMax()
+    public void ArrowCellsConstrainedMax()
     {
         var solver = SolverFactory.CreateBlank(9);
         var arrow = WithOptions("r1c1; r1c2r1c3r1c4", solver);
