@@ -102,7 +102,7 @@ namespace SudokuSolver.Constraints
             bool changed = false;
             foreach (var sumCellsHelper in sumCellsHelpers)
             {
-                LogicResult stepResult = sumCellsHelper.StepLogic(solver, possibleSums, (List<LogicalStepDesc>)null);
+                LogicResult stepResult = sumCellsHelper.StepLogic(solver, possibleSums, (List<LogicalStepDesc>)null, isBruteForcing);
                 if (stepResult == LogicResult.Invalid)
                 {
                     logicalStepDescription?.Add(new($"Cells {solver.CompactName(sumCellsHelper.Cells)} cannot be restricted to sum{(possibleSums.Count > 1 ? "s" : "")} {string.Join(",", possibleSums)}.", sumCellsHelper.Cells));

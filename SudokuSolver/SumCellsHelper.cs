@@ -78,12 +78,12 @@ public class SumCellsHelper
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
-    public LogicResult StepLogic(Solver solver, IEnumerable<int> possibleSums, List<LogicalStepDesc> logicalStepDescription)
+    public LogicResult StepLogic(Solver solver, IEnumerable<int> possibleSums, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
     {
         var sums = possibleSums as SortedSet<int> ?? new SortedSet<int>(possibleSums);
         if (sums.Count == 0)
         {
-            if (logicalStepDescription != null)
+            if (!isBruteForcing && logicalStepDescription != null)
             {
                 logicalStepDescription.Add(new LogicalStepDesc("There are no possible sums.", cells));
             }
@@ -101,10 +101,10 @@ public class SumCellsHelper
         {
             foreach (var curGroup in groups)
             {
-                var (curMin, curMax) = curGroup.MinMaxSum(solver);
+                var (curMin, curMax) = isBruteForcing ? curGroup.QuickMinMaxSum(solver) : curGroup.MinMaxSum(solver);
                 if (curMin == 0 || curMax == 0)
                 {
-                    if (logicalStepDescription != null)
+                    if (!isBruteForcing && logicalStepDescription != null)
                     {
                         string desc = $"{solver.CompactName(curGroup.Cells)} has no valid candidate combination.";
                         logicalStepDescription.Add(new LogicalStepDesc(desc, curGroup.Cells));
@@ -133,12 +133,17 @@ public class SumCellsHelper
 
         if (minSum > possibleSumMax || maxSum < possibleSumMin)
         {
-            if (logicalStepDescription != null)
+            if (!isBruteForcing && logicalStepDescription != null)
             {
                 string desc = $"Sum is no longer possible (Between {minSum} and {maxSum}).";
                 logicalStepDescription?.Add(new LogicalStepDesc(desc, cells));
             }
             return LogicResult.Invalid;
+        }
+
+        if (isBruteForcing)
+        {
+            return LogicResult.None;
         }
 
         if (numIncompleteGroups == 0)
@@ -274,10 +279,10 @@ public class SumCellsHelper
     }
 
     // Overload for StringBuilder compatibility
-    public LogicResult StepLogic(Solver solver, IEnumerable<int> possibleSums, StringBuilder logicalStepDescription)
+    public LogicResult StepLogic(Solver solver, IEnumerable<int> possibleSums, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
         List<LogicalStepDesc> stepDescs = logicalStepDescription != null ? new() : null;
-        var result = StepLogic(solver, possibleSums, stepDescs);
+        var result = StepLogic(solver, possibleSums, stepDescs, isBruteForcing);
         if (logicalStepDescription != null && stepDescs != null)
         {
             foreach (var step in stepDescs)

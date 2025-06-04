@@ -131,7 +131,7 @@ public class PillArrowStrategy : IArrowLogicStrategy
         }
         // If possiblePillTotals is empty because a pill cell is genuinely empty, other logic should catch it.
 
-        var arrowStepResult = arrowSumHelper.StepLogic(solver, possiblePillTotals, logicalStepDescription);
+        var arrowStepResult = arrowSumHelper.StepLogic(solver, possiblePillTotals, logicalStepDescription, isBruteForcing);
         if (arrowStepResult == LogicResult.Invalid) return LogicResult.Invalid;
         changed |= arrowStepResult == LogicResult.Changed;
 
