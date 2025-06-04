@@ -69,7 +69,11 @@
     - **`SolverFactory.cs`**: When adding support for new f-puzzles constraint types, ensure parsing logic is robust and new constraints are correctly instantiated and added to the `Solver`.
     - **`AICSolver.cs`**: This class relies heavily on the weak and strong links established by constraints and basic Sudoku rules. Changes here require a deep understanding of alternating inference chains.
 
-## 6. Testing
+## 6. Building
+    - `.github/workflows/dotnet-core.yml` is a good resource for how the project gets build and tested for release.
+    - `.github/workflows/poll-request.yml` has the basic build and test commands.
+
+## 7. Testing
     - **Unit Tests**:
         - Create NUnit unit tests for any new utility functions or complex, isolated algorithms. Place these in the `SudokuTests` project.
         - Follow existing testing patterns (e.g., `TestUtility.cs` for helper methods).
@@ -77,7 +81,7 @@
         - New constraint types or significant changes to existing constraint logic are primarily tested by adding valid puzzles that utilize the feature to `SudokuTests\Puzzles.cs` or specific test files (e.g., `ArrowTests.cs`). These puzzles will be provided in the prompt.
         - Ensure that the solver can correctly solve these puzzles and that logical steps (if applicable) are reported as expected.
 
-## 7. What to Avoid
+## 8. What to Avoid
     - Introducing breaking changes to public APIs of `Solver` or widely used utility classes without explicit instruction.
     - Adding new third-party dependencies.
     - Removing or significantly altering existing comments that explain critical design decisions or complex business logic without strong justification and explicit instruction.
@@ -85,11 +89,11 @@
     - Making large, unfocused changes across multiple files. Keep changes targeted to the task at hand.
     - Directly manipulating UI elements or engaging in concerns outside the `SudokuSolver` library and `SudokuSolverConsole`'s core logic (e.g., do not attempt to modify Visual Studio settings directly).
 
-## 8. Clarification and Ambiguity
+## 9. Clarification and Ambiguity
     - If requirements in a prompt are unclear, ambiguous, or seem to conflict with these guidelines, state any assumptions made or explicitly ask for clarification.
     - If multiple valid implementation approaches exist, choose the one that is most performant while being consistent with existing patterns and maintaining clarity. If a trade-off is significant, you may note the alternatives.
 
-## 9. Commit Message Format (Simulated)
+## 10. Commit Message Format (Simulated)
     - **Line 1**: Short summary (e.g., "Implement SandwichConstraint StepLogic").
     - **Line 2**: Empty.
     - **Line 3 onwards**:
