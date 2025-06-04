@@ -74,14 +74,16 @@ public partial class Solver
 
     private (int, int) FindBilocalValue()
     {
-        foreach (SudokuGroup group in Groups)
+        // Only groups with exactly MAX_VALUE cells are relevant for bilocals.
+        if (maxValueGroups == null || maxValueGroups.Count == 0)
+        {
+            return (-1, 0);
+        }
+
+        foreach (SudokuGroup group in maxValueGroups)
         {
             List<int> groupCells = group.Cells;
             int numCells = group.Cells.Count;
-            if (numCells != MAX_VALUE)
-            {
-                continue;
-            }
 
             uint atLeastOnce = 0;
             uint atLeastTwice = 0;
