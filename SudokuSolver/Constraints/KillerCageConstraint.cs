@@ -69,7 +69,7 @@ public class KillerCageConstraint : Constraint
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
-        return sumCells?.StepLogic(sudokuSolver, sum.ToEnumerable(), logicalStepDescription) ?? LogicResult.None;
+        return sumCells?.StepLogic(sudokuSolver, sum.ToEnumerable(), logicalStepDescription, isBruteForcing) ?? LogicResult.None;
     }
 
     public override List<(int, int)> Group => cells;

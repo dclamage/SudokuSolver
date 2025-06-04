@@ -62,7 +62,7 @@ public class MultiSumKillerCageConstraint : Constraint
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
-        return sumCells?.StepLogic(sudokuSolver, sums, logicalStepDescription) ?? LogicResult.None;
+        return sumCells?.StepLogic(sudokuSolver, sums, logicalStepDescription, isBruteForcing) ?? LogicResult.None;
     }
 
     public override List<(int, int)> Group => cells;

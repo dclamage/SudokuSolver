@@ -177,7 +177,7 @@ public class CircleArrowStrategy : IArrowLogicStrategy
             return LogicResult.Invalid;
         }
 
-        var arrowStepResult = arrowSumHelper.StepLogic(solver, possibleCircleValues, logicalStepDescription);
+        var arrowStepResult = arrowSumHelper.StepLogic(solver, possibleCircleValues, logicalStepDescription, isBruteForcing);
         if (arrowStepResult == LogicResult.Invalid) return LogicResult.Invalid;
         changed |= arrowStepResult == LogicResult.Changed;
 

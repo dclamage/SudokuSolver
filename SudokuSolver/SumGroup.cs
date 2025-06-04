@@ -28,6 +28,37 @@ public class SumGroup
         return minMax;
     }
 
+    public (int, int) QuickMinMaxSum(Solver solver)
+    {
+        var board = solver.Board;
+
+        int min = 0;
+        int max = 0;
+        foreach (var (i, j) in cells)
+        {
+            uint mask = board[i, j];
+            if ((mask & includeMask & ~valueSetMask) == 0)
+            {
+                return (0, 0);
+            }
+
+            int setVal = GetSetValue(mask);
+            if (setVal != 0)
+            {
+                min += setVal;
+                max += setVal;
+            }
+            else
+            {
+                uint validMask = mask & includeMask;
+                min += MinValue(validMask);
+                max += MaxValue(validMask);
+            }
+        }
+
+        return (min, max);
+    }
+
     private (int, int) CalcMinMaxSum(Solver solver)
     {
         var board = solver.Board;
