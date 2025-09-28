@@ -1562,8 +1562,7 @@
                         if (toolPerCellIndex < toolOutsideIndex) toolOutsideIndex++;
                         toolConstraints.splice(++toolPerCellIndex, 0, info.name);
                      }
-                    // For 'cage' type like Indexers, they behave like perCellConstraints for placement
-                    if (!perCellConstraints.includes(info.name)) perCellConstraints.push(info.name);
+                    if (!regionConstraints.includes(info.name)) regionConstraints.push(info.name);
                 } else if (info.type === "outside") {
                     if (!toolConstraints.includes(info.name)) {
                         if (toolOutsideIndex < toolLineIndex) toolLineIndex++;
