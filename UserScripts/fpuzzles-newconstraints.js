@@ -1379,28 +1379,16 @@
 
         // Row Indexer
         window.rowindexer = function (cell) {
-            this.cells = [];
-            this.cell = null;
-
-            this.sortCells = function () {
-                this.cells = this.cells.filter((c) => c);
-                this.cells.sort((a, b) => a.i * size + a.j - (b.i * size + b.j));
-                this.cell = this.cells.length > 0 ? this.cells[0] : null;
-            };
+            this.cells = [cell];
 
             this.addCellToRegion = function (cell) {
-                if (cell) {
-                    this.cells = [cell];
-                } else {
-                    this.cells = [];
-                }
+                this.cells.push(cell);
                 this.sortCells();
             };
 
-            if (cell) {
-                this.cells = [cell];
-                this.sortCells();
-            }
+            this.sortCells = function () {
+                this.cells.sort((a, b) => a.i * size + a.j - (b.i * size + b.j));
+            };
         };
 
         // Column Indexer
@@ -1574,6 +1562,7 @@
                         if (toolPerCellIndex < toolOutsideIndex) toolOutsideIndex++;
                         toolConstraints.splice(++toolPerCellIndex, 0, info.name);
                      }
+                    if (!regionConstraints.includes(info.name)) regionConstraints.push(info.name);
                     // For 'cage' type like Indexers, they behave like perCellConstraints for placement
                     if (!perCellConstraints.includes(info.name)) perCellConstraints.push(info.name);
                 } else if (info.type === "outside") {
