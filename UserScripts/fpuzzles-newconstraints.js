@@ -1379,16 +1379,28 @@
 
         // Row Indexer
         window.rowindexer = function (cell) {
-            this.cells = [cell];
+            this.cells = [];
+            this.cell = null;
+
+            this.sortCells = function () {
+                this.cells = this.cells.filter((c) => c);
+                this.cells.sort((a, b) => a.i * size + a.j - (b.i * size + b.j));
+                this.cell = this.cells.length > 0 ? this.cells[0] : null;
+            };
 
             this.addCellToRegion = function (cell) {
-                this.cells.push(cell);
+                if (cell) {
+                    this.cells = [cell];
+                } else {
+                    this.cells = [];
+                }
                 this.sortCells();
             };
 
-            this.sortCells = function () {
-                this.cells.sort((a, b) => a.i * size + a.j - (b.i * size + b.j));
-            };
+            if (cell) {
+                this.cells = [cell];
+                this.sortCells();
+            }
         };
 
         // Column Indexer
