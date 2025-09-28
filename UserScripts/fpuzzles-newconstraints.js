@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.15
+// @version      1.16
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
