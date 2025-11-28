@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net10.0</TargetFramework>
     <Authors>dclamage</Authors>
     <PackageId>SudokuSolverLib</PackageId>
     <Product>SudokuSolverLib</Product>
