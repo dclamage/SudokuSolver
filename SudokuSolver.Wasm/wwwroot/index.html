@@ -24,13 +24,16 @@
   <h3>Input JSON</h3>
   <textarea id="inputJson">
 {
-  "fpuzzlesURL": "https://www.f-puzzles.com/?load=N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAQwB2AFwgBrTRDQALbQm0YArjFRbdeiJrTmrNkJoD2mgMZewMb0tdADc4eAtrIiA===",
-  "solutionCount": true
+  "nonce": 12345,
+  "command": "count",
+  "dataType": "fpuzzles",
+  "data": "N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAQwB2AFwgBrTRDQALbQm0YArjFRbdeiJrTmrNkJoD2mgMZewMb0tdADc4eAtrIiA==="
 }
 </textarea>
 
   <div class="controls">
-    <button id="solveBtn">Solve</button>
+    <button id="solveBtn">Send Message</button>
+    <button id="cancelBtn">Cancel</button>
   </div>
 
   <h3>Output JSON</h3>
