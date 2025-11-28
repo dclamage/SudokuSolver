@@ -691,10 +691,11 @@ public partial class Solver
                     MaxDegreeOfParallelism = Environment.ProcessorCount - 1
                 };
 
-                Parallel.For(0, numIterations, options, (_) =>
+                Parallel.For(0, numIterations, options, (i, _) =>
                 {
                     Solver solver = root.Clone(willRunNonSinglesLogic: false);
-                    EstimateSolutionsInternal(solver, state);
+                    long backtrackLimit = ComputeBacktrackLimit(i);
+                    EstimateSolutionsInternal(solver, state, backtrackLimit);
                 });
             }
             else
@@ -702,7 +703,8 @@ public partial class Solver
                 for (long i = 0; i < numIterations; i++)
                 {
                     Solver solver = root.Clone(willRunNonSinglesLogic: false);
-                    EstimateSolutionsInternal(root, state);
+                    long backtrackLimit = ComputeBacktrackLimit(i);
+                    EstimateSolutionsInternal(solver, state, backtrackLimit);
                 }
             }
         }
@@ -760,172 +762,212 @@ public partial class Solver
         }
     }
 
-    private static void EstimateSolutionsInternal(Solver root, EstimateSolutionsState state)
+    private static void EstimateSolutionsInternal(Solver root, EstimateSolutionsState state, long backtrackLimit)
     {
-        const int tinyBranchThreshold = 25;   // "exact" cut-off
-        const double uniformMix = 0.30; // α
         Random rng = ThreadLocalRandom.Instance;
+        double sample = SampleBranch(root, state, backtrackLimit, rng, stratifyRoot: true);
+        state.NewSample(sample);
+    }
 
-        int maxVal = root.MAX_VALUE;
-        bool[] isExact = new bool[maxVal];
-        double[] heuristic = new double[maxVal];
-        double[] probCache = new double[maxVal];
-        Solver[] childSolvers = new Solver[maxVal];
+    private static double SampleBranch(Solver solver, EstimateSolutionsState state, long backtrackLimit, Random rng, bool stratifyRoot)
+    {
+        const double uniformMix = 0.30;
 
-        Stack<EstimationFrame> stack = new(capacity: 64);
-        stack.Push(new EstimationFrame(root, PathProb: 1.0, ExactOffset: 0.0));
+        state.cancellationToken.ThrowIfCancellationRequested();
 
-        while (stack.Count > 0)
+        LogicResult lr = solver.BruteForcePropagate(false, state.cancellationToken);
+        if (lr == LogicResult.Invalid)
         {
-            state.cancellationToken.ThrowIfCancellationRequested();
-            EstimationFrame frame = stack.Pop();
+            return 0.0;
+        }
 
-            Solver solver = frame.Board;
-            double pathProb = frame.PathProb;
-            double exactCarry = frame.ExactOffset;
+        if (lr == LogicResult.PuzzleComplete)
+        {
+            return 1.0;
+        }
 
-            //------------------------------------------------------------
-            // 1.  Propagate singles
-            //------------------------------------------------------------
-            LogicResult lr = solver.BruteForcePropagate(false, state.cancellationToken);
-            if (lr == LogicResult.Invalid)
+        (int cell, _) = solver.GetLeastCandidateCell(allowBilocals: false);
+        if (cell < 0)
+        {
+            return 1.0;
+        }
+
+        uint cellMask = solver.board[cell];
+        double exactSum = 0.0;
+        double heuristicTotal = 0.0;
+
+        List<MonteCarloChild> children = new();
+
+        for (int val = 1; val <= solver.MAX_VALUE; val++)
+        {
+            if ((cellMask & ValueMask(val)) == 0)
             {
-                state.NewSample(exactCarry); // contributes 0
-                return;
-            }
-            if (lr == LogicResult.PuzzleComplete)
-            {
-                state.NewSample(exactCarry + 1.0 / pathProb);
-                return;
+                continue;
             }
 
-            //------------------------------------------------------------
-            // 2.  Choose MRV cell
-            //------------------------------------------------------------
+            Solver childSolver = solver.Clone(willRunNonSinglesLogic: false);
+            if (!childSolver.SetValue(cell, val))
+            {
+                continue;
+            }
+
+            LogicResult childResult = childSolver.BruteForcePropagate(false, state.cancellationToken);
+            if (childResult == LogicResult.Invalid)
+            {
+                continue;
+            }
+
+            if (childResult == LogicResult.PuzzleComplete)
+            {
+                exactSum += 1.0;
+                continue;
+            }
+
+            if (TryCountSolutionsWithLimit(childSolver, backtrackLimit, state.cancellationToken, out long exactCount))
+            {
+                exactSum += exactCount;
+                continue;
+            }
+
+            double heuristic = childSolver.CountCandidatesForNonGivens();
+            children.Add(new MonteCarloChild(childSolver, heuristic));
+            heuristicTotal += heuristic;
+        }
+
+        if (children.Count == 0)
+        {
+            return exactSum;
+        }
+
+        if (stratifyRoot)
+        {
+            double total = exactSum;
+            foreach (MonteCarloChild child in children)
+            {
+                total += SampleBranch(child.Solver, state, backtrackLimit, rng, stratifyRoot: false);
+            }
+
+            return total;
+        }
+
+        double[] probabilities = new double[children.Count];
+        double uniformProb = uniformMix / children.Count;
+        double heuristicWeight = heuristicTotal > 0 ? 1.0 - uniformMix : 0.0;
+        double uniformRemainder = heuristicTotal > 0 ? 0.0 : (1.0 - uniformMix) / children.Count;
+
+        for (int i = 0; i < children.Count; i++)
+        {
+            double weight = heuristicTotal > 0 ? children[i].Heuristic / heuristicTotal : 0.0;
+            probabilities[i] = uniformProb + heuristicWeight * weight + uniformRemainder;
+        }
+
+        int chosenIdx = ChooseChild(probabilities, rng);
+        double probability = probabilities[chosenIdx];
+        MonteCarloChild chosen = children[chosenIdx];
+
+        double childEstimate = SampleBranch(chosen.Solver, state, backtrackLimit, rng, stratifyRoot: false);
+        return exactSum + childEstimate / Math.Max(probability, double.Epsilon);
+    }
+
+    private static int ChooseChild(double[] probabilities, Random rng)
+    {
+        double r = rng.NextDouble();
+        double acc = 0.0;
+
+        for (int idx = 0; idx < probabilities.Length; idx++)
+        {
+            acc += probabilities[idx];
+
+            if (r <= acc || idx == probabilities.Length - 1)
+            {
+                return idx;
+            }
+        }
+
+        return probabilities.Length - 1;
+    }
+
+    private static bool TryCountSolutionsWithLimit(Solver solver, long backtrackLimit, CancellationToken cancellationToken, out long solutionCount)
+    {
+        if (backtrackLimit <= 0)
+        {
+            solutionCount = 0;
+            return false;
+        }
+
+        Solver workingSolver = solver.Clone(willRunNonSinglesLogic: false);
+        workingSolver.isBruteForcing = true;
+
+        solutionCount = 0;
+        return TryCountSolutionsInternal(workingSolver, backtrackLimit, ref solutionCount, cancellationToken);
+    }
+
+    private static bool TryCountSolutionsInternal(Solver root, long backtrackLimit, ref long solutionCount, CancellationToken cancellationToken)
+    {
+        Stack<Solver> stack = new();
+        stack.Push(root);
+
+        long backtracks = 0;
+
+        while (stack.TryPop(out Solver solver))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (backtracks >= backtrackLimit)
+            {
+                return false;
+            }
+
+            backtracks++;
+
+            LogicResult logicResult = solver.BruteForcePropagate(false, cancellationToken);
+            if (logicResult == LogicResult.Invalid)
+            {
+                continue;
+            }
+
+            if (logicResult == LogicResult.PuzzleComplete)
+            {
+                solutionCount++;
+                continue;
+            }
+
             (int cell, _) = solver.GetLeastCandidateCell(allowBilocals: false);
             if (cell < 0)
             {
-                // Defensive: treat as solved
-                state.NewSample(exactCarry + 1.0 / pathProb);
-                return;
+                solutionCount++;
+                continue;
             }
 
-            //------------------------------------------------------------
-            // 3.  Build weights & exact subtotals
-            //------------------------------------------------------------
             uint cellMask = solver.board[cell];
-            double H = 0.0;
-            int kOpen = 0;
-            double exactSum = 0.0;
-
-            Array.Clear(heuristic);
-            Array.Clear(childSolvers);
-
             for (int val = 1; val <= solver.MAX_VALUE; val++)
             {
-                int idx = val - 1;
-
                 if ((cellMask & ValueMask(val)) == 0)
                 {
-                    // digit forbidden
                     continue;
                 }
 
-                Solver childSolver = solver.Clone(willRunNonSinglesLogic: false);
-                if (!childSolver.SetValue(cell, val))
+                Solver child = solver.Clone(willRunNonSinglesLogic: false);
+                if (child.SetValue(cell, val))
                 {
-                    // contradiction
-                    continue;
-                }
-
-                LogicResult childResult = childSolver.BruteForcePropagate(false, state.cancellationToken);
-                if (childResult == LogicResult.Invalid)
-                {
-                    // contradiction
-                    continue;
-                }
-                if (childResult == LogicResult.PuzzleComplete)
-                {
-                    // solved instantly
-                    exactSum += 1.0;
-                    continue;
-                }
-
-                int remaining = childSolver.CountCandidatesForNonGivens();
-                if (remaining <= tinyBranchThreshold)
-                {
-                    // exact enumeration for tiny branch
-                    long exactCnt = childSolver.CountSolutions(cancellationToken: state.cancellationToken);
-                    exactSum += exactCnt;
-                    continue;
-                }
-
-                // --- Monte-Carlo child ---
-                childSolvers[idx] = childSolver;
-                heuristic[idx] = remaining; // h_i
-                H += remaining;
-                kOpen++;
-            }
-
-            //------------------------------------------------------------
-            // 4.  If no MC children left, emit deterministic total
-            //------------------------------------------------------------
-            if (kOpen == 0)
-            {
-                state.NewSample(exactCarry + exactSum / pathProb);
-                return;
-            }
-
-            //------------------------------------------------------------
-            // 5.  Convert h_i to probabilities
-            //------------------------------------------------------------
-            for (int idx = 0; idx < maxVal; idx++)
-            {
-                if (heuristic[idx] == 0) { probCache[idx] = 0; continue; }
-
-                probCache[idx] = uniformMix / kOpen
-                               + (1.0 - uniformMix) * (heuristic[idx] / H);
-            }
-
-            //------------------------------------------------------------
-            // 6.  Roulette-wheel selection
-            //------------------------------------------------------------
-            double r = rng.NextDouble();
-            double acc = 0.0;
-            int chosenIdx = -1;
-
-            for (int idx = 0; idx < maxVal; idx++)
-            {
-                if (probCache[idx] == 0)
-                {
-                    continue;
-                }
-
-                acc += probCache[idx];
-
-                if (r <= acc || idx == maxVal - 1) // fallback on last open child
-                {
-                    chosenIdx = idx;
-                    break;
+                    stack.Push(child);
                 }
             }
-
-            int chosenVal = chosenIdx + 1;
-
-            //------------------------------------------------------------
-            // 7.  Recurse on chosen child
-            //------------------------------------------------------------
-            double newExactCarry = exactCarry + exactSum / pathProb;
-            double newPathProb = pathProb * probCache[chosenIdx];
-            stack.Push(new EstimationFrame(childSolvers[chosenIdx], newPathProb, newExactCarry));
         }
+
+        return true;
     }
 
-    // Frame record used by the explicit stack
-    private readonly record struct EstimationFrame(
-        Solver Board,
-        double PathProb,
-        double ExactOffset);
+    private static long ComputeBacktrackLimit(long iterationIndex)
+    {
+        const long maxBacktrackLimit = 1 << 10;
+        long limit = 1L << (int)Math.Min(10, iterationIndex + 1);
+        return Math.Min(limit, maxBacktrackLimit);
+    }
+
+    private readonly record struct MonteCarloChild(
+        Solver Solver,
+        double Heuristic);
 
 
     // Simple ThreadLocal RNG to avoid Guid overhead
