@@ -13,11 +13,11 @@ jobs:
     outputs:
       version: ${{ steps.set_vars.outputs.version_number }}
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 10.0.x
     - name: Set variables
       id: set_vars
       run: |
@@ -70,9 +70,9 @@ jobs:
         name: workspace
         path: .
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 10.0.x
     - name: Set VERSION env var from job output
       run: echo "VERSION=${{ needs.build_and_test.outputs.version }}" >> $GITHUB_ENV
     - name: Debug env.VERSION
@@ -164,9 +164,9 @@ jobs:
         name: workspace
         path: .
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v5
       with:
-        dotnet-version: 8.0.x
+        dotnet-version: 10.0.x
     - name: Set VERSION env var from job output
       run: echo "VERSION=${{ needs.build_and_test.outputs.version }}" >> $GITHUB_ENV
     - name: Debug env.VERSION
@@ -364,7 +364,7 @@ jobs:
     if: github.event_name == 'pull_request' && github.event.action == 'closed' && github.event.pull_request.merged == true && github.event.pull_request.base.ref == 'master'
     steps:
     - name: Checkout code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v5
     
     - name: Download all artifacts
       uses: actions/download-artifact@v4
