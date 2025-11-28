@@ -3,6 +3,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <OverrideHtmlAssetPlaceholders>true</OverrideHtmlAssetPlaceholders>
+    <WasmEnableThreads>true</WasmEnableThreads>
   </PropertyGroup>
 
   <ItemGroup>
