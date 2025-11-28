@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<!--  Licensed to the .NET Foundation under one or more agreements. -->
+<!-- The .NET Foundation licenses this file to you under the MIT license. -->
+<html>
+
+<head>
+  <title>SudokuSolver.Wasm</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <link rel="preload" id="webassembly" />
+  <script type="importmap"></script>
+  <script type='module' src="main#[.{fingerprint}].js"></script>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    textarea { width: 100%; height: 200px; font-family: monospace; }
+    #output { white-space: pre-wrap; background: #f0f0f0; padding: 10px; border: 1px solid #ccc; min-height: 100px; font-family: monospace; }
+    .controls { margin: 10px 0; }
+  </style>
+</head>
+
+<body>
+  <h1>Sudoku Solver Wasm Test</h1>
+  
+  <h3>Input JSON</h3>
+  <textarea id="inputJson">
+{
+  "fpuzzlesURL": "https://www.f-puzzles.com/?load=N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAQwB2AFwgBrTRDQALbQm0YArjFRbdeiJrTmrNkJoD2mgMZewMb0tdADc4eAtrIiA===",
+  "solutionCount": true
+}
+</textarea>
+
+  <div class="controls">
+    <button id="solveBtn">Solve</button>
+  </div>
+
+  <h3>Output JSON</h3>
+  <div id="output"></div>
+</body>
+
+</html>
