@@ -694,7 +694,7 @@ public class Program
 				long lastCount = 0;
 				if (useEstimate)
 				{
-					solver.CountSolutions(
+					lastCount = solver.CountSolutions(
 						maxSolutions: MaxSolutionCount,
 						multiThread: MultiThread,
                         progressEvent: (long count) =>
@@ -738,7 +738,7 @@ public class Program
 				}
 				else
 				{
-					solver.CountSolutions(
+					lastCount = solver.CountSolutions(
 						maxSolutions: MaxSolutionCount,
 						multiThread: MultiThread,
 						progressEvent: (long count) =>
