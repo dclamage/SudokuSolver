@@ -60,6 +60,13 @@ public class Program
         var listen = app.Option("--listen", "Listen for websocket connections.", CommandOptionType.NoValue);
         var estimateProgress = app.Option("--estimate-progress", "Estimate the total solution count for progress/ETA during --solutioncount.", CommandOptionType.NoValue);
 
+        // Make unique options
+        var makeUnique = app.Option("-m|--unique", "Make the puzzle unique by placing minimal givens heuristically.", CommandOptionType.NoValue);
+        var uniqueSolutionCap = app.Option<long>("--unique-cap", "Solution cap per candidate for the unique algorithm (default 1000).", CommandOptionType.SingleValue);
+        uniqueSolutionCap.DefaultValue = 1000;
+        var uniqueEstimationIterations = app.Option<long>("--unique-iterations", "Monte-Carlo estimation iterations when all candidates exceed the cap (default 10000).", CommandOptionType.SingleValue);
+        uniqueEstimationIterations.DefaultValue = 10000;
+
         // Options
         var maxSolutionCount = app.Option<long>("-x|--maxcount",
             "Set a maximum number of solutions to consider. " +
@@ -121,6 +128,9 @@ public class Program
                 JsonOutput = jsonOutput.HasValue(),
                 JsonProgress = jsonProgress.HasValue(),
                 EstimateProgress = estimateProgress.HasValue(),
+                MakeUnique = makeUnique.HasValue(),
+                UniqueSolutionCap = uniqueSolutionCap.ParsedValue,
+                UniqueEstimationIterations = uniqueEstimationIterations.ParsedValue,
             };
 
             await program.OnExecuteAsync(app, cancellationToken);
@@ -170,6 +180,11 @@ public class Program
     public required bool JsonOutput { get; init; }
     public required bool JsonProgress { get; init; }
     public required bool EstimateProgress { get; init; }
+
+    // Make unique options
+    public required bool MakeUnique { get; init; }
+    public required long UniqueSolutionCap { get; init; }
+    public required long UniqueEstimationIterations { get; init; }
 
     public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
 	{
@@ -325,10 +340,14 @@ public class Program
 		{
             numSolveStepsSpecified++;
 		}
+		if (MakeUnique)
+		{
+            numSolveStepsSpecified++;
+		}
 
 		if (numSolveStepsSpecified == 0)
 		{
-			string errMsg = "ERROR: No solve command specified (e.g. --solve, --logical, --check, --solutioncount, --estimatecount).";
+			string errMsg = "ERROR: No solve command specified (e.g. --solve, --logical, --check, --solutioncount, --estimatecount, --unique).";
 			if (JsonOutput)
 			{
 				JsonResultHandler.OutputError(errMsg);
@@ -528,7 +547,7 @@ public class Program
 			{
 				uint[] board = CountsToBoard(curCandidateCounts);
 				BoardView board2d = new(board, solver.HEIGHT, solver.WIDTH);
-				lock (consoleLock)
+			 lock (consoleLock)
 				{
 					ConsoleUtility.PrintBoard(board2d, solver.Regions, Console.Out);
 					Console.SetCursorPosition(0, currentLineCursor);
@@ -829,6 +848,43 @@ public class Program
             Console.WriteLine("Checking...");
             long numSolutions = solver.CountSolutions(2, MultiThread);
             Console.WriteLine($"There are {(numSolutions <= 1 ? numSolutions.ToString() : "multiple")} solutions.");
+        }
+
+        if (MakeUnique)
+        {
+            Console.WriteLine($"Making puzzle unique (solution cap: {UniqueSolutionCap}, estimation iterations: {UniqueEstimationIterations})...");
+
+            var result = solver.MakeUnique(
+                solutionCap: UniqueSolutionCap,
+                estimationIterations: UniqueEstimationIterations,
+                multiThread: MultiThread,
+                progressEvent: (message) => Console.WriteLine(message),
+                cancellationToken: cancellationToken);
+
+            Console.WriteLine(result.Message);
+
+            if (result.Success)
+            {
+                solver.Print();
+
+                if (OutputPath != null)
+                {
+                    try
+                    {
+                        using StreamWriter file = new(OutputPath);
+                        await file.WriteLineAsync(solver.GivenString);
+                    }
+                    catch (Exception e)
+                    {
+                        Console.WriteLine($"Failed to write to file: {e.Message}");
+                    }
+                }
+
+                if (FpuzzlesOut)
+                {
+                    OpenFPuzzles(solver, VisitURL);
+                }
+            }
         }
 
         watch.Stop();

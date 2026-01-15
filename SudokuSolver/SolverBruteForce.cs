@@ -921,12 +921,334 @@ public partial class Solver
         }
     }
 
-    // Frame record used by the explicit stack
-    private readonly record struct EstimationFrame(
-        Solver Board,
-        double PathProb,
-        double ExactOffset);
+    /// <summary>
+    /// Estimate per-candidate solution counts using Monte-Carlo sampling in one pass.
+    /// Returns (estimates, stdErrs).
+    /// progressEvent receives (estimates[], stdErrs[], iterations) periodically.
+    /// </summary>
+    public (double[] estimates, double[] stdErrs) EstimateTrueCandidates(long numIterations, Action<(double[] estimates, double[] stdErrs, long iterations)> progressEvent = null, bool multiThread = false, CancellationToken cancellationToken = default)
+    {
+        if (seenMap == null)
+        {
+            throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
+        }
 
+        numIterations = Math.Max(numIterations, 0);
+        if (numIterations == 0)
+        {
+            numIterations = long.MaxValue;
+        }
+
+        EstimateTrueCandidatesState state = new(NUM_CANDIDATES, multiThread, progressEvent, cancellationToken);
+        try
+        {
+            Solver root = Clone(willRunNonSinglesLogic: true);
+            if (root.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
+            {
+                state.SendEvent();
+                return (state.GetEstimates(), state.GetStdErrs());
+            }
+            root.isBruteForcing = true;
+
+            if (state.multiThread && Environment.ProcessorCount > 1)
+            {
+                ParallelOptions options = new()
+                {
+                    CancellationToken = cancellationToken,
+                    MaxDegreeOfParallelism = Environment.ProcessorCount - 1
+                };
+
+                Parallel.For(0, numIterations, options, (_) =>
+                {
+                    Solver solver = root.Clone(willRunNonSinglesLogic: false);
+                    EstimateTrueCandidatesInternal(solver, state);
+                });
+            }
+            else
+            {
+                for (long i = 0; i < numIterations; i++)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    Solver solver = root.Clone(willRunNonSinglesLogic: false);
+                    EstimateTrueCandidatesInternal(solver, state);
+                }
+            }
+        }
+        catch (OperationCanceledException) { }
+
+        state.SendEvent();
+        return (state.GetEstimates(), state.GetStdErrs());
+    }
+
+    private class EstimateTrueCandidatesState
+    {
+        private readonly int numCandidates;
+        public readonly bool multiThread;
+        private readonly Action<(double[] estimates, double[] stdErrs, long iterations)> progressEvent;
+        public readonly CancellationToken cancellationToken;
+        private readonly Stopwatch eventTimer;
+
+        // Welford accumulators per candidate
+        private readonly double[] candidateSum;
+        private readonly double[] candidateM2;
+        private readonly long[] candidateSamples; // number of samples recorded for this candidate
+
+        private long iterationsCompleted = 0;
+        private readonly object stateLock = new();
+
+        public EstimateTrueCandidatesState(int numCandidates, bool multiThread, Action<(double[] estimates, double[] stdErrs, long iterations)> progressEvent, CancellationToken cancellationToken)
+        {
+            this.numCandidates = numCandidates;
+            this.multiThread = multiThread;
+            this.progressEvent = progressEvent;
+            this.cancellationToken = cancellationToken;
+            eventTimer = Stopwatch.StartNew();
+
+            candidateSum = new double[numCandidates];
+            candidateM2 = new double[numCandidates];
+            candidateSamples = new long[numCandidates];
+        }
+
+        // Record a weighted sample value for all candidates visited on this path
+        public void RecordPathSample(List<int> visitedCandidates, double sampleValue)
+        {
+            lock (stateLock)
+            {
+                iterationsCompleted++;
+
+                // For each candidate visited, update running stats
+                foreach (int ci in visitedCandidates)
+                {
+                    long n = ++candidateSamples[ci];
+                    double prevMean = n > 1 ? (candidateSum[ci] / (n - 1)) : 0.0;
+                    candidateSum[ci] += sampleValue;
+                    double mean = candidateSum[ci] / n;
+                    if (n > 1)
+                    {
+                        candidateM2[ci] += (sampleValue - prevMean) * (sampleValue - mean);
+                    }
+                }
+
+                if (eventTimer.ElapsedMilliseconds > 500)
+                {
+                    SendEvent();
+                    eventTimer.Restart();
+                }
+            }
+        }
+
+        public double[] GetEstimates()
+        {
+            double[] estimates = new double[numCandidates];
+            for (int i = 0; i < numCandidates; i++)
+            {
+                if (candidateSamples[i] > 0)
+                {
+                    estimates[i] = candidateSum[i] / candidateSamples[i];
+                }
+                else
+                {
+                    estimates[i] = 0.0;
+                }
+            }
+            return estimates;
+        }
+
+        public double[] GetStdErrs()
+        {
+            double[] stdErrs = new double[numCandidates];
+            for (int i = 0; i < numCandidates; i++)
+            {
+                long n = candidateSamples[i];
+                if (n > 1)
+                {
+                    double variance = candidateM2[i] / (n - 1);
+                    stdErrs[i] = Math.Sqrt(variance / (double)n);
+                }
+                else
+                {
+                    stdErrs[i] = double.PositiveInfinity;
+                }
+            }
+            return stdErrs;
+        }
+
+        public void SendEvent()
+        {
+            progressEvent?.Invoke((GetEstimates(), GetStdErrs(), iterationsCompleted));
+        }
+    }
+
+    private static void EstimateTrueCandidatesInternal(Solver root, EstimateTrueCandidatesState state)
+    {
+        const int tinyBranchThreshold = 25;   // "exact" cut-off
+        const double uniformMix = 0.30; // α
+        Random rng = ThreadLocalRandom.Instance;
+
+        int maxVal = root.MAX_VALUE;
+        double[] heuristic = new double[maxVal];
+        double[] probCache = new double[maxVal];
+        Solver[] childSolvers = new Solver[maxVal];
+
+        // Frame that carries the visited candidates along the path
+        Stack<EstimationTCFrame> stack = new(capacity: 64);
+        stack.Push(new EstimationTCFrame(root, PathProb: 1.0, ExactOffset: 0.0, VisitedCandidates: new List<int>()));
+
+        while (stack.Count > 0)
+        {
+            state.cancellationToken.ThrowIfCancellationRequested();
+            EstimationTCFrame frame = stack.Pop();
+
+            Solver solver = frame.Board;
+            double pathProb = frame.PathProb;
+            double exactCarry = frame.ExactOffset;
+            List<int> visited = frame.VisitedCandidates;
+
+            //------------------------------------------------------------
+            // 1.  Propagate singles
+            //------------------------------------------------------------
+            LogicResult lr = solver.BruteForcePropagate(false, state.cancellationToken);
+            if (lr == LogicResult.Invalid)
+            {
+                state.RecordPathSample(visited, exactCarry);
+                continue;
+            }
+            if (lr == LogicResult.PuzzleComplete)
+            {
+                state.RecordPathSample(visited, exactCarry + 1.0 / pathProb);
+                continue;
+            }
+
+            //------------------------------------------------------------
+            // 2.  Choose MRV cell
+            //------------------------------------------------------------
+            (int cell, _) = solver.GetLeastCandidateCell(allowBilocals: false);
+            if (cell < 0)
+            {
+                state.RecordPathSample(visited, exactCarry + 1.0 / pathProb);
+                continue;
+            }
+
+            //------------------------------------------------------------
+            // 3.  Build weights & exact subtotals
+            //------------------------------------------------------------
+            uint cellMask = solver.board[cell];
+            double H = 0.0;
+            int kOpen = 0;
+            double exactSum = 0.0;
+
+            Array.Clear(heuristic);
+            Array.Clear(childSolvers);
+
+            for (int val = 1; val <= solver.MAX_VALUE; val++)
+            {
+                int idx = val - 1;
+
+                if ((cellMask & ValueMask(val)) == 0)
+                {
+                    // digit forbidden
+                    continue;
+                }
+
+                Solver childSolver = solver.Clone(willRunNonSinglesLogic: false);
+                if (!childSolver.SetValue(cell, val))
+                {
+                    // contradiction
+                    continue;
+                }
+
+                LogicResult childResult = childSolver.BruteForcePropagate(false, state.cancellationToken);
+                if (childResult == LogicResult.Invalid)
+                {
+                    // contradiction
+                    continue;
+                }
+                if (childResult == LogicResult.PuzzleComplete)
+                {
+                    // solved instantly
+                    exactSum += 1.0;
+                    continue;
+                }
+
+                int remaining = childSolver.CountCandidatesForNonGivens();
+                if (remaining <= tinyBranchThreshold)
+                {
+                    // exact enumeration for tiny branch
+                    long exactCnt = childSolver.CountSolutions(cancellationToken: state.cancellationToken);
+                    exactSum += exactCnt;
+                    continue;
+                }
+
+                // --- Monte-Carlo child ---
+                childSolvers[idx] = childSolver;
+                heuristic[idx] = remaining; // h_i
+                H += remaining;
+                kOpen++;
+            }
+
+            //------------------------------------------------------------
+            // 4.  If no MC children left, emit deterministic total
+            //------------------------------------------------------------
+            if (kOpen == 0)
+            {
+                state.RecordPathSample(visited, exactCarry + exactSum / pathProb);
+                continue;
+            }
+
+            //------------------------------------------------------------
+            // 5.  Convert h_i to probabilities
+            //------------------------------------------------------------
+            for (int idx = 0; idx < maxVal; idx++)
+            {
+                if (heuristic[idx] == 0) { probCache[idx] = 0; continue; }
+
+                probCache[idx] = uniformMix / kOpen
+                               + (1.0 - uniformMix) * (heuristic[idx] / H);
+            }
+
+            //------------------------------------------------------------
+            // 6.  Roulette-wheel selection
+            //------------------------------------------------------------
+            double r = rng.NextDouble();
+            double acc = 0.0;
+            int chosenIdx = -1;
+
+            for (int idx = 0; idx < maxVal; idx++)
+            {
+                if (probCache[idx] == 0)
+                {
+                    continue;
+                }
+
+                acc += probCache[idx];
+
+                if (r <= acc || idx == maxVal - 1) // fallback on last open child
+                {
+                    chosenIdx = idx;
+                    break;
+                }
+            }
+
+            int chosenVal = chosenIdx + 1;
+
+            //------------------------------------------------------------
+            // 7.  Recurse on chosen child
+            //------------------------------------------------------------
+            // Record the chosen candidate index on the new visited list
+            int chosenCandidateIndex = cell * solver.MAX_VALUE + chosenVal - 1;
+            List<int> newVisited = new(visited);
+            newVisited.Add(chosenCandidateIndex);
+
+            double newExactCarry = exactCarry + exactSum / pathProb;
+            double newPathProb = pathProb * probCache[chosenIdx];
+            stack.Push(new EstimationTCFrame(childSolvers[chosenIdx], newPathProb, newExactCarry, newVisited));
+        }
+    }
+
+    private readonly record struct EstimationTCFrame(Solver Board, double PathProb, double ExactOffset, List<int> VisitedCandidates);
+
+    // Restore EstimationFrame used by the original EstimateSolutionsInternal
+    private readonly record struct EstimationFrame(Solver Board, double PathProb, double ExactOffset);
 
     // Simple ThreadLocal RNG to avoid Guid overhead
     private static class ThreadLocalRandom
