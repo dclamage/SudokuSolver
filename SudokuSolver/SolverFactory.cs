@@ -1000,6 +1000,37 @@ namespace SudokuSolver
                 }
             }
 
+            if (fpuzzlesData.nfaConstraints != null)
+            {
+                foreach (var entry in fpuzzlesData.nfaConstraints)
+                {
+                    if (entry.cells == null || entry.cells.Length == 0 || string.IsNullOrEmpty(entry.nfa))
+                        continue;
+                    int[] cellIndices = entry.cells
+                        .Select(cellStr => { var (r, col) = FPuzzlesUtility.ParseCell(cellStr); return r * width + col; })
+                        .ToArray();
+                    solver.AddConstraint(new NFAConstraint(solver, cellIndices, entry.nfa, entry.name));
+                    AddToConstraintStrings(solver, $"NFAConstraint:{entry.nfa}");
+                }
+            }
+
+            if (fpuzzlesData.binaryLookupConstraints != null)
+            {
+                foreach (var entry in fpuzzlesData.binaryLookupConstraints)
+                {
+                    if (entry.cells == null || entry.cells.Length != 2 || string.IsNullOrEmpty(entry.table))
+                        continue;
+                    var (row0, col0) = FPuzzlesUtility.ParseCell(entry.cells[0]);
+                    var (row1, col1) = FPuzzlesUtility.ParseCell(entry.cells[1]);
+                    int ci0 = row0 * width + col0;
+                    int ci1 = row1 * width + col1;
+                    uint[] tableAB = BinaryLookupConstraint.DecodeTable(entry.table);
+                    uint[] tableBA = BinaryLookupConstraint.BuildReverseTable(tableAB, solver.MAX_VALUE);
+                    solver.AddConstraint(new BinaryLookupConstraint(solver, ci0, ci1, tableAB, tableBA, entry.name));
+                    AddToConstraintStrings(solver, $"BinaryLookupConstraint:{entry.table}");
+                }
+            }
+
             // Apply any command-line constraints
             if (additionalConstraints != null)
             {
@@ -1497,6 +1528,14 @@ namespace SudokuSolver
                 }
             }
             return builder.ToString();
+        }
+
+        private static void AddToConstraintStrings(Solver solver, string entry)
+        {
+            if (solver.customInfo.TryGetValue("ConstraintStrings", out object csObj) && csObj is List<string> csList)
+                csList.Add(entry);
+            else
+                solver.customInfo["ConstraintStrings"] = new List<string> { entry };
         }
     }
 }

@@ -64,6 +64,8 @@ public class FPuzzlesBoard
     public FPuzzlesLines[] slowthermometer { get; set; }
     public string[] disabledlogic { get; set; } = null;
     public string[] truecandidatesoptions { get; set; } = null;
+    public FPuzzlesNFAConstraintEntry[] nfaConstraints { get; set; }
+    public FPuzzlesBinaryLookupEntry[] binaryLookupConstraints { get; set; }
 };
 
 public class FPuzzlesGridEntry
@@ -143,5 +145,19 @@ public record FPuzzlesQuadruple
 {
     public string[] cells { get; set; }
     public int[] values { get; set; }
+}
+
+public record FPuzzlesNFAConstraintEntry
+{
+    public string[] cells { get; set; }
+    public string nfa { get; set; }
+    public string name { get; set; }
+}
+
+public record FPuzzlesBinaryLookupEntry
+{
+    public string[] cells { get; set; }
+    public string table { get; set; }
+    public string name { get; set; }
 }
 

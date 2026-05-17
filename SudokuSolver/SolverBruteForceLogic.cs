@@ -4,6 +4,40 @@ public partial class Solver
 {
     private (int, int) GetLeastCandidateCell(bool allowBilocals = true)
     {
+        // Conflict-score path: rank cells by (score / candidateCount), highest first.
+        // Only considers cells with score > 0 so a cold-start (all zeros) falls through to MRV.
+        if (conflictScores != null)
+        {
+            int csBestCell = -1;
+            int csBestScore = -1;
+            int csBestCount = 1;
+
+            for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+            {
+                uint cellMask = board[cellIndex];
+                if (IsValueSet(cellMask)) continue;
+
+                int score = conflictScores[cellIndex];
+                if (score == 0) continue;
+
+                int count = ValueCount(cellMask);
+                // Maximize score/count using cross-multiply to avoid floating point:
+                // score/count > csBestScore/csBestCount  ↔  score*csBestCount > csBestScore*count
+                if (csBestCell < 0 || score * csBestCount > csBestScore * count)
+                {
+                    csBestCell = cellIndex;
+                    csBestScore = score;
+                    csBestCount = count;
+                }
+            }
+
+            if (csBestCell >= 0)
+            {
+                return (csBestCell, 0);
+            }
+        }
+
+        // Fallback: existing MRV + bilocal logic
         int bestCellIndex = -1;
         int numCandidates = MAX_VALUE + 1;
         if (smallGroupsBySize != null)

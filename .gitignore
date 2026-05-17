@@ -448,3 +448,6 @@ $RECYCLE.BIN/
 
 ## Publishing
 publish-*/
+
+## AI
+.claude/

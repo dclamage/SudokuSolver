@@ -126,6 +126,10 @@ public partial class Solver
             weakLinks = other.weakLinks;
         }
         totalWeakLinks = other.totalWeakLinks;
+
+        // Share conflict scores by reference so all clones in one search tree update the same array.
+        conflictScores = other.conflictScores;
+        branchCellIndex = -1;
     }
 
     /// <summary>
@@ -558,6 +562,22 @@ public partial class Solver
         }
 
         maxValueGroups = Groups.Where(g => g.Cells.Count == MAX_VALUE).ToList();
+
+        // Allocate conflict scores seeded with structural priority.
+        // Cells in smaller constraint groups are tried first during cold-start search.
+        conflictScores = new int[NUM_CELLS];
+        foreach (var group in Groups)
+        {
+            int count = group.Cells.Count;
+            if (count < MAX_VALUE)
+            {
+                int priority = MAX_VALUE - count;
+                foreach (int cellIdx in group.Cells)
+                {
+                    conflictScores[cellIdx] += priority;
+                }
+            }
+        }
 
         // Initialize hidden single tracking array
         if (Groups.Count > 0)

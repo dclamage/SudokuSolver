@@ -140,6 +140,10 @@ public partial class Solver
 
             if (logicResult == LogicResult.Invalid)
             {
+                if (solver.branchCellIndex >= 0)
+                {
+                    Interlocked.Increment(ref solver.conflictScores[solver.branchCellIndex]);
+                }
                 continue;
             }
 
@@ -157,7 +161,7 @@ public partial class Solver
             Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
             newSolver.isBruteForcing = true;
             if (newSolver.ClearValue(cellIndex, val))
-            { 
+            {
                 if (!state.isMultiThreaded || !state.PushSolver(newSolver))
                 {
                     stack.Push(newSolver);
@@ -167,6 +171,7 @@ public partial class Solver
             // Change the board to only allow this value in the slot
             if (solver.SetValue(cellIndex, val))
             {
+                solver.branchCellIndex = cellIndex;
                 stack.Push(solver);
             }
         }
@@ -335,6 +340,10 @@ public partial class Solver
 
             if (logicResult == LogicResult.Invalid)
             {
+                if (solver.branchCellIndex >= 0)
+                {
+                    Interlocked.Increment(ref solver.conflictScores[solver.branchCellIndex]);
+                }
                 continue;
             }
 
@@ -362,6 +371,7 @@ public partial class Solver
 
             if (solver.SetValue(cellIndex, val))
             {
+                solver.branchCellIndex = cellIndex;
                 stack.Push(solver);
             }
         }
@@ -547,6 +557,10 @@ public partial class Solver
         LogicResult logicResult = BruteForcePropagate(false, state.cancellationToken);
         if (logicResult == LogicResult.Invalid)
         {
+            if (branchCellIndex >= 0)
+            {
+                Interlocked.Increment(ref conflictScores[branchCellIndex]);
+            }
             return false;
         }
         if (logicResult == LogicResult.PuzzleComplete)
@@ -647,6 +661,7 @@ public partial class Solver
 
             if (solver.SetValue(cellIndex, val))
             {
+                solver.branchCellIndex = cellIndex;
                 stack.Push(solver);
             }
         }

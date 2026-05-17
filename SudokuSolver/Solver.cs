@@ -51,6 +51,12 @@ public partial class Solver
     // Returns whether two cells cannot be the same value
     private bool[] seenMap;
 
+    // Conflict-score heuristic: shared across all clones in one search tree via reference assignment.
+    // Cells that repeatedly cause contradictions get higher scores and are branched on first.
+    internal int[] conflictScores;
+    // Index of the cell this solver instance was branched on (-1 = not a branch point).
+    internal int branchCellIndex = -1;
+
     /// <summary>
     /// Groups which cannot contain more than one of the same digit.
     /// This will at least contain all rows, columns, and boxes.
