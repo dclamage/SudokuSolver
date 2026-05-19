@@ -10,6 +10,7 @@ public sealed class BinaryLookupConstraint : Constraint
     private readonly int cellIndex1;
     private readonly uint[] tableAB; // tableAB[v-1] = allowed values in cell1 when cell0 = v
     private readonly uint[] tableBA; // tableBA[v-1] = allowed values in cell0 when cell1 = v
+    private readonly string hashKey;
     private readonly string constraintName;
 
     public BinaryLookupConstraint(Solver solver, int cellIndex0, int cellIndex1, uint[] tableAB, uint[] tableBA, string name = null)
@@ -19,11 +20,16 @@ public sealed class BinaryLookupConstraint : Constraint
         this.cellIndex1 = cellIndex1;
         this.tableAB = tableAB;
         this.tableBA = tableBA;
+        this.hashKey = $"{cellIndex0},{cellIndex1}:{string.Join(',', tableAB)}";
         this.constraintName = name ?? "Binary Lookup Constraint";
     }
 
     public override string SpecificName => constraintName;
     public override bool NeedsEnforceConstraint => true;
+
+    public override string GetHash(Solver solver) => hashKey;
+
+    public override LogicResult InitCandidates(Solver solver) => RunFilter(solver);
 
     public override bool EnforceConstraint(Solver solver, int i, int j, int val)
     {

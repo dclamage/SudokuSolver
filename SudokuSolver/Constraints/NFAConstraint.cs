@@ -31,14 +31,16 @@ public sealed class NFAConstraint : Constraint
     private readonly CompressedNFA nfa;
     private readonly bool[] cellMembership;
     private readonly int numWords;
-    // Pre-allocated scratch bitsets to avoid per-call heap allocation.
-    private readonly uint[][] stateWords;
+    private readonly string serializedNFA;
+    // Solver clones share constraint instances, so scratch state must not be shared across worker threads.
+    private readonly ThreadLocal<uint[][]> stateWords;
     private readonly string constraintName;
 
     public NFAConstraint(Solver solver, int[] cellIndices, string serializedNFA, string name = null)
         : base(solver, serializedNFA)
     {
         this.cellIndices = cellIndices;
+        this.serializedNFA = serializedNFA;
         this.constraintName = name ?? "NFA Constraint";
         this.nfa = NFADeserializer.Deserialize(serializedNFA);
         this.numWords = (nfa.NumStates + 31) / 32;
@@ -50,13 +52,15 @@ public sealed class NFAConstraint : Constraint
                 cellMembership[ci] = true;
         }
 
-        stateWords = new uint[cellIndices.Length + 1][];
-        for (int s = 0; s <= cellIndices.Length; s++)
-            stateWords[s] = new uint[numWords];
+        stateWords = new ThreadLocal<uint[][]>(() => CreateStateWords(cellIndices.Length + 1, numWords));
     }
 
     public override string SpecificName => constraintName;
     public override bool NeedsEnforceConstraint => true;
+
+    public override string GetHash(Solver solver) => $"{string.Join(',', cellIndices)}:{serializedNFA}";
+
+    public override LogicResult InitCandidates(Solver solver) => RunFilter(solver);
 
     public override bool EnforceConstraint(Solver solver, int i, int j, int val)
     {
@@ -74,6 +78,7 @@ public sealed class NFAConstraint : Constraint
     {
         IReadOnlyList<uint> board = solver.FlatBoard;
         int numCells = cellIndices.Length;
+        uint[][] stateWords = this.stateWords.Value;
 
         // Clear scratch state bitsets
         for (int s = 0; s <= numCells; s++)
@@ -180,6 +185,14 @@ public sealed class NFAConstraint : Constraint
         }
 
         return changed ? LogicResult.Changed : LogicResult.None;
+    }
+
+    private static uint[][] CreateStateWords(int numSlots, int numWords)
+    {
+        uint[][] result = new uint[numSlots][];
+        for (int s = 0; s < numSlots; s++)
+            result[s] = new uint[numWords];
+        return result;
     }
 
     // Deserializes an ISS NFASerializer base64 bitstream directly into a CompressedNFA.

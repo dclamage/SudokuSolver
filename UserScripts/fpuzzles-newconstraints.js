@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Fpuzzles-NewConstraints
 // @namespace    http://tampermonkey.net/
-// @version      1.16
+// @version      1.17
 // @description  Adds more constraints to f-puzzles.
 // @author       Rangsk
 // @match        https://*.f-puzzles.com/*
@@ -259,6 +259,568 @@
         },
     ];
 
+    const customConstraintStorageKey = "sudokuSolverCustomConstraintsV1";
+    let customConstraintDefinitions = [];
+    let customCompileCache = new Map();
+
+    const fallbackCustomConstraintSource = [
+        "export const type = 'nfa';",
+        "export const spec = {",
+        "    startState: 0,",
+        "    transition: (state, value) => value > state ? value : undefined,",
+        "    accept: (state) => state > 0,",
+        "};",
+    ].join("\n");
+
+    const customSlug = function(name) {
+        return String(name || "customconstraint").toLowerCase().replace(/[^a-z0-9]+/g, "");
+    };
+
+    const normalizeCustomVariable = function(variable) {
+        if (typeof variable === "string") {
+            return { name: variable, label: variable, type: "text", defaultValue: "" };
+        }
+        const name = String(variable && variable.name ? variable.name : "value").trim();
+        return {
+            name,
+            label: String(variable && variable.label ? variable.label : name),
+            type: variable && variable.type === "number" ? "number" : "text",
+            defaultValue: variable && variable.defaultValue !== undefined
+                ? String(variable.defaultValue)
+                : variable && variable.default !== undefined
+                    ? String(variable.default)
+                    : "",
+        };
+    };
+
+    const normalizeCustomDefinition = function(definition) {
+        const rawName = definition && definition.name ? String(definition.name) : "Custom Constraint";
+        const placement = ["line", "cell", "cage", "outside"].includes(definition && definition.type)
+            ? definition.type
+            : definition && definition.type === "region"
+                ? "cage"
+                : "line";
+        const logicType = ["nfa", "binary", "precompiled-nfa", "precompiled-binary"].includes(definition && definition.logicType)
+            ? definition.logicType
+            : definition && definition.nfa
+                ? "precompiled-nfa"
+                : definition && definition.table
+                    ? "precompiled-binary"
+                    : definition && definition.type === "binary"
+                        ? "binary"
+                        : "nfa";
+        const variables = Array.isArray(definition && definition.variables)
+            ? definition.variables.map(normalizeCustomVariable).filter(v => v.name.length > 0)
+            : [];
+        return {
+            version: 1,
+            id: definition && definition.id ? String(definition.id) : customSlug(rawName),
+            name: rawName,
+            type: placement,
+            logicType,
+            source: definition && definition.source ? String(definition.source) : fallbackCustomConstraintSource,
+            nfa: definition && definition.nfa ? String(definition.nfa) : "",
+            table: definition && definition.table ? String(definition.table) : "",
+            color: definition && definition.color ? String(definition.color) : "#7A7CFF",
+            colorDark: definition && definition.colorDark ? String(definition.colorDark) : definition && definition.color ? String(definition.color) : "#9EA0FF",
+            lineWidth: definition && definition.lineWidth ? Number(definition.lineWidth) : 0.18,
+            symbol: definition && definition.symbol ? String(definition.symbol) : "*",
+            variables,
+        };
+    };
+
+    const loadCustomConstraintDefinitions = function() {
+        try {
+            const raw = localStorage.getItem(customConstraintStorageKey);
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            const list = Array.isArray(parsed) ? parsed : parsed && Array.isArray(parsed.definitions) ? parsed.definitions : [];
+            return list.map(normalizeCustomDefinition);
+        } catch (e) {
+            console.warn("Fpuzzles-NewConstraints: Could not load custom constraints.", e);
+            return [];
+        }
+    };
+
+    const saveCustomConstraintDefinitions = function() {
+        localStorage.setItem(customConstraintStorageKey, JSON.stringify(customConstraintDefinitions, null, 2));
+        customCompileCache = new Map();
+    };
+
+    const customInfoFromDefinition = function(definition) {
+        return {
+            name: definition.name,
+            type: definition.type,
+            color: definition.color,
+            colorDark: definition.colorDark,
+            lineWidth: definition.lineWidth,
+            symbol: definition.symbol,
+            tooltip: [
+                `${definition.name} custom constraint.`,
+                definition.type === "outside" ? "Click outside the grid to place it." :
+                    definition.type === "cell" ? "Click a cell to place it." :
+                        "Click and drag to place it.",
+                "Use Custom Constraints to edit the definition and instance variables.",
+            ],
+            isCustomConstraint: true,
+            customDefinitionId: definition.id,
+            customDefinition: definition,
+        };
+    };
+
+    const syncCustomConstraintInfo = function() {
+        customConstraintDefinitions = loadCustomConstraintDefinitions();
+        for (let i = newConstraintInfo.length - 1; i >= 0; i--) {
+            if (newConstraintInfo[i].isCustomConstraint) {
+                newConstraintInfo.splice(i, 1);
+            }
+        }
+        const existingNames = new Set(newConstraintInfo.map(info => info.name));
+        for (let definition of customConstraintDefinitions) {
+            let name = definition.name;
+            let suffix = 2;
+            while (existingNames.has(name)) {
+                name = `${definition.name} ${suffix++}`;
+            }
+            definition = { ...definition, name };
+            existingNames.add(name);
+            newConstraintInfo.push(customInfoFromDefinition(definition));
+        }
+    };
+
+    syncCustomConstraintInfo();
+
+    const customDefaultArgs = function(definition) {
+        const args = {};
+        for (const variable of definition.variables || []) {
+            args[variable.name] = variable.defaultValue || "";
+        }
+        return args;
+    };
+
+    const customArgsForInstance = function(definition, instance) {
+        const args = customDefaultArgs(definition);
+        if (instance && instance.customArgs) {
+            Object.assign(args, instance.customArgs);
+        }
+        for (const variable of definition.variables || []) {
+            if (variable.type === "number" && args[variable.name] !== "") {
+                const parsed = Number(args[variable.name]);
+                args[variable.name] = Number.isFinite(parsed) ? parsed : args[variable.name];
+            }
+        }
+        return args;
+    };
+
+    const requiredBits = function(maxValue) {
+        if (maxValue <= 0) return 1;
+        return 32 - Math.clz32(maxValue);
+    };
+
+    const canonicalJSON = function(value) {
+        const replacer = function(key, val) {
+            if (val && typeof val === "object" && !Array.isArray(val)) {
+                return Object.fromEntries(Object.entries(val).sort((a, b) => a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
+            }
+            return val;
+        };
+        return JSON.stringify(value, replacer);
+    };
+
+    class CustomBitWriter {
+        constructor() {
+            this.bytes = [];
+            this.bitLength = 0;
+        }
+
+        writeBits(value, bitCount) {
+            const normalized = value >>> 0;
+            for (let i = bitCount - 1; i >= 0; i--) {
+                const bit = (normalized >>> i) & 1;
+                const byteIndex = this.bitLength >> 3;
+                if (byteIndex === this.bytes.length) {
+                    this.bytes.push(0);
+                }
+                if (bit) {
+                    this.bytes[byteIndex] |= 1 << (7 - (this.bitLength & 7));
+                }
+                this.bitLength++;
+            }
+        }
+
+        toUint8Array() {
+            return Uint8Array.from(this.bytes);
+        }
+    }
+
+    class CustomNFA {
+        constructor() {
+            this.startIds = new Set();
+            this.acceptIds = new Set();
+            this.transitions = [];
+        }
+
+        addState() {
+            this.transitions.push([]);
+            return this.transitions.length - 1;
+        }
+
+        addStartId(id) {
+            this.startIds.add(id);
+        }
+
+        addAcceptId(id) {
+            this.acceptIds.add(id);
+        }
+
+        addTransition(from, to, value) {
+            const symbolIndex = value - 1;
+            if (!this.transitions[from][symbolIndex]) {
+                this.transitions[from][symbolIndex] = [to];
+            } else if (!this.transitions[from][symbolIndex].includes(to)) {
+                this.transitions[from][symbolIndex].push(to);
+            }
+        }
+
+        isAccepting(id) {
+            return this.acceptIds.has(id);
+        }
+
+        getStartIds() {
+            return this.startIds;
+        }
+
+        getAcceptIds() {
+            return this.acceptIds;
+        }
+
+        getStateTransitions(id) {
+            return this.transitions[id] || [];
+        }
+
+        numStates() {
+            return this.transitions.length;
+        }
+
+        numSymbols() {
+            let max = 0;
+            for (const transitions of this.transitions) {
+                if (transitions.length > max) max = transitions.length;
+            }
+            return max;
+        }
+
+        remapStates(remap) {
+            const newTransitions = [];
+            for (let oldIndex = 0; oldIndex < remap.length; oldIndex++) {
+                const newIndex = remap[oldIndex];
+                const oldTransitions = this.transitions[oldIndex] || [];
+                const newStateTransitions = [];
+                for (let symbolIndex = 0; symbolIndex < oldTransitions.length; symbolIndex++) {
+                    const targets = oldTransitions[symbolIndex];
+                    if (targets) newStateTransitions[symbolIndex] = [...new Set(targets.map(t => remap[t]))];
+                }
+                newTransitions[newIndex] = newStateTransitions;
+            }
+            this.transitions = newTransitions;
+            this.startIds = new Set([...this.startIds].map(id => remap[id]));
+            this.acceptIds = new Set([...this.acceptIds].map(id => remap[id]));
+        }
+    }
+
+    class CustomNFASerializer {
+        static FORMAT = { PLAIN: 0, PACKED: 1 };
+
+        static serialize(nfa) {
+            if (!nfa.numStates() || !nfa.getStartIds().size) {
+                return "";
+            }
+            this.normalizeStates(nfa);
+            const numStates = nfa.numStates();
+            const startCount = nfa.getStartIds().size;
+            let startIsAccept = 0;
+            let acceptCount = nfa.getAcceptIds().size;
+            for (let i = 0; i < startCount; i++) {
+                if (nfa.isAccepting(i)) {
+                    startIsAccept |= 1 << i;
+                    acceptCount--;
+                }
+            }
+            const symbolCount = Math.max(nfa.numSymbols(), 1);
+            if (symbolCount > 16) {
+                throw new Error(`NFA requires ${symbolCount} symbols but only 16 are supported.`);
+            }
+            const stateBits = Math.max(1, requiredBits(numStates - 1));
+            if (stateBits > 16) {
+                throw new Error("NFA exceeds maximum supported state count.");
+            }
+            const symbolBits = requiredBits(symbolCount - 1);
+            const formatInfo = this.chooseStateFormat(nfa, symbolCount, symbolBits, stateBits);
+            const writer = new CustomBitWriter();
+            writer.writeBits(formatInfo.format, 2);
+            writer.writeBits(stateBits - 1, 4);
+            writer.writeBits(symbolCount - 1, 4);
+            writer.writeBits(startCount, stateBits);
+            writer.writeBits(acceptCount, stateBits);
+            writer.writeBits(startIsAccept, startCount);
+            if (formatInfo.format === this.FORMAT.PLAIN) {
+                writer.writeBits(formatInfo.transitionCountBits, 4);
+                this.writePlainBody(writer, nfa, formatInfo.transitionCountBits, symbolBits, stateBits);
+            } else {
+                this.writePackedBody(writer, nfa, symbolCount, stateBits);
+            }
+            return this.encodeBytes(writer.toUint8Array());
+        }
+
+        static normalizeStates(nfa) {
+            const startSet = nfa.getStartIds();
+            const acceptIds = [];
+            const otherIds = [];
+            for (let i = 0; i < nfa.numStates(); i++) {
+                if (startSet.has(i)) continue;
+                if (nfa.isAccepting(i)) acceptIds.push(i);
+                else otherIds.push(i);
+            }
+            const remap = new Array(nfa.numStates());
+            let next = 0;
+            for (const id of startSet) remap[id] = next++;
+            for (const id of acceptIds) remap[id] = next++;
+            for (const id of otherIds) remap[id] = next++;
+            nfa.remapStates(remap);
+        }
+
+        static chooseStateFormat(nfa, symbolCount, symbolBits, stateBits) {
+            let maxTransitions = 0;
+            let totalTransitions = 0;
+            let canPack = true;
+            for (let stateId = 0; stateId < nfa.numStates(); stateId++) {
+                const transitions = nfa.getStateTransitions(stateId);
+                let transitionCount = 0;
+                for (const targets of transitions) {
+                    if (!targets) continue;
+                    if (targets.length > 1) canPack = false;
+                    transitionCount += targets.length;
+                }
+                maxTransitions = Math.max(maxTransitions, transitionCount);
+                totalTransitions += transitionCount;
+            }
+            const transitionCountBits = requiredBits(maxTransitions);
+            if (!canPack) {
+                return { format: this.FORMAT.PLAIN, transitionCountBits };
+            }
+            const plainSizeEstimate = nfa.numStates() * transitionCountBits + totalTransitions * (symbolBits + stateBits);
+            const packedSizeEstimate = nfa.numStates() * symbolCount + totalTransitions * stateBits;
+            return {
+                format: packedSizeEstimate < plainSizeEstimate ? this.FORMAT.PACKED : this.FORMAT.PLAIN,
+                transitionCountBits,
+            };
+        }
+
+        static writePlainBody(writer, nfa, transitionCountBits, symbolBits, stateBits) {
+            for (let stateId = 0; stateId < nfa.numStates(); stateId++) {
+                const transitions = nfa.getStateTransitions(stateId);
+                let transitionCount = 0;
+                for (const targets of transitions) {
+                    if (targets) transitionCount += targets.length;
+                }
+                writer.writeBits(transitionCount, transitionCountBits);
+                for (let symbolIndex = 0; symbolIndex < transitions.length; symbolIndex++) {
+                    const targets = transitions[symbolIndex];
+                    if (!targets) continue;
+                    for (const target of targets) {
+                        writer.writeBits(symbolIndex, symbolBits);
+                        writer.writeBits(target, stateBits);
+                    }
+                }
+            }
+        }
+
+        static writePackedBody(writer, nfa, symbolCount, stateBits) {
+            for (let stateId = 0; stateId < nfa.numStates(); stateId++) {
+                const transitions = nfa.getStateTransitions(stateId);
+                let symbolMask = 0;
+                for (let symbolIndex = 0; symbolIndex < transitions.length; symbolIndex++) {
+                    if (transitions[symbolIndex] && transitions[symbolIndex].length) {
+                        symbolMask |= 1 << symbolIndex;
+                    }
+                }
+                writer.writeBits(symbolMask, symbolCount);
+                for (let symbolIndex = 0; symbolIndex < transitions.length; symbolIndex++) {
+                    const targets = transitions[symbolIndex];
+                    if (targets && targets.length) {
+                        writer.writeBits(targets[0], stateBits);
+                    }
+                }
+            }
+        }
+
+        static encodeBytes(bytes) {
+            let binary = "";
+            for (const b of bytes) binary += String.fromCharCode(b);
+            return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+        }
+    }
+
+    const transformCustomModuleSource = function(source) {
+        if (/^\s*import\s/m.test(source)) {
+            throw new Error("Custom constraint sources cannot import other modules in the userscript editor.");
+        }
+        return source
+            .replace(/export\s+default\s+/g, "exports.default = ")
+            .replace(/export\s+(const|let|var)\s+([A-Za-z_$][\w$]*)\s*=/g, "exports.$2 =")
+            .replace(/export\s+function\s+([A-Za-z_$][\w$]*)\s*\(/g, "exports.$1 = function $1(")
+            .replace(/export\s+class\s+([A-Za-z_$][\w$]*)/g, "exports.$1 = class $1");
+    };
+
+    const loadCustomConstraintModule = function(definition, params, numValues) {
+        const exports = {};
+        const module = { exports };
+        const transformed = transformCustomModuleSource(definition.source || "");
+        const fn = new Function("exports", "module", "params", "numValues", "size", `"use strict";\n${transformed}\n;return module.exports;`);
+        return fn(exports, module, params, numValues, numValues);
+    };
+
+    const buildCustomNFAFromSpec = function(spec, numValues) {
+        if (!spec || typeof spec.transition !== "function" || typeof spec.accept !== "function") {
+            throw new Error("NFA custom constraints must provide spec.transition and spec.accept.");
+        }
+        const maxStateCount = 1 << 12;
+        const nfa = new CustomNFA();
+        const stateToIndex = new Map();
+        const indexToState = [];
+        const toStateArray = result => Array.isArray(result) ? result : result !== undefined ? [result] : [];
+        const stringifyState = state => {
+            if (Array.isArray(state)) throw new Error("NFA states must not be arrays.");
+            const serialized = canonicalJSON(state);
+            if (serialized === undefined) throw new Error("NFA state could not be JSON serialized.");
+            return serialized;
+        };
+        const addState = function(stateString) {
+            if (stateToIndex.size >= maxStateCount) {
+                throw new Error("NFA state limit exceeded.");
+            }
+            const index = nfa.addState();
+            stateToIndex.set(stateString, index);
+            indexToState[index] = stateString;
+            if (spec.accept(JSON.parse(stateString))) {
+                nfa.addAcceptId(index);
+            }
+            return index;
+        };
+        const startStates = toStateArray(spec.startState);
+        let currentLevel = [];
+        for (const startState of startStates) {
+            const stateString = stringifyState(startState);
+            const index = addState(stateString);
+            nfa.addStartId(index);
+            currentLevel.push(index);
+        }
+        let depth = 0;
+        const maxDepth = spec.maxDepth === undefined ? Infinity : spec.maxDepth;
+        while (currentLevel.length) {
+            const nextLevel = [];
+            for (const index of currentLevel) {
+                const stateValue = JSON.parse(indexToState[index]);
+                for (let value = 1; value <= numValues; value++) {
+                    const nextStates = toStateArray(spec.transition(stateValue, value));
+                    for (const nextState of nextStates) {
+                        const nextStateString = stringifyState(nextState);
+                        let targetIndex = stateToIndex.get(nextStateString);
+                        if (targetIndex === undefined) {
+                            if (depth >= maxDepth) continue;
+                            targetIndex = addState(nextStateString);
+                            nextLevel.push(targetIndex);
+                        }
+                        nfa.addTransition(index, targetIndex, value);
+                    }
+                }
+            }
+            currentLevel = nextLevel;
+            depth++;
+        }
+        return nfa;
+    };
+
+    const encodeBinaryLookupTable = function(table) {
+        const bytes = new Uint8Array(table.length * 4);
+        for (let i = 0; i < table.length; i++) {
+            const value = table[i] >>> 0;
+            bytes[i * 4] = value & 0xff;
+            bytes[i * 4 + 1] = (value >>> 8) & 0xff;
+            bytes[i * 4 + 2] = (value >>> 16) & 0xff;
+            bytes[i * 4 + 3] = (value >>> 24) & 0xff;
+        }
+        let binary = "";
+        for (const b of bytes) binary += String.fromCharCode(b);
+        return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    };
+
+    const decodeBinaryLookupTable = function(encoded, numValues) {
+        if (!encoded) return null;
+        const padded = encoded.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(encoded.length / 4) * 4, "=");
+        const binary = atob(padded);
+        const table = new Uint32Array(numValues);
+        for (let i = 0; i < numValues && i * 4 + 3 < binary.length; i++) {
+            table[i] =
+                binary.charCodeAt(i * 4) |
+                (binary.charCodeAt(i * 4 + 1) << 8) |
+                (binary.charCodeAt(i * 4 + 2) << 16) |
+                (binary.charCodeAt(i * 4 + 3) << 24);
+        }
+        return table;
+    };
+
+    const compileCustomConstraint = function(definition, params, numValues) {
+        const cacheKey = JSON.stringify({
+            id: definition.id,
+            logicType: definition.logicType,
+            source: definition.source,
+            nfa: definition.nfa,
+            table: definition.table,
+            params,
+            numValues,
+        });
+        if (customCompileCache.has(cacheKey)) {
+            return customCompileCache.get(cacheKey);
+        }
+        let result;
+        if (definition.logicType === "precompiled-nfa") {
+            result = { type: "nfa", nfa: definition.nfa, runtimeNFA: null };
+        } else if (definition.logicType === "precompiled-binary") {
+            result = { type: "binary", table: definition.table, tableMasks: decodeBinaryLookupTable(definition.table, numValues) };
+        } else {
+            const module = loadCustomConstraintModule(definition, params, numValues);
+            const type = module.type || definition.logicType;
+            if (type === "nfa") {
+                if (module.nfa || module.encodedNFA) {
+                    result = { type: "nfa", nfa: module.nfa || module.encodedNFA, runtimeNFA: null };
+                } else if (module.regex) {
+                    throw new Error("Browser compilation currently supports JS state-machine specs and binary lookup functions. Precompile regex constraints with scripts/compile-constraint.mjs and use Precompiled NFA.");
+                } else {
+                    const nfa = buildCustomNFAFromSpec(module.spec, numValues);
+                    result = { type: "nfa", nfa: CustomNFASerializer.serialize(nfa), runtimeNFA: nfa };
+                }
+            } else if (type === "binary") {
+                if (typeof module.isAllowed !== "function") {
+                    throw new Error("Binary custom constraints must export isAllowed(v1, v2).");
+                }
+                const table = new Uint32Array(numValues);
+                for (let v1 = 1; v1 <= numValues; v1++) {
+                    let mask = 0;
+                    for (let v2 = 1; v2 <= numValues; v2++) {
+                        if (module.isAllowed(v1, v2)) mask |= 1 << (v2 - 1);
+                    }
+                    table[v1 - 1] = mask;
+                }
+                result = { type: "binary", table: encodeBinaryLookupTable(table), tableMasks: table };
+            } else {
+                throw new Error(`Unknown custom constraint logic type: ${type}`);
+            }
+        }
+        customCompileCache.set(cacheKey, result);
+        return result;
+    };
+
     // Drawing helpers
     // Outline code provided by Sven Neumann
     const getOutline = function(cells, os) {
@@ -413,8 +975,207 @@
         ctx.lineCap = prevLineCap;
     }
 
+    const customDisplayColor = function(info) {
+        return boolSettings["Dark Mode"] ? info.colorDark || info.color : info.color;
+    };
+
+    const drawCustomCellMarker = function(cell, info, label) {
+        if (!cell) return;
+        const color = customDisplayColor(info);
+        const radius = cellSL * 0.32;
+        ctx.save();
+        ctx.globalAlpha = 0.22;
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(cell.x + cellSL / 2, cell.y + cellSL / 2, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(2, cellSL * 0.035);
+        ctx.stroke();
+        if (label) {
+            ctx.fillStyle = boolSettings["Dark Mode"] ? "#F0F0F0" : "#000000";
+            ctx.font = `${cellSL * 0.32}px Arial`;
+            ctx.fillText(label, cell.x + cellSL / 2, cell.y + cellSL * 0.62);
+        }
+        ctx.restore();
+    };
+
+    const drawCustomOutside = function(instance, info) {
+        if (!instance || !instance.cell) return;
+        ctx.save();
+        ctx.fillStyle = boolSettings["Dark Mode"] ? "#F0F0F0" : "#000000";
+        ctx.font = cellSL * 0.85 + "px Arial";
+        ctx.fillText(info.symbol || "*", instance.cell.x + cellSL / 2, instance.cell.y + cellSL * 0.82);
+        const value = instance.value || "";
+        if (value.length) {
+            ctx.font = cellSL * 0.52 + "px Arial";
+            ctx.fillText(value, instance.cell.x + cellSL / 2, instance.cell.y + cellSL * 0.48);
+        }
+        ctx.restore();
+    };
+
+    const showCustomConstraintInstance = function(instance, info) {
+        if (info.type === "line") {
+            for (const line of instance.lines || []) {
+                if (line.length > 0) {
+                    drawLine(line, info.color, info.colorDark, info.lineWidth);
+                }
+            }
+        } else if (info.type === "cell") {
+            for (const cell of instance.cells || []) {
+                drawCustomCellMarker(cell, info, info.symbol);
+            }
+        } else if (info.type === "outside") {
+            drawCustomOutside(instance, info);
+        }
+    };
+
     const doShim = function() {
         ("use strict");
+
+        syncCustomConstraintInfo();
+
+        const customConstraintInfos = function() {
+            return newConstraintInfo.filter(info => info.isCustomConstraint);
+        };
+
+        const customDefinitionForInfo = function(info) {
+            return customConstraintDefinitions.find(def => def.id === info.customDefinitionId) || info.customDefinition;
+        };
+
+        const ensureCustomConstraintStorage = function() {
+            for (const info of customConstraintInfos()) {
+                const id = cID(info.name);
+                if (!constraints[id]) {
+                    constraints[id] = [];
+                }
+            }
+        };
+
+        const refreshCustomConstraintRegistration = function() {
+            syncCustomConstraintInfo();
+            registerCustomConstraintClasses();
+            categorizeTools();
+            ensureCustomConstraintStorage();
+            createSidebars();
+        };
+
+        const formatCustomCells = function(cells) {
+            return (cells || []).filter(cell => cell && !cell.outside).map(cell => formatCell(cell));
+        };
+
+        const customGroupsForInstance = function(info, instance) {
+            if (!instance) return [];
+            if (info.type === "line") {
+                return (instance.lines || []).map(line => line.filter(cell => cell && !cell.outside));
+            }
+            if (info.type === "outside") {
+                return instance.set ? [instance.set] : [];
+            }
+            return [instance.cells || []];
+        };
+
+        const appendCustomConstraintPayloads = function(puzzle) {
+            const usedDefinitions = new Map();
+            for (const info of customConstraintInfos()) {
+                const definition = customDefinitionForInfo(info);
+                const id = cID(info.name);
+                const instances = constraints[id] || [];
+                for (const instance of instances) {
+                    const params = customArgsForInstance(definition, instance);
+                    let compiled;
+                    try {
+                        compiled = compileCustomConstraint(definition, params, size);
+                    } catch (e) {
+                        console.warn(`Could not compile custom constraint "${definition.name}".`, e);
+                        continue;
+                    }
+                    for (const group of customGroupsForInstance(info, instance)) {
+                        const cells = formatCustomCells(group);
+                        if (compiled.type === "binary") {
+                            if (cells.length !== 2) {
+                                console.warn(`Binary custom constraint "${definition.name}" requires exactly two cells; got ${cells.length}.`);
+                                continue;
+                            }
+                            if (!puzzle.binaryLookupConstraints) puzzle.binaryLookupConstraints = [];
+                            puzzle.binaryLookupConstraints.push({
+                                cells,
+                                table: compiled.table,
+                                name: definition.name,
+                            });
+                        } else {
+                            if (cells.length === 0) continue;
+                            if (!puzzle.nfaConstraints) puzzle.nfaConstraints = [];
+                            puzzle.nfaConstraints.push({
+                                cells,
+                                nfa: compiled.nfa,
+                                name: definition.name,
+                            });
+                        }
+                        usedDefinitions.set(definition.id, definition);
+                    }
+                }
+            }
+            if (usedDefinitions.size) {
+                puzzle.customConstraintDefinitions = [...usedDefinitions.values()];
+            }
+        };
+
+        const appendCustomInstanceMetadata = function(puzzle) {
+            for (const info of customConstraintInfos()) {
+                const definition = customDefinitionForInfo(info);
+                if (!definition.variables || !definition.variables.length) continue;
+                const id = cID(info.name);
+                const puzzleEntries = puzzle[id] || [];
+                const instances = constraints[id] || [];
+                for (let i = 0; i < Math.min(puzzleEntries.length, instances.length); i++) {
+                    puzzleEntries[i].customArgs = customArgsForInstance(definition, instances[i]);
+                }
+            }
+        };
+
+        const restoreCustomInstanceMetadata = function(puzzle) {
+            for (const info of customConstraintInfos()) {
+                const definition = customDefinitionForInfo(info);
+                const id = cID(info.name);
+                const puzzleEntries = puzzle[id] || [];
+                const instances = constraints[id] || [];
+                for (let i = 0; i < Math.min(puzzleEntries.length, instances.length); i++) {
+                    instances[i].customArgs = {
+                        ...customDefaultArgs(definition),
+                        ...(puzzleEntries[i].customArgs || {}),
+                    };
+                    bindCustomValueProperty(instances[i], definition);
+                    if (instances[i].updateSet) {
+                        instances[i].updateSet();
+                    }
+                }
+            }
+        };
+
+        const mergeCustomDefinitionsFromPuzzle = function(puzzle) {
+            if (!Array.isArray(puzzle.customConstraintDefinitions)) return false;
+            let changed = false;
+            const defsById = new Map(customConstraintDefinitions.map(def => [def.id, def]));
+            for (const rawDefinition of puzzle.customConstraintDefinitions) {
+                const definition = normalizeCustomDefinition(rawDefinition);
+                if (!defsById.has(definition.id)) {
+                    customConstraintDefinitions.push(definition);
+                    defsById.set(definition.id, definition);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                saveCustomConstraintDefinitions();
+                syncCustomConstraintInfo();
+                registerCustomConstraintClasses();
+                categorizeTools();
+                ensureCustomConstraintStorage();
+            }
+            delete puzzle.customConstraintDefinitions;
+            return changed;
+        };
 
         // Additional import/export data
         const origExportPuzzle = exportPuzzle;
@@ -478,6 +1239,25 @@
                             fontC: "#000000",
                             fromConstraint: constraintInfo.name,
                         });
+                    } else if (constraintInfo.type === "cell") {
+                        if (!puzzle.circle) {
+                            puzzle.circle = [];
+                        }
+
+                        for (let instance of puzzleEntry) {
+                            for (let cell of instance.cells || []) {
+                                puzzle.circle.push({
+                                    cells: [cell],
+                                    baseC: constraintInfo.color,
+                                    outlineC: constraintInfo.color,
+                                    fontC: "#000000",
+                                    value: constraintInfo.symbol || "",
+                                    width: 0.65,
+                                    height: 0.65,
+                                    fromConstraint: constraintInfo.name,
+                                });
+                            }
+                        }
                     } else if (constraintInfo.type === "outside") {
                         if (!puzzle.text) {
                             puzzle.text = [];
@@ -503,6 +1283,9 @@
                     }
                 }
             }
+
+            appendCustomInstanceMetadata(puzzle);
+            appendCustomConstraintPayloads(puzzle);
 
             // Export as a single whisper constraint with a configurable difference
             const allWhispers = [];
@@ -534,6 +1317,7 @@
         importPuzzle = function (string, clearHistory) {
             // Remove any generated cosmetics
             const puzzle = JSON.parse(compressor.decompressFromBase64(string));
+            mergeCustomDefinitionsFromPuzzle(puzzle);
             let constraintNames = newConstraintInfo.map((c) => c.name);
             if (puzzle.line) {
                 let filteredLines = [];
@@ -629,6 +1413,7 @@
 
             string = compressor.compressToBase64(JSON.stringify(puzzle));
             origImportPuzzle(string, clearHistory);
+            restoreCustomInstanceMetadata(puzzle);
         };
 
         // Draw the new constraints
@@ -653,6 +1438,74 @@
                 }
             }
             origDrawConstraints(layer);
+        };
+
+        const nfaAllowsValues = function(nfa, values, numValues) {
+            if (!nfa) return true;
+            let current = new Set(nfa.getStartIds());
+            for (const value of values) {
+                const allowedValues = value ? [value] : digits.slice(0, numValues);
+                const next = new Set();
+                for (const stateId of current) {
+                    const transitions = nfa.getStateTransitions(stateId);
+                    for (const allowedValue of allowedValues) {
+                        const targets = transitions[allowedValue - 1];
+                        if (targets) {
+                            for (const target of targets) {
+                                next.add(target);
+                            }
+                        }
+                    }
+                }
+                if (!next.size) return false;
+                current = next;
+            }
+            for (const stateId of current) {
+                if (nfa.isAccepting(stateId)) return true;
+            }
+            return false;
+        };
+
+        const binaryAllowsCandidate = function(tableMasks, group, cell, value) {
+            if (!tableMasks || group.length !== 2) return true;
+            const index = group.indexOf(cell);
+            if (index < 0) return true;
+            const other = group[1 - index];
+            const otherValues = other.value ? [other.value] : other.candidates && other.candidates.length ? other.candidates : digits;
+            if (index === 0) {
+                const mask = tableMasks[value - 1] || 0;
+                return otherValues.some(v => (mask & (1 << (v - 1))) !== 0);
+            }
+            return otherValues.some(v => ((tableMasks[v - 1] || 0) & (1 << (value - 1))) !== 0);
+        };
+
+        const customConstraintCandidatePossible = function(n, cell) {
+            for (const info of customConstraintInfos()) {
+                const definition = customDefinitionForInfo(info);
+                const instances = constraints[cID(info.name)] || [];
+                for (const instance of instances) {
+                    const groups = customGroupsForInstance(info, instance);
+                    if (!groups.some(group => group.includes(cell))) continue;
+                    let compiled;
+                    try {
+                        compiled = compileCustomConstraint(definition, customArgsForInstance(definition, instance), size);
+                    } catch (e) {
+                        console.warn(`Could not evaluate custom constraint "${definition.name}".`, e);
+                        continue;
+                    }
+                    for (const group of groups) {
+                        const index = group.indexOf(cell);
+                        if (index < 0) continue;
+                        if (compiled.type === "binary") {
+                            if (!binaryAllowsCandidate(compiled.tableMasks, group, cell, n)) return false;
+                        } else if (compiled.runtimeNFA) {
+                            const values = group.map((groupCell, groupIndex) => groupIndex === index ? n : groupCell.value || 0);
+                            if (!nfaAllowsValues(compiled.runtimeNFA, values, size)) return false;
+                        }
+                    }
+                }
+            }
+            return true;
         };
 
         // Conflict highlighting for new constraints
@@ -1160,6 +2013,10 @@
                 }
             }
 
+            if (!customConstraintCandidatePossible(n, cell)) {
+                return false;
+            }
+
             return true;
         };
 
@@ -1538,6 +2395,94 @@
             };
         };
 
+        const bindCustomValueProperty = function(instance, definition) {
+            const firstVariable = definition.variables && definition.variables.length ? definition.variables[0] : null;
+            if (!firstVariable) {
+                instance.value = "";
+                return;
+            }
+            Object.defineProperty(instance, "value", {
+                get: function() {
+                    return this.customArgs[firstVariable.name] === undefined ? "" : String(this.customArgs[firstVariable.name]);
+                },
+                set: function(value) {
+                    this.customArgs[firstVariable.name] = String(value || "");
+                },
+                configurable: true,
+            });
+        };
+
+        const updateCustomOutsideSet = function(instance) {
+            if (instance.cell) {
+                instance.isReverse = false;
+                instance.isRow = false;
+                if (instance.cell.i >= 0 && instance.cell.i < size) {
+                    instance.isRow = true;
+                    instance.set = getCellsInRow(instance.cell.i);
+                    if (instance.cell.j >= size) {
+                        instance.set = instance.set.slice(0);
+                        instance.set.reverse();
+                        instance.isReverse = true;
+                    }
+                }
+                if (instance.cell.j >= 0 && instance.cell.j < size) {
+                    instance.isRow = false;
+                    instance.set = getCellsInColumn(instance.cell.j);
+                    if (instance.cell.i >= size) {
+                        instance.set = instance.set.slice(0);
+                        instance.set.reverse();
+                        instance.isReverse = true;
+                    }
+                }
+            }
+        };
+
+        const registerCustomConstraintClasses = function() {
+            for (const info of customConstraintInfos()) {
+                const definition = customDefinitionForInfo(info);
+                window[cID(info.name)] = function(cellsOrCell) {
+                    this.customConstraintId = definition.id;
+                    this.customArgs = customDefaultArgs(definition);
+                    if (info.type === "line") {
+                        this.lines = cellsOrCell ? [[cellsOrCell]] : [[]];
+                    } else if (info.type === "outside") {
+                        if (cellsOrCell) this.cell = cellsOrCell[0];
+                        this.set = null;
+                        this.isReverse = false;
+                        this.isRow = false;
+                        bindCustomValueProperty(this, definition);
+                        this.updateSet = function() {
+                            updateCustomOutsideSet(this);
+                        };
+                        this.updateSet();
+                        this.typeNumber = function(num) {
+                            if (this.value.length === 0 && num === "0") return;
+                            this.value += String(num);
+                        };
+                    } else {
+                        this.cells = Array.isArray(cellsOrCell) ? cellsOrCell.filter(Boolean) : cellsOrCell ? [cellsOrCell] : [];
+                        this.addCellToRegion = function(cell) {
+                            this.cells.push(cell);
+                            this.sortCells();
+                        };
+                        this.sortCells = function() {
+                            this.cells.sort((a, b) => a.i * size + a.j - (b.i * size + b.j));
+                        };
+                    }
+                    this.show = function() {
+                        showCustomConstraintInstance(this, info);
+                    };
+                    this.addCellToLine = function(cell) {
+                        if (!this.lines) this.lines = [[]];
+                        this.lines[this.lines.length - 1].push(cell);
+                    };
+                };
+            }
+        };
+
+        registerCustomConstraintClasses();
+        ensureCustomConstraintStorage();
+
         const origCategorizeTools = categorizeTools;
         categorizeTools = function () {
             origCategorizeTools();
@@ -1563,6 +2508,13 @@
                         toolConstraints.splice(++toolPerCellIndex, 0, info.name);
                      }
                     if (!regionConstraints.includes(info.name)) regionConstraints.push(info.name);
+                } else if (info.type === "cell") {
+                     if (!toolConstraints.includes(info.name)) {
+                        if (toolPerCellIndex < toolLineIndex) toolLineIndex++;
+                        if (toolPerCellIndex < toolOutsideIndex) toolOutsideIndex++;
+                        toolConstraints.splice(++toolPerCellIndex, 0, info.name);
+                     }
+                    if (!perCellConstraints.includes(info.name)) perCellConstraints.push(info.name);
                 } else if (info.type === "outside") {
                     if (!toolConstraints.includes(info.name)) {
                         if (toolOutsideIndex < toolLineIndex) toolLineIndex++;
@@ -1590,12 +2542,479 @@
             oneCellAtATimeTools = [...perCellConstraints, ...draggableConstraints, ...draggableCosmetics, ...newConstraintInfo.filter(info => info.type === "cage").map(info => info.name)];
             draggableTools = [...draggableConstraints, ...draggableCosmetics];
             multicellTools = [...multicellConstraints, ...multicellCosmetics];
+            ensureCustomConstraintStorage();
         };
 
         // Tooltips
         for (let info of newConstraintInfo) {
             descriptions[info.name] = info.tooltip;
         }
+
+        let selectedCustomDefinitionIndex = 0;
+        let customConstraintManagerOverlay = null;
+        let customManagerPreviousDisableInputs = null;
+
+        const escapeHtml = function(value) {
+            return String(value || "")
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+        };
+
+        const customVariablesJson = function(definition) {
+            return JSON.stringify((definition.variables || []).map(variable => ({
+                name: variable.name,
+                label: variable.label,
+                type: variable.type,
+                defaultValue: variable.defaultValue,
+            })), null, 2);
+        };
+
+        const customInstancesForDefinition = function(definition) {
+            const info = customConstraintInfos().find(candidate => candidate.customDefinitionId === definition.id);
+            if (!info) return { info: null, instances: [] };
+            return { info, instances: constraints[cID(info.name)] || [] };
+        };
+
+        const describeCustomInstance = function(info, instance) {
+            const groups = customGroupsForInstance(info, instance);
+            if (!groups.length) return "No cells";
+            return groups.map(group => formatCustomCells(group).join(" ")).join(" | ");
+        };
+
+        const closeCustomConstraintManager = function() {
+            if (customConstraintManagerOverlay) {
+                customConstraintManagerOverlay.style.display = "none";
+            }
+            if (customManagerPreviousDisableInputs !== null) {
+                disableInputs = customManagerPreviousDisableInputs;
+                customManagerPreviousDisableInputs = null;
+            }
+        };
+
+        const ensureCustomManagerOverlay = function() {
+            if (customConstraintManagerOverlay) return;
+            const style = document.createElement("style");
+            style.textContent = `
+                #fpcc-overlay {
+                    position: fixed;
+                    inset: 0;
+                    z-index: 100000;
+                    display: none;
+                    align-items: center;
+                    justify-content: center;
+                    background: rgba(0, 0, 0, 0.45);
+                    font-family: Arial, sans-serif;
+                    outline: none;
+                }
+                #fpcc-panel {
+                    width: min(1180px, calc(100vw - 48px));
+                    height: min(760px, calc(100vh - 48px));
+                    background: #f4f4f4;
+                    color: #111;
+                    border: 1px solid #222;
+                    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.35);
+                    display: grid;
+                    grid-template-columns: 280px 1fr;
+                }
+                #fpcc-overlay.fpcc-dark #fpcc-panel {
+                    background: #252525;
+                    color: #eee;
+                    border-color: #777;
+                }
+                .fpcc-list {
+                    border-right: 1px solid #999;
+                    padding: 14px;
+                    overflow: auto;
+                }
+                .fpcc-main {
+                    padding: 14px 16px;
+                    overflow: auto;
+                }
+                .fpcc-header {
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    gap: 8px;
+                    margin-bottom: 12px;
+                }
+                .fpcc-title {
+                    font-size: 20px;
+                    font-weight: 700;
+                }
+                .fpcc-row {
+                    display: grid;
+                    grid-template-columns: 150px minmax(0, 1fr);
+                    gap: 8px;
+                    align-items: center;
+                    margin-bottom: 8px;
+                }
+                .fpcc-row label {
+                    font-weight: 700;
+                    font-size: 13px;
+                }
+                .fpcc-row input,
+                .fpcc-row select,
+                .fpcc-row textarea {
+                    width: 100%;
+                    box-sizing: border-box;
+                    font: 13px Arial, sans-serif;
+                    padding: 6px 7px;
+                    border: 1px solid #999;
+                    border-radius: 3px;
+                    background: #fff;
+                    color: #111;
+                }
+                #fpcc-overlay.fpcc-dark .fpcc-row input,
+                #fpcc-overlay.fpcc-dark .fpcc-row select,
+                #fpcc-overlay.fpcc-dark .fpcc-row textarea {
+                    background: #111;
+                    color: #eee;
+                    border-color: #666;
+                }
+                .fpcc-row textarea {
+                    min-height: 150px;
+                    resize: vertical;
+                    font-family: Consolas, monospace;
+                }
+                .fpcc-source textarea {
+                    min-height: 260px;
+                }
+                .fpcc-actions {
+                    display: flex;
+                    flex-wrap: wrap;
+                    gap: 8px;
+                    margin: 10px 0;
+                }
+                .fpcc-actions button,
+                .fpcc-list button,
+                .fpcc-close {
+                    border: 1px solid #777;
+                    background: #fff;
+                    color: #111;
+                    padding: 7px 10px;
+                    border-radius: 3px;
+                    cursor: pointer;
+                    font: 13px Arial, sans-serif;
+                }
+                #fpcc-overlay.fpcc-dark .fpcc-actions button,
+                #fpcc-overlay.fpcc-dark .fpcc-list button,
+                #fpcc-overlay.fpcc-dark .fpcc-close {
+                    background: #333;
+                    color: #eee;
+                    border-color: #777;
+                }
+                .fpcc-list-item {
+                    width: 100%;
+                    text-align: left;
+                    margin-bottom: 6px;
+                }
+                .fpcc-list-item.fpcc-selected {
+                    border-color: #335cff;
+                    background: #dfe6ff;
+                }
+                #fpcc-overlay.fpcc-dark .fpcc-list-item.fpcc-selected {
+                    background: #26315f;
+                }
+                .fpcc-help {
+                    font-size: 12px;
+                    opacity: 0.78;
+                    margin: -2px 0 10px 158px;
+                }
+                .fpcc-instance {
+                    border-top: 1px solid #aaa;
+                    padding: 9px 0;
+                }
+                .fpcc-instance-title {
+                    font-weight: 700;
+                    margin-bottom: 6px;
+                }
+                .fpcc-json-output {
+                    min-height: 80px;
+                }
+            `;
+            document.head.appendChild(style);
+            customConstraintManagerOverlay = document.createElement("div");
+            customConstraintManagerOverlay.id = "fpcc-overlay";
+            customConstraintManagerOverlay.tabIndex = -1;
+            document.body.appendChild(customConstraintManagerOverlay);
+            const blockFpuzzlesEvent = function(event) {
+                event.stopPropagation();
+                if (event.type === "wheel" || event.type === "contextmenu") {
+                    event.preventDefault();
+                }
+                if (event.type === "keydown" && event.key === "Escape") {
+                    event.preventDefault();
+                    closeCustomConstraintManager();
+                }
+            };
+            [
+                "mousedown",
+                "mouseup",
+                "mousemove",
+                "click",
+                "dblclick",
+                "contextmenu",
+                "wheel",
+                "touchstart",
+                "touchmove",
+                "touchend",
+                "keydown",
+                "keyup",
+                "keypress",
+            ].forEach(eventName => customConstraintManagerOverlay.addEventListener(eventName, blockFpuzzlesEvent));
+        };
+
+        const readCustomDefinitionFromForm = function(existingDefinition) {
+            const variablesRaw = document.getElementById("fpcc-variables").value.trim();
+            let variables = [];
+            if (variablesRaw) {
+                variables = JSON.parse(variablesRaw);
+                if (!Array.isArray(variables)) throw new Error("Variables must be a JSON array.");
+            }
+            return normalizeCustomDefinition({
+                id: existingDefinition ? existingDefinition.id : undefined,
+                name: document.getElementById("fpcc-name").value,
+                type: document.getElementById("fpcc-placement").value,
+                logicType: document.getElementById("fpcc-logic").value,
+                source: document.getElementById("fpcc-source").value,
+                nfa: document.getElementById("fpcc-nfa").value.trim(),
+                table: document.getElementById("fpcc-table").value.trim(),
+                color: document.getElementById("fpcc-color").value,
+                colorDark: document.getElementById("fpcc-color-dark").value,
+                lineWidth: parseFloat(document.getElementById("fpcc-line-width").value),
+                symbol: document.getElementById("fpcc-symbol").value,
+                variables,
+            });
+        };
+
+        const renderCustomConstraintManager = function() {
+            ensureCustomManagerOverlay();
+            selectedCustomDefinitionIndex = Math.max(0, Math.min(selectedCustomDefinitionIndex, customConstraintDefinitions.length - 1));
+            const definition = customConstraintDefinitions[selectedCustomDefinitionIndex] || normalizeCustomDefinition({
+                name: "Custom Constraint",
+                source: fallbackCustomConstraintSource,
+            });
+            const { info, instances } = customInstancesForDefinition(definition);
+            const listHtml = customConstraintDefinitions.map((def, index) => `
+                <button class="fpcc-list-item ${index === selectedCustomDefinitionIndex ? "fpcc-selected" : ""}" data-fpcc-select="${index}">
+                    ${escapeHtml(def.name)}
+                    <br><small>${escapeHtml(def.type)} / ${escapeHtml(def.logicType)}</small>
+                </button>
+            `).join("");
+            const instanceHtml = info ? instances.map((instance, index) => {
+                const args = customArgsForInstance(definition, instance);
+                const variableInputs = (definition.variables || []).map(variable => `
+                    <div class="fpcc-row">
+                        <label>${escapeHtml(variable.label)}</label>
+                        <input data-fpcc-instance="${index}" data-fpcc-variable="${escapeHtml(variable.name)}" value="${escapeHtml(args[variable.name])}">
+                    </div>
+                `).join("");
+                return `
+                    <div class="fpcc-instance">
+                        <div class="fpcc-instance-title">Instance ${index + 1}: ${escapeHtml(describeCustomInstance(info, instance))}</div>
+                        ${variableInputs || "<div class=\"fpcc-help\" style=\"margin-left:0\">No variables configured for this definition.</div>"}
+                    </div>
+                `;
+            }).join("") : "";
+
+            customConstraintManagerOverlay.className = boolSettings["Dark Mode"] ? "fpcc-dark" : "";
+            customConstraintManagerOverlay.innerHTML = `
+                <div id="fpcc-panel">
+                    <div class="fpcc-list">
+                        <div class="fpcc-header">
+                            <div class="fpcc-title">Custom</div>
+                        </div>
+                        ${listHtml || "<div class=\"fpcc-help\" style=\"margin-left:0\">No custom constraints yet.</div>"}
+                        <div class="fpcc-actions">
+                            <button id="fpcc-add">New</button>
+                            <button id="fpcc-import">Import</button>
+                            <button id="fpcc-export">Export</button>
+                        </div>
+                        <textarea id="fpcc-json-output" class="fpcc-json-output" readonly placeholder="Exported JSON appears here."></textarea>
+                    </div>
+                    <div class="fpcc-main">
+                        <div class="fpcc-header">
+                            <div class="fpcc-title">Custom Constraint Manager</div>
+                            <button class="fpcc-close" id="fpcc-close">Close</button>
+                        </div>
+                        <div class="fpcc-row">
+                            <label>Name</label>
+                            <input id="fpcc-name" value="${escapeHtml(definition.name)}">
+                        </div>
+                        <div class="fpcc-row">
+                            <label>Placement</label>
+                            <select id="fpcc-placement">
+                                <option value="line" ${definition.type === "line" ? "selected" : ""}>Line</option>
+                                <option value="cell" ${definition.type === "cell" ? "selected" : ""}>Cell marker</option>
+                                <option value="cage" ${definition.type === "cage" ? "selected" : ""}>Region/cage</option>
+                                <option value="outside" ${definition.type === "outside" ? "selected" : ""}>Outside clue</option>
+                            </select>
+                        </div>
+                        <div class="fpcc-row">
+                            <label>Logic</label>
+                            <select id="fpcc-logic">
+                                <option value="nfa" ${definition.logicType === "nfa" ? "selected" : ""}>JS NFA state machine</option>
+                                <option value="binary" ${definition.logicType === "binary" ? "selected" : ""}>JS binary lookup</option>
+                                <option value="precompiled-nfa" ${definition.logicType === "precompiled-nfa" ? "selected" : ""}>Precompiled NFA</option>
+                                <option value="precompiled-binary" ${definition.logicType === "precompiled-binary" ? "selected" : ""}>Precompiled binary lookup</option>
+                            </select>
+                        </div>
+                        <div class="fpcc-row">
+                            <label>Color</label>
+                            <input id="fpcc-color" value="${escapeHtml(definition.color)}">
+                        </div>
+                        <div class="fpcc-row">
+                            <label>Dark color</label>
+                            <input id="fpcc-color-dark" value="${escapeHtml(definition.colorDark)}">
+                        </div>
+                        <div class="fpcc-row">
+                            <label>Line width</label>
+                            <input id="fpcc-line-width" type="number" step="0.01" min="0.03" max="1" value="${escapeHtml(definition.lineWidth)}">
+                        </div>
+                        <div class="fpcc-row">
+                            <label>Symbol</label>
+                            <input id="fpcc-symbol" value="${escapeHtml(definition.symbol)}">
+                        </div>
+                        <div class="fpcc-row">
+                            <label>Variables JSON</label>
+                            <textarea id="fpcc-variables">${escapeHtml(customVariablesJson(definition))}</textarea>
+                        </div>
+                        <div class="fpcc-help">Variables are available to source as params.name. The first variable is typable for outside clues.</div>
+                        <div class="fpcc-row fpcc-source">
+                            <label>Source</label>
+                            <textarea id="fpcc-source" spellcheck="false">${escapeHtml(definition.source)}</textarea>
+                        </div>
+                        <div class="fpcc-row">
+                            <label>Precompiled NFA</label>
+                            <textarea id="fpcc-nfa" spellcheck="false">${escapeHtml(definition.nfa)}</textarea>
+                        </div>
+                        <div class="fpcc-row">
+                            <label>Precompiled table</label>
+                            <textarea id="fpcc-table" spellcheck="false">${escapeHtml(definition.table)}</textarea>
+                        </div>
+                        <div class="fpcc-actions">
+                            <button id="fpcc-save">Save</button>
+                            <button id="fpcc-validate">Validate compile</button>
+                            <button id="fpcc-delete">Delete</button>
+                        </div>
+                        <div class="fpcc-title" style="font-size:16px;margin-top:14px;">Placed Instances</div>
+                        ${instanceHtml || "<div class=\"fpcc-help\" style=\"margin-left:0\">No placed instances for this definition.</div>"}
+                    </div>
+                </div>
+            `;
+
+            customConstraintManagerOverlay.querySelectorAll("[data-fpcc-select]").forEach(button => {
+                button.addEventListener("click", () => {
+                    selectedCustomDefinitionIndex = parseInt(button.getAttribute("data-fpcc-select"), 10);
+                    renderCustomConstraintManager();
+                });
+            });
+            customConstraintManagerOverlay.querySelector("#fpcc-close").addEventListener("click", closeCustomConstraintManager);
+            customConstraintManagerOverlay.querySelector("#fpcc-add").addEventListener("click", () => {
+                customConstraintDefinitions.push(normalizeCustomDefinition({
+                    name: `Custom Constraint ${customConstraintDefinitions.length + 1}`,
+                    source: fallbackCustomConstraintSource,
+                }));
+                selectedCustomDefinitionIndex = customConstraintDefinitions.length - 1;
+                saveCustomConstraintDefinitions();
+                refreshCustomConstraintRegistration();
+                renderCustomConstraintManager();
+            });
+            customConstraintManagerOverlay.querySelector("#fpcc-save").addEventListener("click", () => {
+                try {
+                    const oldDefinition = customConstraintDefinitions[selectedCustomDefinitionIndex];
+                    const newDefinition = readCustomDefinitionFromForm(oldDefinition);
+                    if (oldDefinition && cID(oldDefinition.name) !== cID(newDefinition.name) && constraints[cID(oldDefinition.name)] && !constraints[cID(newDefinition.name)]) {
+                        constraints[cID(newDefinition.name)] = constraints[cID(oldDefinition.name)];
+                    }
+                    customConstraintDefinitions[selectedCustomDefinitionIndex] = newDefinition;
+                    saveCustomConstraintDefinitions();
+                    refreshCustomConstraintRegistration();
+                    renderCustomConstraintManager();
+                } catch (e) {
+                    alert(e.message);
+                }
+            });
+            customConstraintManagerOverlay.querySelector("#fpcc-delete").addEventListener("click", () => {
+                const oldDefinition = customConstraintDefinitions[selectedCustomDefinitionIndex];
+                if (!oldDefinition || !confirm(`Delete "${oldDefinition.name}"? Placed instances for this custom tool will be removed from the active tool list.`)) return;
+                delete constraints[cID(oldDefinition.name)];
+                customConstraintDefinitions.splice(selectedCustomDefinitionIndex, 1);
+                selectedCustomDefinitionIndex = Math.max(0, selectedCustomDefinitionIndex - 1);
+                saveCustomConstraintDefinitions();
+                refreshCustomConstraintRegistration();
+                renderCustomConstraintManager();
+            });
+            customConstraintManagerOverlay.querySelector("#fpcc-validate").addEventListener("click", () => {
+                try {
+                    const candidateDefinition = readCustomDefinitionFromForm(definition);
+                    const compiled = compileCustomConstraint(candidateDefinition, customDefaultArgs(candidateDefinition), size);
+                    alert(compiled.type === "binary" ? "Compiled binary lookup table." : `Compiled NFA (${compiled.nfa.length} chars).`);
+                } catch (e) {
+                    alert(e.message);
+                }
+            });
+            customConstraintManagerOverlay.querySelector("#fpcc-export").addEventListener("click", async () => {
+                const text = JSON.stringify(customConstraintDefinitions, null, 2);
+                customConstraintManagerOverlay.querySelector("#fpcc-json-output").value = text;
+                try {
+                    await navigator.clipboard.writeText(text);
+                } catch (_) {
+                    // The textarea is the fallback for browsers that block clipboard writes.
+                }
+            });
+            customConstraintManagerOverlay.querySelector("#fpcc-import").addEventListener("click", () => {
+                const pasted = prompt("Paste custom constraint JSON:");
+                if (!pasted) return;
+                try {
+                    const parsed = JSON.parse(pasted);
+                    const importedRaw = Array.isArray(parsed)
+                        ? parsed
+                        : parsed.definitions
+                            ? parsed.definitions
+                            : parsed.nfa || parsed.table || parsed.source || parsed.name
+                                ? [parsed]
+                                : [];
+                    const imported = importedRaw.map(normalizeCustomDefinition);
+                    const byId = new Map(customConstraintDefinitions.map((def, index) => [def.id, index]));
+                    for (const definition of imported) {
+                        if (byId.has(definition.id)) {
+                            customConstraintDefinitions[byId.get(definition.id)] = definition;
+                        } else {
+                            customConstraintDefinitions.push(definition);
+                        }
+                    }
+                    saveCustomConstraintDefinitions();
+                    refreshCustomConstraintRegistration();
+                    renderCustomConstraintManager();
+                } catch (e) {
+                    alert(e.message);
+                }
+            });
+            customConstraintManagerOverlay.querySelectorAll("[data-fpcc-instance]").forEach(input => {
+                input.addEventListener("input", () => {
+                    const instanceIndex = parseInt(input.getAttribute("data-fpcc-instance"), 10);
+                    const variableName = input.getAttribute("data-fpcc-variable");
+                    if (!instances[instanceIndex].customArgs) {
+                        instances[instanceIndex].customArgs = customDefaultArgs(definition);
+                    }
+                    instances[instanceIndex].customArgs[variableName] = input.value;
+                    generateCandidates();
+                });
+            });
+        };
+
+        const openCustomConstraintManager = function() {
+            renderCustomConstraintManager();
+            if (customManagerPreviousDisableInputs === null) {
+                customManagerPreviousDisableInputs = disableInputs;
+            }
+            disableInputs = true;
+            customConstraintManagerOverlay.style.display = "flex";
+            customConstraintManagerOverlay.focus();
+        };
 
         // Puzzle title
         // Unfortuantely, there's no way to shim this so it's duplicated in full.
@@ -1682,10 +3101,37 @@
         };
 
         // Multi-column constraint sidebar
+        let customManagerPopupButton = null;
+        const addCustomConstraintManagerPopupButton = function() {
+            const constraintsSidebar = sidebars.find(sb => sb.title === "Constraints");
+            if (!constraintsSidebar) return;
+            const existing = constraintsSidebar.buttons.find(button => button.id === "CustomConstraintManager");
+            if (existing) return;
+            if (!customManagerPopupButton) {
+                customManagerPopupButton = new button(
+                    0,
+                    0,
+                    buttonW,
+                    buttonSH,
+                    ["Constraint Tools"],
+                    "CustomConstraintManager",
+                    "Custom Manager"
+                );
+                customManagerPopupButton.click = function() {
+                    if (!this.hovering()) return;
+                    closePopups();
+                    openCustomConstraintManager();
+                    return true;
+                };
+            }
+            constraintsSidebar.buttons.push(customManagerPopupButton);
+        };
+
         let constraintSidebarWidth = 0;
         const prevCreateSidebarConstraints = createSidebarConstraints;
         createSidebarConstraints = function () {
             prevCreateSidebarConstraints();
+            addCustomConstraintManagerPopupButton();
 
             {
                 const x = gridX - (sidebarDist + sidebarW / 2);

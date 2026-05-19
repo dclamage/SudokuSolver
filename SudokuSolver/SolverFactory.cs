@@ -1010,7 +1010,7 @@ namespace SudokuSolver
                         .Select(cellStr => { var (r, col) = FPuzzlesUtility.ParseCell(cellStr); return r * width + col; })
                         .ToArray();
                     solver.AddConstraint(new NFAConstraint(solver, cellIndices, entry.nfa, entry.name));
-                    AddToConstraintStrings(solver, $"NFAConstraint:{entry.nfa}");
+                    AddToConstraintStrings(solver, $"NFAConstraint:{CustomConstraintCacheKey(cellIndices, entry.nfa)}");
                 }
             }
 
@@ -1027,7 +1027,7 @@ namespace SudokuSolver
                     uint[] tableAB = BinaryLookupConstraint.DecodeTable(entry.table);
                     uint[] tableBA = BinaryLookupConstraint.BuildReverseTable(tableAB, solver.MAX_VALUE);
                     solver.AddConstraint(new BinaryLookupConstraint(solver, ci0, ci1, tableAB, tableBA, entry.name));
-                    AddToConstraintStrings(solver, $"BinaryLookupConstraint:{entry.table}");
+                    AddToConstraintStrings(solver, $"BinaryLookupConstraint:{CustomConstraintCacheKey([ci0, ci1], entry.table)}");
                 }
             }
 
@@ -1528,6 +1528,11 @@ namespace SudokuSolver
                 }
             }
             return builder.ToString();
+        }
+
+        private static string CustomConstraintCacheKey(IEnumerable<int> cellIndices, string payload)
+        {
+            return $"{string.Join(",", cellIndices)}:{payload}";
         }
 
         private static void AddToConstraintStrings(Solver solver, string entry)
