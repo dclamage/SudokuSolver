@@ -491,6 +491,9 @@ public partial class Solver
         // Create an initial seen map based on the standard groups only
         InitSeenMap();
 
+        // Derive innie/outie sum constraints from killer cage / house overlaps
+        AddInnieCageConstraints();
+
         int prevNumLinks = totalWeakLinks;
 
         // Do a single pass on intializing constraints.

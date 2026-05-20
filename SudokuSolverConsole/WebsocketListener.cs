@@ -99,7 +99,7 @@ internal class WebsocketListener : IDisposable
 {
     private WatsonWsServer server;
     private readonly object serverLock = new();
-    private readonly Dictionary<string, CancellationTokenSource> cancellationTokenMap = [];
+    private readonly Dictionary<Guid, CancellationTokenSource> cancellationTokenMap = [];
     private readonly Dictionary<byte[], BaseResponse> trueCandidatesResponseCache = new(new ByteArrayComparer());
     private readonly List<ResponseCacheItem> lastTrueCandidatesResponses = [];
     private List<string> additionalConstraints;
@@ -125,18 +125,18 @@ internal class WebsocketListener : IDisposable
         Console.WriteLine($"Accepting connections from {host}:{port}");
     }
 
-    private void ClientConnected(ClientConnectedEventArgs args)
+    private void ClientConnected(ConnectionEventArgs args)
     {
-        Console.WriteLine("Client connected: " + args.IpPort);
+        Console.WriteLine("Client connected: " + args.Client.IpPort);
     }
 
-    private void ClientDisconnected(ClientDisconnectedEventArgs args)
+    private void ClientDisconnected(DisconnectionEventArgs args)
     {
-        Console.WriteLine("Client disconnected: " + args.IpPort);
-        if (cancellationTokenMap.TryGetValue(args.IpPort, out CancellationTokenSource cancellationToken))
+        Console.WriteLine("Client disconnected: " + args.Client.IpPort);
+        if (cancellationTokenMap.TryGetValue(args.Client.Guid, out CancellationTokenSource cancellationToken))
         {
             cancellationToken.Cancel();
-            _ = cancellationTokenMap.Remove(args.IpPort);
+            _ = cancellationTokenMap.Remove(args.Client.Guid);
         }
     }
 
@@ -144,24 +144,24 @@ internal class WebsocketListener : IDisposable
     {
         string messageString = Encoding.UTF8.GetString(args.Data);
         Message message = JsonSerializer.Deserialize(messageString, WebsocketsJsonContext.Default.Message);
+        Guid clientGuid = args.Client.Guid;
 
-        if (cancellationTokenMap.TryGetValue(args.IpPort, out CancellationTokenSource cancellationTokenSource))
+        if (cancellationTokenMap.TryGetValue(clientGuid, out CancellationTokenSource cancellationTokenSource))
         {
             cancellationTokenSource.Cancel();
         }
 
         if (message.command == "cancel")
         {
-            SendMessage(args.IpPort, new CanceledResponse(message.nonce));
+            SendMessage(clientGuid, new CanceledResponse(message.nonce));
             return;
         }
 
         if (message.dataType == "fpuzzles")
         {
-            cancellationTokenSource = cancellationTokenMap[args.IpPort] = new();
+            cancellationTokenSource = cancellationTokenMap[clientGuid] = new();
             CancellationToken cancellationToken = cancellationTokenSource.Token;
 
-            string ipPort = args.IpPort;
             _ = Task.Run(() =>
             {
                 try
@@ -187,7 +187,7 @@ internal class WebsocketListener : IDisposable
                                 if (trueCandidatesResponseCache.TryGetValue(comparableData, out BaseResponse response))
                                 {
                                     response.nonce = message.nonce;
-                                    SendMessage(ipPort, response);
+                                    SendMessage(clientGuid, response);
                                     return;
                                 }
                             }
@@ -198,31 +198,31 @@ internal class WebsocketListener : IDisposable
                     switch (message.command)
                     {
                         case "truecandidates":
-                            SendTrueCandidates(ipPort, message.nonce, solver, cancellationToken);
+                            SendTrueCandidates(clientGuid, message.nonce, solver, cancellationToken);
                             break;
                         case "solve":
-                            SendSolve(ipPort, message.nonce, solver, cancellationToken);
+                            SendSolve(clientGuid, message.nonce, solver, cancellationToken);
                             break;
                         case "check":
-                            SendCount(ipPort, message.nonce, solver, 2, cancellationToken);
+                            SendCount(clientGuid, message.nonce, solver, 2, cancellationToken);
                             break;
                         case "count":
-                            SendCount(ipPort, message.nonce, solver, 0, cancellationToken);
+                            SendCount(clientGuid, message.nonce, solver, 0, cancellationToken);
                             break;
                         case "estimate":
-                            SendEstimate(ipPort, message.nonce, solver, cancellationToken);
+                            SendEstimate(clientGuid, message.nonce, solver, cancellationToken);
                             break;
                         case "solvepath":
-                            SendSolvePath(ipPort, message.nonce, solver, cancellationToken);
+                            SendSolvePath(clientGuid, message.nonce, solver, cancellationToken);
                             break;
                         case "step":
-                            SendStep(ipPort, message.nonce, solver, cancellationToken);
+                            SendStep(clientGuid, message.nonce, solver, cancellationToken);
                             break;
                     }
                 }
                 catch (OperationCanceledException)
                 {
-                    SendMessage(ipPort, new CanceledResponse(message.nonce));
+                    SendMessage(clientGuid, new CanceledResponse(message.nonce));
                 }
                 catch (Exception e)
                 {
@@ -230,7 +230,7 @@ internal class WebsocketListener : IDisposable
                     {
                         Console.WriteLine(e);
                     }
-                    SendMessage(ipPort, new InvalidResponse(message.nonce) { message = e.Message });
+                    SendMessage(clientGuid, new InvalidResponse(message.nonce) { message = e.Message });
                 }
             }, cancellationToken);
         }
@@ -241,7 +241,7 @@ internal class WebsocketListener : IDisposable
         return solver.customInfo.TryGetValue(option, out object obj) && obj is bool value && value;
     }
 
-    private void SendMessage(string ipPort, BaseResponse response)
+    private void SendMessage(Guid clientGuid, BaseResponse response)
     {
         string json = response switch
         {
@@ -256,11 +256,11 @@ internal class WebsocketListener : IDisposable
         };
         lock (serverLock)
         {
-            _ = server.SendAsync(ipPort, json);
+            _ = server.SendAsync(clientGuid, json);
         }
     }
 
-    private void SendTrueCandidatesMessage(string ipPort, BaseResponse response, Solver request, CancellationToken cancellationToken, byte[] trueCandidatesKey = null)
+    private void SendTrueCandidatesMessage(Guid clientGuid, BaseResponse response, Solver request, CancellationToken cancellationToken, byte[] trueCandidatesKey = null)
     {
         lock (serverLock)
         {
@@ -279,7 +279,7 @@ internal class WebsocketListener : IDisposable
                 }
             }
 
-            SendMessage(ipPort, response);
+            SendMessage(clientGuid, response);
         }
     }
 
@@ -287,17 +287,17 @@ internal class WebsocketListener : IDisposable
     /// Update solver to keep only the candidates that are present in the given response.
     /// Send an "invalid" response if the puzzle has no more solutions after this operation.
     /// </summary>
-    /// <param name="ipPort">IP port to send the response message</param>
+    /// <param name="clientGuid">Client GUID to send the response message</param>
     /// <param name="nonce">Nonce of the response message</param>
     /// <param name="solver">Solver to update</param>
     /// <param name="response">Response of a previous "true candidates" request</param>
     /// <param name="keepCandidateCondition">A callback that takes the number of solutions for a candidate and returns whether the candidate should be kept in the solver</param>
     /// <returns>Is the puzzle still valid?</returns>
-    private bool KeepCandidatesOfResponse(string ipPort, int nonce, Solver solver, BaseResponse response, Predicate<long> keepCandidateCondition)
+    private bool KeepCandidatesOfResponse(Guid clientGuid, int nonce, Solver solver, BaseResponse response, Predicate<long> keepCandidateCondition)
     {
         if (response is InvalidResponse invalidResponse)
         {
-            SendMessage(ipPort, new InvalidResponse(nonce) { message = invalidResponse.message });
+            SendMessage(clientGuid, new InvalidResponse(nonce) { message = invalidResponse.message });
             return false;
         }
 
@@ -318,7 +318,7 @@ internal class WebsocketListener : IDisposable
                     }
                     if (solver.KeepMask(i, j, mask) == LogicResult.Invalid)
                     {
-                        SendMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
+                        SendMessage(clientGuid, new InvalidResponse(nonce) { message = "No solutions found." });
                         return false;
                     }
                 }
@@ -328,7 +328,7 @@ internal class WebsocketListener : IDisposable
         return true;
     }
 
-    private void SendTrueCandidates(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
+    private void SendTrueCandidates(Guid clientGuid, int nonce, Solver solver, CancellationToken cancellationToken)
     {
         // Accepts an integer option for number of solutions to cap (was previously 'truecandidatescolored' boolean)
         long numSolutionsCap = 1;
@@ -373,7 +373,7 @@ internal class WebsocketListener : IDisposable
                 }
 
                 // Remove candidates that already logically proved to have no solutions
-                if (!KeepCandidatesOfResponse(ipPort, nonce, logicalSolver, item.response, numSolutions => numSolutions != 0))
+                if (!KeepCandidatesOfResponse(clientGuid, nonce, logicalSolver, item.response, numSolutions => numSolutions != 0))
                 {
                     return;
                 }
@@ -381,7 +381,7 @@ internal class WebsocketListener : IDisposable
 
             if (logicalSolver.ConsolidateBoard(cancellationToken: cancellationToken) == LogicResult.Invalid)
             {
-                SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
+                SendTrueCandidatesMessage(clientGuid, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
                 return;
             }
         }
@@ -389,7 +389,7 @@ internal class WebsocketListener : IDisposable
         foreach (ResponseCacheItem item in matchingCacheItems)
         {
             // Remove candidates that already proved (by logic or by brute force) to have no solutions
-            if (!KeepCandidatesOfResponse(ipPort, nonce, solver, item.response, numSolutions => numSolutions > 0))
+            if (!KeepCandidatesOfResponse(clientGuid, nonce, solver, item.response, numSolutions => numSolutions > 0))
             {
                 return;
             }
@@ -404,7 +404,7 @@ internal class WebsocketListener : IDisposable
 
         if (numSolutions == null || numSolutions.All(candidate => candidate == 0))
         {
-            SendTrueCandidatesMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
+            SendTrueCandidatesMessage(clientGuid, new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
             return;
         }
 
@@ -455,39 +455,39 @@ internal class WebsocketListener : IDisposable
         {
             if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
             {
-                SendTrueCandidatesMessage(ipPort, response, request, cancellationToken, comparableData);
+                SendTrueCandidatesMessage(clientGuid, response, request, cancellationToken, comparableData);
             }
             else
             {
-                SendTrueCandidatesMessage(ipPort, response, request, cancellationToken);
+                SendTrueCandidatesMessage(clientGuid, response, request, cancellationToken);
             }
         }
     }
 
-    private void SendSolve(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
+    private void SendSolve(Guid clientGuid, int nonce, Solver solver, CancellationToken cancellationToken)
     {
         if (!solver.FindSolution(multiThread: !singleThreaded, isRandom: true, cancellationToken: cancellationToken))
         {
-            SendMessage(ipPort, new InvalidResponse(nonce) { message = "No solutions found." });
+            SendMessage(clientGuid, new InvalidResponse(nonce) { message = "No solutions found." });
         }
         else
         {
-            SendMessage(ipPort, new SolvedResponse(nonce)
+            SendMessage(clientGuid, new SolvedResponse(nonce)
             {
                 solution = solver.FlatBoard.Select(SolverUtility.GetValue).ToArray()
             });
         }
     }
 
-    private void SendCount(string ipPort, int nonce, Solver solver, long maxSolutions, CancellationToken cancellationToken)
+    private void SendCount(Guid clientGuid, int nonce, Solver solver, long maxSolutions, CancellationToken cancellationToken)
     {
         long numSolutions = solver.CountSolutions(maxSolutions, multiThread: !singleThreaded, cancellationToken: cancellationToken, progressEvent: (count) =>
         {
-            SendMessage(ipPort, new CountResponse(nonce) { count = count, inProgress = true });
+            SendMessage(clientGuid, new CountResponse(nonce) { count = count, inProgress = true });
         });
         if (!cancellationToken.IsCancellationRequested)
         {
-            SendMessage(ipPort, new CountResponse(nonce) { count = numSolutions, inProgress = false });
+            SendMessage(clientGuid, new CountResponse(nonce) { count = numSolutions, inProgress = false });
         }
     }
 
@@ -501,14 +501,14 @@ internal class WebsocketListener : IDisposable
         return sb;
     }
 
-    private void SendSolvePath(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
+    private void SendSolvePath(Guid clientGuid, int nonce, Solver solver, CancellationToken cancellationToken)
     {
         List<LogicalStepDesc> logicalStepDescs = [];
         LogicResult logicResult = solver.ConsolidateBoard(logicalStepDescs, cancellationToken);
-        SendLogicResponse(ipPort, nonce, solver, logicResult, StepsDescription(logicalStepDescs));
+        SendLogicResponse(clientGuid, nonce, solver, logicResult, StepsDescription(logicalStepDescs));
     }
 
-    private void SendStep(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
+    private void SendStep(Guid clientGuid, int nonce, Solver solver, CancellationToken cancellationToken)
     {
         if (solver.customInfo["OriginalCenterMarks"] is uint[,] originalCenterMarks)
         {
@@ -523,7 +523,7 @@ internal class WebsocketListener : IDisposable
                     {
                         StringBuilder sb = new();
                         _ = sb.Append("Initial candidates.");
-                        SendLogicResponse(ipPort, nonce, solver, LogicResult.Changed, sb);
+                        SendLogicResponse(clientGuid, nonce, solver, LogicResult.Changed, sb);
                         return;
                     }
                 }
@@ -532,10 +532,10 @@ internal class WebsocketListener : IDisposable
 
         List<LogicalStepDesc> logicalStepDescs = [];
         LogicResult logicResult = solver.StepLogic(logicalStepDescs, cancellationToken);
-        SendLogicResponse(ipPort, nonce, solver, logicResult, StepsDescription(logicalStepDescs));
+        SendLogicResponse(clientGuid, nonce, solver, logicResult, StepsDescription(logicalStepDescs));
     }
 
-    private void SendLogicResponse(string ipPort, int nonce, Solver solver, LogicResult logicResult, StringBuilder description)
+    private void SendLogicResponse(Guid clientGuid, int nonce, Solver solver, LogicResult logicResult, StringBuilder description)
     {
         if (!description.ToString().EndsWith(Environment.NewLine))
         {
@@ -574,7 +574,7 @@ internal class WebsocketListener : IDisposable
                 cells[i] = new() { value = 0, candidates = candidates.ToArray() };
             }
         }
-        SendMessage(ipPort, new LogicalResponse(nonce)
+        SendMessage(clientGuid, new LogicalResponse(nonce)
         {
             cells = cells,
             message = description.ToString().TrimStart(),
@@ -582,7 +582,7 @@ internal class WebsocketListener : IDisposable
         });
     }
 
-    private void SendEstimate(string ipPort, int nonce, Solver solver, CancellationToken cancellationToken)
+    private void SendEstimate(Guid clientGuid, int nonce, Solver solver, CancellationToken cancellationToken)
     {
         const double z95 = 1.96;
         solver.EstimateSolutions(
@@ -597,7 +597,7 @@ internal class WebsocketListener : IDisposable
                 double relErrPercent = estimate != 0 ? 100.0 * (z95 * stderr) / estimate : 0.0;
                 if (!cancellationToken.IsCancellationRequested)
                 {
-                    SendMessage(ipPort, new EstimateResponse(nonce)
+                    SendMessage(clientGuid, new EstimateResponse(nonce)
                     {
                         estimate = estimate,
                         stderr = stderr,

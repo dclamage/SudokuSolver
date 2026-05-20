@@ -4,11 +4,10 @@ namespace SudokuTests;
 public class ArrowTests
 {
     [TestMethod]
-    [ExpectedException(typeof(ArgumentException))]
     public void MustSupplyTwoGroups()
     {
         // Only providing one group where two are required
-        var arrow = new ArrowSumConstraint(SolverFactory.CreateBlank(9), "r1c1");
+        Assert.ThrowsExactly<ArgumentException>(() => new ArrowSumConstraint(SolverFactory.CreateBlank(9), "r1c1"));
     }
 
     [TestMethod]

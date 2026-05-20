@@ -1447,32 +1447,55 @@
                 delete puzzle.whispers;
             }
 
-            string = compressor.compressToBase64(JSON.stringify(puzzle));
-            origImportPuzzle(string, clearHistory);
-            restoreCustomInstanceMetadata(puzzle);
-
-            // Restore active constraint set from puzzle, or auto-detect from placed constraints
+            // Determine active constraints BEFORE calling origImportPuzzle.
+            // f-puzzles calls createGrid → createConstraints inside origImportPuzzle, which
+            // initialises the constraints[] map from toolConstraints.  We must update
+            // puzzleActiveConstraints (and therefore toolConstraints) first so every
+            // constraint that needs to be placed has a slot in constraints[].
+            const allKnownNames = [...(builtinToolConstraints || []), ...newConstraintInfo.map(i => i.name)];
             if (Array.isArray(puzzle.activeConstraints)) {
                 puzzleActiveConstraints = new Set(puzzle.activeConstraints);
+                refreshCustomConstraintRegistration();
             } else {
-                // Old puzzle with no stored set — auto-detect from what's actually placed
+                // Old puzzle: activate everything so createConstraints registers all slots,
+                // then we'll trim to only what was actually placed afterwards.
+                puzzleActiveConstraints = new Set(allKnownNames);
+                refreshCustomConstraintRegistration();
+            }
+
+            // Suppress the createGrid override's reset while origImportPuzzle runs
+            importingPuzzle = true;
+            try {
+                string = compressor.compressToBase64(JSON.stringify(puzzle));
+                origImportPuzzle(string, clearHistory);
+            } finally {
+                importingPuzzle = false;
+            }
+            restoreCustomInstanceMetadata(puzzle);
+
+            // For old puzzles without stored activeConstraints: trim to only used constraints
+            if (!Array.isArray(puzzle.activeConstraints)) {
                 puzzleActiveConstraints = new Set();
-                const allNames = [...(builtinToolConstraints || []), ...newConstraintInfo.map(i => i.name)];
-                for (const name of allNames) {
+                for (const name of allKnownNames) {
                     const id = cID(name);
                     const v = constraints[id];
                     if (Array.isArray(v) ? v.length > 0 : !!v) puzzleActiveConstraints.add(name);
                 }
+                refreshCustomConstraintRegistration();
             }
-            refreshCustomConstraintRegistration();
         };
 
-        // Reset active constraints when the user starts a new puzzle
+        // Flag set during importPuzzle to prevent createGrid from resetting puzzle state
+        let importingPuzzle = false;
+
+        // Reset active constraints when the user starts a new puzzle (not during import)
         const origCreateGrid = createGrid;
         createGrid = function(newSize, clearHistory, refreshCandidates) {
             origCreateGrid(newSize, clearHistory, refreshCandidates);
-            puzzleActiveConstraints = new Set();
-            refreshCustomConstraintRegistration();
+            if (!importingPuzzle) {
+                puzzleActiveConstraints = new Set();
+                refreshCustomConstraintRegistration();
+            }
         };
 
         // Draw the new constraints

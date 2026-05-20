@@ -5,7 +5,8 @@ public class SumGroup
     public SumGroup(Solver solver, List<(int, int)> cells, int excludeValue = 0)
     {
         this.cells = cells.OrderBy(cell => cell.Item1 * solver.WIDTH + cell.Item2).ToList();
-        if (excludeValue >= 1 && excludeValue <= solver.MAX_VALUE)
+        numValues = solver.MAX_VALUE;
+        if (excludeValue >= 1 && excludeValue <= numValues)
         {
             includeMask = solver.ALL_VALUES_MASK & ~ValueMask(excludeValue);
         }
@@ -18,9 +19,9 @@ public class SumGroup
     public (int, int) MinMaxSum(Solver solver)
     {
         // Trivial case of max number of cells
-        if (cells.Count == solver.MAX_VALUE)
+        if (cells.Count == numValues)
         {
-            int sum = (solver.MAX_VALUE * (solver.MAX_VALUE + 1)) / 2;
+            int sum = (numValues * (numValues + 1)) / 2;
             return (sum, sum);
         }
 
@@ -63,7 +64,7 @@ public class SumGroup
         if (numUnsetValues == unsetCells.Count)
         {
             int unsetSum = 0;
-            for (int v = 1; v <= solver.MAX_VALUE; v++)
+            for (int v = 1; v <= numValues; v++)
             {
                 if (HasValue(unsetMask, v))
                 {
@@ -79,7 +80,44 @@ public class SumGroup
             return (setSum + MinValue(unsetMask), setSum + MaxValue(unsetMask));
         }
 
-        // Determine all possible placeable sums and return that range
+        // K>=2: KillerCageSums fast path
+        int numUnset = unsetCells.Count;
+        SumData sumData = SumData.Get(numValues);
+        if (sumData != null && numUnset <= numValues)
+        {
+            uint[] unsetCellMasks = new uint[numUnset];
+            for (int i = 0; i < numUnset; i++)
+            {
+                var (r, c) = unsetCells[i];
+                unsetCellMasks[i] = board[r, c] & includeMask & ~valueSetMask;
+            }
+
+            var kcRow = sumData.KillerCageSums[numUnset];
+            int minTotal = int.MaxValue, maxTotal = 0;
+
+            for (int rs = 1; rs < kcRow.Length; rs++)
+            {
+                uint[] opts = kcRow[rs];
+                if (opts.Length == 0) continue;
+                for (int oi = 0; oi < opts.Length; oi++)
+                {
+                    uint o = opts[oi];
+                    if ((o & ~unsetMask) != 0) continue;
+                    bool valid = true;
+                    for (int i = 0; i < numUnset; i++)
+                        if ((unsetCellMasks[i] & o) == 0) { valid = false; break; }
+                    if (!valid) continue;
+                    int total = setSum + rs;
+                    if (minTotal == int.MaxValue) minTotal = total;
+                    maxTotal = total;
+                    break; // one valid combo per rs is enough
+                }
+            }
+
+            return minTotal == int.MaxValue ? (0, 0) : (minTotal, maxTotal);
+        }
+
+        // Fallback: combination-based approach
         int minValue = MinValue(unsetMask);
         int maxValue = MaxValue(unsetMask);
         List<int> possibleVals = Enumerable.Range(minValue, maxValue).Where(v => HasValue(unsetMask, v)).ToList();
@@ -213,11 +251,11 @@ public class SumGroup
             foreach (int sum in sums)
             {
                 int value = sum - setSum;
-                if (value >= 1 && value <= solver.MAX_VALUE)
+                if (value >= 1 && value <= numValues)
                 {
                     newMask |= ValueMask(value);
                 }
-                else if (value > solver.MAX_VALUE)
+                else if (value > numValues)
                 {
                     break;
                 }
@@ -238,8 +276,6 @@ public class SumGroup
             return LogicResult.None;
         }
 
-        uint[] newMasks;
-
         uint unsetMask = UnsetMask(solver);
 
         // Check for not enough values to fill all the cells
@@ -248,11 +284,65 @@ public class SumGroup
             return LogicResult.Invalid;
         }
 
+        // K>=2: KillerCageSums fast path
+        SumData sumData = SumData.Get(numValues);
+        if (sumData != null && numUnsetCells <= numValues)
+        {
+            uint[] unsetCellMasks = new uint[numUnsetCells];
+            for (int i = 0; i < numUnsetCells; i++)
+            {
+                var (r, c) = unsetCells[i];
+                unsetCellMasks[i] = board[r, c] & includeMask & ~valueSetMask;
+            }
+
+            uint[] cellSupported = new uint[numUnsetCells];
+            var kcRow = sumData.KillerCageSums[numUnsetCells];
+
+            foreach (int s in sums)
+            {
+                int rs = s - setSum;
+                if (rs <= 0 || rs >= kcRow.Length) continue;
+                uint[] opts = kcRow[rs];
+                for (int oi = 0; oi < opts.Length; oi++)
+                {
+                    uint o = opts[oi];
+                    if ((o & ~unsetMask) != 0) continue;
+                    bool valid = true;
+                    for (int i = 0; i < numUnsetCells; i++)
+                        if ((unsetCellMasks[i] & o) == 0) { valid = false; break; }
+                    if (!valid) continue;
+                    for (int i = 0; i < numUnsetCells; i++)
+                        cellSupported[i] |= unsetCellMasks[i] & o;
+                }
+            }
+
+            bool changed = false, invalid = false;
+            int unsetIndex = 0;
+            for (int i = 0; i < cells.Count; i++)
+            {
+                var cell = cells[i];
+                uint curMask = board[cell.Item1, cell.Item2];
+                if (GetSetValue(curMask) == 0)
+                {
+                    uint newMask = curMask & cellSupported[unsetIndex];
+                    if (resultMasks[i] != newMask)
+                    {
+                        resultMasks[i] = newMask;
+                        changed = true;
+                        if (newMask == 0) invalid = true;
+                    }
+                    unsetIndex++;
+                }
+            }
+            return invalid ? LogicResult.Invalid : (changed ? LogicResult.Changed : LogicResult.None);
+        }
+
+        // Fallback: combination/permutation approach
         int minValue = MinValue(unsetMask);
         int maxValue = MaxValue(unsetMask);
         List<int> possibleVals = Enumerable.Range(minValue, maxValue).Where(v => HasValue(unsetMask, v)).ToList();
 
-        newMasks = new uint[numUnsetCells];
+        uint[] newMasks = new uint[numUnsetCells];
         foreach (var combination in possibleVals.Combinations(unsetCells.Count))
         {
             int curSum = setSum + combination.Sum();
@@ -283,29 +373,24 @@ public class SumGroup
             }
         }
 
-        bool changed = false;
-        bool invalid = false;
-        int unsetIndex = 0;
+        bool ch = false, inv = false;
+        int ui = 0;
         for (int i = 0; i < cells.Count; i++)
         {
             var cell = cells[i];
             uint curMask = board[cell.Item1, cell.Item2];
             if (GetSetValue(curMask) == 0)
             {
-                uint newMask = curMask & newMasks[unsetIndex++];
+                uint newMask = curMask & newMasks[ui++];
                 if (resultMasks[i] != newMask)
                 {
                     resultMasks[i] = newMask;
-                    changed = true;
-
-                    if (newMask == 0)
-                    {
-                        invalid = true;
-                    }
+                    ch = true;
+                    if (newMask == 0) inv = true;
                 }
             }
         }
-        return invalid ? LogicResult.Invalid : (changed ? LogicResult.Changed : LogicResult.None);
+        return inv ? LogicResult.Invalid : (ch ? LogicResult.Changed : LogicResult.None);
     }
 
     private void ApplySumResult(Solver solver, uint[] resultMasks)
@@ -319,7 +404,6 @@ public class SumGroup
 
     public List<int> PossibleSums(Solver solver)
     {
-        int MAX_VALUE = solver.MAX_VALUE;
         var board = solver.Board;
 
         var unsetCells = cells;
@@ -341,7 +425,7 @@ public class SumGroup
             List<int> sums = new();
             var unsetCell = unsetCells[0];
             uint curMask = board[unsetCell.Item1, unsetCell.Item2];
-            for (int v = 1; v <= MAX_VALUE; v++)
+            for (int v = 1; v <= numValues; v++)
             {
                 if ((curMask & ValueMask(v)) != 0)
                 {
@@ -351,54 +435,81 @@ public class SumGroup
             return sums;
         }
 
-        uint[] newMasks;
-
-        SortedSet<int> sumsSet = new();
         uint unsetMask = UnsetMask(solver);
         if (ValueCount(unsetMask) < unsetCells.Count)
         {
             return new();
         }
 
+        // K>=2: KillerCageSums fast path
+        SumData sumData = SumData.Get(numValues);
+        if (sumData != null && numUnsetCells <= numValues)
+        {
+            uint[] unsetCellMasks = new uint[numUnsetCells];
+            for (int i = 0; i < numUnsetCells; i++)
+            {
+                var (r, c) = unsetCells[i];
+                unsetCellMasks[i] = board[r, c] & includeMask & ~valueSetMask;
+            }
+
+            SortedSet<int> sumsSet = new();
+            var kcRow = sumData.KillerCageSums[numUnsetCells];
+
+            for (int rs = 1; rs < kcRow.Length; rs++)
+            {
+                uint[] opts = kcRow[rs];
+                if (opts.Length == 0) continue;
+                for (int oi = 0; oi < opts.Length; oi++)
+                {
+                    uint o = opts[oi];
+                    if ((o & ~unsetMask) != 0) continue;
+                    bool valid = true;
+                    for (int i = 0; i < numUnsetCells; i++)
+                        if ((unsetCellMasks[i] & o) == 0) { valid = false; break; }
+                    if (!valid) continue;
+                    sumsSet.Add(setSum + rs);
+                    break; // one valid combo per rs is enough
+                }
+            }
+
+            return sumsSet.ToList();
+        }
+
+        // Fallback
+        SortedSet<int> sumsSetFallback = new();
         int minValue = MinValue(unsetMask);
         int maxValue = MaxValue(unsetMask);
         List<int> possibleVals = Enumerable.Range(minValue, maxValue).Where(v => HasValue(unsetMask, v)).ToList();
 
-        newMasks = new uint[numUnsetCells];
+        uint[] newMasks = new uint[numUnsetCells];
         foreach (var combination in possibleVals.Combinations(unsetCells.Count))
         {
             int curSum = setSum + combination.Sum();
-            if (!sumsSet.Contains(curSum))
+            if (!sumsSetFallback.Contains(curSum))
             {
-                // Find if any permutation fits into the cells
                 foreach (var perm in combination.Permutations())
                 {
                     bool needCheck = false;
                     for (int i = 0; i < numUnsetCells; i++)
                     {
                         uint valueMask = ValueMask(perm[i]);
-                        if ((newMasks[i] & valueMask) == 0)
-                        {
-                            needCheck = true;
-                            break;
-                        }
+                        if ((newMasks[i] & valueMask) == 0) { needCheck = true; break; }
                     }
 
                     if (needCheck && solver.CanPlaceDigits(unsetCells, perm))
                     {
-                        sumsSet.Add(curSum);
+                        sumsSetFallback.Add(curSum);
                         break;
                     }
                 }
             }
         }
 
-        return sumsSet.ToList();
+        return sumsSetFallback.ToList();
     }
 
     public bool IsSumPossible(Solver solver, int sum)
     {
-        int MAX_VALUE = solver.MAX_VALUE;
         var board = solver.Board;
 
         var unsetCells = cells;
@@ -425,10 +536,8 @@ public class SumGroup
             var unsetCell = unsetCells[0];
             uint curMask = board[unsetCell.Item1, unsetCell.Item2];
             int valueNeeded = sum - setSum;
-            return valueNeeded >= 1 && valueNeeded <= MAX_VALUE && HasValue(curMask, valueNeeded);
+            return valueNeeded >= 1 && valueNeeded <= numValues && HasValue(curMask, valueNeeded);
         }
-
-        uint[] newMasks;
 
         uint unsetMask = UnsetMask(solver);
         if (ValueCount(unsetMask) < unsetCells.Count)
@@ -436,27 +545,53 @@ public class SumGroup
             return false;
         }
 
+        // K>=2: KillerCageSums fast path
+        SumData sumData = SumData.Get(numValues);
+        if (sumData != null && numUnsetCells <= numValues)
+        {
+            uint[] unsetCellMasks = new uint[numUnsetCells];
+            for (int i = 0; i < numUnsetCells; i++)
+            {
+                var (r, c) = unsetCells[i];
+                unsetCellMasks[i] = board[r, c] & includeMask & ~valueSetMask;
+            }
+
+            int rs = sum - setSum;
+            var kcRow = sumData.KillerCageSums[numUnsetCells];
+            if (rs > 0 && rs < kcRow.Length)
+            {
+                uint[] opts = kcRow[rs];
+                for (int oi = 0; oi < opts.Length; oi++)
+                {
+                    uint o = opts[oi];
+                    if ((o & ~unsetMask) != 0) continue;
+                    bool valid = true;
+                    for (int i = 0; i < numUnsetCells; i++)
+                        if ((unsetCellMasks[i] & o) == 0) { valid = false; break; }
+                    if (!valid) continue;
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // Fallback
         int minValue = MinValue(unsetMask);
         int maxValue = MaxValue(unsetMask);
         List<int> possibleVals = Enumerable.Range(minValue, maxValue).Where(v => HasValue(unsetMask, v)).ToList();
 
-        newMasks = new uint[numUnsetCells];
+        uint[] newMasks = new uint[numUnsetCells];
         foreach (var combination in possibleVals.Combinations(unsetCells.Count))
         {
             if (setSum + combination.Sum() == sum)
             {
-                // Find if any permutation fits into the cells
                 foreach (var perm in combination.Permutations())
                 {
                     bool needCheck = false;
                     for (int i = 0; i < numUnsetCells; i++)
                     {
                         uint valueMask = ValueMask(perm[i]);
-                        if ((newMasks[i] & valueMask) == 0)
-                        {
-                            needCheck = true;
-                            break;
-                        }
+                        if ((newMasks[i] & valueMask) == 0) { needCheck = true; break; }
                     }
 
                     if (needCheck && solver.CanPlaceDigits(unsetCells, perm))
@@ -512,4 +647,5 @@ public class SumGroup
     public IReadOnlyList<(int, int)> Cells => cells;
     private readonly List<(int, int)> cells;
     private readonly uint includeMask;
+    private readonly int numValues;
 }
