@@ -390,6 +390,39 @@
 
     syncCustomConstraintInfo();
 
+    // ===== Per-puzzle constraint picker state =====
+    // Which constraints appear in the Constraint Tools popup for the current puzzle.
+    // Stored in puzzle JSON (activeConstraints field); empty for a new puzzle.
+    let puzzleActiveConstraints = new Set();
+
+    // Set by doShim on first categorizeTools run; used by toolbox to enumerate all constraints
+    let builtinToolConstraints = null;
+
+    // ===== Per-user MRU / frequency tracking (localStorage) =====
+    // Tracks how often the user has added each constraint to a puzzle so the
+    // toolbox can surface frequently/recently used ones.
+    const usageStorageKey = "sudokuSolverConstraintUsageV1";
+
+    const loadConstraintUsage = function() {
+        try {
+            const raw = localStorage.getItem(usageStorageKey);
+            return raw ? JSON.parse(raw) : {};
+        } catch (e) { return {}; }
+    };
+
+    let constraintUsage = loadConstraintUsage();
+
+    const saveConstraintUsage = function() {
+        localStorage.setItem(usageStorageKey, JSON.stringify(constraintUsage));
+    };
+
+    const recordConstraintUsed = function(name) {
+        if (!constraintUsage[name]) constraintUsage[name] = { count: 0, lastUsed: 0 };
+        constraintUsage[name].count++;
+        constraintUsage[name].lastUsed = Date.now();
+        saveConstraintUsage();
+    };
+
     const customDefaultArgs = function(definition) {
         const args = {};
         for (const variable of definition.variables || []) {
@@ -1310,6 +1343,9 @@
                 delete puzzle.dutchwhispers;
             }
 
+            // Persist the puzzle's active constraint set
+            puzzle.activeConstraints = [...puzzleActiveConstraints];
+
             return compressor.compressToBase64(JSON.stringify(puzzle));
         };
 
@@ -1414,6 +1450,29 @@
             string = compressor.compressToBase64(JSON.stringify(puzzle));
             origImportPuzzle(string, clearHistory);
             restoreCustomInstanceMetadata(puzzle);
+
+            // Restore active constraint set from puzzle, or auto-detect from placed constraints
+            if (Array.isArray(puzzle.activeConstraints)) {
+                puzzleActiveConstraints = new Set(puzzle.activeConstraints);
+            } else {
+                // Old puzzle with no stored set — auto-detect from what's actually placed
+                puzzleActiveConstraints = new Set();
+                const allNames = [...(builtinToolConstraints || []), ...newConstraintInfo.map(i => i.name)];
+                for (const name of allNames) {
+                    const id = cID(name);
+                    const v = constraints[id];
+                    if (Array.isArray(v) ? v.length > 0 : !!v) puzzleActiveConstraints.add(name);
+                }
+            }
+            refreshCustomConstraintRegistration();
+        };
+
+        // Reset active constraints when the user starts a new puzzle
+        const origCreateGrid = createGrid;
+        createGrid = function(newSize, clearHistory, refreshCandidates) {
+            origCreateGrid(newSize, clearHistory, refreshCandidates);
+            puzzleActiveConstraints = new Set();
+            refreshCustomConstraintRegistration();
         };
 
         // Draw the new constraints
@@ -2483,52 +2542,78 @@
         registerCustomConstraintClasses();
         ensureCustomConstraintStorage();
 
+
         const origCategorizeTools = categorizeTools;
         categorizeTools = function () {
             origCategorizeTools();
 
-            let toolLineIndex = toolConstraints.indexOf("Palindrome");
-            let toolPerCellIndex = toolConstraints.indexOf("Maximum"); // "Cage" type constraints will go after this group
-            let toolOutsideIndex = toolConstraints.indexOf("Sandwich Sum");
+            // Capture the built-in list once so the Toolbox UI can enumerate them
+            if (!builtinToolConstraints) {
+                builtinToolConstraints = [...toolConstraints];
+            }
+
+            // Filter the built-in picker list down to only puzzle-active constraints
+            toolConstraints = toolConstraints.filter(n => puzzleActiveConstraints.has(n));
+
+            // Find the last visible representative of each insertion zone
+            const lastVisibleOf = function(candidates) {
+                let idx = -1;
+                for (const name of candidates) {
+                    const i = toolConstraints.lastIndexOf(name);
+                    if (i > idx) idx = i;
+                }
+                return idx;
+            };
+
+            const builtinLineNames    = ["Thermometer", "Palindrome", "Arrow", "Between Line"];
+            const builtinCageNames    = ["Extra Region", "Killer Cage", "Clone", "Odd", "Even", "Minimum", "Maximum"];
+            const builtinOutsideNames = ["Little Killer Sum", "Sandwich Sum"];
+
+            let toolLineIndex    = lastVisibleOf(builtinLineNames);
+            let toolPerCellIndex = lastVisibleOf(builtinCageNames);
+            let toolOutsideIndex = lastVisibleOf(builtinOutsideNames);
+
+            // Fallback: if reference constraints were hidden, place new ones at the end
+            const safeEnd = toolConstraints.length - 1;
+            if (toolLineIndex    < 0) toolLineIndex    = safeEnd;
+            if (toolPerCellIndex < 0) toolPerCellIndex = safeEnd;
+            if (toolOutsideIndex < 0) toolOutsideIndex = safeEnd;
 
             for (let info of newConstraintInfo) {
-                const name_cID = cID(info.name);
+                // Always register in behavior arrays regardless of toolbox visibility
                 if (info.type === "line") {
-                    if (!toolConstraints.includes(info.name)) {
-                         // Adjust indices if inserting before them
-                        if (toolLineIndex < toolPerCellIndex) toolPerCellIndex++;
-                        if (toolLineIndex < toolOutsideIndex) toolOutsideIndex++;
-                        toolConstraints.splice(++toolLineIndex, 0, info.name);
-                    }
                     if (!lineConstraints.includes(info.name)) lineConstraints.push(info.name);
                 } else if (info.type === "cage") {
-                     if (!toolConstraints.includes(info.name)) {
-                        if (toolPerCellIndex < toolLineIndex) toolLineIndex++;
-                        if (toolPerCellIndex < toolOutsideIndex) toolOutsideIndex++;
-                        toolConstraints.splice(++toolPerCellIndex, 0, info.name);
-                     }
                     if (!regionConstraints.includes(info.name)) regionConstraints.push(info.name);
                 } else if (info.type === "cell") {
-                     if (!toolConstraints.includes(info.name)) {
-                        if (toolPerCellIndex < toolLineIndex) toolLineIndex++;
-                        if (toolPerCellIndex < toolOutsideIndex) toolOutsideIndex++;
-                        toolConstraints.splice(++toolPerCellIndex, 0, info.name);
-                     }
                     if (!perCellConstraints.includes(info.name)) perCellConstraints.push(info.name);
                 } else if (info.type === "outside") {
-                    if (!toolConstraints.includes(info.name)) {
-                        if (toolOutsideIndex < toolLineIndex) toolLineIndex++;
-                        if (toolOutsideIndex < toolPerCellIndex) toolPerCellIndex++;
-                        toolConstraints.splice(++toolOutsideIndex, 0, info.name);
-                    }
                     if (!outsideConstraints.includes(info.name)) outsideConstraints.push(info.name);
                     if (!typableConstraints.includes(info.name)) typableConstraints.push(info.name);
+                }
+
+                // Skip the picker if not active for this puzzle
+                if (!puzzleActiveConstraints.has(info.name)) continue;
+                if (toolConstraints.includes(info.name)) continue;
+
+                if (info.type === "line") {
+                    if (toolLineIndex < toolPerCellIndex) toolPerCellIndex++;
+                    if (toolLineIndex < toolOutsideIndex) toolOutsideIndex++;
+                    toolConstraints.splice(++toolLineIndex, 0, info.name);
+                } else if (info.type === "cage" || info.type === "cell") {
+                    if (toolPerCellIndex < toolLineIndex) toolLineIndex++;
+                    if (toolPerCellIndex < toolOutsideIndex) toolOutsideIndex++;
+                    toolConstraints.splice(++toolPerCellIndex, 0, info.name);
+                } else if (info.type === "outside") {
+                    if (toolOutsideIndex < toolLineIndex) toolLineIndex++;
+                    if (toolOutsideIndex < toolPerCellIndex) toolPerCellIndex++;
+                    toolConstraints.splice(++toolOutsideIndex, 0, info.name);
                 }
             }
 
             draggableConstraints = [...new Set([...lineConstraints, ...regionConstraints])];
-            multicellConstraints = [...new Set([...lineConstraints, ...regionConstraints, ...borderConstraints, ...cornerConstraints, ...perCellConstraints.filter(name => newConstraintInfo.find(info => info.name === name && info.type === "cage"))])]; // Add cage-type to multicell
-            betweenCellConstraints = [...borderConstraints, ...cornerConstraints]; // cage-type are not between cells
+            multicellConstraints = [...new Set([...lineConstraints, ...regionConstraints, ...borderConstraints, ...cornerConstraints, ...perCellConstraints.filter(name => newConstraintInfo.find(info => info.name === name && info.type === "cage"))])];
+            betweenCellConstraints = [...borderConstraints, ...cornerConstraints];
             allConstraints = [...boolConstraints, ...toolConstraints];
 
             tools = [...toolConstraints, ...toolCosmetics];
@@ -2538,7 +2623,6 @@
             diagonalRegionTools = [...diagonalRegionConstraints, ...diagonalRegionCosmetics];
             outsideTools = [...outsideConstraints, ...outsideCosmetics];
             outsideCornerTools = [...outsideCornerConstraints, ...outsideCornerCosmetics];
-             // Add new cage-type perCell to oneCellAtATime
             oneCellAtATimeTools = [...perCellConstraints, ...draggableConstraints, ...draggableCosmetics, ...newConstraintInfo.filter(info => info.type === "cage").map(info => info.name)];
             draggableTools = [...draggableConstraints, ...draggableCosmetics];
             multicellTools = [...multicellConstraints, ...multicellCosmetics];
@@ -3006,6 +3090,335 @@
             });
         };
 
+        // ===== Constraint Toolbox Dialog =====
+        let toolboxOverlay = null;
+        let toolboxPrevDisableInputs = null;
+
+        const closeToolbox = function() {
+            if (toolboxOverlay) toolboxOverlay.style.display = "none";
+            if (toolboxPrevDisableInputs !== null) {
+                disableInputs = toolboxPrevDisableInputs;
+                toolboxPrevDisableInputs = null;
+            }
+        };
+
+        const getConstraintCategory = function(name) {
+            const info = newConstraintInfo.find(i => i.name === name);
+            if (info) return info.type;
+            if (lineConstraints   && lineConstraints.includes(name))    return "line";
+            if (perCellConstraints && perCellConstraints.includes(name)) return "cell";
+            if (regionConstraints  && regionConstraints.includes(name))  return "cage";
+            if (outsideConstraints && outsideConstraints.includes(name)) return "outside";
+            return "other";
+        };
+
+        const categoryLabel = { line: "Line", cage: "Region / Cage", cell: "Cell Marker", outside: "Outside Clue", other: "Other" };
+        const categoryOrder = ["line", "cage", "cell", "outside", "other"];
+
+        const getConstraintDescription = function(name) {
+            const d = typeof descriptions !== "undefined" && descriptions[name];
+            if (Array.isArray(d)) return d[0] || "";
+            if (typeof d === "string") return d;
+            const info = newConstraintInfo.find(i => i.name === name);
+            return (info && info.tooltip && info.tooltip[0]) || "";
+        };
+
+        const getConstraintColor = function(name) {
+            const info = newConstraintInfo.find(i => i.name === name);
+            if (!info) return null;
+            return (boolSettings["Dark Mode"] ? info.colorDark : info.color) || info.color || null;
+        };
+
+        const getAllToolboxItems = function() {
+            const items = [];
+            const seen = new Set();
+            const add = function(name) {
+                if (seen.has(name)) return;
+                seen.add(name);
+                const info = newConstraintInfo.find(i => i.name === name);
+                items.push({
+                    name,
+                    isCustom: !!(info && info.isCustomConstraint),
+                    category: getConstraintCategory(name),
+                    description: getConstraintDescription(name),
+                    color: getConstraintColor(name),
+                });
+            };
+            if (builtinToolConstraints) for (const n of builtinToolConstraints) add(n);
+            for (const info of newConstraintInfo) add(info.name);
+            return items;
+        };
+
+        const ensureToolboxOverlay = function() {
+            if (toolboxOverlay) return;
+            const style = document.createElement("style");
+            style.textContent = `
+                #fptb-overlay {
+                    position: fixed; inset: 0; z-index: 100001;
+                    display: none; align-items: center; justify-content: center;
+                    background: rgba(0,0,0,0.5);
+                    font-family: Arial, sans-serif; outline: none;
+                }
+                #fptb-panel {
+                    width: min(920px, calc(100vw - 40px));
+                    height: min(720px, calc(100vh - 40px));
+                    background: #f0f0f0; color: #111;
+                    border: 1px solid #333; border-radius: 4px;
+                    box-shadow: 0 16px 48px rgba(0,0,0,0.4);
+                    display: flex; flex-direction: column; overflow: hidden;
+                }
+                #fptb-overlay.fptb-dark #fptb-panel {
+                    background: #2a2a2a; color: #eee; border-color: #666;
+                }
+                #fptb-header {
+                    display: flex; align-items: center; gap: 8px;
+                    padding: 12px 16px; background: #ddd;
+                    border-bottom: 1px solid #bbb; flex-shrink: 0;
+                }
+                #fptb-overlay.fptb-dark #fptb-header {
+                    background: #1e1e1e; border-color: #555;
+                }
+                #fptb-title { font-size: 17px; font-weight: 700; flex: 1; }
+                #fptb-toolbar {
+                    display: flex; align-items: center; gap: 8px;
+                    padding: 10px 16px; border-bottom: 1px solid #ccc;
+                    flex-wrap: wrap; flex-shrink: 0;
+                }
+                #fptb-overlay.fptb-dark #fptb-toolbar { border-color: #444; }
+                #fptb-search {
+                    flex: 1; min-width: 140px; max-width: 260px;
+                    padding: 6px 9px; font: 13px Arial, sans-serif;
+                    border: 1px solid #999; border-radius: 3px;
+                    background: #fff; color: #111;
+                }
+                #fptb-overlay.fptb-dark #fptb-search {
+                    background: #111; color: #eee; border-color: #555;
+                }
+                .fptb-select {
+                    padding: 6px 8px; font: 13px Arial, sans-serif;
+                    border: 1px solid #999; border-radius: 3px;
+                    background: #fff; color: #111; cursor: pointer;
+                }
+                #fptb-overlay.fptb-dark .fptb-select {
+                    background: #111; color: #eee; border-color: #555;
+                }
+                .fptb-btn {
+                    padding: 6px 12px; font: 13px Arial, sans-serif;
+                    border: 1px solid #777; border-radius: 3px;
+                    background: #fff; color: #111; cursor: pointer;
+                    white-space: nowrap;
+                }
+                #fptb-overlay.fptb-dark .fptb-btn {
+                    background: #333; color: #eee; border-color: #777;
+                }
+                #fptb-btn-custom { margin-left: auto; }
+                #fptb-body { flex: 1; overflow-y: auto; padding: 10px 16px; }
+                .fptb-group-label {
+                    font-size: 11px; font-weight: 700;
+                    text-transform: uppercase; letter-spacing: 0.07em;
+                    opacity: 0.5; margin: 14px 0 5px;
+                    padding-bottom: 3px; border-bottom: 1px solid #ccc;
+                }
+                .fptb-group-label:first-child { margin-top: 2px; }
+                #fptb-overlay.fptb-dark .fptb-group-label { border-color: #444; }
+                .fptb-item {
+                    display: flex; align-items: center; gap: 10px;
+                    padding: 6px 8px; border-radius: 3px; margin-bottom: 2px;
+                }
+                .fptb-item:hover { background: rgba(0,0,0,0.06); }
+                #fptb-overlay.fptb-dark .fptb-item:hover { background: rgba(255,255,255,0.07); }
+                .fptb-swatch {
+                    width: 13px; height: 13px; border-radius: 2px;
+                    border: 1px solid rgba(0,0,0,0.25); flex-shrink: 0;
+                }
+                .fptb-name { font-weight: 600; font-size: 13px; min-width: 148px; }
+                .fptb-badge {
+                    font-size: 10px; padding: 2px 6px; border-radius: 10px;
+                    background: rgba(0,0,0,0.1); opacity: 0.7; white-space: nowrap;
+                }
+                #fptb-overlay.fptb-dark .fptb-badge { background: rgba(255,255,255,0.13); }
+                .fptb-badge-custom { background: rgba(80,80,220,0.18) !important; opacity: 1 !important; }
+                .fptb-desc {
+                    font-size: 12px; opacity: 0.6; flex: 1;
+                    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+                }
+                .fptb-toggle {
+                    padding: 4px 11px; font: 12px Arial, sans-serif;
+                    border-radius: 3px; cursor: pointer;
+                    white-space: nowrap; flex-shrink: 0; border: 1px solid;
+                }
+                .fptb-toggle-on  { background: #2d6a2d; border-color: #1a4a1a; color: #fff; }
+                .fptb-toggle-off { background: #fff; border-color: #999; color: #555; }
+                #fptb-overlay.fptb-dark .fptb-toggle-off {
+                    background: #333; border-color: #666; color: #aaa;
+                }
+                #fptb-footer {
+                    padding: 8px 16px; border-top: 1px solid #ccc;
+                    font-size: 12px; opacity: 0.6; flex-shrink: 0;
+                }
+                #fptb-overlay.fptb-dark #fptb-footer { border-color: #444; }
+                #fptb-empty { text-align: center; padding: 36px; opacity: 0.5; font-size: 14px; }
+            `;
+            document.head.appendChild(style);
+            toolboxOverlay = document.createElement("div");
+            toolboxOverlay.id = "fptb-overlay";
+            toolboxOverlay.tabIndex = -1;
+            document.body.appendChild(toolboxOverlay);
+            const blockEvent = function(e) {
+                e.stopPropagation();
+                if (e.type === "wheel" || e.type === "contextmenu") e.preventDefault();
+                if (e.type === "keydown" && e.key === "Escape") { e.preventDefault(); closeToolbox(); }
+            };
+            ["mousedown","mouseup","mousemove","click","dblclick","contextmenu","wheel",
+             "touchstart","touchmove","touchend","keydown","keyup","keypress"]
+                .forEach(ev => toolboxOverlay.addEventListener(ev, blockEvent));
+        };
+
+        const renderToolbox = function() {
+            ensureToolboxOverlay();
+
+            const dark = boolSettings["Dark Mode"];
+            toolboxOverlay.className = dark ? "fptb-dark" : "";
+
+            const searchVal  = toolboxOverlay._search  || "";
+            const filterType = toolboxOverlay._type    || "all";
+            const filterShow = toolboxOverlay._show    || "all";
+
+            let items = getAllToolboxItems();
+            const total = items.length;
+
+            if (filterType !== "all") items = items.filter(it => it.category === filterType);
+            if (filterShow === "on")  items = items.filter(it =>  puzzleActiveConstraints.has(it.name));
+            if (filterShow === "off") items = items.filter(it => !puzzleActiveConstraints.has(it.name));
+            if (searchVal) {
+                const q = searchVal.toLowerCase();
+                items = items.filter(it =>
+                    it.name.toLowerCase().includes(q) ||
+                    it.description.toLowerCase().includes(q) ||
+                    (categoryLabel[it.category] || "").toLowerCase().includes(q)
+                );
+            }
+
+            // Sort: in-puzzle first, then by MRU (most recently used), then alphabetical
+            items.sort((a, b) => {
+                const aOn = puzzleActiveConstraints.has(a.name);
+                const bOn = puzzleActiveConstraints.has(b.name);
+                if (aOn !== bOn) return aOn ? -1 : 1;
+                if (a.category !== b.category) {
+                    return categoryOrder.indexOf(a.category) - categoryOrder.indexOf(b.category);
+                }
+                const aLast = (constraintUsage[a.name] || {}).lastUsed || 0;
+                const bLast = (constraintUsage[b.name] || {}).lastUsed || 0;
+                if (aLast !== bLast) return bLast - aLast; // more recent first
+                return a.name.localeCompare(b.name);
+            });
+
+            // Build grouped sections: "In This Puzzle" at top, then by category
+            const inPuzzle = items.filter(it => puzzleActiveConstraints.has(it.name));
+            const notInPuzzle = items.filter(it => !puzzleActiveConstraints.has(it.name));
+
+            const renderItem = function(it) {
+                const on = puzzleActiveConstraints.has(it.name);
+                const sw = it.color ? `background:${escapeHtml(it.color)}` : "background:#888";
+                const customBadge = it.isCustom
+                    ? ` <span class="fptb-badge fptb-badge-custom">custom</span>` : "";
+                const usageInfo = constraintUsage[it.name];
+                const usageBadge = !on && usageInfo && usageInfo.count > 0
+                    ? ` <span class="fptb-badge" title="Used ${usageInfo.count}x">★${usageInfo.count}</span>` : "";
+                return `
+                    <div class="fptb-item">
+                        <div class="fptb-swatch" style="${sw}"></div>
+                        <div class="fptb-name">${escapeHtml(it.name)}${customBadge}</div>
+                        <span class="fptb-badge">${escapeHtml(categoryLabel[it.category] || it.category)}</span>
+                        <div class="fptb-desc">${escapeHtml(it.description)}${usageBadge}</div>
+                        <button class="fptb-toggle ${on ? "fptb-toggle-on" : "fptb-toggle-off"}"
+                                data-fptb="${escapeHtml(it.name)}">${on ? "In Puzzle ✓" : "+ Add to Puzzle"}</button>
+                    </div>`;
+            };
+
+            let bodyHtml = "";
+            if (inPuzzle.length > 0) {
+                bodyHtml += `<div class="fptb-group-label">In This Puzzle</div>`;
+                bodyHtml += inPuzzle.map(renderItem).join("");
+            }
+            if (notInPuzzle.length > 0) {
+                // Group remaining by category
+                const grouped = {};
+                for (const it of notInPuzzle) {
+                    (grouped[it.category] || (grouped[it.category] = [])).push(it);
+                }
+                for (const cat of categoryOrder) {
+                    const group = grouped[cat];
+                    if (!group || !group.length) continue;
+                    bodyHtml += `<div class="fptb-group-label">${escapeHtml(categoryLabel[cat] || cat)}</div>`;
+                    bodyHtml += group.map(renderItem).join("");
+                }
+            }
+            if (!bodyHtml) bodyHtml = `<div id="fptb-empty">No constraints match your search.</div>`;
+
+            const activeCount = puzzleActiveConstraints.size;
+            toolboxOverlay.innerHTML = `
+                <div id="fptb-panel">
+                    <div id="fptb-header">
+                        <div id="fptb-title">Constraint Toolbox</div>
+                        <button class="fptb-btn" id="fptb-close">Close</button>
+                    </div>
+                    <div id="fptb-toolbar">
+                        <input id="fptb-search" type="text" placeholder="Search constraints…"
+                               value="${escapeHtml(searchVal)}">
+                        <select id="fptb-type" class="fptb-select">
+                            <option value="all"     ${filterType==="all"     ? "selected":""}>All Types</option>
+                            <option value="line"    ${filterType==="line"    ? "selected":""}>Line</option>
+                            <option value="cage"    ${filterType==="cage"    ? "selected":""}>Region / Cage</option>
+                            <option value="cell"    ${filterType==="cell"    ? "selected":""}>Cell Marker</option>
+                            <option value="outside" ${filterType==="outside" ? "selected":""}>Outside Clue</option>
+                            <option value="other"   ${filterType==="other"   ? "selected":""}>Other</option>
+                        </select>
+                        <select id="fptb-show" class="fptb-select">
+                            <option value="all" ${filterShow==="all" ? "selected":""}>All Constraints</option>
+                            <option value="on"  ${filterShow==="on"  ? "selected":""}>In This Puzzle</option>
+                            <option value="off" ${filterShow==="off" ? "selected":""}>Not in Puzzle</option>
+                        </select>
+                        <button class="fptb-btn" id="fptb-btn-custom">+ Custom Constraint…</button>
+                    </div>
+                    <div id="fptb-body">${bodyHtml}</div>
+                    <div id="fptb-footer">${activeCount} of ${total} constraint${total !== 1 ? "s" : ""} active in this puzzle</div>
+                </div>`;
+
+            toolboxOverlay.querySelector("#fptb-close").addEventListener("click", closeToolbox);
+            toolboxOverlay.querySelector("#fptb-btn-custom").addEventListener("click", () => {
+                closeToolbox();
+                openCustomConstraintManager();
+            });
+            const searchEl = toolboxOverlay.querySelector("#fptb-search");
+            searchEl.addEventListener("input", () => { toolboxOverlay._search = searchEl.value; renderToolbox(); });
+            toolboxOverlay.querySelector("#fptb-type").addEventListener("change", e => { toolboxOverlay._type = e.target.value; renderToolbox(); });
+            toolboxOverlay.querySelector("#fptb-show").addEventListener("change", e => { toolboxOverlay._show = e.target.value; renderToolbox(); });
+            toolboxOverlay.querySelectorAll(".fptb-toggle").forEach(btn => {
+                btn.addEventListener("click", () => {
+                    const name = btn.getAttribute("data-fptb");
+                    if (puzzleActiveConstraints.has(name)) {
+                        puzzleActiveConstraints.delete(name);
+                    } else {
+                        puzzleActiveConstraints.add(name);
+                        recordConstraintUsed(name);
+                    }
+                    refreshCustomConstraintRegistration();
+                    renderToolbox();
+                });
+            });
+            searchEl.focus();
+        };
+
+        const openToolbox = function() {
+            ensureToolboxOverlay();
+            renderToolbox();
+            if (toolboxPrevDisableInputs === null) toolboxPrevDisableInputs = disableInputs;
+            disableInputs = true;
+            toolboxOverlay.style.display = "flex";
+            toolboxOverlay.focus();
+        };
+
         const openCustomConstraintManager = function() {
             renderCustomConstraintManager();
             if (customManagerPreviousDisableInputs === null) {
@@ -3101,37 +3514,33 @@
         };
 
         // Multi-column constraint sidebar
-        let customManagerPopupButton = null;
-        const addCustomConstraintManagerPopupButton = function() {
+        let toolboxPopupButton = null;
+        const addToolboxPopupButton = function() {
             const constraintsSidebar = sidebars.find(sb => sb.title === "Constraints");
             if (!constraintsSidebar) return;
-            const existing = constraintsSidebar.buttons.find(button => button.id === "CustomConstraintManager");
-            if (existing) return;
-            if (!customManagerPopupButton) {
-                customManagerPopupButton = new button(
-                    0,
-                    0,
-                    buttonW,
-                    buttonSH,
+            if (constraintsSidebar.buttons.some(b => b.id === "ToolboxButton")) return;
+            if (!toolboxPopupButton) {
+                toolboxPopupButton = new button(
+                    0, 0, buttonW, buttonSH,
                     ["Constraint Tools"],
-                    "CustomConstraintManager",
-                    "Custom Manager"
+                    "ToolboxButton",
+                    "Toolbox"
                 );
-                customManagerPopupButton.click = function() {
+                toolboxPopupButton.click = function() {
                     if (!this.hovering()) return;
                     closePopups();
-                    openCustomConstraintManager();
+                    openToolbox();
                     return true;
                 };
             }
-            constraintsSidebar.buttons.push(customManagerPopupButton);
+            constraintsSidebar.buttons.push(toolboxPopupButton);
         };
 
         let constraintSidebarWidth = 0;
         const prevCreateSidebarConstraints = createSidebarConstraints;
         createSidebarConstraints = function () {
             prevCreateSidebarConstraints();
-            addCustomConstraintManagerPopupButton();
+            addToolboxPopupButton();
 
             {
                 const x = gridX - (sidebarDist + sidebarW / 2);
