@@ -103,11 +103,13 @@ public partial class Solver
 
             _checkGroupForHiddens = new bool[other._checkGroupForHiddens.Length];
             other._checkGroupForHiddens.AsSpan().CopyTo(_checkGroupForHiddens);
+            _numGroupsNeedingHiddenCheck = other._numGroupsNeedingHiddenCheck;
         }
         else
         {
             _candidateCountsPerGroupValue = null;
             _checkGroupForHiddens = null;
+            _numGroupsNeedingHiddenCheck = 0;
         }
 
         Groups = other.Groups;
@@ -127,9 +129,20 @@ public partial class Solver
         }
         totalWeakLinks = other.totalWeakLinks;
 
-        // Share conflict scores by reference so all clones in one search tree update the same array.
+        // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
+        conflictDecayState = other.conflictDecayState;
+        bruteForceSolveStatsTracker = other.bruteForceSolveStatsTracker;
+        countBruteForceAssignments = other.countBruteForceAssignments;
         branchCellIndex = -1;
+        searchDepth = other.searchDepth;
+
+        // Share the read-only propagation-queue maps; allocate a fresh queued-flags array.
+        cellToConstraintIndices = other.cellToConstraintIndices;
+        _alwaysRunConstraintIndices = other._alwaysRunConstraintIndices;
+        _constraintQueued = other.constraints.Count > 0 ? new bool[other.constraints.Count] : Array.Empty<bool>();
+        _numConstraintsQueued = 0;
+        _lastContradictionCellIndex = -1;
     }
 
     /// <summary>
@@ -566,9 +579,20 @@ public partial class Solver
 
         maxValueGroups = Groups.Where(g => g.Cells.Count == MAX_VALUE).ToList();
 
+        // Allocate conflict decay state (shared by reference with all search-tree clones).
+        conflictDecayState = new long[1]; // [0] = total increments since epoch
+
         // Allocate conflict scores seeded with structural priority.
         // Cells in smaller constraint groups are tried first during cold-start search.
         conflictScores = new int[NUM_CELLS];
+
+        // Uniform baseline so every cell participates in score/count ratio comparison.
+        // Without this, cells at cs=0 are skipped entirely in GetLeastCandidateCell,
+        // causing arrow circle cells (cs=9) to always win over unconstrained cells regardless
+        // of candidate count. Baseline=MAX_VALUE^2 lets the ratio naturally prefer MRV.
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+            conflictScores[cellIndex] = MAX_VALUE * MAX_VALUE;
+
         foreach (var group in Groups)
         {
             int count = group.Cells.Count;
@@ -580,6 +604,40 @@ public partial class Solver
                     conflictScores[cellIdx] += priority;
                 }
             }
+        }
+
+        // Let constraints contribute their own structural priority (e.g. arrow circle cells).
+        // This ensures pure-constraint puzzles with no killer cages also get useful
+        // cold-start cell ordering even before any conflict data accumulates.
+        foreach (var constraint in constraints)
+        {
+            constraint.SeedConflictPriority(conflictScores);
+        }
+
+        // Build propagation-queue reverse map: cellToConstraintIndices[cell] = constraint indices
+        // that declared that cell via CellIndicesForPropagationQueue.
+        // Constraints that return null go into _alwaysRunConstraintIndices (run every step).
+        {
+            var cellLists = new List<int>[NUM_CELLS];
+            for (int i = 0; i < NUM_CELLS; i++) cellLists[i] = new List<int>();
+            var alwaysRun = new List<int>();
+            for (int ci = 0; ci < constraints.Count; ci++)
+            {
+                var cells = constraints[ci].CellIndicesForPropagationQueue;
+                if (cells == null || cells.Count == 0)
+                {
+                    alwaysRun.Add(ci);
+                }
+                else
+                {
+                    foreach (int cell in cells)
+                        if ((uint)cell < (uint)NUM_CELLS)
+                            cellLists[cell].Add(ci);
+                }
+            }
+            cellToConstraintIndices = Array.ConvertAll(cellLists, l => l.ToArray());
+            _alwaysRunConstraintIndices = alwaysRun.Count > 0 ? alwaysRun.ToArray() : null;
+            _constraintQueued = constraints.Count > 0 ? new bool[constraints.Count] : Array.Empty<bool>();
         }
 
         // Initialize hidden single tracking array
@@ -605,11 +663,15 @@ public partial class Solver
                     _checkGroupForHiddens[groupIdx] = count <= 1;
                 }
             }
+            _numGroupsNeedingHiddenCheck = 0;
+            for (int i = 0; i < Groups.Count; i++)
+                if (_checkGroupForHiddens[i]) _numGroupsNeedingHiddenCheck++;
         }
         else
         {
             _candidateCountsPerGroupValue = null;
             _checkGroupForHiddens = null;
+            _numGroupsNeedingHiddenCheck = 0;
         }
 
         return true;

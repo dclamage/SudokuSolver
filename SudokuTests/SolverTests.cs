@@ -87,6 +87,48 @@ public class SolverTests
     }
 
     [TestMethod]
+    public void FindSolutionPopulatesBruteForceStats()
+    {
+        var (givens, solution) = Puzzles.uniqueClassics[0];
+
+        foreach (bool multiThread in new[] { false, true })
+        {
+            Solver solver = SolverFactory.CreateFromGivens(givens);
+
+            Assert.IsTrue(solver.FindSolution(multiThread: multiThread), $"Failed to find solution with multiThread={multiThread}");
+            Assert.AreEqual(solution, solver.ToGivenString(), $"Unexpected solution with multiThread={multiThread}");
+
+            BruteForceSolveStats stats = solver.LastBruteForceSolveStats;
+            Assert.IsNotNull(stats, $"Expected brute-force stats with multiThread={multiThread}");
+            Assert.IsTrue(stats.ValuesTried > 0, $"Expected at least one value assignment with multiThread={multiThread}");
+            Assert.IsTrue(stats.ValuesTried >= stats.Guesses, $"Expected values tried to be at least guesses with multiThread={multiThread}");
+            Assert.IsTrue(stats.PuzzleSetupTime >= TimeSpan.Zero, $"Expected non-negative setup time with multiThread={multiThread}");
+            Assert.IsTrue(stats.Runtime >= TimeSpan.Zero, $"Expected non-negative runtime with multiThread={multiThread}");
+        }
+    }
+
+    [TestMethod]
+    public void TrueCandidatesPopulatesBruteForceStats()
+    {
+        var (givens, _) = Puzzles.uniqueClassics[0];
+
+        foreach (bool multiThread in new[] { false, true })
+        {
+            Solver solver = SolverFactory.CreateFromGivens(givens);
+
+            long[] trueCandidates = solver.TrueCandidates(multiThread: multiThread);
+            Assert.IsTrue(trueCandidates.Any(count => count > 0), $"Expected true candidates with multiThread={multiThread}");
+
+            BruteForceSolveStats stats = solver.LastBruteForceSolveStats;
+            Assert.IsNotNull(stats, $"Expected brute-force stats with multiThread={multiThread}");
+            Assert.IsTrue(stats.ValuesTried > 0, $"Expected at least one value assignment with multiThread={multiThread}");
+            Assert.IsTrue(stats.ValuesTried >= stats.Guesses, $"Expected values tried to be at least guesses with multiThread={multiThread}");
+            Assert.IsTrue(stats.PuzzleSetupTime >= TimeSpan.Zero, $"Expected non-negative setup time with multiThread={multiThread}");
+            Assert.IsTrue(stats.Runtime >= TimeSpan.Zero, $"Expected non-negative runtime with multiThread={multiThread}");
+        }
+    }
+
+    [TestMethod]
     public void MiracleCount()
     {
         Solver solver = SolverFactory.CreateFromGivens(Puzzles.blankGrid, new string[]

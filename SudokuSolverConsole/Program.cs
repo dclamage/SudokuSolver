@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 using McMaster.Extensions.CommandLineUtils;
@@ -14,6 +14,22 @@ public class Program
         "Watch me on YouTube: https://youtube.com/rangsk\n" +
         "Support me on Patreon: https://www.patreon.com/rangsk\n" +
         "Buy me a Coffee: https://ko-fi.com/rangsk";
+
+	private static void PrintBruteForceStats(Solver solver, TimeSpan puzzleSetupTimeOffset)
+	{
+		BruteForceSolveStats stats = solver.LastBruteForceSolveStats;
+		if (stats == null)
+		{
+			return;
+		}
+
+		TimeSpan totalPuzzleSetupTime = stats.PuzzleSetupTime + puzzleSetupTimeOffset;
+
+		Console.WriteLine($"Guesses: {stats.Guesses:N0}");
+		Console.WriteLine($"Values tried: {stats.ValuesTried:N0}");
+		Console.WriteLine($"Puzzle setup time: {totalPuzzleSetupTime.TotalMilliseconds:F3} ms");
+		Console.WriteLine($"Runtime: {stats.Runtime.TotalMilliseconds:F3} ms");
+	}
 
     public static async Task<int> Main(string[] args)
 	{
@@ -89,6 +105,7 @@ public class Program
 			.Accepts(v => v.Range(1024, 49151));
 		port.DefaultValue = 4545;
         var hideBanner = app.Option("--hide-banner", "Do not show the text with app version and support links.", CommandOptionType.NoValue);
+        var branchTrace = app.Option("--branch-trace", "Write branch decisions to a TSV file for divergence analysis (single-thread only).", CommandOptionType.SingleValue);
 		var print = app.Option("-p|--print", "Print the input board.", CommandOptionType.NoValue);
         var verbose = app.Option("--verbose", "Print verbose logs.", CommandOptionType.NoValue);
         var jsonOutput = app.Option("--json", "Output results as JSON, suppress all other output.", CommandOptionType.NoValue);
@@ -131,6 +148,7 @@ public class Program
                 MakeUnique = makeUnique.HasValue(),
                 UniqueSolutionCap = uniqueSolutionCap.ParsedValue,
                 UniqueEstimationIterations = uniqueEstimationIterations.ParsedValue,
+                BranchTrace = branchTrace.Value(),
             };
 
             await program.OnExecuteAsync(app, cancellationToken);
@@ -185,6 +203,9 @@ public class Program
     public required bool MakeUnique { get; init; }
     public required long UniqueSolutionCap { get; init; }
     public required long UniqueEstimationIterations { get; init; }
+
+    // Diagnostics
+    public required string BranchTrace { get; init; }
 
     public async Task<int> OnExecuteAsync(CommandLineApplication app, CancellationToken cancellationToken = default)
 	{
@@ -358,6 +379,13 @@ public class Program
 			return 1;
 		}
 
+		TimeSpan bruteForcePuzzleSetupTimeOffset = TimeSpan.Zero;
+		Stopwatch bruteForceSetupStopwatch = null;
+		if (SolveBruteForce || SolveRandomBruteForce || TrueCandidates)
+		{
+			bruteForceSetupStopwatch = Stopwatch.StartNew();
+		}
+
 		Solver solver;
 		try
 		{
@@ -412,6 +440,12 @@ public class Program
 			return 1;
 		}
 
+		if (bruteForceSetupStopwatch != null)
+		{
+			bruteForceSetupStopwatch.Stop();
+			bruteForcePuzzleSetupTimeOffset = bruteForceSetupStopwatch.Elapsed;
+		}
+
         if (JsonOutput)
         {
             JsonResultHandler.HandleJsonOutput(this, solver, cancellationToken);
@@ -460,13 +494,20 @@ public class Program
 
 		if (SolveBruteForce)
 		{
+            bool haveTrace = !string.IsNullOrEmpty(BranchTrace);
+            if (haveTrace)
+            {
+                Solver.EnableBranchTrace(BranchTrace);
+            }
 			Console.WriteLine("Finding a solution with brute force:");
 			if (!solver.FindSolution(multiThread: MultiThread))
 			{
 				Console.WriteLine($"No solutions found!");
+				PrintBruteForceStats(solver, bruteForcePuzzleSetupTimeOffset);
 			}
 			else
 			{
+				PrintBruteForceStats(solver, bruteForcePuzzleSetupTimeOffset);
 				solver.Print();
 
 				if (OutputPath != null)
@@ -487,6 +528,11 @@ public class Program
 					OpenFPuzzles(solver, VisitURL);
 				}
 			}
+            if (haveTrace)
+            {
+                Solver.DisableBranchTrace();
+                Console.WriteLine($"Branch trace written to: {BranchTrace}");
+            }
 		}
 
 		if (SolveRandomBruteForce)
@@ -495,9 +541,11 @@ public class Program
 			if (!solver.FindSolution(multiThread: MultiThread, isRandom: true))
 			{
 				Console.WriteLine($"No solutions found!");
+				PrintBruteForceStats(solver, bruteForcePuzzleSetupTimeOffset);
 			}
 			else
 			{
+				PrintBruteForceStats(solver, bruteForcePuzzleSetupTimeOffset);
 				solver.Print();
 
 				if (OutputPath != null)
@@ -555,6 +603,7 @@ public class Program
 			}
 
             long[] trueCandidateCounts = solver.TrueCandidates(multiThread: MultiThread, numSolutionsCap: MaxSolutionCount, progressEvent: PrintProgressBoard, cancellationToken: cancellationToken);
+			PrintBruteForceStats(solver, bruteForcePuzzleSetupTimeOffset);
 
 			uint[] board = CountsToBoard(trueCandidateCounts);
 			if (board.Any(cell => cell == 0))
@@ -599,6 +648,11 @@ public class Program
 
 		if (SolutionCount)
 		{
+            bool haveTrace = !string.IsNullOrEmpty(BranchTrace);
+            if (haveTrace)
+            {
+                Solver.EnableBranchTrace(BranchTrace);
+            }
 			Console.WriteLine("Finding solution count...");
 
 			double estimate = 0, stderr = 0;
@@ -807,11 +861,17 @@ public class Program
                     double pctError = estimate != 0 ? 100.0 * absError / estimate : 0.0;
                     Console.WriteLine($"Estimate was {estimate:E6}, actual count was {numSolutions}. Error: {absError:E6} ({pctError:F2}% off)");
                 }
+                PrintBruteForceStats(solver, bruteForcePuzzleSetupTimeOffset);
 			}
 			catch (Exception e)
 			{
 				Console.WriteLine($"ERROR: {e.Message}");
 			}
+            if (haveTrace)
+            {
+                Solver.DisableBranchTrace();
+                Console.WriteLine($"Branch trace written to: {BranchTrace}");
+            }
 		}
 
         if (EstimateCount)

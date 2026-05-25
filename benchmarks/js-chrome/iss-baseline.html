@@ -1,0 +1,179 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Real ISS Chrome Baseline</title>
+<script type="module">
+  globalThis.VERSION_PARAM = '?iss-baseline';
+
+  const { SudokuParser } = await import('/Interactive-Sudoku-Solver/js/sudoku_parser.js' + globalThis.VERSION_PARAM);
+
+  globalThis.runIssBenchmark = async (issText, options = {}) => {
+    const warmup = Math.max(0, options.warmup ?? 5);
+    const samples = Math.max(1, options.samples ?? 20);
+    const constraint = JSON.parse(JSON.stringify(SudokuParser.parseText(issText)));
+    const worker = makeWorker();
+
+    try {
+      for (let i = 0; i < warmup; i++) {
+        await runIssSolve(worker, constraint, options);
+      }
+
+      const results = [];
+      for (let i = 0; i < samples; i++) {
+        results.push(await runIssSolve(worker, constraint, options));
+      }
+
+      return {
+        kind: 'iss-real-chrome-samples',
+        warmup,
+        samples: results,
+        summary: summarizeSamples(results),
+      };
+    } finally {
+      worker.terminate();
+    }
+  };
+
+  function makeWorker() {
+    const worker = new Worker(
+      '/Interactive-Sudoku-Solver/js/solver_worker.js' + globalThis.VERSION_PARAM,
+      { type: 'module' });
+
+    worker.call = (method, payload) => new Promise((resolve, reject) => {
+      let lastState = null;
+      let lastDebug = null;
+
+      const onMessage = (event) => {
+        const data = event.data;
+        switch (data.type) {
+          case 'state':
+            lastState = data.state;
+            break;
+          case 'debug':
+            lastDebug = data.data;
+            break;
+          case 'result':
+            worker.removeEventListener('message', onMessage);
+            resolve({ result: data.result, state: lastState, debug: lastDebug });
+            break;
+          case 'exception':
+            worker.removeEventListener('message', onMessage);
+            reject(new Error(data.error?.message ?? String(data.error)));
+            break;
+        }
+      };
+
+      worker.addEventListener('message', onMessage);
+      worker.postMessage({ method, payload });
+    });
+
+    return worker;
+  }
+
+  async function runIssSolve(worker, constraint, options) {
+    const init = await worker.call('init', {
+      constraint,
+      logUpdateFrequency: 0,
+      debugOptions: null,
+    });
+    const count = await worker.call('countSolutions', options.maxSolutions ?? 0);
+    const state = count.state;
+    const counters = state.counters;
+
+    let traceHash = null;
+    if (options.traceHash ?? true) {
+      const trace = await worker.call('getBranchTraceTsv');
+      traceHash = fnv1a32(String(trace.result));
+    }
+
+    return {
+      engine: 'iss-real',
+      language: 'javascript',
+      runtime: 'chrome',
+      puzzle: {
+        size: 9,
+        arrows: countArrows(constraint),
+        givens: countGivens(constraint),
+      },
+      setupMs: state.puzzleSetupTime,
+      runtimeMs: state.timeMs,
+      totalMs: state.puzzleSetupTime + state.timeMs,
+      solutions: count.result,
+      guesses: counters.guesses,
+      valuesTried: counters.valuesTried,
+      nodesSearched: counters.nodesSearched,
+      backtracks: counters.backtracks,
+      constraintsProcessed: counters.constraintsProcessed,
+      branchesIgnored: counters.branchesIgnored,
+      progressRatio: counters.progressRatio,
+      traceHash,
+      trace: [],
+    };
+  }
+
+  function countArrows(constraint) {
+    return constraint.args[0].filter(c => c.type === 'Arrow').length;
+  }
+
+  function countGivens(constraint) {
+    return constraint.args[0].filter(c => c.type === 'Given').length;
+  }
+
+  function summarizeSamples(samples) {
+    const setup = samples.map(s => s.setupMs);
+    const runtime = samples.map(s => s.runtimeMs);
+    const total = samples.map(s => s.totalMs);
+    const first = samples[0];
+
+    return {
+      setupMs: summarizeNumbers(setup),
+      runtimeMs: summarizeNumbers(runtime),
+      totalMs: summarizeNumbers(total),
+      solutions: first.solutions,
+      guesses: first.guesses,
+      valuesTried: first.valuesTried,
+      nodesSearched: first.nodesSearched,
+      backtracks: first.backtracks,
+      constraintsProcessed: first.constraintsProcessed,
+      branchesIgnored: first.branchesIgnored,
+      progressRatio: first.progressRatio,
+      traceHash: first.traceHash,
+      consistent: samples.every(s =>
+        s.solutions === first.solutions
+        && s.guesses === first.guesses
+        && s.valuesTried === first.valuesTried
+        && s.nodesSearched === first.nodesSearched
+        && s.backtracks === first.backtracks
+        && s.constraintsProcessed === first.constraintsProcessed
+        && s.traceHash === first.traceHash),
+    };
+  }
+
+  function summarizeNumbers(values) {
+    const sorted = values.slice().sort((a, b) => a - b);
+    return {
+      min: sorted[0],
+      p10: percentile(sorted, 0.10),
+      median: percentile(sorted, 0.50),
+      p90: percentile(sorted, 0.90),
+      max: sorted[sorted.length - 1],
+    };
+  }
+
+  function percentile(sorted, p) {
+    if (sorted.length === 1) return sorted[0];
+    const index = (sorted.length - 1) * p;
+    const lower = Math.floor(index);
+    const upper = Math.ceil(index);
+    if (lower === upper) return sorted[lower];
+    const weight = index - lower;
+    return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+  }
+
+  function fnv1a32(text) {
+    let hash = 0x811c9dc5;
+    for (let i = 0; i < text.length; i++) {
+      hash = Math.imul(hash ^ text.charCodeAt(i), 16777619) >>> 0;
+    }
+    return hash.toString(16).padStart(8, '0');
+  }
+</script>

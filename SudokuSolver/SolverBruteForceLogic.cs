@@ -6,12 +6,12 @@ public partial class Solver
     {
         // Conflict-score path: rank cells by (score / candidateCount), highest first.
         // Only considers cells with score > 0 so a cold-start (all zeros) falls through to MRV.
+        int csBestCell = -1;
+        int csBestScore = -1;
+        int csBestCount = 1;
+
         if (conflictScores != null)
         {
-            int csBestCell = -1;
-            int csBestScore = -1;
-            int csBestCount = 1;
-
             for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
             {
                 uint cellMask = board[cellIndex];
@@ -30,14 +30,43 @@ public partial class Solver
                     csBestCount = count;
                 }
             }
+        }
 
-            if (csBestCell >= 0)
+        // Bilocal path — mirrors ISS CandidateFinders.House.
+        // ISS scores bilocals as maxConflictScore(c0,c1) * 0.5 and compares against
+        // the regular score/count metric.  A bilocal wins when:
+        //   maxCS * 0.5 > csBestScore / csBestCount
+        //   ↔  maxCS * csBestCount > 2 * csBestScore
+        //
+        // Run this alongside the conflict-score path (not only as a fallback) so that
+        // a well-scoring bilocal can override even a strong conflict-score candidate.
+        if (allowBilocals)
+        {
+            var (bCell, bOtherCell, bVal) = FindBestBilocal();
+            if (bVal > 0)
             {
-                return (csBestCell, 0);
+                if (csBestCell < 0)
+                {
+                    // No conflict-score winner: bilocal is our best structured hint.
+                    return (bCell, bVal);
+                }
+
+                // Compare: bilocal wins if maxCS * csBestCount > 2 * csBestScore
+                int bMaxCS = Math.Max(conflictScores[bCell],
+                                      bOtherCell >= 0 ? conflictScores[bOtherCell] : 0);
+                if (bMaxCS * csBestCount > 2 * csBestScore)
+                {
+                    return (bCell, bVal);
+                }
             }
         }
 
-        // Fallback: existing MRV + bilocal logic
+        if (csBestCell >= 0)
+        {
+            return (csBestCell, 0);
+        }
+
+        // Fallback: existing MRV logic (no conflict scores, no useful bilocal found above)
         int bestCellIndex = -1;
         int numCandidates = MAX_VALUE + 1;
         if (smallGroupsBySize != null)
@@ -94,58 +123,68 @@ public partial class Solver
             }
         }
 
-        if (numCandidates > 3 && allowBilocals)
-        {
-            (int bCellIndex, int bVal) = FindBilocalValue();
-            if (bVal > 0)
-            {
-                return (bCellIndex, bVal);
-            }
-        }
-
         return (bestCellIndex, 0);
     }
 
-    private (int, int) FindBilocalValue()
+    // Returns (primaryCell, otherCell, val) for the bilocal with the highest
+    // max(conflictScores[c0], conflictScores[c1]).  primaryCell has the higher score.
+    // Returns (-1, -1, 0) when no bilocal exists.
+    private (int, int, int) FindBestBilocal()
     {
-        // Only groups with exactly MAX_VALUE cells are relevant for bilocals.
         if (maxValueGroups == null || maxValueGroups.Count == 0)
-        {
-            return (-1, 0);
-        }
+            return (-1, -1, 0);
+
+        int bestC0 = -1, bestC1 = -1, bestVal = 0, bestScore = -1;
 
         foreach (SudokuGroup group in maxValueGroups)
         {
             List<int> groupCells = group.Cells;
-            int numCells = group.Cells.Count;
+            int numCells = groupCells.Count;
 
-            uint atLeastOnce = 0;
-            uint atLeastTwice = 0;
-            uint moreThanTwice = 0;
-            for (int groupIndex = 0; groupIndex < numCells; groupIndex++)
+            uint atLeastOnce = 0, atLeastTwice = 0, moreThanTwice = 0;
+            for (int gi = 0; gi < numCells; gi++)
             {
-                int cellIndex = groupCells[groupIndex];
-                uint mask = board[cellIndex];
+                uint mask = board[groupCells[gi]];
                 moreThanTwice |= atLeastTwice & mask;
                 atLeastTwice |= atLeastOnce & mask;
                 atLeastOnce |= mask;
             }
 
             uint exactlyTwice = atLeastTwice & ~moreThanTwice & ~valueSetMask;
-            if (exactlyTwice != 0)
+            while (exactlyTwice != 0)
             {
                 int val = MinValue(exactlyTwice);
+                exactlyTwice &= ~ValueMask(val);
                 uint valMask = ValueMask(val);
-                foreach (int cellIndex in group.Cells)
+
+                int c0 = -1, c1 = -1;
+                foreach (int ci in groupCells)
                 {
-                    if ((board[cellIndex] & valMask) != 0)
+                    if ((board[ci] & valMask) != 0)
                     {
-                        return (cellIndex, val);
+                        if (c0 < 0) c0 = ci;
+                        else { c1 = ci; break; }
                     }
+                }
+                if (c0 < 0 || c1 < 0) continue;
+                if (!IsWeakLink(CandidateIndex(c0, val), CandidateIndex(c1, val))) continue;
+
+                // Score by max conflict score of the two cells (ISS CandidateFinders.House)
+                int s0 = conflictScores != null ? conflictScores[c0] : 0;
+                int s1 = conflictScores != null ? conflictScores[c1] : 0;
+                int score = s0 >= s1 ? s0 : s1;
+
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    // Return the higher-scored cell as primary
+                    if (s0 >= s1) { bestC0 = c0; bestC1 = c1; }
+                    else           { bestC0 = c1; bestC1 = c0; }
+                    bestVal = val;
                 }
             }
         }
-        return (-1, 0);
+        return (bestC0, bestC1, bestVal);
     }
 
     /// <summary>
@@ -179,14 +218,35 @@ public partial class Solver
             }
         }
 
-        foreach (Constraint constraint in constraints)
+        if (isBruteForcing && _constraintQueued != null && _constraintQueued.Length > 0)
         {
-            cancellationToken.ThrowIfCancellationRequested();
+            // Re-mark always-run constraints (those with no declared cells) on every step.
+            if (_alwaysRunConstraintIndices != null)
+                foreach (int ai in _alwaysRunConstraintIndices)
+                    if (!_constraintQueued[ai]) { _constraintQueued[ai] = true; _numConstraintsQueued++; }
 
-            curResult = constraint.StepLogic(this, (List<LogicalStepDesc>)null, true);
-            if (curResult != LogicResult.None)
+            if (_numConstraintsQueued == 0)
+                goto skipConstraints;
+
+            // Drain queued constraints in list order; stop on first change.
+            for (int ci = 0; ci < constraints.Count; ci++)
             {
-                return curResult;
+                if (!_constraintQueued[ci]) continue;
+                _constraintQueued[ci] = false;
+                _numConstraintsQueued--;
+                cancellationToken.ThrowIfCancellationRequested();
+                curResult = constraints[ci].StepLogic(this, (List<LogicalStepDesc>)null, true);
+                if (curResult != LogicResult.None) return curResult;
+            }
+            skipConstraints:;
+        }
+        else
+        {
+            foreach (Constraint constraint in constraints)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                curResult = constraint.StepLogic(this, (List<LogicalStepDesc>)null, true);
+                if (curResult != LogicResult.None) return curResult;
             }
         }
 
@@ -255,6 +315,7 @@ public partial class Solver
 
                     Solver solver = Clone(willRunNonSinglesLogic: false);
                     solver.isBruteForcing = true;
+                    solver.countBruteForceAssignments = false;
                     if (!solver.SetValue(cellIndex, value))
                     {
                         // Trivially invalid, we can eliminate it from the host solver
@@ -264,8 +325,10 @@ public partial class Solver
                         }
                     }
 
-                    // Run some hand-selected logic until nothing changes
-                    LogicResult curResult = solver.BruteForcePropagate(true, cancellationToken);
+                    // Run constraint + singles propagation to find eliminations for weak links.
+                    // Advanced strategies (pairs/triples/pointing) are skipped here — they are
+                    // expensive per-clone and rarely contribute additional links in practice.
+                    LogicResult curResult = solver.BruteForcePropagate(false, cancellationToken);
                     if (curResult == LogicResult.None)
                     {
                         continue;

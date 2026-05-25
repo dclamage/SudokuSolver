@@ -1,0 +1,9 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Arrow Sudoku JavaScript Chrome Benchmark</title>
+<script type="module">
+  import { runArrowSamples, runArrowSolve } from './solver.mjs';
+
+  globalThis.runArrowBenchmark = (issText, options = {}) => runArrowSamples(issText, options);
+  globalThis.runArrowSolveOnce = (issText, options = {}) => runArrowSolve(issText, options);
+</script>

@@ -1,0 +1,13 @@
+{
+  "name": "sudoku-arrow-js-chrome-benchmark",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "smoke": "node node-smoke.mjs",
+    "chrome": "node chrome-runner.mjs",
+    "iss": "node iss-baseline-runner.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.10.2"
+  }
+}

@@ -1,9 +1,28 @@
-﻿using System.Threading;
+﻿using System.Text;
+using System.Threading;
 
 namespace SudokuSolver;
 
 public partial class Solver
 {
+    // Serialize the current board state as 81 cells separated by '|'.
+    // Each cell shows its remaining candidate digits (e.g. "126") or a single
+    // digit for a set cell.  Only used for branch-trace snapshots.
+    private string SerializeBoardForTrace()
+    {
+        var sb = new StringBuilder(NUM_CELLS * 4);
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+        {
+            if (cellIndex > 0) sb.Append('|');
+            uint mask = board[cellIndex] & ALL_VALUES_MASK;
+            for (int v = 1; v <= MAX_VALUE; v++)
+            {
+                if ((mask & ValueMask(v)) != 0)
+                    sb.Append(v);
+            }
+        }
+        return sb.ToString();
+    }
     /// <summary>
     /// Finds a single solution to the board. This may not be the only solution.
     /// For the exact same board inputs, the solution will always be the same.
@@ -19,13 +38,21 @@ public partial class Solver
             throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
         }
 
+        lastBruteForceSolveStats = null;
+        Stopwatch setupStopwatch = Stopwatch.StartNew();
         Solver solver = Clone(willRunNonSinglesLogic: true);
+        solver.bruteForceSolveStatsTracker = new BruteForceSolveStatsTracker();
+        solver.countBruteForceAssignments = true;
         if (solver.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
         {
+            setupStopwatch.Stop();
+            lastBruteForceSolveStats = solver.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero);
             return false;
         }
+        setupStopwatch.Stop();
         solver.isBruteForcing = true;
 
+        Stopwatch runtimeStopwatch = Stopwatch.StartNew();
         using FindSolutionState state = new(isRandom, multiThread, cancellationToken);
         if (multiThread)
         {
@@ -39,6 +66,8 @@ public partial class Solver
         {
             FindSolutionInternal(solver, state);
         }
+        runtimeStopwatch.Stop();
+        lastBruteForceSolveStats = solver.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed);
         if (cancellationToken.IsCancellationRequested)
         {
             return false;
@@ -131,6 +160,12 @@ public partial class Solver
                 continue;
             }
 
+            if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintIndices != null)
+            {
+                solver.EnqueueConstraintsForCell(solver._lastContradictionCellIndex);
+                solver._lastContradictionCellIndex = -1;
+            }
+
             LogicResult logicResult = solver.BruteForcePropagate(false, state.cancellationToken);
             if (logicResult == LogicResult.PuzzleComplete)
             {
@@ -142,7 +177,9 @@ public partial class Solver
             {
                 if (solver.branchCellIndex >= 0)
                 {
-                    Interlocked.Increment(ref solver.conflictScores[solver.branchCellIndex]);
+                    solver.IncrementConflictScore(solver.branchCellIndex);
+                    if (stack.TryPeek(out Solver findSolParent))
+                        findSolParent._lastContradictionCellIndex = solver.branchCellIndex;
                 }
                 continue;
             }
@@ -154,8 +191,26 @@ public partial class Solver
                 continue;
             }
 
+            solver.bruteForceSolveStatsTracker?.IncrementGuesses();
+
             // Try a possible value for this cell
             int val = v != 0 ? v : state.isRandom ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
+
+            // Branch trace logging
+            var traceWriter = BranchTraceWriter;
+            if (traceWriter != null)
+            {
+                int lineNum = Interlocked.Increment(ref _branchTraceLineCount);
+                if (lineNum <= BranchTraceMaxLines)
+                {
+                    int row = cellIndex / solver.WIDTH;
+                    int col = cellIndex % solver.WIDTH;
+                    int cs = solver.conflictScores != null ? solver.conflictScores[cellIndex] : 0;
+                    int cands = ValueCount(solver.board[cellIndex]);
+                    string snap = lineNum <= BranchTraceSnapMax ? $"\t{solver.SerializeBoardForTrace()}" : "";
+                    traceWriter.WriteLine($"{lineNum}\t{solver.searchDepth}\t{row + 1}\t{col + 1}\t{cands}\t{cs}\t{val}{snap}");
+                }
+            }
 
             // Create a backup board in case it needs to be restored
             Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
@@ -172,6 +227,7 @@ public partial class Solver
             if (solver.SetValue(cellIndex, val))
             {
                 solver.branchCellIndex = cellIndex;
+                solver.searchDepth++;
                 stack.Push(solver);
             }
         }
@@ -195,15 +251,24 @@ public partial class Solver
         // Any negative count is treated as infinite
         maxSolutions = Math.Max(maxSolutions, 0);
 
+        lastBruteForceSolveStats = null;
+        Stopwatch setupStopwatch = Stopwatch.StartNew();
         using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken);
         try
         {
             Solver boardCopy = Clone(willRunNonSinglesLogic: true);
+            boardCopy.bruteForceSolveStatsTracker = new BruteForceSolveStatsTracker();
+            boardCopy.countBruteForceAssignments = true;
             if (boardCopy.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
             {
+                setupStopwatch.Stop();
+                lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero);
                 return 0;
             }
+            setupStopwatch.Stop();
             boardCopy.isBruteForcing = true;
+
+            Stopwatch runtimeStopwatch = Stopwatch.StartNew();
             if (state.multiThread)
             {
                 if (!state.PushSolver(boardCopy, isInitialCall: true))
@@ -216,6 +281,8 @@ public partial class Solver
             {
                 CountSolutionsInternal(boardCopy, state);
             }
+            runtimeStopwatch.Stop();
+            lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed);
         }
         catch (OperationCanceledException) { }
 
@@ -331,6 +398,12 @@ public partial class Solver
         {
             state.cancellationToken.ThrowIfCancellationRequested();
 
+            if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintIndices != null)
+            {
+                solver.EnqueueConstraintsForCell(solver._lastContradictionCellIndex);
+                solver._lastContradictionCellIndex = -1;
+            }
+
             LogicResult logicResult = solver.BruteForcePropagate(false, state.cancellationToken);
             if (logicResult == LogicResult.PuzzleComplete)
             {
@@ -342,7 +415,9 @@ public partial class Solver
             {
                 if (solver.branchCellIndex >= 0)
                 {
-                    Interlocked.Increment(ref solver.conflictScores[solver.branchCellIndex]);
+                    solver.IncrementConflictScore(solver.branchCellIndex);
+                    if (stack.TryPeek(out Solver countSolParent))
+                        countSolParent._lastContradictionCellIndex = solver.branchCellIndex;
                 }
                 continue;
             }
@@ -355,8 +430,26 @@ public partial class Solver
                 continue;
             }
 
+            solver.bruteForceSolveStatsTracker?.IncrementGuesses();
+
             // Try a possible value for this cell
             int val = v != 0 ? v : MinValue(solver.board[cellIndex]);
+
+            // Branch trace logging
+            var traceWriter = BranchTraceWriter;
+            if (traceWriter != null)
+            {
+                int lineNum = Interlocked.Increment(ref _branchTraceLineCount);
+                if (lineNum <= BranchTraceMaxLines)
+                {
+                    int row = cellIndex / solver.WIDTH;
+                    int col = cellIndex % solver.WIDTH;
+                    int cs = solver.conflictScores != null ? solver.conflictScores[cellIndex] : 0;
+                    int cands = ValueCount(solver.board[cellIndex]);
+                    string snap = lineNum <= BranchTraceSnapMax ? $"\t{solver.SerializeBoardForTrace()}" : "";
+                    traceWriter.WriteLine($"{lineNum}\t{solver.searchDepth}\t{row + 1}\t{col + 1}\t{cands}\t{cs}\t{val}{snap}");
+                }
+            }
 
             // Create a solver without this value and start a task for it
             Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
@@ -372,6 +465,7 @@ public partial class Solver
             if (solver.SetValue(cellIndex, val))
             {
                 solver.branchCellIndex = cellIndex;
+                solver.searchDepth++;
                 stack.Push(solver);
             }
         }
@@ -384,17 +478,26 @@ public partial class Solver
             throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
         }
 
+        lastBruteForceSolveStats = null;
         numSolutionsCap = Math.Max(numSolutionsCap, 0);
 
+        Stopwatch setupStopwatch = Stopwatch.StartNew();
         using TrueCandidatesState state = new(this, multiThread, progressEvent, numSolutionsCap, cancellationToken);
         try
         {
             Solver boardCopy = Clone(willRunNonSinglesLogic: false);
+            boardCopy.bruteForceSolveStatsTracker = new BruteForceSolveStatsTracker();
+            boardCopy.countBruteForceAssignments = true;
             if (boardCopy.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
             {
+                setupStopwatch.Stop();
+                lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero);
                 return state.candidateSolutionCounts;
             }
+            setupStopwatch.Stop();
             boardCopy.isBruteForcing = true;
+
+            Stopwatch runtimeStopwatch = Stopwatch.StartNew();
             if (state.multiThread)
             {
                 if (!state.PushSolver(boardCopy, isInitialCall: true))
@@ -407,6 +510,8 @@ public partial class Solver
             {
                 TrueCandidatesInternal(boardCopy, state);
             }
+            runtimeStopwatch.Stop();
+            lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed);
         }
         catch (OperationCanceledException) { }
 
@@ -559,7 +664,7 @@ public partial class Solver
         {
             if (branchCellIndex >= 0)
             {
-                Interlocked.Increment(ref conflictScores[branchCellIndex]);
+                IncrementConflictScore(branchCellIndex);
             }
             return false;
         }
@@ -647,6 +752,8 @@ public partial class Solver
                 // Try a possible value for this cell
                 val = v != 0 ? v : MinValue(solver.board[cellIndex]);
             }
+
+            solver.bruteForceSolveStatsTracker?.IncrementGuesses();
 
             // Create a solver without this value and start a task for it
             Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);

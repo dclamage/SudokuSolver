@@ -130,6 +130,32 @@ public abstract class Constraint
     /// </summary>
     public virtual List<(int, int)> Group => null;
 
+    // Cached result of CellIndicesForPropagationQueue default implementation.
+    private IReadOnlyList<int> _cachedCellIndicesForQueue;
+    private bool _cellIndicesQueueCached;
+
+    /// <summary>
+    /// Cell indices (row*WIDTH+col) that this constraint monitors during brute force.
+    /// The propagation queue will re-run this constraint only when one of these cells changes.
+    /// Return null to run on every propagation step (always-run bucket).
+    /// Default: converts Group cells to indices; override when Group is null but cells are known.
+    /// </summary>
+    public virtual IReadOnlyList<int> CellIndicesForPropagationQueue
+    {
+        get
+        {
+            if (!_cellIndicesQueueCached)
+            {
+                _cellIndicesQueueCached = true;
+                var group = Group;
+                _cachedCellIndicesForQueue = group?.Count > 0
+                    ? group.ConvertAll(c => c.Item1 * WIDTH + c.Item2)
+                    : null;
+            }
+            return _cachedCellIndicesForQueue;
+        }
+    }
+
     /// <summary>
     /// Returns a list of cells which must contain the given value.
     /// </summary>
@@ -180,6 +206,16 @@ public abstract class Constraint
 
         return logicResult == LogicResult.Invalid ? result : null;
     }
+
+    /// <summary>
+    /// Seed the conflict-score array with structural priority for this constraint's cells.
+    /// Called once during FinalizeConstraints after group-based seeding.
+    /// Override to give key cells (e.g. circle cells in arrows) a head start so
+    /// the cold-start branching heuristic picks them before any contradictions accumulate.
+    /// The default implementation seeds nothing; the group-based seeding in
+    /// FinalizeConstraints already handles distinctness-group constraints.
+    /// </summary>
+    public virtual void SeedConflictPriority(int[] conflictScores) { }
 
     /// <summary>
     /// Add any weak or strong links that are initially known due to this constraint

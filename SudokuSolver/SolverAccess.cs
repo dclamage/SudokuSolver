@@ -192,6 +192,12 @@ public partial class Solver
 
     public bool IsBruteForcing => isBruteForcing;
 
+    /// <summary>
+    /// Gets the statistics from the most recent brute-force search operation,
+    /// including <see cref="FindSolution(bool, CancellationToken, bool)"/> and <see cref="TrueCandidates(bool, Action{long[]}, long, CancellationToken)"/>.
+    /// </summary>
+    public BruteForceSolveStats LastBruteForceSolveStats => lastBruteForceSolveStats;
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetValue((int, int) cell)
     {

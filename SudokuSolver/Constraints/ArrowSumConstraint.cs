@@ -15,6 +15,7 @@ public class ArrowSumConstraint : Constraint
     private readonly Solver _solverInstanceRef; // To pass to strategy methods that might need solver context
     private readonly bool _isDegenerate;
     private readonly bool _isClone;
+    private bool _linksInitialized = false;
 
     public ArrowSumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
@@ -55,6 +56,12 @@ public class ArrowSumConstraint : Constraint
     // it would either be a different constraint type or require an additional GroupConstraint.
     public override List<(int, int)> Group => null;
 
+    private IReadOnlyList<int> _cellIndicesForQueue;
+    public override IReadOnlyList<int> CellIndicesForPropagationQueue =>
+        _cellIndicesForQueue ??= circleCells.Concat(arrowCells)
+            .Select(c => c.Item1 * WIDTH + c.Item2)
+            .ToList();
+
     public override LogicResult InitCandidates(Solver sudokuSolver)
     {
         if (_isDegenerate || _isClone)
@@ -86,6 +93,19 @@ public class ArrowSumConstraint : Constraint
         return _logicStrategy.StepLogic(sudokuSolver, circleCells, arrowCells, _arrowSumHelperInstance, logicalStepDescription, isBruteForcing);
     }
 
+    public override void SeedConflictPriority(int[] conflictScores)
+    {
+        if (_isDegenerate) return;
+        // Circle cells are the key decision point: their value fixes the entire arrow sum.
+        // Give them the highest structural priority so the cold-start heuristic branches on
+        // them first, before any conflict data has accumulated.
+        foreach (var (i, j) in circleCells)
+            conflictScores[i * WIDTH + j] += MAX_VALUE;
+        // Shaft cells also participate in the sum constraint; give them a smaller boost.
+        foreach (var (i, j) in arrowCells)
+            conflictScores[i * WIDTH + j] += MAX_VALUE / 2;
+    }
+
     public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
         if (_isDegenerate)
@@ -109,6 +129,10 @@ public class ArrowSumConstraint : Constraint
             return LogicResult.None;
         }
 
+        // InitLinks is called on every FinalizeConstraints loop iteration, but the
+        // expensive simulation-based link discovery only needs to run once.
+        if (_linksInitialized) return LogicResult.None;
+        _linksInitialized = true;
         return InitLinksByRunningLogic(sudokuSolver, _allCells, logicalStepDescription);
     }
 

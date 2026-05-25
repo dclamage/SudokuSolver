@@ -166,9 +166,55 @@ public class CircleArrowStrategy : IArrowLogicStrategy
         bool changed = false;
         var boardView = solver.Board;
         var circleCell = GetCircleCell(circleCells);
+        uint currentCircleMask = boardView[circleCell.Item1, circleCell.Item2];
+
+        if (isBruteForcing && logicalStepDescription == null && arrowCells.Count > 0)
+        {
+            // BF fast path: bitmask sums, zero heap allocations for single-group arrows
+            uint circleCandMask = currentCircleMask & ~valueSetMask;
+            if (circleCandMask == 0) return LogicResult.Invalid;
+
+            ulong sumsMask = 0;
+            for (int v = 1; v <= solver.MAX_VALUE; v++)
+                if ((circleCandMask & ValueMask(v)) != 0)
+                    sumsMask |= 1uL << v;
+
+            var stepResult = arrowSumHelper.StepLogicBF(solver, sumsMask, out ulong possibleSumsMask);
+            if (stepResult == LogicResult.Invalid) return LogicResult.Invalid;
+            changed |= stepResult == LogicResult.Changed;
+
+            uint circleKeepMask = 0;
+            ulong pm = possibleSumsMask;
+            while (pm != 0)
+            {
+                int s = BitOperations.TrailingZeroCount(pm);
+                pm &= pm - 1;
+                if (s >= 1 && s <= solver.MAX_VALUE)
+                    circleKeepMask |= ValueMask(s);
+            }
+
+            var bfKeepResult = solver.KeepMask(circleCell.Item1, circleCell.Item2, circleKeepMask);
+            if (bfKeepResult == LogicResult.Invalid) return LogicResult.Invalid;
+            if (bfKeepResult == LogicResult.Changed) changed = true;
+
+            if (arrowCells.Count == 1)
+            {
+                var arrowCell = arrowCells[0];
+                uint cc = solver.Board[circleCell.Item1, circleCell.Item2];
+                uint ac = solver.Board[arrowCell.Item1, arrowCell.Item2];
+                uint commonMask = cc & ac;
+                var r1 = solver.KeepMask(circleCell.Item1, circleCell.Item2, commonMask);
+                if (r1 == LogicResult.Invalid) return LogicResult.Invalid;
+                if (r1 == LogicResult.Changed) changed = true;
+                var r2 = solver.KeepMask(arrowCell.Item1, arrowCell.Item2, commonMask);
+                if (r2 == LogicResult.Invalid) return LogicResult.Invalid;
+                if (r2 == LogicResult.Changed) changed = true;
+            }
+
+            return changed ? LogicResult.Changed : LogicResult.None;
+        }
 
         List<int> possibleCircleValues = [];
-        uint currentCircleMask = boardView[circleCell.Item1, circleCell.Item2];
         for (int v = 1; v <= solver.MAX_VALUE; ++v) { if (HasValue(currentCircleMask, v)) possibleCircleValues.Add(v); }
 
         if (possibleCircleValues.Count == 0)

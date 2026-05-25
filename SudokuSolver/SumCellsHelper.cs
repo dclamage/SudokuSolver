@@ -273,6 +273,41 @@ public class SumCellsHelper
         return LogicResult.None;
     }
 
+    // Brute-force optimized StepLogic: uses sum bitmasks. Zero heap allocations for single-group helpers.
+    // sumsMask: bit s set = sum s is one of the allowed totals.
+    // outSumsMask: after propagation, which sums are still achievable.
+    public LogicResult StepLogicBF(Solver solver, ulong sumsMask, out ulong outSumsMask)
+    {
+        outSumsMask = 0;
+        if (sumsMask == 0) return LogicResult.Invalid;
+
+        if (groups.Count == 1)
+        {
+            var group = groups[0];
+            var lr = group.RestrictSumMask(solver, sumsMask);
+            if (lr == LogicResult.Invalid) return LogicResult.Invalid;
+            outSumsMask = group.PossibleSumsMask(solver);
+            return lr;
+        }
+
+        // Multi-group fallback: convert bitmask to SortedSet and use allocating path
+        var sumsSet = new SortedSet<int>();
+        ulong rem = sumsMask;
+        while (rem != 0)
+        {
+            int s = BitOperations.TrailingZeroCount(rem);
+            rem &= rem - 1;
+            sumsSet.Add(s);
+        }
+        var lr2 = StepLogic(solver, sumsSet, (List<LogicalStepDesc>)null);
+        if (lr2 == LogicResult.Invalid) return LogicResult.Invalid;
+        var possibleSums = PossibleSums(solver);
+        if (possibleSums != null)
+            foreach (int s in possibleSums)
+                if ((uint)s < 64) outSumsMask |= 1uL << s;
+        return lr2;
+    }
+
     // Overload for StringBuilder compatibility
     public LogicResult StepLogic(Solver solver, IEnumerable<int> possibleSums, StringBuilder logicalStepDescription)
     {

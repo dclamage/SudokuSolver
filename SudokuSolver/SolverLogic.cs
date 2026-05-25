@@ -385,6 +385,11 @@ public partial class Solver
 
     private LogicResult FindHiddenSingle(List<LogicalStepDesc> logicalStepDescs)
     {
+        if (_numGroupsNeedingHiddenCheck == 0)
+        {
+            return LogicResult.None;
+        }
+
         foreach (var group in Groups)
         {
             int groupIndex = group.Index;
@@ -475,6 +480,7 @@ public partial class Solver
             // This accounts for the case where there were multiple hiddens to find.
             // It does mean we always check one extra time, but in the long run that's not a problem.
             _checkGroupForHiddens[groupIndex] = false;
+            _numGroupsNeedingHiddenCheck--;
         }
         return LogicResult.None;
     }

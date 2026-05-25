@@ -644,6 +644,170 @@ public class SumGroup
         return 0;
     }
 
+    // Returns a bitmask where bit s is set if sum s is achievable. Uses stackalloc — zero heap allocations.
+    public ulong PossibleSumsMask(Solver solver)
+    {
+        var board = solver.Board;
+        int setSum = SetSum(solver);
+
+        int numUnset = 0;
+        Span<uint> unsetCellMasks = stackalloc uint[cells.Count];
+        for (int i = 0; i < cells.Count; i++)
+        {
+            var (r, c) = cells[i];
+            uint mask = board[r, c];
+            if (GetSetValue(mask) == 0)
+                unsetCellMasks[numUnset++] = mask & includeMask & ~valueSetMask;
+        }
+
+        if (numUnset == 0)
+            return (uint)setSum < 64 ? 1uL << setSum : 0;
+
+        uint unsetMask = 0;
+        for (int i = 0; i < numUnset; i++)
+            unsetMask |= unsetCellMasks[i];
+
+        if (ValueCount(unsetMask) < numUnset)
+            return 0;
+
+        if (numUnset == 1)
+        {
+            ulong result = 0;
+            uint m = unsetCellMasks[0];
+            for (int v = 1; v <= numValues; v++)
+                if ((m & ValueMask(v)) != 0)
+                {
+                    int s = setSum + v;
+                    if ((uint)s < 64) result |= 1uL << s;
+                }
+            return result;
+        }
+
+        SumData sumData = SumData.Get(numValues);
+        if (sumData == null || numUnset > numValues)
+            return 0;
+
+        ulong resultMask = 0;
+        var kcRow = sumData.KillerCageSums[numUnset];
+        for (int rs = 1; rs < kcRow.Length; rs++)
+        {
+            uint[] opts = kcRow[rs];
+            if (opts.Length == 0) continue;
+            for (int oi = 0; oi < opts.Length; oi++)
+            {
+                uint o = opts[oi];
+                if ((o & ~unsetMask) != 0) continue;
+                bool valid = true;
+                for (int i = 0; i < numUnset; i++)
+                    if ((unsetCellMasks[i] & o) == 0) { valid = false; break; }
+                if (!valid) continue;
+                int totalSum = setSum + rs;
+                if ((uint)totalSum < 64) resultMask |= 1uL << totalSum;
+                break;
+            }
+        }
+        return resultMask;
+    }
+
+    // Restricts cells to support only sums set in sumsMask, applying changes directly. Uses stackalloc — zero heap allocations.
+    public LogicResult RestrictSumMask(Solver solver, ulong sumsMask)
+    {
+        if (sumsMask == 0) return LogicResult.Invalid;
+        var board = solver.Board;
+
+        for (int i = 0; i < cells.Count; i++)
+        {
+            var (r, c) = cells[i];
+            if ((board[r, c] & includeMask & ~valueSetMask) == 0)
+                return LogicResult.Invalid;
+        }
+
+        int setSum = SetSum(solver);
+
+        int numUnset = 0;
+        Span<int> unsetIdx = stackalloc int[cells.Count];
+        Span<uint> unsetCellMasks = stackalloc uint[cells.Count];
+        uint unsetMask = 0;
+        for (int i = 0; i < cells.Count; i++)
+        {
+            var (r, c) = cells[i];
+            uint mask = board[r, c];
+            if (GetSetValue(mask) == 0)
+            {
+                unsetIdx[numUnset] = i;
+                uint cm = mask & includeMask & ~valueSetMask;
+                unsetCellMasks[numUnset] = cm;
+                unsetMask |= cm;
+                numUnset++;
+            }
+        }
+
+        if (numUnset == 0)
+            return ((uint)setSum < 64 && (sumsMask & (1uL << setSum)) != 0) ? LogicResult.None : LogicResult.Invalid;
+
+        if (ValueCount(unsetMask) < numUnset)
+            return LogicResult.Invalid;
+
+        if (numUnset == 1)
+        {
+            var (r, c) = cells[unsetIdx[0]];
+            uint curMask = unsetCellMasks[0];
+            uint newMask = 0;
+            ulong rem = sumsMask;
+            while (rem != 0)
+            {
+                int s = BitOperations.TrailingZeroCount(rem);
+                rem &= rem - 1;
+                int v = s - setSum;
+                if (v >= 1 && v <= numValues)
+                    newMask |= ValueMask(v);
+            }
+            newMask &= curMask;
+            if (newMask == curMask) return LogicResult.None;
+            return solver.KeepMask(r, c, newMask);
+        }
+
+        SumData sumData = SumData.Get(numValues);
+        if (sumData == null || numUnset > numValues)
+            return LogicResult.None;
+
+        Span<uint> cellSupported = stackalloc uint[cells.Count];
+        cellSupported[..numUnset].Clear();
+
+        var kcRow = sumData.KillerCageSums[numUnset];
+        ulong remaining = sumsMask;
+        while (remaining != 0)
+        {
+            int s = BitOperations.TrailingZeroCount(remaining);
+            remaining &= remaining - 1;
+            int rs = s - setSum;
+            if (rs <= 0 || rs >= kcRow.Length) continue;
+            uint[] opts = kcRow[rs];
+            for (int oi = 0; oi < opts.Length; oi++)
+            {
+                uint o = opts[oi];
+                if ((o & ~unsetMask) != 0) continue;
+                bool valid = true;
+                for (int i = 0; i < numUnset; i++)
+                    if ((unsetCellMasks[i] & o) == 0) { valid = false; break; }
+                if (!valid) continue;
+                for (int i = 0; i < numUnset; i++)
+                    cellSupported[i] |= unsetCellMasks[i] & o;
+            }
+        }
+
+        LogicResult result = LogicResult.None;
+        for (int i = 0; i < numUnset; i++)
+        {
+            if (cellSupported[i] == 0) return LogicResult.Invalid;
+            var (r, c) = cells[unsetIdx[i]];
+            var lr = solver.KeepMask(r, c, cellSupported[i]);
+            if (lr == LogicResult.Invalid) return LogicResult.Invalid;
+            if (lr == LogicResult.Changed) result = LogicResult.Changed;
+        }
+        return result;
+    }
+
     public IReadOnlyList<(int, int)> Cells => cells;
     private readonly List<(int, int)> cells;
     private readonly uint includeMask;
