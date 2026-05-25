@@ -1,0 +1,18 @@
+[package]
+name = "sudoku-arrow-rust-bench"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "sudoku_arrow_rust_bench"
+path = "src/lib.rs"
+crate-type = ["rlib", "cdylib"]
+
+[[bin]]
+name = "sudoku-arrow-rust-native"
+path = "src/main.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

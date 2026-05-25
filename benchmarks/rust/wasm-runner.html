@@ -1,0 +1,145 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Rust Wasm Arrow Benchmark</title>
+<script type="module">
+const WASM_URL = '/benchmarks/rust/target/wasm32-unknown-unknown/release/sudoku_arrow_rust_bench.wasm';
+
+let wasmExportsPromise;
+const encoder = new TextEncoder();
+
+async function getWasmExports() {
+  if (!wasmExportsPromise) {
+    wasmExportsPromise = fetch(WASM_URL)
+      .then(response => {
+        if (!response.ok) throw new Error(`Failed to fetch wasm: ${response.status} ${response.statusText}`);
+        return response.arrayBuffer();
+      })
+      .then(bytes => WebAssembly.instantiate(bytes, {}))
+      .then(({ instance }) => {
+        if (!instance.exports.memory) throw new Error('Wasm module did not export memory.');
+        return instance.exports;
+      });
+  }
+  return wasmExportsPromise;
+}
+
+function summarizeSamples(samples) {
+  const setup = samples.map(s => s.setupMs);
+  const runtime = samples.map(s => s.runtimeMs);
+  const total = samples.map(s => s.totalMs);
+  const first = samples[0];
+
+  return {
+    setupMs: summarizeNumbers(setup),
+    runtimeMs: summarizeNumbers(runtime),
+    totalMs: summarizeNumbers(total),
+    solutions: first.solutions,
+    guesses: first.guesses,
+    valuesTried: first.valuesTried,
+    nodesSearched: first.nodesSearched,
+    backtracks: first.backtracks,
+    domainEliminations: first.domainEliminations,
+    propagationSteps: first.propagationSteps,
+    traceHash: first.traceHash,
+    consistent: samples.every(s =>
+      s.solutions === first.solutions
+      && s.guesses === first.guesses
+      && s.valuesTried === first.valuesTried
+      && s.nodesSearched === first.nodesSearched
+      && s.backtracks === first.backtracks
+      && s.traceHash === first.traceHash),
+  };
+}
+
+function summarizeNumbers(values) {
+  const sorted = values.slice().sort((a, b) => a - b);
+  return {
+    min: sorted[0],
+    p10: percentile(sorted, 0.10),
+    median: percentile(sorted, 0.50),
+    p90: percentile(sorted, 0.90),
+    max: sorted[sorted.length - 1],
+  };
+}
+
+function percentile(sorted, p) {
+  if (sorted.length === 1) return sorted[0];
+  const index = (sorted.length - 1) * p;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sorted[lower];
+  const weight = index - lower;
+  return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+}
+
+async function runRustWasmSolve(issText, options = {}) {
+  const exports = await getWasmExports();
+  const bytes = encoder.encode(issText);
+  const ptr = exports.bench_alloc(bytes.length);
+  new Uint8Array(exports.memory.buffer, ptr, bytes.length).set(bytes);
+
+  const setupStart = performance.now();
+  const setupCode = exports.bench_setup(ptr, bytes.length, options.maxSolutions ?? 0, options.traceLimit ?? 0);
+  const setupMs = performance.now() - setupStart;
+  exports.bench_dealloc(ptr, bytes.length);
+  if (setupCode !== 0) throw new Error(`bench_setup failed with code ${setupCode}`);
+
+  const runtimeStart = performance.now();
+  const solveCode = exports.bench_solve();
+  const runtimeMs = performance.now() - runtimeStart;
+  if (solveCode !== 0) throw new Error(`bench_solve failed with code ${solveCode}`);
+
+  const result = {
+    engine: 'rust-wasm-arrow-reference',
+    language: 'rust',
+    runtime: 'wasm-chrome',
+    puzzle: {
+      size: 9,
+      arrows: (issText.match(/\.Arrow~/g) ?? []).length,
+      givens: 0,
+    },
+    setupMs,
+    runtimeMs,
+    totalMs: setupMs + runtimeMs,
+    solutions: exports.bench_get_solutions(),
+    guesses: exports.bench_get_guesses(),
+    valuesTried: exports.bench_get_values_tried(),
+    nodesSearched: exports.bench_get_nodes_searched(),
+    backtracks: exports.bench_get_backtracks(),
+    domainEliminations: exports.bench_get_domain_eliminations(),
+    propagationSteps: exports.bench_get_propagation_steps(),
+    traceHash: (exports.bench_get_trace_hash() >>> 0).toString(16).padStart(8, '0'),
+    trace: [],
+  };
+
+  exports.bench_free_state();
+  return result;
+}
+
+globalThis.runRustWasmBenchmark = async function runRustWasmBenchmark(issText, options = {}) {
+  const warmup = Math.max(0, options.warmup ?? 5);
+  const samples = Math.max(1, options.samples ?? 20);
+  const solveOptions = {
+    maxSolutions: options.maxSolutions ?? 0,
+    traceLimit: options.traceLimit ?? 0,
+  };
+
+  await getWasmExports();
+
+  for (let i = 0; i < warmup; i++) {
+    await runRustWasmSolve(issText, solveOptions);
+  }
+
+  const results = [];
+  for (let i = 0; i < samples; i++) {
+    results.push(await runRustWasmSolve(issText, solveOptions));
+  }
+
+  return {
+    kind: 'arrow-rust-wasm-samples',
+    warmup,
+    samples: results,
+    summary: summarizeSamples(results),
+  };
+};
+</script>
