@@ -269,12 +269,40 @@ public partial class Solver
             Solver boardCopy = Clone(willRunNonSinglesLogic: true);
             boardCopy.bruteForceSolveStatsTracker = new BruteForceSolveStatsTracker();
             boardCopy.countBruteForceAssignments = true;
-            if (boardCopy.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
+            LogicResult discoveryResult = boardCopy.DiscoverWeakLinks(cancellationToken);
+            if (discoveryResult == LogicResult.Invalid)
             {
                 setupStopwatch.Stop();
                 long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
                 lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
                 return 0;
+            }
+            if (discoveryResult == LogicResult.PuzzleComplete)
+            {
+                setupStopwatch.Stop();
+                state.IncrementSolutions(boardCopy);
+                long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
+                lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
+                return maxSolutions > 0 && state.numSolutions > maxSolutions ? maxSolutions : state.numSolutions;
+            }
+            if (discoveryResult == LogicResult.Changed)
+            {
+                LogicResult setupPropagateResult = boardCopy.BruteForcePropagate(false, cancellationToken);
+                if (setupPropagateResult == LogicResult.Invalid)
+                {
+                    setupStopwatch.Stop();
+                    long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
+                    lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
+                    return 0;
+                }
+                if (setupPropagateResult == LogicResult.PuzzleComplete)
+                {
+                    setupStopwatch.Stop();
+                    state.IncrementSolutions(boardCopy);
+                    long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
+                    lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
+                    return maxSolutions > 0 && state.numSolutions > maxSolutions ? maxSolutions : state.numSolutions;
+                }
             }
             setupStopwatch.Stop();
             boardCopy.isBruteForcing = true;
