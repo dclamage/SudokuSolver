@@ -62,7 +62,7 @@ pub struct SolverStats {
 #[derive(Clone, Debug)]
 struct ArrowConstraint {
     cells: Vec<u8>,
-    tuple_values: Vec<u8>,
+    tuple_masks: Vec<u16>,
 }
 
 pub struct ArrowSudokuSolver {
@@ -506,15 +506,13 @@ impl ArrowSudokuSolver {
 
         {
             let arrow = &self.arrows[arrow_index];
-            let tuple_values = &arrow.tuple_values;
+            let tuple_masks = &arrow.tuple_masks;
             let cells = &arrow.cells;
             let mut offset = 0usize;
-            while offset < tuple_values.len() {
+            while offset < tuple_masks.len() {
                 let mut valid = true;
                 for i in 0..width {
-                    if self.grid_pool[grid_index][cells[i] as usize]
-                        & VALUE_MASKS[tuple_values[offset + i] as usize]
-                        == 0
+                    if self.grid_pool[grid_index][cells[i] as usize] & tuple_masks[offset + i] == 0
                     {
                         valid = false;
                         break;
@@ -523,7 +521,7 @@ impl ArrowSudokuSolver {
 
                 if valid {
                     for i in 0..width {
-                        self.supports[i] |= VALUE_MASKS[tuple_values[offset + i] as usize];
+                        self.supports[i] |= tuple_masks[offset + i];
                     }
                 }
                 offset += width;
@@ -715,7 +713,6 @@ impl ArrowSudokuSolver {
     }
 
     fn mix_trace(&mut self, cell: usize, depth: usize, value: usize) {
-        self.trace_hash = self.trace_hash.wrapping_mul(1);
         self.trace_hash = (self.trace_hash ^ (cell as u32 + 1)).wrapping_mul(16777619);
         self.trace_hash = (self.trace_hash ^ (depth as u32 + 1)).wrapping_mul(16777619);
         self.trace_hash = (self.trace_hash ^ value as u32).wrapping_mul(16777619);
@@ -731,9 +728,14 @@ fn build_arrow(cells: &[u8]) -> Result<ArrowConstraint, String> {
         build_arrow_tuples(cells, &mut values, &mut tuples, 1, circle_value as i32);
     }
 
+    let tuple_masks = tuples
+        .iter()
+        .map(|&value| VALUE_MASKS[value as usize])
+        .collect();
+
     Ok(ArrowConstraint {
         cells: cells.to_vec(),
-        tuple_values: tuples,
+        tuple_masks,
     })
 }
 

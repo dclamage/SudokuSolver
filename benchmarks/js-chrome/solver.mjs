@@ -421,16 +421,16 @@ export class ArrowSudokuSolver {
   enforceArrow(grid, arrowIndex) {
     const arrow = this.arrows[arrowIndex];
     const cells = arrow.cells;
-    const tupleValues = arrow.tupleValues;
+    const tupleMasks = arrow.tupleMasks;
     const width = cells.length;
     const supports = this.supports;
 
     supports.fill(0, 0, width);
 
-    for (let offset = 0; offset < tupleValues.length; offset += width) {
+    for (let offset = 0; offset < tupleMasks.length; offset += width) {
       let valid = true;
       for (let i = 0; i < width; i++) {
-        if ((grid[cells[i]] & VALUE_MASKS[tupleValues[offset + i]]) === 0) {
+        if ((grid[cells[i]] & tupleMasks[offset + i]) === 0) {
           valid = false;
           break;
         }
@@ -439,7 +439,7 @@ export class ArrowSudokuSolver {
       if (!valid) continue;
 
       for (let i = 0; i < width; i++) {
-        supports[i] |= VALUE_MASKS[tupleValues[offset + i]];
+        supports[i] |= tupleMasks[offset + i];
       }
     }
 
@@ -628,7 +628,7 @@ function buildArrow(cells) {
 
   return {
     cells,
-    tupleValues: Uint8Array.from(tuples),
+    tupleMasks: Uint16Array.from(tuples, value => VALUE_MASKS[value]),
   };
 }
 

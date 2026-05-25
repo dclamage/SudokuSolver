@@ -651,17 +651,17 @@ file sealed class ArrowSudokuSolver
     {
         ArrowConstraint arrow = _arrows[arrowIndex];
         byte[] cells = arrow.Cells;
-        byte[] tupleValues = arrow.TupleValues;
+        ushort[] tupleMasks = arrow.TupleMasks;
         int width = cells.Length;
 
         Array.Clear(_supports, 0, width);
 
-        for (int offset = 0; offset < tupleValues.Length; offset += width)
+        for (int offset = 0; offset < tupleMasks.Length; offset += width)
         {
             bool valid = true;
             for (int i = 0; i < width; i++)
             {
-                if ((grid[cells[i]] & ArrowTables.ValueMasks[tupleValues[offset + i]]) == 0)
+                if ((grid[cells[i]] & tupleMasks[offset + i]) == 0)
                 {
                     valid = false;
                     break;
@@ -672,7 +672,7 @@ file sealed class ArrowSudokuSolver
 
             for (int i = 0; i < width; i++)
             {
-                _supports[i] |= ArrowTables.ValueMasks[tupleValues[offset + i]];
+                _supports[i] |= tupleMasks[offset + i];
             }
         }
 
@@ -886,7 +886,14 @@ file sealed class ArrowSudokuSolver
             BuildArrowTuples(cells, values, tuples, 1, circleValue);
         }
 
-        return new ArrowConstraint(cells, tuples.ToArray());
+        byte[] tupleValues = tuples.ToArray();
+        ushort[] tupleMasks = new ushort[tupleValues.Length];
+        for (int i = 0; i < tupleValues.Length; i++)
+        {
+            tupleMasks[i] = ArrowTables.ValueMasks[tupleValues[i]];
+        }
+
+        return new ArrowConstraint(cells, tupleMasks);
     }
 
     private static byte[][] BuildConstraintsByCell(ArrowConstraint[] arrows)
@@ -1164,7 +1171,7 @@ file sealed record SolveOptions(int MaxSolutions, int TraceLimit)
 
 file sealed record ParsedPuzzle(byte[][] Arrows);
 
-file sealed record ArrowConstraint(byte[] Cells, byte[] TupleValues);
+file sealed record ArrowConstraint(byte[] Cells, ushort[] TupleMasks);
 
 file sealed record TraceEntry(int Depth, string Cell, int Value, string Candidates);
 
