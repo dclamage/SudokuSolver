@@ -199,6 +199,11 @@ public partial class Solver
     public bool IsBruteForcing => isBruteForcing;
 
     /// <summary>
+    /// Gets the shared registry of setup-time sum terms and relations.
+    /// </summary>
+    internal SumConstraintRegistry SumConstraints => sumConstraints;
+
+    /// <summary>
     /// Gets the statistics from the most recent brute-force search operation,
     /// including <see cref="FindSolution(bool, CancellationToken, bool)"/> and <see cref="TrueCandidates(bool, Action{long[]}, long, CancellationToken)"/>.
     /// </summary>

@@ -19,7 +19,8 @@ public class LittleKillerConstraint : Constraint
     private readonly (int, int) cellStart;
     private readonly HashSet<(int, int)> cells;
     private readonly List<(int, int)> cellsList;
-    private SumCellsHelper sumCells = null;
+    private readonly int[] cellIndices;
+    private SumTerm sumTerm = null;
 
     private static readonly Regex optionsRegex = new(@"(\d+);[rR](\d+)[cC](\d+);([UD][LR])");
 
@@ -76,6 +77,7 @@ public class LittleKillerConstraint : Constraint
             cell = NextCell(cell);
         }
         cellsList = new(cells);
+        cellIndices = cellsList.Select(cell => cell.Item1 * WIDTH + cell.Item2).Order().ToArray();
     }
 
     private (int, int) NextCell((int, int) cell)
@@ -127,37 +129,22 @@ public class LittleKillerConstraint : Constraint
             return LogicResult.None;
         }
 
-        sumCells = new SumCellsHelper(sudokuSolver, cellsList);
-        return sumCells.Init(sudokuSolver, sum.ToEnumerable());
+        sumTerm ??= sudokuSolver.SumConstraints.RegisterFixedSum(this, cellsList, [sum]);
+        return sumTerm.InitCandidates(sudokuSolver);
     }
 
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
-        if (sumCells == null || !cells.Contains((i, j)))
-        {
-            return true;
-        }
-
-        var board = sudokuSolver.Board;
-
-        int actualSum = 0;
-        foreach (var cell in cells)
-        {
-            uint mask = board[cell.Item1, cell.Item2];
-            if (!IsValueSet(mask))
-            {
-                return true;
-            }
-            actualSum += GetValue(mask);
-        }
-        return sum == actualSum;
+        return sumTerm?.EnforceComplete(sudokuSolver, i * WIDTH + j) ?? true;
     }
 
-    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription);
-    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumCells != null ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => sumTerm != null ? InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription) : LogicResult.None;
+    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumTerm != null ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
+
+    public override IReadOnlyList<int> CellIndicesForPropagationQueue => cellIndices;
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
-        return sumCells?.StepLogic(sudokuSolver, sum.ToEnumerable(), logicalStepDescription) ?? LogicResult.None;
+        return sumTerm?.StepLogic(sudokuSolver, logicalStepDescription, isBruteForcing) ?? LogicResult.None;
     }
 }

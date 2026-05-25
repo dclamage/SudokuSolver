@@ -60,6 +60,7 @@ public partial class Solver
     private (int, int, int)[] candidateToCoordValueLookup;
     // Returns whether two cells cannot be the same value
     private bool[] seenMap;
+    private readonly SumConstraintRegistry sumConstraints;
 
     // Conflict-score heuristic: shared across all clones in one search tree via reference assignment.
     // Cells that repeatedly cause contradictions get higher scores and are branched on first.
