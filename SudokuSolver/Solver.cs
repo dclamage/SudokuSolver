@@ -45,6 +45,9 @@ public partial class Solver
     // Private state
     private bool isInSetValue = false;
     private bool isBruteForcing = false;
+    private bool isPooledBruteForceSolver = false;
+    private bool isPooledBruteForceSolverRented = false;
+    private int pooledBruteForceSolverIndex = -1;
     private bool isInvalid;
     private int unsetCellsCount;
     private readonly List<int> pendingNakedSingles;

@@ -24,6 +24,16 @@ public sealed class BruteForceSolveStats
     /// Gets the time spent in the actual brute-force search after setup completed.
     /// </summary>
     public required TimeSpan Runtime { get; init; }
+
+    /// <summary>
+    /// Gets the bytes allocated while preparing the puzzle for brute-force search.
+    /// </summary>
+    public required long PuzzleSetupAllocatedBytes { get; init; }
+
+    /// <summary>
+    /// Gets the bytes allocated during the actual brute-force search after setup completed.
+    /// </summary>
+    public required long RuntimeAllocatedBytes { get; init; }
 }
 
 internal sealed class BruteForceSolveStatsTracker
@@ -35,11 +45,13 @@ internal sealed class BruteForceSolveStatsTracker
 
     public void IncrementValuesTried() => Interlocked.Increment(ref valuesTried);
 
-    public BruteForceSolveStats Snapshot(TimeSpan puzzleSetupTime, TimeSpan runtime) => new()
+    public BruteForceSolveStats Snapshot(TimeSpan puzzleSetupTime, TimeSpan runtime, long puzzleSetupAllocatedBytes, long runtimeAllocatedBytes) => new()
     {
         Guesses = Interlocked.Read(ref guesses),
         ValuesTried = Interlocked.Read(ref valuesTried),
         PuzzleSetupTime = puzzleSetupTime,
         Runtime = runtime,
+        PuzzleSetupAllocatedBytes = puzzleSetupAllocatedBytes,
+        RuntimeAllocatedBytes = runtimeAllocatedBytes,
     };
 }

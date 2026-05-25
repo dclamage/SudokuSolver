@@ -29,7 +29,11 @@ public class Program
 		Console.WriteLine($"Values tried: {stats.ValuesTried:N0}");
 		Console.WriteLine($"Puzzle setup time: {totalPuzzleSetupTime.TotalMilliseconds:F3} ms");
 		Console.WriteLine($"Runtime: {stats.Runtime.TotalMilliseconds:F3} ms");
+		Console.WriteLine($"Brute-force setup allocated: {FormatAllocatedBytes(stats.PuzzleSetupAllocatedBytes)}");
+		Console.WriteLine($"Runtime allocated: {FormatAllocatedBytes(stats.RuntimeAllocatedBytes)}");
 	}
+
+	private static string FormatAllocatedBytes(long bytes) => $"{bytes:N0} B ({bytes / 1048576.0:N3} MiB)";
 
     public static async Task<int> Main(string[] args)
 	{

@@ -241,6 +241,9 @@ public partial class Solver
 
         TrackHiddenSingles(cellIndex, prevMask, mask);
 
+        if (isBruteForcing && cellToConstraintIndices != null)
+            EnqueueConstraintsForCell(cellIndex);
+
         return true;
     }
 

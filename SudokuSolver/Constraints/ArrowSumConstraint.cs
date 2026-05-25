@@ -16,6 +16,8 @@ public class ArrowSumConstraint : Constraint
     private readonly bool _isDegenerate;
     private readonly bool _isClone;
     private bool _linksInitialized = false;
+    private ArrowTupleSupport _circleArrowTupleSupport;
+    private bool _isDiscoveringLinks;
 
     public ArrowSumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
@@ -70,6 +72,15 @@ public class ArrowSumConstraint : Constraint
         }
 
         _arrowSumHelperInstance = new SumCellsHelper(sudokuSolver, arrowCells);
+        if (circleCells.Count == 1)
+        {
+            _circleArrowTupleSupport ??= ArrowTupleSupport.Build(sudokuSolver, circleCells, arrowCells);
+            if (_circleArrowTupleSupport != null)
+            {
+                return _circleArrowTupleSupport.StepLogic(sudokuSolver);
+            }
+        }
+
         return _logicStrategy.InitCandidates(sudokuSolver, circleCells, arrowCells, _arrowSumHelperInstance);
     }
 
@@ -78,6 +89,12 @@ public class ArrowSumConstraint : Constraint
         if (_isDegenerate || _isClone)
         {
             return true;
+        }
+
+        if (_circleArrowTupleSupport != null)
+        {
+            int cellIndex = i * WIDTH + j;
+            return !_circleArrowTupleSupport.ContainsCell(cellIndex) || _circleArrowTupleSupport.HasValidTuple(sudokuSolver);
         }
 
         return _logicStrategy.EnforceConstraint(sudokuSolver, circleCells, arrowCells, _arrowSumHelperInstance, _allCells, i, j, val);
@@ -90,20 +107,27 @@ public class ArrowSumConstraint : Constraint
             return LogicResult.None;
         }
 
+        if ((isBruteForcing || _isDiscoveringLinks) && logicalStepDescription == null && _circleArrowTupleSupport != null)
+        {
+            return _circleArrowTupleSupport.StepLogic(sudokuSolver);
+        }
+
         return _logicStrategy.StepLogic(sudokuSolver, circleCells, arrowCells, _arrowSumHelperInstance, logicalStepDescription, isBruteForcing);
     }
 
     public override void SeedConflictPriority(int[] conflictScores)
     {
         if (_isDegenerate) return;
-        // Circle cells are the key decision point: their value fixes the entire arrow sum.
-        // Give them the highest structural priority so the cold-start heuristic branches on
-        // them first, before any conflict data has accumulated.
+        if (!_isClone && circleCells.Count == 1)
+        {
+            _circleArrowTupleSupport ??= ArrowTupleSupport.Build(_solverInstanceRef, circleCells, arrowCells);
+        }
+
+        int priority = Math.Max(MAX_VALUE * 2 - circleCells.Count - arrowCells.Count, MAX_VALUE);
         foreach (var (i, j) in circleCells)
-            conflictScores[i * WIDTH + j] += MAX_VALUE;
-        // Shaft cells also participate in the sum constraint; give them a smaller boost.
+            conflictScores[i * WIDTH + j] += priority;
         foreach (var (i, j) in arrowCells)
-            conflictScores[i * WIDTH + j] += MAX_VALUE / 2;
+            conflictScores[i * WIDTH + j] += priority;
     }
 
     public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
@@ -133,7 +157,15 @@ public class ArrowSumConstraint : Constraint
         // expensive simulation-based link discovery only needs to run once.
         if (_linksInitialized) return LogicResult.None;
         _linksInitialized = true;
-        return InitLinksByRunningLogic(sudokuSolver, _allCells, logicalStepDescription);
+        _isDiscoveringLinks = true;
+        try
+        {
+            return InitLinksByRunningLogic(sudokuSolver, _allCells, logicalStepDescription);
+        }
+        finally
+        {
+            _isDiscoveringLinks = false;
+        }
     }
 
     public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value)

@@ -39,6 +39,7 @@ public partial class Solver
         }
 
         lastBruteForceSolveStats = null;
+        long setupAllocatedBytesStart = GC.GetTotalAllocatedBytes(precise: false);
         Stopwatch setupStopwatch = Stopwatch.StartNew();
         Solver solver = Clone(willRunNonSinglesLogic: true);
         solver.bruteForceSolveStatsTracker = new BruteForceSolveStatsTracker();
@@ -46,14 +47,17 @@ public partial class Solver
         if (solver.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
         {
             setupStopwatch.Stop();
-            lastBruteForceSolveStats = solver.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero);
+            long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
+            lastBruteForceSolveStats = solver.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
             return false;
         }
         setupStopwatch.Stop();
         solver.isBruteForcing = true;
+        using FindSolutionState state = new(isRandom, multiThread, cancellationToken, solver.NUM_CANDIDATES + 1);
+        long puzzleSetupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
 
+        long runtimeAllocatedBytesStart = GC.GetTotalAllocatedBytes(precise: false);
         Stopwatch runtimeStopwatch = Stopwatch.StartNew();
-        using FindSolutionState state = new(isRandom, multiThread, cancellationToken);
         if (multiThread)
         {
             if (!state.PushSolver(solver, true))
@@ -67,7 +71,8 @@ public partial class Solver
             FindSolutionInternal(solver, state);
         }
         runtimeStopwatch.Stop();
-        lastBruteForceSolveStats = solver.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed);
+        long runtimeAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - runtimeAllocatedBytesStart;
+        lastBruteForceSolveStats = solver.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed, puzzleSetupAllocatedBytes, runtimeAllocatedBytes);
         if (cancellationToken.IsCancellationRequested)
         {
             return false;
@@ -81,7 +86,8 @@ public partial class Solver
 
     private class FindSolutionState : IDisposable
     {
-        public CountdownEvent countdownEvent = new(1);
+        public readonly CountdownEvent countdownEvent;
+        public readonly Solver[] searchStack;
         public uint[] result = null;
         public CancellationToken cancellationToken;
         public bool isRandom = false;
@@ -90,11 +96,13 @@ public partial class Solver
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
 
-        public FindSolutionState(bool isRandom, bool isMultiThreaded, CancellationToken cancellationToken)
+        public FindSolutionState(bool isRandom, bool isMultiThreaded, CancellationToken cancellationToken, int searchStackCapacity)
         {
             this.cancellationToken = cancellationToken;
             this.isRandom = isRandom;
             this.isMultiThreaded = isMultiThreaded;
+            countdownEvent = isMultiThreaded ? new CountdownEvent(1) : null;
+            searchStack = isMultiThreaded ? null : new Solver[searchStackCapacity];
 
             maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
         }
@@ -133,7 +141,7 @@ public partial class Solver
 
         public void Dispose()
         {
-            ((IDisposable)countdownEvent).Dispose();
+            ((IDisposable)countdownEvent)?.Dispose();
         }
 
         public void ReportSolution(Solver solver)
@@ -149,10 +157,11 @@ public partial class Solver
 
     private static void FindSolutionInternal(Solver root, FindSolutionState state)
     {
-        Stack<Solver> stack = new();
-        stack.Push(root);
+        Solver[] stack = state.isMultiThreaded ? new Solver[root.NUM_CANDIDATES + 1] : state.searchStack;
+        int stackCount = 0;
+        PushSearchStack(stack, ref stackCount, root);
 
-        while (state.result is null && stack.TryPop(out Solver solver))
+        while (state.result is null && TryPopSearchStack(stack, ref stackCount, out Solver solver))
         {
             state.cancellationToken.ThrowIfCancellationRequested();
             if (state.result != null)
@@ -178,13 +187,13 @@ public partial class Solver
                 if (solver.branchCellIndex >= 0)
                 {
                     solver.IncrementConflictScore(solver.branchCellIndex);
-                    if (stack.TryPeek(out Solver findSolParent))
+                    if (TryPeekSearchStack(stack, stackCount, out Solver findSolParent))
                         findSolParent._lastContradictionCellIndex = solver.branchCellIndex;
                 }
                 continue;
             }
 
-            (int cellIndex, int v) = solver.GetLeastCandidateCell();
+            (int cellIndex, int v) = solver.GetLeastCandidateCell(allowBilocals: false);
             if (cellIndex < 0)
             {
                 state.ReportSolution(solver);
@@ -219,7 +228,7 @@ public partial class Solver
             {
                 if (!state.isMultiThreaded || !state.PushSolver(newSolver))
                 {
-                    stack.Push(newSolver);
+                    PushSearchStack(stack, ref stackCount, newSolver);
                 }
             }
 
@@ -228,7 +237,7 @@ public partial class Solver
             {
                 solver.branchCellIndex = cellIndex;
                 solver.searchDepth++;
-                stack.Push(solver);
+                PushSearchStack(stack, ref stackCount, solver);
             }
         }
     }
@@ -252,8 +261,9 @@ public partial class Solver
         maxSolutions = Math.Max(maxSolutions, 0);
 
         lastBruteForceSolveStats = null;
+    long setupAllocatedBytesStart = GC.GetTotalAllocatedBytes(precise: false);
         Stopwatch setupStopwatch = Stopwatch.StartNew();
-        using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken);
+        using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken, NUM_CANDIDATES + 1);
         try
         {
             Solver boardCopy = Clone(willRunNonSinglesLogic: true);
@@ -262,12 +272,16 @@ public partial class Solver
             if (boardCopy.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
             {
                 setupStopwatch.Stop();
-                lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero);
+                long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
+                lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
                 return 0;
             }
             setupStopwatch.Stop();
             boardCopy.isBruteForcing = true;
+            state.InitializeSolverPool(boardCopy);
+            long puzzleSetupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
 
+            long runtimeAllocatedBytesStart = GC.GetTotalAllocatedBytes(precise: false);
             Stopwatch runtimeStopwatch = Stopwatch.StartNew();
             if (state.multiThread)
             {
@@ -282,7 +296,8 @@ public partial class Solver
                 CountSolutionsInternal(boardCopy, state);
             }
             runtimeStopwatch.Stop();
-            lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed);
+            long runtimeAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - runtimeAllocatedBytesStart;
+            lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed, puzzleSetupAllocatedBytes, runtimeAllocatedBytes);
         }
         catch (OperationCanceledException) { }
 
@@ -298,6 +313,10 @@ public partial class Solver
         public readonly Action<Solver> solutionEvent;
         public readonly CancellationToken cancellationToken;
         public readonly CountdownEvent countdownEvent;
+        public readonly Solver[] searchStack;
+        private BruteForceSolverPool solverPool;
+        private SearchStackPool searchStackPool;
+        private readonly int searchStackCapacity;
 
         private readonly object solutionLock = new();
         private readonly Stopwatch eventTimer;
@@ -305,17 +324,59 @@ public partial class Solver
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
 
-        public CountSolutionsState(long maxSolutions, bool multiThread, Action<long> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken)
+        public CountSolutionsState(long maxSolutions, bool multiThread, Action<long> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken, int searchStackCapacity)
         {
             this.maxSolutions = maxSolutions;
             this.multiThread = multiThread;
             this.progressEvent = progressEvent;
             this.solutionEvent = solutionEvent;
             this.cancellationToken = cancellationToken;
+            this.searchStackCapacity = searchStackCapacity;
             eventTimer = Stopwatch.StartNew();
             countdownEvent = multiThread ? new CountdownEvent(1) : null;
+            searchStack = multiThread ? null : new Solver[searchStackCapacity];
             maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
             MaxSolutionsReached = false;
+        }
+
+        public void InitializeSolverPool(Solver root)
+        {
+            if (multiThread)
+            {
+                solverPool = new BruteForceSolverPool(root, searchStackCapacity * maxRunningTasks, isThreadSafe: true);
+                searchStackPool = new SearchStackPool(searchStackCapacity, maxRunningTasks);
+            }
+            else
+            {
+                solverPool = new BruteForceSolverPool(root, root.NUM_CANDIDATES + 1);
+            }
+        }
+
+        public Solver RentBranchSolver(Solver source)
+        {
+            if (solverPool == null)
+            {
+                Solver clone = source.Clone(willRunNonSinglesLogic: false);
+                clone.isBruteForcing = true;
+                return clone;
+            }
+
+            return solverPool.RentCopy(source);
+        }
+
+        public void ReleaseSolver(Solver solver)
+        {
+            solverPool?.Release(solver);
+        }
+
+        public Solver[] RentSearchStack()
+        {
+            return searchStackPool.Rent();
+        }
+
+        public void ReleaseSearchStack(Solver[] stack)
+        {
+            searchStackPool.Release(stack);
         }
 
         public bool MaxSolutionsReached { get; private set; }
@@ -391,84 +452,320 @@ public partial class Solver
     {
         bool isMultithreaded = state.multiThread;
 
-        Stack<Solver> stack = new();
-        stack.Push(root);
-
-        while (stack.TryPop(out Solver solver) && !state.MaxSolutionsReached)
+        Solver[] stack = isMultithreaded ? state.RentSearchStack() : state.searchStack;
+        int stackCount = 0;
+        try
         {
-            state.cancellationToken.ThrowIfCancellationRequested();
+            PushSearchStack(stack, ref stackCount, root);
 
-            if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintIndices != null)
+            while (TryPopSearchStack(stack, ref stackCount, out Solver solver) && !state.MaxSolutionsReached)
             {
-                solver.EnqueueConstraintsForCell(solver._lastContradictionCellIndex);
-                solver._lastContradictionCellIndex = -1;
-            }
+                state.cancellationToken.ThrowIfCancellationRequested();
 
-            LogicResult logicResult = solver.BruteForcePropagate(false, state.cancellationToken);
-            if (logicResult == LogicResult.PuzzleComplete)
-            {
-                state.IncrementSolutions(solver);
-                continue;
-            }
-
-            if (logicResult == LogicResult.Invalid)
-            {
-                if (solver.branchCellIndex >= 0)
+                if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintIndices != null)
                 {
-                    solver.IncrementConflictScore(solver.branchCellIndex);
-                    if (stack.TryPeek(out Solver countSolParent))
-                        countSolParent._lastContradictionCellIndex = solver.branchCellIndex;
+                    solver.EnqueueConstraintsForCell(solver._lastContradictionCellIndex);
+                    solver._lastContradictionCellIndex = -1;
                 }
-                continue;
-            }
 
-            // Start with the cell that has the least possible candidates
-            (int cellIndex, int v) = solver.GetLeastCandidateCell();
-            if (cellIndex < 0)
-            {
-                state.IncrementSolutions(solver);
-                continue;
-            }
-
-            solver.bruteForceSolveStatsTracker?.IncrementGuesses();
-
-            // Try a possible value for this cell
-            int val = v != 0 ? v : MinValue(solver.board[cellIndex]);
-
-            // Branch trace logging
-            var traceWriter = BranchTraceWriter;
-            if (traceWriter != null)
-            {
-                int lineNum = Interlocked.Increment(ref _branchTraceLineCount);
-                if (lineNum <= BranchTraceMaxLines)
+                LogicResult logicResult = solver.BruteForcePropagate(false, state.cancellationToken);
+                if (logicResult == LogicResult.PuzzleComplete)
                 {
-                    int row = cellIndex / solver.WIDTH;
-                    int col = cellIndex % solver.WIDTH;
-                    int cs = solver.conflictScores != null ? solver.conflictScores[cellIndex] : 0;
-                    int cands = ValueCount(solver.board[cellIndex]);
-                    string snap = lineNum <= BranchTraceSnapMax ? $"\t{solver.SerializeBoardForTrace()}" : "";
-                    traceWriter.WriteLine($"{lineNum}\t{solver.searchDepth}\t{row + 1}\t{col + 1}\t{cands}\t{cs}\t{val}{snap}");
+                    state.IncrementSolutions(solver);
+                    state.ReleaseSolver(solver);
+                    continue;
                 }
-            }
 
-            // Create a solver without this value and start a task for it
-            Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
-            newSolver.isBruteForcing = true;
-            if (newSolver.ClearValue(cellIndex, val))
-            {
-                if (!isMultithreaded || !state.PushSolver(newSolver))
+                if (logicResult == LogicResult.Invalid)
                 {
-                    stack.Push(newSolver);
+                    if (solver.branchCellIndex >= 0)
+                    {
+                        solver.IncrementConflictScore(solver.branchCellIndex);
+                        if (TryPeekSearchStack(stack, stackCount, out Solver countSolParent))
+                            countSolParent._lastContradictionCellIndex = solver.branchCellIndex;
+                    }
+                        state.ReleaseSolver(solver);
+                    continue;
                 }
-            }
 
-            if (solver.SetValue(cellIndex, val))
-            {
-                solver.branchCellIndex = cellIndex;
-                solver.searchDepth++;
-                stack.Push(solver);
+                // Start with the cell that has the least possible candidates
+                (int cellIndex, int v) = solver.GetLeastCandidateCell(allowBilocals: false);
+                if (cellIndex < 0)
+                {
+                    state.IncrementSolutions(solver);
+                    state.ReleaseSolver(solver);
+                    continue;
+                }
+
+                solver.bruteForceSolveStatsTracker?.IncrementGuesses();
+
+                // Try a possible value for this cell
+                int val = v != 0 ? v : MinValue(solver.board[cellIndex]);
+
+                // Branch trace logging
+                var traceWriter = BranchTraceWriter;
+                if (traceWriter != null)
+                {
+                    int lineNum = Interlocked.Increment(ref _branchTraceLineCount);
+                    if (lineNum <= BranchTraceMaxLines)
+                    {
+                        int row = cellIndex / solver.WIDTH;
+                        int col = cellIndex % solver.WIDTH;
+                        int cs = solver.conflictScores != null ? solver.conflictScores[cellIndex] : 0;
+                        int cands = ValueCount(solver.board[cellIndex]);
+                        string snap = lineNum <= BranchTraceSnapMax ? $"\t{solver.SerializeBoardForTrace()}" : "";
+                        traceWriter.WriteLine($"{lineNum}\t{solver.searchDepth}\t{row + 1}\t{col + 1}\t{cands}\t{cs}\t{val}{snap}");
+                    }
+                }
+
+                // Create a solver without this value and start a task for it
+                Solver newSolver = state.RentBranchSolver(solver);
+                if (newSolver.ClearValue(cellIndex, val))
+                {
+                    if (!isMultithreaded || !state.PushSolver(newSolver))
+                    {
+                        PushSearchStack(stack, ref stackCount, newSolver);
+                    }
+                }
+                else
+                {
+                    state.ReleaseSolver(newSolver);
+                }
+
+                if (solver.SetValue(cellIndex, val))
+                {
+                    solver.branchCellIndex = cellIndex;
+                    solver.searchDepth++;
+                    PushSearchStack(stack, ref stackCount, solver);
+                }
+                else
+                {
+                    state.ReleaseSolver(solver);
+                }
             }
         }
+        finally
+        {
+            while (TryPopSearchStack(stack, ref stackCount, out Solver remainingSolver))
+            {
+                state.ReleaseSolver(remainingSolver);
+            }
+
+            if (isMultithreaded)
+            {
+                state.ReleaseSearchStack(stack);
+            }
+        }
+    }
+
+    private sealed class BruteForceSolverPool
+    {
+        private readonly Solver[] solvers;
+        private readonly int[] freeStack;
+        private readonly bool isThreadSafe;
+        private readonly object syncLock = new();
+        private int freeCount;
+
+        public BruteForceSolverPool(Solver root, int capacity, bool isThreadSafe = false)
+        {
+            this.isThreadSafe = isThreadSafe;
+            solvers = new Solver[capacity];
+            freeStack = new int[capacity];
+            for (int i = 0; i < capacity; i++)
+            {
+                Solver solver = root.Clone(willRunNonSinglesLogic: false);
+                solver.isBruteForcing = true;
+                solver.isPooledBruteForceSolver = true;
+                solver.pooledBruteForceSolverIndex = i;
+                solver.pendingNakedSingles.Capacity = Math.Max(solver.pendingNakedSingles.Capacity, root.NUM_CANDIDATES);
+                solvers[i] = solver;
+                freeStack[i] = i;
+            }
+            freeCount = capacity;
+        }
+
+        public Solver RentCopy(Solver source)
+        {
+            Solver solver = RentSolver();
+            solver.CopyBruteForceRuntimeStateFrom(source);
+            return solver;
+        }
+
+        private Solver RentSolver()
+        {
+            if (isThreadSafe)
+            {
+                lock (syncLock)
+                {
+                    return RentSolverUnsynchronized();
+                }
+            }
+
+            return RentSolverUnsynchronized();
+        }
+
+        private Solver RentSolverUnsynchronized()
+        {
+            if (freeCount == 0)
+            {
+                throw new InvalidOperationException("Brute-force solver pool exhausted.");
+            }
+
+            Solver solver = solvers[freeStack[--freeCount]];
+            solver.isPooledBruteForceSolverRented = true;
+            return solver;
+        }
+
+        public void Release(Solver solver)
+        {
+            if (!solver.isPooledBruteForceSolver)
+            {
+                return;
+            }
+
+            if (isThreadSafe)
+            {
+                lock (syncLock)
+                {
+                    ReleaseUnsynchronized(solver);
+                }
+                return;
+            }
+
+            ReleaseUnsynchronized(solver);
+        }
+
+        private void ReleaseUnsynchronized(Solver solver)
+        {
+            if (!solver.isPooledBruteForceSolverRented)
+            {
+                throw new InvalidOperationException("Tried to release a solver that is not currently rented.");
+            }
+
+            solver.isPooledBruteForceSolverRented = false;
+            freeStack[freeCount++] = solver.pooledBruteForceSolverIndex;
+        }
+    }
+
+    private sealed class SearchStackPool
+    {
+        private readonly Solver[][] stacks;
+        private readonly int[] freeStack;
+        private readonly object syncLock = new();
+        private int freeCount;
+
+        public SearchStackPool(int stackCapacity, int capacity)
+        {
+            stacks = new Solver[capacity][];
+            freeStack = new int[capacity];
+            for (int i = 0; i < capacity; i++)
+            {
+                stacks[i] = new Solver[stackCapacity];
+                freeStack[i] = i;
+            }
+            freeCount = capacity;
+        }
+
+        public Solver[] Rent()
+        {
+            lock (syncLock)
+            {
+                if (freeCount == 0)
+                {
+                    throw new InvalidOperationException("Search stack pool exhausted.");
+                }
+
+                return stacks[freeStack[--freeCount]];
+            }
+        }
+
+        public void Release(Solver[] stack)
+        {
+            Array.Clear(stack);
+            lock (syncLock)
+            {
+                for (int i = 0; i < stacks.Length; i++)
+                {
+                    if (ReferenceEquals(stacks[i], stack))
+                    {
+                        freeStack[freeCount++] = i;
+                        return;
+                    }
+                }
+            }
+
+            throw new InvalidOperationException("Tried to release a search stack that does not belong to this pool.");
+        }
+    }
+
+    private void CopyBruteForceRuntimeStateFrom(Solver other)
+    {
+        other.board.AsSpan().CopyTo(board);
+        isInSetValue = false;
+        isBruteForcing = true;
+        isInvalid = other.isInvalid;
+        unsetCellsCount = other.unsetCellsCount;
+
+        pendingNakedSingles.Clear();
+        for (int i = 0; i < other.pendingNakedSingles.Count; i++)
+        {
+            pendingNakedSingles.Add(other.pendingNakedSingles[i]);
+        }
+
+        if (other._candidateCountsPerGroupValue != null)
+        {
+            other._candidateCountsPerGroupValue.AsSpan().CopyTo(_candidateCountsPerGroupValue);
+            other._checkGroupForHiddens.AsSpan().CopyTo(_checkGroupForHiddens);
+            _numGroupsNeedingHiddenCheck = other._numGroupsNeedingHiddenCheck;
+        }
+
+        _numConstraintsQueued = 0;
+        if (_constraintQueued != null && _constraintQueued.Length > 0)
+        {
+            Array.Clear(_constraintQueued);
+        }
+
+        bruteForceSolveStatsTracker = other.bruteForceSolveStatsTracker;
+        countBruteForceAssignments = other.countBruteForceAssignments;
+        branchCellIndex = -1;
+        searchDepth = other.searchDepth;
+        _lastContradictionCellIndex = -1;
+    }
+
+    private static void PushSearchStack(Solver[] stack, ref int stackCount, Solver solver)
+    {
+        if (stackCount >= stack.Length)
+        {
+            throw new InvalidOperationException("Brute-force search stack exhausted.");
+        }
+
+        stack[stackCount++] = solver;
+    }
+
+    private static bool TryPopSearchStack(Solver[] stack, ref int stackCount, out Solver solver)
+    {
+        if (stackCount == 0)
+        {
+            solver = null;
+            return false;
+        }
+
+        int index = --stackCount;
+        solver = stack[index];
+        stack[index] = null;
+        return true;
+    }
+
+    private static bool TryPeekSearchStack(Solver[] stack, int stackCount, out Solver solver)
+    {
+        if (stackCount == 0)
+        {
+            solver = null;
+            return false;
+        }
+
+        solver = stack[stackCount - 1];
+        return true;
     }
 
     public long[] TrueCandidates(bool multiThread = false, Action<long[]> progressEvent = null, long numSolutionsCap = 8, CancellationToken cancellationToken = default)
@@ -481,6 +778,7 @@ public partial class Solver
         lastBruteForceSolveStats = null;
         numSolutionsCap = Math.Max(numSolutionsCap, 0);
 
+    long setupAllocatedBytesStart = GC.GetTotalAllocatedBytes(precise: false);
         Stopwatch setupStopwatch = Stopwatch.StartNew();
         using TrueCandidatesState state = new(this, multiThread, progressEvent, numSolutionsCap, cancellationToken);
         try
@@ -491,12 +789,15 @@ public partial class Solver
             if (boardCopy.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
             {
                 setupStopwatch.Stop();
-                lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero);
+                long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
+                lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
                 return state.candidateSolutionCounts;
             }
             setupStopwatch.Stop();
+            long puzzleSetupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
             boardCopy.isBruteForcing = true;
 
+            long runtimeAllocatedBytesStart = GC.GetTotalAllocatedBytes(precise: false);
             Stopwatch runtimeStopwatch = Stopwatch.StartNew();
             if (state.multiThread)
             {
@@ -511,7 +812,8 @@ public partial class Solver
                 TrueCandidatesInternal(boardCopy, state);
             }
             runtimeStopwatch.Stop();
-            lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed);
+            long runtimeAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - runtimeAllocatedBytesStart;
+            lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed, puzzleSetupAllocatedBytes, runtimeAllocatedBytes);
         }
         catch (OperationCanceledException) { }
 

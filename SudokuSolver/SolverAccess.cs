@@ -49,6 +49,12 @@ public partial class Solver
     }
 
     public IReadOnlyList<uint> FlatBoard => board;
+
+    /// <summary>
+    /// Gets the internal board array for allocation-free solver hot paths.
+    /// </summary>
+    internal uint[] BoardArray => board;
+
     public BoardView Board => new(board, WIDTH, HEIGHT);
     public uint[] BoardClone
     {

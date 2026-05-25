@@ -587,11 +587,10 @@ public partial class Solver
         conflictScores = new int[NUM_CELLS];
 
         // Uniform baseline so every cell participates in score/count ratio comparison.
-        // Without this, cells at cs=0 are skipped entirely in GetLeastCandidateCell,
-        // causing arrow circle cells (cs=9) to always win over unconstrained cells regardless
-        // of candidate count. Baseline=MAX_VALUE^2 lets the ratio naturally prefer MRV.
+        // Keep this close to the arrow benchmark's scoring scale so learned conflicts
+        // can affect branch selection early in the search.
         for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
-            conflictScores[cellIndex] = MAX_VALUE * MAX_VALUE;
+            conflictScores[cellIndex] = MAX_VALUE * 3;
 
         foreach (var group in Groups)
         {
