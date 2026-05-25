@@ -261,7 +261,7 @@ public partial class Solver
         maxSolutions = Math.Max(maxSolutions, 0);
 
         lastBruteForceSolveStats = null;
-    long setupAllocatedBytesStart = GC.GetTotalAllocatedBytes(precise: false);
+        long setupAllocatedBytesStart = GC.GetTotalAllocatedBytes(precise: false);
         Stopwatch setupStopwatch = Stopwatch.StartNew();
         using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken, NUM_CANDIDATES + 1);
         try
@@ -577,7 +577,7 @@ public partial class Solver
                 solver.isBruteForcing = true;
                 solver.isPooledBruteForceSolver = true;
                 solver.pooledBruteForceSolverIndex = i;
-                solver.pendingNakedSingles.Capacity = Math.Max(solver.pendingNakedSingles.Capacity, root.NUM_CANDIDATES);
+                solver.pendingNakedSingles.Capacity = Math.Max(solver.pendingNakedSingles.Capacity, root.NUM_CELLS);
                 solvers[i] = solver;
                 freeStack[i] = i;
             }

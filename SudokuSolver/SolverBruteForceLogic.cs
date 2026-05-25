@@ -299,6 +299,10 @@ public partial class Solver
             cancellationToken.ThrowIfCancellationRequested();
 
             innerResult = LogicResult.None;
+            Solver scratchSolver = Clone(willRunNonSinglesLogic: false);
+            scratchSolver.isBruteForcing = true;
+            scratchSolver.countBruteForceAssignments = false;
+            scratchSolver.pendingNakedSingles.Capacity = Math.Max(scratchSolver.pendingNakedSingles.Capacity, NUM_CANDIDATES);
 
             for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
             {
@@ -313,10 +317,9 @@ public partial class Solver
                     int value = MinValue(cellMask);
                     cellMask &= ~ValueMask(value);
 
-                    Solver solver = Clone(willRunNonSinglesLogic: false);
-                    solver.isBruteForcing = true;
-                    solver.countBruteForceAssignments = false;
-                    if (!solver.SetValue(cellIndex, value))
+                    scratchSolver.CopyBruteForceRuntimeStateFrom(this);
+                    scratchSolver.countBruteForceAssignments = false;
+                    if (!scratchSolver.SetValue(cellIndex, value))
                     {
                         // Trivially invalid, we can eliminate it from the host solver
                         if (!ClearValue(cellIndex, value))
@@ -328,7 +331,7 @@ public partial class Solver
                     // Run constraint + singles propagation to find eliminations for weak links.
                     // Advanced strategies (pairs/triples/pointing) are skipped here — they are
                     // expensive per-clone and rarely contribute additional links in practice.
-                    LogicResult curResult = solver.BruteForcePropagate(false, cancellationToken);
+                    LogicResult curResult = scratchSolver.BruteForcePropagate(false, cancellationToken);
                     if (curResult == LogicResult.None)
                     {
                         continue;
@@ -362,7 +365,7 @@ public partial class Solver
                                 continue;
                             }
 
-                            uint newMask = solver.board[curCellIndex] & ~valueSetMask;
+                            uint newMask = scratchSolver.board[curCellIndex] & ~valueSetMask;
                             uint elimMask = oldMask & ~newMask;
                             while (elimMask != 0)
                             {

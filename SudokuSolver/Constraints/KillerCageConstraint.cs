@@ -60,7 +60,7 @@ public class KillerCageConstraint : Constraint
     }
 
     public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => sumTerm != null ? InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription) : LogicResult.None;
-    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumTerm != null ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
+    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumTerm?.CellsMustContain(sudokuSolver, value);
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
