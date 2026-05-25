@@ -16,6 +16,12 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "SudokuTests", "SudokuTests\
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SudokuSolverISS2", "SudokuSolverISS2\SudokuSolverISS2.csproj", "{5C7477E7-18C9-417E-81B8-AF502C0EDE59}"
 EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "benchmarks", "benchmarks", "{66320409-64EC-F7C5-3DEF-65E7510DAAD1}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "csharp", "csharp", "{B4C2D2AF-4FE5-6EAB-43B0-6672488B2F7D}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SudokuArrowCSharpBench", "benchmarks\csharp\SudokuArrowCSharpBench.csproj", "{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -86,9 +92,25 @@ Global
 		{5C7477E7-18C9-417E-81B8-AF502C0EDE59}.Release|x64.Build.0 = Release|Any CPU
 		{5C7477E7-18C9-417E-81B8-AF502C0EDE59}.Release|x86.ActiveCfg = Release|Any CPU
 		{5C7477E7-18C9-417E-81B8-AF502C0EDE59}.Release|x86.Build.0 = Release|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Debug|x64.Build.0 = Debug|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Debug|x86.Build.0 = Debug|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Release|x64.ActiveCfg = Release|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Release|x64.Build.0 = Release|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Release|x86.ActiveCfg = Release|Any CPU
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{B4C2D2AF-4FE5-6EAB-43B0-6672488B2F7D} = {66320409-64EC-F7C5-3DEF-65E7510DAAD1}
+		{BDDD8C70-ACFB-4B12-B63C-2D36930665EC} = {B4C2D2AF-4FE5-6EAB-43B0-6672488B2F7D}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {AC04FE02-B8A2-4F33-B8A8-9E059B055121}
