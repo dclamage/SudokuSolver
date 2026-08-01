@@ -8,7 +8,7 @@ public class KillerCageConstraint : Constraint
 {
     public readonly List<(int, int)> cells;
     public readonly int sum;
-    private SumCellsHelper sumCells;
+    private SumTerm sumTerm;
 
     private static readonly Regex optionsRegex = new(@"(\d+);(.*)");
 
@@ -50,26 +50,21 @@ public class KillerCageConstraint : Constraint
             return LogicResult.None;
         }
 
-        sumCells = new(sudokuSolver, cells);
-        return sumCells.Init(sudokuSolver, sum.ToEnumerable());
+        sumTerm ??= sudokuSolver.SumConstraints.RegisterFixedSum(this, cells, [sum]);
+        return sumTerm.InitCandidates(sudokuSolver);
     }
 
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
-        // Determine if the sum is now complete
-        if (sumCells != null && cells.Contains((i, j)) && cells.All(cell => sudokuSolver.IsValueSet(cell.Item1, cell.Item2)))
-        {
-            return cells.Select(cell => sudokuSolver.GetValue(cell)).Sum() == sum;
-        }
-        return true;
+        return sumTerm?.EnforceComplete(sudokuSolver, i * WIDTH + j) ?? true;
     }
 
-    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => sumCells != null ? InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription) : LogicResult.None;
-    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumCells != null ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
+    public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => sumTerm != null ? InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription) : LogicResult.None;
+    public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumTerm?.CellsMustContain(sudokuSolver, value);
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
-        return sumCells?.StepLogic(sudokuSolver, sum.ToEnumerable(), logicalStepDescription) ?? LogicResult.None;
+        return sumTerm?.StepLogic(sudokuSolver, logicalStepDescription, isBruteForcing) ?? LogicResult.None;
     }
 
     public override List<(int, int)> Group => cells;

@@ -24,6 +24,7 @@ public partial class Solver
 
         constraints = [];
         enforceConstraints = [];
+        sumConstraints = new(this);
 
         isInvalid = false;
         unsetCellsCount = NUM_CELLS;
@@ -91,6 +92,7 @@ public partial class Solver
         seenMap = other.seenMap;
         constraints = other.constraints;
         enforceConstraints = other.enforceConstraints;
+        sumConstraints = other.sumConstraints;
         isInvalid = other.isInvalid;
         unsetCellsCount = other.unsetCellsCount;
         pendingNakedSingles = [.. other.pendingNakedSingles];

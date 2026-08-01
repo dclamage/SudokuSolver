@@ -273,6 +273,178 @@ public class SumCellsHelper
         return LogicResult.None;
     }
 
+    // Brute-force optimized StepLogic: uses sum bitmasks. Zero heap allocations for single-group helpers.
+    // sumsMask: bit s set = sum s is one of the allowed totals.
+    // outSumsMask: after propagation, which sums are still achievable.
+    public LogicResult StepLogicBF(Solver solver, ulong sumsMask, out ulong outSumsMask)
+    {
+        outSumsMask = 0;
+        if (sumsMask == 0) return LogicResult.Invalid;
+
+        if (groups.Count == 1)
+        {
+            var group = groups[0];
+            var lr = group.RestrictSumMask(solver, sumsMask);
+            if (lr == LogicResult.Invalid) return LogicResult.Invalid;
+            outSumsMask = group.PossibleSumsMask(solver);
+            return lr;
+        }
+
+        int groupCount = groups.Count;
+        Span<ulong> groupMasks = stackalloc ulong[groupCount];
+        Span<int> groupMins = stackalloc int[groupCount];
+        Span<int> groupMaxes = stackalloc int[groupCount];
+
+        int completedSum = 0;
+        int numIncompleteGroups = 0;
+        int incompleteGroupIndex = -1;
+        int minSum = 0;
+        int maxSum = 0;
+        for (int groupIndex = 0; groupIndex < groupCount; groupIndex++)
+        {
+            ulong groupMask = groups[groupIndex].PossibleSumsMask(solver);
+            if (groupMask == 0) return LogicResult.Invalid;
+
+            int groupMin = BitOperations.TrailingZeroCount(groupMask);
+            int groupMax = 63 - BitOperations.LeadingZeroCount(groupMask);
+            groupMasks[groupIndex] = groupMask;
+            groupMins[groupIndex] = groupMin;
+            groupMaxes[groupIndex] = groupMax;
+            minSum += groupMin;
+            maxSum += groupMax;
+
+            if (groupMin == groupMax)
+            {
+                completedSum += groupMin;
+            }
+            else
+            {
+                numIncompleteGroups++;
+                incompleteGroupIndex = groupIndex;
+            }
+        }
+
+        int possibleSumMin = BitOperations.TrailingZeroCount(sumsMask);
+        int possibleSumMax = 63 - BitOperations.LeadingZeroCount(sumsMask);
+        if (minSum > possibleSumMax || maxSum < possibleSumMin)
+        {
+            return LogicResult.Invalid;
+        }
+
+        if (numIncompleteGroups == 0)
+        {
+            outSumsMask = PossibleSumsMask(solver);
+            return LogicResult.None;
+        }
+
+        LogicResult result = LogicResult.None;
+        if (numIncompleteGroups == 1)
+        {
+            ulong validGroupSums = 0;
+            ulong remainingSums = sumsMask;
+            while (remainingSums != 0)
+            {
+                int sum = BitOperations.TrailingZeroCount(remainingSums);
+                remainingSums &= remainingSums - 1;
+                int groupSum = sum - completedSum;
+                if ((uint)groupSum < 64)
+                {
+                    validGroupSums |= 1uL << groupSum;
+                }
+            }
+
+            validGroupSums &= groupMasks[incompleteGroupIndex];
+            if (validGroupSums == 0) return LogicResult.Invalid;
+
+            result = groups[incompleteGroupIndex].RestrictSumMask(solver, validGroupSums);
+            if (result == LogicResult.Invalid) return LogicResult.Invalid;
+        }
+        else
+        {
+            int minDof = possibleSumMax - minSum;
+            int maxDof = maxSum - possibleSumMin;
+            for (int groupIndex = 0; groupIndex < groupCount; groupIndex++)
+            {
+                int groupMin = groupMins[groupIndex];
+                int groupMax = groupMaxes[groupIndex];
+                if (groupMin == groupMax)
+                {
+                    continue;
+                }
+
+                int newGroupMin = Math.Max(groupMin, groupMax - maxDof);
+                int newGroupMax = Math.Min(groupMax, groupMin + minDof);
+                if (newGroupMin > groupMin || newGroupMax < groupMax)
+                {
+                    ulong groupRangeMask = SumRangeMask(newGroupMin, newGroupMax) & groupMasks[groupIndex];
+                    if (groupRangeMask == 0) return LogicResult.Invalid;
+
+                    var logicResult = groups[groupIndex].RestrictSumMask(solver, groupRangeMask);
+                    if (logicResult == LogicResult.Invalid) return LogicResult.Invalid;
+                    if (logicResult == LogicResult.Changed) result = LogicResult.Changed;
+                }
+            }
+        }
+
+        outSumsMask = PossibleSumsMask(solver);
+        return result;
+    }
+
+    private static ulong SumRangeMask(int minSum, int maxSum)
+    {
+        ulong mask = 0;
+        int first = Math.Max(0, minSum);
+        int last = Math.Min(63, maxSum);
+        for (int sum = first; sum <= last; sum++)
+        {
+            mask |= 1uL << sum;
+        }
+        return mask;
+    }
+
+    /// <summary>
+    /// Gets the currently possible total sums as a bit mask, where bit <c>s</c> means sum <c>s</c> is achievable.
+    /// </summary>
+    /// <param name="solver">The solver state used to read current candidates and values.</param>
+    /// <returns>A mask of possible sums, or <c>0</c> when no sum is possible.</returns>
+    public ulong PossibleSumsMask(Solver solver)
+    {
+        ulong combinedMask = 1;
+        foreach (var group in groups)
+        {
+            ulong groupMask = group.PossibleSumsMask(solver);
+            if (groupMask == 0)
+            {
+                return 0;
+            }
+
+            ulong nextMask = 0;
+            ulong remainingCombined = combinedMask;
+            while (remainingCombined != 0)
+            {
+                int sumA = BitOperations.TrailingZeroCount(remainingCombined);
+                remainingCombined &= remainingCombined - 1;
+
+                ulong remainingGroup = groupMask;
+                while (remainingGroup != 0)
+                {
+                    int sumB = BitOperations.TrailingZeroCount(remainingGroup);
+                    remainingGroup &= remainingGroup - 1;
+
+                    int sum = sumA + sumB;
+                    if ((uint)sum < 64)
+                    {
+                        nextMask |= 1uL << sum;
+                    }
+                }
+            }
+
+            combinedMask = nextMask;
+        }
+
+        return combinedMask;
+    }
+
     // Overload for StringBuilder compatibility
     public LogicResult StepLogic(Solver solver, IEnumerable<int> possibleSums, StringBuilder logicalStepDescription)
     {

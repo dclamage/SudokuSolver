@@ -49,6 +49,12 @@ public partial class Solver
     }
 
     public IReadOnlyList<uint> FlatBoard => board;
+
+    /// <summary>
+    /// Gets the internal board array for allocation-free solver hot paths.
+    /// </summary>
+    internal uint[] BoardArray => board;
+
     public BoardView Board => new(board, WIDTH, HEIGHT);
     public uint[] BoardClone
     {
@@ -191,6 +197,11 @@ public partial class Solver
     }
 
     public bool IsBruteForcing => isBruteForcing;
+
+    /// <summary>
+    /// Gets the shared registry of setup-time sum terms and relations.
+    /// </summary>
+    internal SumConstraintRegistry SumConstraints => sumConstraints;
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public int GetValue((int, int) cell)

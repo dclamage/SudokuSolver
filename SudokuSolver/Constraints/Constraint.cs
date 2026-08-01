@@ -130,6 +130,32 @@ public abstract class Constraint
     /// </summary>
     public virtual List<(int, int)> Group => null;
 
+    // Cached result of CellIndicesForPropagationQueue default implementation.
+    private IReadOnlyList<int> _cachedCellIndicesForQueue;
+    private bool _cellIndicesQueueCached;
+
+    /// <summary>
+    /// Cell indices (row*WIDTH+col) that this constraint monitors during brute force.
+    /// The propagation queue will re-run this constraint only when one of these cells changes.
+    /// Return null to run on every propagation step (always-run bucket).
+    /// Default: converts Group cells to indices; override when Group is null but cells are known.
+    /// </summary>
+    public virtual IReadOnlyList<int> CellIndicesForPropagationQueue
+    {
+        get
+        {
+            if (!_cellIndicesQueueCached)
+            {
+                _cellIndicesQueueCached = true;
+                var group = Group;
+                _cachedCellIndicesForQueue = group?.Count > 0
+                    ? group.ConvertAll(c => c.Item1 * WIDTH + c.Item2)
+                    : null;
+            }
+            return _cachedCellIndicesForQueue;
+        }
+    }
+
     /// <summary>
     /// Returns a list of cells which must contain the given value.
     /// </summary>

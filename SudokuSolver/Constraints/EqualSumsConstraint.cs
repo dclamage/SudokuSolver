@@ -1,17 +1,15 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
+﻿using System.Collections.Generic;
 using System.Text;
-using System.Threading.Tasks;
 
 namespace SudokuSolver.Constraints
 {
     public abstract class EqualSumsConstraint : Constraint
     {
         private List<(int, int)> cells;
-        private HashSet<(int, int)> cellsHash;
+        private int[] cellIndices;
         private List<List<(int, int)>> cellGroups;
-        private List<SumCellsHelper> sumCellsHelpers;
+        private SumTerm[] sumTerms;
+        private SumEqualityRelation sumRelation;
 
         protected EqualSumsConstraint(Solver solver, string options) : base(solver, options)
         {
@@ -27,60 +25,46 @@ namespace SudokuSolver.Constraints
                 return LogicResult.None;
             }
 
-            cells = cellGroups.SelectMany(group => group).ToList();
-            cellsHash = cells.ToHashSet();
-
-            sumCellsHelpers = cellGroups.Select(group => new SumCellsHelper(solver, group)).ToList();
-            List<int> possibleSums = PossibleSums(solver);
-            if (possibleSums.Count == 0)
+            if (sumRelation == null)
             {
-                return LogicResult.Invalid;
+                cells = cellGroups.SelectMany(group => group).ToList();
+                cellIndices = cells
+                    .Select(cell => cell.Item1 * WIDTH + cell.Item2)
+                    .Distinct()
+                    .Order()
+                    .ToArray();
+                sumTerms = cellGroups
+                    .Select(group => solver.SumConstraints.RegisterOpenSum(this, group))
+                    .ToArray();
+                sumRelation = solver.SumConstraints.RegisterEquality(this, sumTerms);
             }
 
-            bool changed = false;
-            foreach (var sumCellsHelper in sumCellsHelpers)
-            {
-                LogicResult initResult = sumCellsHelper.Init(solver, possibleSums);
-                if (initResult == LogicResult.Invalid)
-                {
-                    return LogicResult.Invalid;
-                }
-
-                changed |= initResult == LogicResult.Changed;
-            }
-            
-            return changed ? LogicResult.Changed : LogicResult.None;
+            return sumRelation.InitCandidates(solver);
         }
 
         public override bool EnforceConstraint(Solver solver, int i, int j, int val)
         {
-            if (sumCellsHelpers == null)
+            if (sumRelation == null)
             {
                 return true;
             }
 
-            if (!cellsHash.Contains((i, j)))
-            {
-                return true;
-            }
-
-            List<int> possibleSums = PossibleSums(solver);
-            if (possibleSums.Count == 0)
-            {
-                return false;
-            }
-
-            return true;
+            return sumRelation.EnforcePossible(solver, i * WIDTH + j);
         }
 
         public override LogicResult StepLogic(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
         {
-            if (sumCellsHelpers == null)
+            if (sumRelation == null)
             {
                 return LogicResult.None;
             }
 
-            List<int> possibleSums = PossibleSums(solver);
+            if (logicalStepDescription == null)
+            {
+                return sumRelation.StepLogic(solver, null, isBruteForcing);
+            }
+
+            List<int> possibleSums = sumRelation.PossibleSums(solver);
             if (possibleSums.Count == 0)
             {
                 logicalStepDescription?.Add(new("There are no possible sums.", cells));
@@ -100,12 +84,12 @@ namespace SudokuSolver.Constraints
             }
 
             bool changed = false;
-            foreach (var sumCellsHelper in sumCellsHelpers)
+            foreach (var sumTerm in sumTerms)
             {
-                LogicResult stepResult = sumCellsHelper.StepLogic(solver, possibleSums, (List<LogicalStepDesc>)null);
+                LogicResult stepResult = sumTerm.StepLogic(solver, possibleSums, (StringBuilder)null, false);
                 if (stepResult == LogicResult.Invalid)
                 {
-                    logicalStepDescription?.Add(new($"Cells {solver.CompactName(sumCellsHelper.Cells)} cannot be restricted to sum{(possibleSums.Count > 1 ? "s" : "")} {string.Join(",", possibleSums)}.", sumCellsHelper.Cells));
+                    logicalStepDescription?.Add(new($"Cells {solver.CompactName(sumTerm.Cells)} cannot be restricted to sum{(possibleSums.Count > 1 ? "s" : "")} {string.Join(",", possibleSums)}.", sumTerm.Cells));
                     return LogicResult.Invalid;
                 }
                 changed |= stepResult == LogicResult.Changed;
@@ -148,40 +132,10 @@ namespace SudokuSolver.Constraints
             return changed ? LogicResult.Changed : LogicResult.None;
         }
 
-        public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => sumCellsHelpers != null ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
+        public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => sumRelation != null ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
         
-        public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumCellsHelpers != null ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
+        public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumRelation != null ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
 
-        private List<int> PossibleSums(Solver solver)
-        {
-            HashSet<int> possibleSums = null;
-            foreach (var sumCellsHelper in sumCellsHelpers)
-            {
-                List<int> curPossibleSums = sumCellsHelper.PossibleSums(solver);
-                if (curPossibleSums == null)
-                {
-                    possibleSums = null;
-                    break;
-                }
-
-                if (possibleSums == null)
-                {
-                    possibleSums = curPossibleSums.ToHashSet();
-                }
-                else
-                {
-                    possibleSums.IntersectWith(curPossibleSums);
-                }
-            }
-
-            if (possibleSums == null || possibleSums.Count == 0)
-            {
-                return new();
-            }
-
-            List<int> possibleSumsList = possibleSums.ToList();
-            possibleSumsList.Sort();
-            return possibleSumsList;
-        }
+        public override IReadOnlyList<int> CellIndicesForPropagationQueue => cellIndices;
     }
 }
