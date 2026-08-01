@@ -6,6 +6,7 @@ public class SkyscraperConstraint : Constraint
     public readonly int clue;
     public readonly (int, int) cellStart;
     private readonly List<(int, int)> cells;
+    private readonly int[] cellIndices;
     private readonly HashSet<(int, int)> cellsLookup;
     private readonly string specificName;
     private bool needsLogic = true;
@@ -58,9 +59,14 @@ public class SkyscraperConstraint : Constraint
             }
         }
         cellsLookup = new(cells);
+        cellIndices = [.. cells.Select(sudokuSolver.CellIndex)];
 
         specificName = $"Skyscraper {clue} at {CellName(cellStart)}";
     }
+
+    // Watch only this line's cells so brute-force propagation re-runs this constraint when one of
+    // them changes, instead of on every step (it has no Group, so it would otherwise always run).
+    public override IReadOnlyList<int> CellIndicesForPropagationQueue => cellIndices;
 
     public override LogicResult InitCandidates(Solver solver)
     {
@@ -166,113 +172,59 @@ public class SkyscraperConstraint : Constraint
         {
             return LogicResult.None;
         }
-        
+
+        int n = cellIndices.Length;
+        uint[] board = solver.BoardArray;
+
+        // Allocation-free scratch (n <= MAX_VALUE <= 31).
+        Span<uint> candidateMasks = stackalloc uint[n];
+        Span<uint> supportMasks = stackalloc uint[n];
+        Span<int> assigned = stackalloc int[n];
+        supportMasks.Clear();
+
+        for (int pos = 0; pos < n; pos++)
+        {
+            uint mask = board[cellIndices[pos]] & ALL_VALUES_MASK;
+            if (mask == 0)
+            {
+                return LogicResult.Invalid;
+            }
+            candidateMasks[pos] = mask;
+        }
+
+        // Depth-first support search: find full-line assignments that are all-different, respect the
+        // solver's existing weak links, and have exactly `clue` visible buildings, accumulating the
+        // supported value at each position. This preserves the old permutation-filter semantics
+        // (which called CanPlaceDigits) without allocating or enumerating every permutation.
+        SkyscraperSearch(solver, candidateMasks, supportMasks, assigned, 0, 0u, 0, 0);
+
         bool changed = false;
-
-        var board = solver.Board;
-        List<int> unsetCellIndexes = new(cells.Count);
-        List<int> curVals = new(cells.Count);
-        uint unsetMask = 0;
-        for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
-        {
-            var (i, j) = cells[cellIndex];
-            if (!IsValueSet(board[i, j]))
-            {
-                unsetCellIndexes.Add(cellIndex);
-                unsetMask |= board[i, j];
-                curVals.Add(0);
-            }
-            else
-            {
-                int val = GetValue(board[i, j]);
-                curVals.Add(val);
-            }
-        }
-        if (unsetCellIndexes.Count == 0)
-        {
-            return LogicResult.None;
-        }
-
-        uint[] keepMasks;
-        List<int> unsetVals = new(ValueCount(unsetMask));
-        int minVal = MinValue(unsetMask);
-        int maxVal = MaxValue(unsetMask);
-        for (int v = minVal; v <= maxVal; v++)
-        {
-            if (HasValue(unsetMask, v))
-            {
-                unsetVals.Add(v);
-            }
-        }
-
-        bool haveValidPerm = false;
-        keepMasks = new uint[cells.Count];
-        int numUnsetCells = unsetCellIndexes.Count;
-        foreach (var perm in unsetVals.Permutations())
-        {
-            for (int unsetCellIndex = 0; unsetCellIndex < numUnsetCells; unsetCellIndex++)
-            {
-                int cellIndex = unsetCellIndexes[unsetCellIndex];
-                curVals[cellIndex] = perm[unsetCellIndex];
-            }
-            if (SeenCount(curVals) != clue)
-            {
-                continue;
-            }
-
-            bool needCheck = false;
-            for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
-            {
-                if ((keepMasks[cellIndex] & ValueMask(curVals[cellIndex])) == 0)
-                {
-                    needCheck = true;
-                    break;
-                }
-            }
-
-            if (!needCheck)
-            {
-                continue;
-            }
-
-            if (!solver.CanPlaceDigits(cells, curVals))
-            {
-                continue;
-            }
-
-            for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
-            {
-                keepMasks[cellIndex] |= ValueMask(curVals[cellIndex]);
-            }
-            haveValidPerm = true;
-        }
-
-        if (!haveValidPerm)
-        {
-            if (logicalStepDescription != null)
-            {
-                logicalStepDescription.Append($"Clue value {clue} is impossible.");
-            }
-            return LogicResult.Invalid;
-        }
-
         List<int> elims = null;
-        for (int cellIndex = 0; cellIndex < cells.Count; cellIndex++)
+        for (int pos = 0; pos < n; pos++)
         {
-            var (i, j) = cells[cellIndex];
-            uint curMask = board[i, j];
-            if (IsValueSet(curMask))
+            int cellIndex = cellIndices[pos];
+            uint cur = board[cellIndex] & ALL_VALUES_MASK;
+            uint support = supportMasks[pos];
+
+            if ((cur & support) == 0)
+            {
+                logicalStepDescription?.Append($"Clue value {clue} is impossible.");
+                return LogicResult.Invalid;
+            }
+
+            if (IsValueSet(board[cellIndex]))
             {
                 continue;
             }
 
-            uint elimMask = curMask & ~keepMasks[cellIndex];
+            uint elimMask = cur & ~support;
             if (elimMask == 0)
             {
                 continue;
             }
 
-            var logicResult = solver.KeepMask(i, j, keepMasks[cellIndex]);
+            var (i, j) = cells[pos];
+            var logicResult = solver.KeepMask(i, j, support);
             if (logicResult == LogicResult.Invalid)
             {
                 return LogicResult.Invalid;
@@ -286,7 +238,7 @@ public class SkyscraperConstraint : Constraint
                     {
                         if (HasValue(elimMask, v))
                         {
-                            elims.Add(CandidateIndex(i, j, v));
+                            elims.Add(CandidateIndex(cellIndex, v));
                         }
                     }
                 }
@@ -302,18 +254,86 @@ public class SkyscraperConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
-    private static int SeenCount(List<int> values)
+    /// <summary>
+    /// Recursively assigns a value to each cell of the line in order, tracking the used values, the
+    /// running maximum height, and how many are visible. On reaching a complete assignment with
+    /// exactly <c>clue</c> visible, records each position's value into <paramref name="supportMasks"/>.
+    /// Prunes on visibility bounds and existing weak links, and returns true once every candidate is
+    /// supported (saturation) so the caller stops. Allocation-free.
+    /// </summary>
+    private bool SkyscraperSearch(Solver solver, ReadOnlySpan<uint> candidateMasks, Span<uint> supportMasks, Span<int> assigned, int pos, uint usedMask, int runningMax, int visible)
     {
-        int count = 0;
-        int maxValueSeen = 0;
-        foreach (int v in values)
+        int n = candidateMasks.Length;
+        if (pos == n)
         {
-            if (v > maxValueSeen)
+            if (visible != clue)
             {
-                maxValueSeen = v;
-                count++;
+                return false;
+            }
+
+            bool saturated = true;
+            for (int i = 0; i < n; i++)
+            {
+                supportMasks[i] |= ValueMask(assigned[i]);
+                if ((candidateMasks[i] & ~supportMasks[i]) != 0)
+                {
+                    saturated = false;
+                }
+            }
+            return saturated;
+        }
+
+        // Prune: exactly `clue` visible must still be reachable.
+        int remaining = n - pos;
+        if (visible > clue || visible + remaining < clue)
+        {
+            return false;
+        }
+
+        int cellIndex = cellIndices[pos];
+        uint options = candidateMasks[pos];
+        while (options != 0)
+        {
+            int v = MinValue(options);
+            uint vMask = ValueMask(v);
+            options &= ~vMask;
+
+            if ((usedMask & vMask) != 0)
+            {
+                continue; // the line is a house: values are all-different
+            }
+
+            bool isVisible = v > runningMax;
+            int newVisible = isVisible ? visible + 1 : visible;
+            if (newVisible > clue)
+            {
+                continue;
+            }
+
+            // Reject if this candidate is weak-linked to any already-assigned candidate (this is what
+            // CanPlaceDigits checked, cross-constraint weak links included).
+            int candIndex = CandidateIndex(cellIndex, v);
+            bool blocked = false;
+            for (int k = 0; k < pos; k++)
+            {
+                if (solver.IsWeakLink(candIndex, CandidateIndex(cellIndices[k], assigned[k])))
+                {
+                    blocked = true;
+                    break;
+                }
+            }
+            if (blocked)
+            {
+                continue;
+            }
+
+            assigned[pos] = v;
+            if (SkyscraperSearch(solver, candidateMasks, supportMasks, assigned, pos + 1, usedMask | vMask, isVisible ? v : runningMax, newVisible))
+            {
+                return true; // saturated: every candidate is supported, no need to search further
             }
         }
-        return count;
+
+        return false;
     }
 }
