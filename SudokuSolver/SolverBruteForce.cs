@@ -124,7 +124,7 @@ public partial class Solver
     {
         Solver[] stack = state.isMultiThreaded ? new Solver[root.NUM_CANDIDATES + 1] : state.searchStack;
         int stackCount = 0;
-        PushSearchStack(stack, ref stackCount, root);
+        PushSearchStack(ref stack, ref stackCount, root);
 
         while (state.result is null && TryPopSearchStack(stack, ref stackCount, out Solver solver))
         {
@@ -175,7 +175,7 @@ public partial class Solver
             {
                 if (!state.isMultiThreaded || !state.PushSolver(newSolver))
                 {
-                    PushSearchStack(stack, ref stackCount, newSolver);
+                    PushSearchStack(ref stack, ref stackCount, newSolver);
                 }
             }
 
@@ -184,7 +184,7 @@ public partial class Solver
             {
                 solver.branchCellIndex = cellIndex;
                 solver.searchDepth++;
-                PushSearchStack(stack, ref stackCount, solver);
+                PushSearchStack(ref stack, ref stackCount, solver);
             }
         }
     }
@@ -409,7 +409,7 @@ public partial class Solver
         int stackCount = 0;
         try
         {
-            PushSearchStack(stack, ref stackCount, root);
+            PushSearchStack(ref stack, ref stackCount, root);
 
             while (TryPopSearchStack(stack, ref stackCount, out Solver solver) && !state.MaxSolutionsReached)
             {
@@ -459,7 +459,7 @@ public partial class Solver
                 {
                     if (!isMultithreaded || !state.PushSolver(newSolver))
                     {
-                        PushSearchStack(stack, ref stackCount, newSolver);
+                        PushSearchStack(ref stack, ref stackCount, newSolver);
                     }
                 }
                 else
@@ -471,7 +471,7 @@ public partial class Solver
                 {
                     solver.branchCellIndex = cellIndex;
                     solver.searchDepth++;
-                    PushSearchStack(stack, ref stackCount, solver);
+                    PushSearchStack(ref stack, ref stackCount, solver);
                 }
                 else
                 {
@@ -522,6 +522,17 @@ public partial class Solver
         public Solver RentCopy(Solver source)
         {
             Solver solver = RentSolver();
+            if (solver == null)
+            {
+                // Pool exhausted (should not happen given the capacity bound, but degrade
+                // gracefully instead of crashing): hand back a non-pooled clone. Release
+                // no-ops for non-pooled solvers, so this is safe to mix with pooled ones.
+                Solver clone = source.Clone(willRunNonSinglesLogic: false);
+                clone.isBruteForcing = true;
+                clone.CopyBruteForceRuntimeStateFrom(source);
+                return clone;
+            }
+
             solver.CopyBruteForceRuntimeStateFrom(source);
             return solver;
         }
@@ -543,7 +554,7 @@ public partial class Solver
         {
             if (freeCount == 0)
             {
-                throw new InvalidOperationException("Brute-force solver pool exhausted.");
+                return null;
             }
 
             Solver solver = solvers[freeStack[--freeCount]];
@@ -584,19 +595,21 @@ public partial class Solver
 
     private sealed class SearchStackPool
     {
-        private readonly Solver[][] stacks;
-        private readonly int[] freeStack;
+        // Free list of reusable search-stack arrays. Stacks are matched by slot, not by
+        // reference identity, so a stack that was grown (replaced) by PushSearchStack can
+        // be released back safely. Rent allocates and Release drops if the pool over/underflows.
+        private readonly Solver[][] free;
+        private readonly int stackCapacity;
         private readonly object syncLock = new();
         private int freeCount;
 
         public SearchStackPool(int stackCapacity, int capacity)
         {
-            stacks = new Solver[capacity][];
-            freeStack = new int[capacity];
+            this.stackCapacity = stackCapacity;
+            free = new Solver[capacity][];
             for (int i = 0; i < capacity; i++)
             {
-                stacks[i] = new Solver[stackCapacity];
-                freeStack[i] = i;
+                free[i] = new Solver[stackCapacity];
             }
             freeCount = capacity;
         }
@@ -605,13 +618,16 @@ public partial class Solver
         {
             lock (syncLock)
             {
-                if (freeCount == 0)
+                if (freeCount > 0)
                 {
-                    throw new InvalidOperationException("Search stack pool exhausted.");
+                    Solver[] stack = free[--freeCount];
+                    free[freeCount] = null;
+                    return stack;
                 }
-
-                return stacks[freeStack[--freeCount]];
             }
+
+            // Pool underflow (should not happen given the capacity bound): allocate rather than crash.
+            return new Solver[stackCapacity];
         }
 
         public void Release(Solver[] stack)
@@ -619,17 +635,11 @@ public partial class Solver
             Array.Clear(stack);
             lock (syncLock)
             {
-                for (int i = 0; i < stacks.Length; i++)
+                if (freeCount < free.Length)
                 {
-                    if (ReferenceEquals(stacks[i], stack))
-                    {
-                        freeStack[freeCount++] = i;
-                        return;
-                    }
+                    free[freeCount++] = stack;
                 }
             }
-
-            throw new InvalidOperationException("Tried to release a search stack that does not belong to this pool.");
         }
     }
 
@@ -665,11 +675,13 @@ public partial class Solver
         _lastContradictionCellIndex = -1;
     }
 
-    private static void PushSearchStack(Solver[] stack, ref int stackCount, Solver solver)
+    private static void PushSearchStack(ref Solver[] stack, ref int stackCount, Solver solver)
     {
         if (stackCount >= stack.Length)
         {
-            throw new InvalidOperationException("Brute-force search stack exhausted.");
+            // Grow rather than crash. The preallocated capacity (NUM_CANDIDATES + 1) bounds
+            // the DFS frontier for strictly-binary branching, so this is a defensive fallback.
+            Array.Resize(ref stack, stack.Length * 2);
         }
 
         stack[stackCount++] = solver;
