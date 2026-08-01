@@ -286,9 +286,18 @@ public partial class Solver
     /// <returns></returns>
     private LogicResult DiscoverWeakLinks(CancellationToken cancellationToken)
     {
+        BruteForceSolveStatsTracker statsTracker = bruteForceSolveStatsTracker;
+
         // Run logic on the base solver first
+        long initialPropagationStart = Stopwatch.GetTimestamp();
         LogicResult result = BruteForcePropagate(true, cancellationToken);
+        statsTracker?.AddWeakLinkDiscoveryInitialPropagationTime(initialPropagationStart);
         if (result == LogicResult.PuzzleComplete || result == LogicResult.Invalid)
+        {
+            return result;
+        }
+
+        if (IsDynamicWeakLinkDiscoveryDisabled())
         {
             return result;
         }
@@ -299,7 +308,10 @@ public partial class Solver
             cancellationToken.ThrowIfCancellationRequested();
 
             innerResult = LogicResult.None;
+            statsTracker?.IncrementWeakLinkDiscoveryPasses();
+            long scratchCloneStart = Stopwatch.GetTimestamp();
             Solver scratchSolver = Clone(willRunNonSinglesLogic: false);
+            statsTracker?.AddWeakLinkDiscoveryScratchCloneTime(scratchCloneStart);
             scratchSolver.isBruteForcing = true;
             scratchSolver.countBruteForceAssignments = false;
             scratchSolver.pendingNakedSingles.Capacity = Math.Max(scratchSolver.pendingNakedSingles.Capacity, NUM_CANDIDATES);
@@ -317,21 +329,35 @@ public partial class Solver
                     int value = MinValue(cellMask);
                     cellMask &= ~ValueMask(value);
 
+                    statsTracker?.IncrementWeakLinkDiscoveryProbes();
+                    long copyStart = Stopwatch.GetTimestamp();
                     scratchSolver.CopyBruteForceRuntimeStateFrom(this);
+                    statsTracker?.AddWeakLinkDiscoveryCopyTime(copyStart);
                     scratchSolver.countBruteForceAssignments = false;
+                    long setValueStart = Stopwatch.GetTimestamp();
+                    bool probeInvalid = false;
                     if (!scratchSolver.SetValue(cellIndex, value))
                     {
+                        statsTracker?.AddWeakLinkDiscoverySetValueTime(setValueStart);
+                        statsTracker?.IncrementWeakLinkDiscoveryInvalidProbes();
+                        probeInvalid = true;
                         // Trivially invalid, we can eliminate it from the host solver
                         if (!ClearValue(cellIndex, value))
                         {
                             return LogicResult.Invalid;
                         }
                     }
+                    else
+                    {
+                        statsTracker?.AddWeakLinkDiscoverySetValueTime(setValueStart);
+                    }
 
                     // Run constraint + singles propagation to find eliminations for weak links.
                     // Advanced strategies (pairs/triples/pointing) are skipped here — they are
                     // expensive per-clone and rarely contribute additional links in practice.
+                    long probePropagationStart = Stopwatch.GetTimestamp();
                     LogicResult curResult = scratchSolver.BruteForcePropagate(false, cancellationToken);
+                    statsTracker?.AddWeakLinkDiscoveryProbePropagationTime(probePropagationStart);
                     if (curResult == LogicResult.None)
                     {
                         continue;
@@ -340,6 +366,10 @@ public partial class Solver
                     if (curResult == LogicResult.Invalid)
                     {
                         // Non-trivially invalid, we can eliminate it from the host solver
+                        if (!probeInvalid)
+                        {
+                            statsTracker?.IncrementWeakLinkDiscoveryInvalidProbes();
+                        }
                         if (!ClearValue(cellIndex, value))
                         {
                             return LogicResult.Invalid;
@@ -350,6 +380,7 @@ public partial class Solver
                     else
                     {
                         int setCandidate = CandidateIndex(cellIndex, value);
+                        long linkScanStart = Stopwatch.GetTimestamp();
 
                         // Find new eliminations and form the proper weak links
                         for (int curCellIndex = 0; curCellIndex < NUM_CELLS; curCellIndex++)
@@ -373,15 +404,31 @@ public partial class Solver
                                 elimMask &= ~ValueMask(elimValue);
 
                                 int elimCandidate = CandidateIndex(curCellIndex, elimValue);
+                                int weakLinksBefore = totalWeakLinks;
                                 _ = AddWeakLink(setCandidate, elimCandidate);
+                                int linksAdded = totalWeakLinks - weakLinksBefore;
+                                if (linksAdded != 0)
+                                {
+                                    statsTracker?.AddWeakLinkDiscoveryLinksAdded(linksAdded);
+                                }
                             }
                         }
+                        statsTracker?.AddWeakLinkDiscoveryLinkScanTime(linkScanStart);
                     }
                 }
             }
         } while (innerResult == LogicResult.Changed);
 
         return result;
+    }
+
+    private static bool IsDynamicWeakLinkDiscoveryDisabled()
+    {
+        string value = Environment.GetEnvironmentVariable("SUDOKU_DISABLE_DYNAMIC_WEAK_LINK_DISCOVERY");
+        return value != null &&
+            (value == "1" ||
+            value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            value.Equals("yes", StringComparison.OrdinalIgnoreCase));
     }
 
     private LogicResult FastFindPairs(CancellationToken cancellationToken)

@@ -31,9 +31,56 @@ public class Program
 		Console.WriteLine($"Runtime: {stats.Runtime.TotalMilliseconds:F3} ms");
 		Console.WriteLine($"Brute-force setup allocated: {FormatAllocatedBytes(stats.PuzzleSetupAllocatedBytes)}");
 		Console.WriteLine($"Runtime allocated: {FormatAllocatedBytes(stats.RuntimeAllocatedBytes)}");
+
+		if (puzzleSetupTimeOffset > TimeSpan.Zero)
+		{
+			Console.WriteLine($"Pre-brute-force setup time: {puzzleSetupTimeOffset.TotalMilliseconds:F3} ms");
+		}
+
+		if (HasSetupBreakdown(stats))
+		{
+			Console.WriteLine("Brute-force setup breakdown:");
+			PrintMilliseconds("state initialization", stats.SetupStateInitializationTime);
+			PrintMilliseconds("root clone", stats.SetupCloneTime);
+			PrintMilliseconds("weak-link discovery", stats.SetupWeakLinkDiscoveryTime);
+			PrintMilliseconds("final propagation", stats.SetupFinalPropagationTime);
+			PrintMilliseconds("pool initialization", stats.SetupPoolInitializationTime);
+			PrintMilliseconds("other", stats.SetupOtherTime);
+		}
+
+		if (HasWeakLinkDiscoveryBreakdown(stats))
+		{
+			Console.WriteLine("Weak-link discovery breakdown:");
+			PrintMilliseconds("initial propagation", stats.WeakLinkDiscoveryInitialPropagationTime);
+			PrintMilliseconds("scratch clone", stats.WeakLinkDiscoveryScratchCloneTime);
+			PrintMilliseconds("scratch copy", stats.WeakLinkDiscoveryCopyTime);
+			PrintMilliseconds("set probe value", stats.WeakLinkDiscoverySetValueTime);
+			PrintMilliseconds("probe propagation", stats.WeakLinkDiscoveryProbePropagationTime);
+			PrintMilliseconds("link scan", stats.WeakLinkDiscoveryLinkScanTime);
+			PrintMilliseconds("other", stats.WeakLinkDiscoveryOtherTime);
+			Console.WriteLine($"  passes: {stats.WeakLinkDiscoveryPasses:N0}");
+			Console.WriteLine($"  probes: {stats.WeakLinkDiscoveryProbes:N0}");
+			Console.WriteLine($"  invalid probes: {stats.WeakLinkDiscoveryInvalidProbes:N0}");
+			Console.WriteLine($"  directional links added: {stats.WeakLinkDiscoveryLinksAdded:N0}");
+		}
 	}
 
 	private static string FormatAllocatedBytes(long bytes) => $"{bytes:N0} B ({bytes / 1048576.0:N3} MiB)";
+
+	private static void PrintMilliseconds(string label, TimeSpan time) => Console.WriteLine($"  {label}: {time.TotalMilliseconds:F3} ms");
+
+	private static bool HasSetupBreakdown(BruteForceSolveStats stats) =>
+		stats.SetupStateInitializationTime > TimeSpan.Zero ||
+		stats.SetupCloneTime > TimeSpan.Zero ||
+		stats.SetupWeakLinkDiscoveryTime > TimeSpan.Zero ||
+		stats.SetupFinalPropagationTime > TimeSpan.Zero ||
+		stats.SetupPoolInitializationTime > TimeSpan.Zero;
+
+	private static bool HasWeakLinkDiscoveryBreakdown(BruteForceSolveStats stats) =>
+		stats.WeakLinkDiscoveryPasses > 0 ||
+		stats.WeakLinkDiscoveryProbes > 0 ||
+		stats.WeakLinkDiscoveryInitialPropagationTime > TimeSpan.Zero ||
+		stats.WeakLinkDiscoveryProbePropagationTime > TimeSpan.Zero;
 
     public static async Task<int> Main(string[] args)
 	{

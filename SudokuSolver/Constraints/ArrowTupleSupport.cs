@@ -127,6 +127,53 @@ internal sealed class ArrowTupleSupport
     }
 
     /// <summary>
+    /// Registers weak links between candidate pairs that cannot appear together in any currently valid tuple.
+    /// </summary>
+    /// <param name="solver">The solver state to inspect and update.</param>
+    /// <returns>The result of adding the direct tuple incompatibility links.</returns>
+    internal LogicResult InitLinks(Solver solver)
+    {
+        LogicResult result = LogicResult.None;
+        uint[] board = solver.BoardArray;
+
+        for (int left = 0; left < width - 1; left++)
+        {
+            uint leftMask = board[cellIndices[left]] & solver.ALL_VALUES_MASK;
+            while (leftMask != 0)
+            {
+                int leftValue = MinValue(leftMask);
+                uint leftValueMask = ValueMask(leftValue);
+                leftMask &= ~leftValueMask;
+
+                int leftCandidate = solver.CandidateIndex(cellIndices[left], leftValue);
+                for (int right = left + 1; right < width; right++)
+                {
+                    uint rightMask = board[cellIndices[right]] & solver.ALL_VALUES_MASK;
+                    uint supportedRightMask = SupportedMaskForTuplePair(board, left, leftValueMask, right);
+                    uint elimMask = rightMask & ~supportedRightMask;
+                    while (elimMask != 0)
+                    {
+                        int rightValue = MinValue(elimMask);
+                        elimMask &= ~ValueMask(rightValue);
+
+                        LogicResult linkResult = solver.AddWeakLink(leftCandidate, solver.CandidateIndex(cellIndices[right], rightValue));
+                        if (linkResult == LogicResult.Invalid)
+                        {
+                            return LogicResult.Invalid;
+                        }
+                        if (linkResult == LogicResult.Changed)
+                        {
+                            result = LogicResult.Changed;
+                        }
+                    }
+                }
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
     /// Gets whether this tuple support watches the given cell.
     /// </summary>
     /// <param name="cellIndex">The cell index to test.</param>
@@ -171,6 +218,35 @@ internal sealed class ArrowTupleSupport
         }
 
         return false;
+    }
+
+    private uint SupportedMaskForTuplePair(uint[] board, int left, uint leftValueMask, int right)
+    {
+        uint result = 0;
+        for (int offset = 0; offset < tupleMasks.Length; offset += width)
+        {
+            if ((tupleMasks[offset + left] & leftValueMask) == 0 || !IsTupleValid(board, offset))
+            {
+                continue;
+            }
+
+            result |= tupleMasks[offset + right];
+        }
+
+        return result;
+    }
+
+    private bool IsTupleValid(uint[] board, int offset)
+    {
+        for (int i = 0; i < width; i++)
+        {
+            if ((board[cellIndices[i]] & tupleMasks[offset + i]) == 0)
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static void BuildTuples(int maxValue, int width, bool[] peers, int[] values, List<uint> tuples, int index, int remainingSum)

@@ -157,6 +157,16 @@ public class ArrowSumConstraint : Constraint
         // expensive simulation-based link discovery only needs to run once.
         if (_linksInitialized) return LogicResult.None;
         _linksInitialized = true;
+
+        if (circleCells.Count == 1)
+        {
+            _circleArrowTupleSupport ??= ArrowTupleSupport.Build(sudokuSolver, circleCells, arrowCells);
+            if (_circleArrowTupleSupport != null)
+            {
+                return _circleArrowTupleSupport.InitLinks(sudokuSolver);
+            }
+        }
+
         _isDiscoveringLinks = true;
         try
         {

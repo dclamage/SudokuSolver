@@ -263,18 +263,25 @@ public partial class Solver
         lastBruteForceSolveStats = null;
         long setupAllocatedBytesStart = GC.GetTotalAllocatedBytes(precise: false);
         Stopwatch setupStopwatch = Stopwatch.StartNew();
+        BruteForceSolveStatsTracker statsTracker = new();
+        long setupStateInitializationStart = Stopwatch.GetTimestamp();
         using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken, NUM_CANDIDATES + 1);
+        statsTracker.AddSetupStateInitializationTime(setupStateInitializationStart);
         try
         {
+            long setupCloneStart = Stopwatch.GetTimestamp();
             Solver boardCopy = Clone(willRunNonSinglesLogic: true);
-            boardCopy.bruteForceSolveStatsTracker = new BruteForceSolveStatsTracker();
+            statsTracker.AddSetupCloneTime(setupCloneStart);
+            boardCopy.bruteForceSolveStatsTracker = statsTracker;
             boardCopy.countBruteForceAssignments = true;
+            long weakLinkDiscoveryStart = Stopwatch.GetTimestamp();
             LogicResult discoveryResult = boardCopy.DiscoverWeakLinks(cancellationToken);
+            statsTracker.AddSetupWeakLinkDiscoveryTime(weakLinkDiscoveryStart);
             if (discoveryResult == LogicResult.Invalid)
             {
                 setupStopwatch.Stop();
                 long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
-                lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
+                lastBruteForceSolveStats = statsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
                 return 0;
             }
             if (discoveryResult == LogicResult.PuzzleComplete)
@@ -282,17 +289,19 @@ public partial class Solver
                 setupStopwatch.Stop();
                 state.IncrementSolutions(boardCopy);
                 long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
-                lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
+                lastBruteForceSolveStats = statsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
                 return maxSolutions > 0 && state.numSolutions > maxSolutions ? maxSolutions : state.numSolutions;
             }
             if (discoveryResult == LogicResult.Changed)
             {
+                long finalPropagationStart = Stopwatch.GetTimestamp();
                 LogicResult setupPropagateResult = boardCopy.BruteForcePropagate(false, cancellationToken);
+                statsTracker.AddSetupFinalPropagationTime(finalPropagationStart);
                 if (setupPropagateResult == LogicResult.Invalid)
                 {
                     setupStopwatch.Stop();
                     long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
-                    lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
+                    lastBruteForceSolveStats = statsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
                     return 0;
                 }
                 if (setupPropagateResult == LogicResult.PuzzleComplete)
@@ -300,13 +309,15 @@ public partial class Solver
                     setupStopwatch.Stop();
                     state.IncrementSolutions(boardCopy);
                     long setupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
-                    lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
+                    lastBruteForceSolveStats = statsTracker.Snapshot(setupStopwatch.Elapsed, TimeSpan.Zero, setupAllocatedBytes, 0);
                     return maxSolutions > 0 && state.numSolutions > maxSolutions ? maxSolutions : state.numSolutions;
                 }
             }
-            setupStopwatch.Stop();
             boardCopy.isBruteForcing = true;
+            long poolInitializationStart = Stopwatch.GetTimestamp();
             state.InitializeSolverPool(boardCopy);
+            statsTracker.AddSetupPoolInitializationTime(poolInitializationStart);
+            setupStopwatch.Stop();
             long puzzleSetupAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - setupAllocatedBytesStart;
 
             long runtimeAllocatedBytesStart = GC.GetTotalAllocatedBytes(precise: false);
@@ -325,7 +336,7 @@ public partial class Solver
             }
             runtimeStopwatch.Stop();
             long runtimeAllocatedBytes = GC.GetTotalAllocatedBytes(precise: false) - runtimeAllocatedBytesStart;
-            lastBruteForceSolveStats = boardCopy.bruteForceSolveStatsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed, puzzleSetupAllocatedBytes, runtimeAllocatedBytes);
+            lastBruteForceSolveStats = statsTracker.Snapshot(setupStopwatch.Elapsed, runtimeStopwatch.Elapsed, puzzleSetupAllocatedBytes, runtimeAllocatedBytes);
         }
         catch (OperationCanceledException) { }
 
