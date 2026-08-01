@@ -120,20 +120,35 @@ Regenerate this table any time with the grep in the git history of this file's c
 
 ---
 
-## Improvement 1 — `OrthogonalValueConstraint` (highest leverage)
+## Improvement 1 — `OrthogonalValueConstraint` ✅ DONE (commit `13b31bc`, 2026-08-01)
 
-- **Why first:** base class for the most common marker constraints (kropki/`DifferenceConstraint`,
-  `RatioConstraint`, the `sum:` marker, etc.). One rewrite benefits every subclass, and these appear
-  in *many* puzzles. Allocates 3× in `StepLogic` and is in the always-run bucket.
-- **File:** `SudokuSolver/Constraints/OrthogonalValueConstraint.cs` (+ verify subclasses inherit the
-  hot path: `DifferenceConstraint`, `RatioConstraint`, `SumConstraint`).
-- **Gotcha:** it has both a *marker* mode (2 specific cells) and a *negative-constraint* mode (applies
-  to every unmarked orthogonal pair — effectively board-wide). Scheduling (`CellIndicesForPropagationQueue`)
-  is only clean for the marker mode; the negative mode may need to stay always-run or watch all its
-  pairs' cells. Read the class carefully before deciding.
-- **Measure with:** find/add a kropki-heavy or difference/ratio-heavy puzzle to the corpus (check the
-  variant collection; "Black Kropki X" is in `uniqueVariantFPuzzles`).
-- **Expected:** allocation elimination on marker-heavy puzzles; a scheduling win where markers are sparse.
+**Key finding that reframed this one:** `OrthogonalValueConstraint.StepLogic` returns `None`
+*unconditionally* while brute forcing (guard at the top of the method) — the constraint is enforced
+entirely by the weak links it adds in `InitLinks`. So its `StepLogic` **allocations never fire during
+brute force** (they only fire in logical solving); the audit's "3 allocs" is a logical-solve cost, not
+a brute-force one. The real brute-force cost was pure scheduling: it sat in the always-run bucket,
+paying a virtual no-op call per instance on every propagation step.
+
+**What landed (deduction-neutral, brute-force scheduling only):**
+- New `Constraint.WantsBruteForcePropagation` virtual (default `true`). When `false`, the constraint is
+  left out of the brute-force propagation queue **entirely** — neither always-run nor cell-scheduled —
+  wired in `SolverInitialization.FinalizeConstraints` (the queue-build loop `continue`s on it).
+- `OrthogonalValueConstraint` overrides it to `false`.
+- **Dead end avoided:** first tried `CellIndicesForPropagationQueue` = marker cells (cell-scheduling).
+  That *regressed* ~8% — marker cells change constantly, so per-cell-change enqueue bookkeeping costs
+  more than the always-run no-op it removes. For a no-op-during-BF constraint the only win is to not be
+  in the queue at all; hence the new opt-out flag.
+- **Result:** ~5–6% faster on a 16-instance kropki search (`kropki-search-cap50k`, added to corpus).
+  Win scales with the number of `OrthogonalValueConstraint` instances; ~noise on 1–2 instances. Full
+  suite (94) passes; counts match `dev` across difference/ratio/sum markers, negative constraints, and
+  a unique negative-kropki puzzle.
+
+**Follow-up for a later session:** the `StepLogic` *logical-solve* allocations are still there
+(`GetRelatedConstraints(...).SelectMany(...).ToHashSet()` per call at the top of `StepLogic` + the
+per-call `valInstances` array). Only worth it if a `solve`/logical corpus case is dominated by this
+constraint. Also: `WantsBruteForcePropagation => false` is reusable by any other constraint whose
+`StepLogic` short-circuits on `isBruteForcing` — worth auditing (grep `if (isBruteForcing)` in
+`Constraints/*.cs`) as part of Improvement 5.
 
 ## Improvement 2 — `SandwichConstraint`
 
