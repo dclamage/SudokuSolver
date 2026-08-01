@@ -155,7 +155,8 @@ public partial class Solver
 
                 int combinedSum = pieceA.Sum + pieceB.Sum;
                 int unionCount = pieceA.Cells.Count + pieceB.Cells.Count;
-                if (combinedSum > 63 || unionCount > 7)
+                // Enforcement handles any size via the list path; cap only to bound recurring cost.
+                if (unionCount > 2 * MAX_VALUE)
                 {
                     continue;
                 }
@@ -168,14 +169,30 @@ public partial class Solver
                 unionCells.AddRange(pieceB.Cells);
 
                 DerivedSumConstraint constraint = DerivedSumConstraint.CreateFixedSum(this, unionCells, [combinedSum]);
-                ulong mask = constraint.FixedTermScoringMask(this);
-                double gain = DerivedSumScoring.ScoreFixedSumGain(mask, 1UL << combinedSum, out bool contradiction);
+
+                // Small terms use the exact 64-bit sum mask; larger ones fall back to range scoring
+                // (and range-based enforcement via SumCellsHelper's list path).
+                double gain;
+                bool contradiction;
+                double cost;
+                if (unionCount * MAX_VALUE <= 63 && combinedSum <= 63)
+                {
+                    ulong mask = constraint.FixedTermScoringMask(this);
+                    gain = DerivedSumScoring.ScoreFixedSumGain(mask, 1UL << combinedSum, out contradiction);
+                    cost = DerivedSumScoring.Cost(unionCount, groupCount: 1, popcountP: BitOperations.PopCount(mask), popcountN: 0);
+                }
+                else
+                {
+                    (int min, int max) = constraint.FixedTermScoringRange(this);
+                    gain = DerivedSumScoring.ScoreFixedSumRangeGain(min, max, combinedSum, out contradiction);
+                    // Non-mask terms enforce via the allocating list path, so weight their cost higher.
+                    cost = DerivedSumScoring.Cost(unionCount, groupCount: 2, popcountP: Math.Min(max - min + 1, 60), popcountN: 0);
+                }
                 if (contradiction || gain <= 0.0)
                 {
                     continue;
                 }
 
-                double cost = DerivedSumScoring.Cost(unionCount, groupCount: 1, popcountP: BitOperations.PopCount(mask), popcountN: 0);
                 int[] watched = [.. pieceA.Indices, .. pieceB.Indices];
                 candidates.Add(new DerivedSumCandidate
                 {

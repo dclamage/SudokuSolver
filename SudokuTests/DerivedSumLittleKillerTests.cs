@@ -67,6 +67,29 @@ public class DerivedSumLittleKillerTests
     }
 
     /// <summary>
+    /// Long adjacent diagonals whose union exceeds the 64-bit mask limit (13 cells here) must still
+    /// combine — via the range-based scoring and the list-based enforcement path — fire, and produce
+    /// a solution that satisfies both little killers exactly.
+    /// </summary>
+    [TestMethod]
+    public void LargeCombinedLittleKillerUsesRangePathAndFires()
+    {
+        // Diagonal A (i+j=5): (0,5),(1,4),(2,3),(3,2),(4,1),(5,0) sum 22.
+        // Diagonal B (i+j=6): (0,6),(1,5),(2,4),(3,3),(4,2),(5,1),(6,0) sum 28. Union = 13 cells.
+        string[] lks = ["lk:22;r1c6;DL", "lk:28;r1c7;DL"];
+
+        Solver.LastDerivedCommitCount = -1;
+        Solver solver = SolverFactory.CreateBlank(9, lks);
+        Assert.IsTrue(solver.FindSolution(multiThread: false), "No solution found");
+        Assert.IsTrue(Solver.LastDerivedCommitCount > 0, $"Range-path discovery did not fire (committed {Solver.LastDerivedCommitCount})");
+
+        string s = solver.ToGivenString();
+        int Val(int r, int c) => s[r * 9 + c] - '0';
+        Assert.AreEqual(22, Val(0, 5) + Val(1, 4) + Val(2, 3) + Val(3, 2) + Val(4, 1) + Val(5, 0), "Little killer A (sum 22) violated");
+        Assert.AreEqual(28, Val(0, 6) + Val(1, 5) + Val(2, 4) + Val(3, 3) + Val(4, 2) + Val(5, 1) + Val(6, 0), "Little killer B (sum 28) violated");
+    }
+
+    /// <summary>
     /// Discovery must not change a puzzle's satisfiability decision: an unsatisfiable little-killer
     /// combination still reports no solution with discovery on, and a satisfiable one still solves.
     /// </summary>

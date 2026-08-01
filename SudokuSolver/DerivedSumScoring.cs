@@ -79,6 +79,31 @@ internal static class DerivedSumScoring
     }
 
     /// <summary>
+    /// Range-based gain of pinning a term whose achievable total spans [min, max] to a single
+    /// <paramref name="target"/>. Used for large terms (sum &gt; 63 / cells * MAX_VALUE &gt; 63) that cannot
+    /// use the 64-bit mask. Approximates the mask-based gain using the range width instead of an exact
+    /// popcount, so it may over-estimate when the target is achievable many ways.
+    /// </summary>
+    internal static double ScoreFixedSumRangeGain(int min, int max, int target, out bool contradiction)
+    {
+        contradiction = target < min || target > max;
+        if (contradiction)
+        {
+            return 0.0;
+        }
+
+        if (min == max)
+        {
+            return 0.0;
+        }
+
+        double width = max - min + 1;
+        double informationGain = Math.Log2(width);
+        double edgeCut = ((target - min) + (max - target)) / width; // = (max - min) / width, ~1 for a point target
+        return informationGain + 2.0 * edgeCut;
+    }
+
+    /// <summary>
     /// Estimated recurring enforcement cost of a candidate: proportional to how many cells it watches,
     /// scaled by how many sum groups it spans and how wide its masks are.
     /// </summary>

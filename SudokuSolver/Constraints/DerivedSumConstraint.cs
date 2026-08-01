@@ -62,6 +62,12 @@ internal sealed class DerivedSumConstraint : Constraint
     /// </summary>
     internal ulong FixedTermScoringMask(Solver solver) => _fixedTerm.PossibleSumsMask(solver);
 
+    /// <summary>
+    /// The unrestricted achievable-sum range [min, max] of the fixed term's cells (uniqueness-aware),
+    /// for scoring large terms whose totals exceed the 64-bit mask. Fixed-sum constraints only.
+    /// </summary>
+    internal (int Min, int Max) FixedTermScoringRange(Solver solver) => _fixedTerm.SumRange(solver);
+
     public override string SpecificName => _specificName;
 
     public override bool NeedsEnforceConstraint => false;
