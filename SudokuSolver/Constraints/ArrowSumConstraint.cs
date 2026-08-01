@@ -15,6 +15,9 @@ public class ArrowSumConstraint : Constraint
     private readonly Solver _solverInstanceRef; // To pass to strategy methods that might need solver context
     private readonly bool _isDegenerate;
     private readonly bool _isClone;
+    private bool _linksInitialized = false;
+    private ArrowTupleSupport _circleArrowTupleSupport;
+    private bool _isDiscoveringLinks;
 
     public ArrowSumConstraint(Solver sudokuSolver, string options) : base(sudokuSolver, options)
     {
@@ -55,6 +58,12 @@ public class ArrowSumConstraint : Constraint
     // it would either be a different constraint type or require an additional GroupConstraint.
     public override List<(int, int)> Group => null;
 
+    private IReadOnlyList<int> _cellIndicesForQueue;
+    public override IReadOnlyList<int> CellIndicesForPropagationQueue =>
+        _cellIndicesForQueue ??= circleCells.Concat(arrowCells)
+            .Select(c => c.Item1 * WIDTH + c.Item2)
+            .ToList();
+
     public override LogicResult InitCandidates(Solver sudokuSolver)
     {
         if (_isDegenerate || _isClone)
@@ -63,6 +72,15 @@ public class ArrowSumConstraint : Constraint
         }
 
         _arrowSumHelperInstance = new SumCellsHelper(sudokuSolver, arrowCells);
+        if (circleCells.Count == 1)
+        {
+            _circleArrowTupleSupport ??= ArrowTupleSupport.Build(sudokuSolver, circleCells, arrowCells);
+            if (_circleArrowTupleSupport != null)
+            {
+                return _circleArrowTupleSupport.StepLogic(sudokuSolver);
+            }
+        }
+
         return _logicStrategy.InitCandidates(sudokuSolver, circleCells, arrowCells, _arrowSumHelperInstance);
     }
 
@@ -71,6 +89,12 @@ public class ArrowSumConstraint : Constraint
         if (_isDegenerate || _isClone)
         {
             return true;
+        }
+
+        if (_circleArrowTupleSupport != null)
+        {
+            int cellIndex = i * WIDTH + j;
+            return !_circleArrowTupleSupport.ContainsCell(cellIndex) || _circleArrowTupleSupport.HasValidTuple(sudokuSolver);
         }
 
         return _logicStrategy.EnforceConstraint(sudokuSolver, circleCells, arrowCells, _arrowSumHelperInstance, _allCells, i, j, val);
@@ -83,7 +107,27 @@ public class ArrowSumConstraint : Constraint
             return LogicResult.None;
         }
 
+        if ((isBruteForcing || _isDiscoveringLinks) && logicalStepDescription == null && _circleArrowTupleSupport != null)
+        {
+            return _circleArrowTupleSupport.StepLogic(sudokuSolver);
+        }
+
         return _logicStrategy.StepLogic(sudokuSolver, circleCells, arrowCells, _arrowSumHelperInstance, logicalStepDescription, isBruteForcing);
+    }
+
+    public override void SeedConflictPriority(int[] conflictScores)
+    {
+        if (_isDegenerate) return;
+        if (!_isClone && circleCells.Count == 1)
+        {
+            _circleArrowTupleSupport ??= ArrowTupleSupport.Build(_solverInstanceRef, circleCells, arrowCells);
+        }
+
+        int priority = Math.Max(MAX_VALUE * 2 - circleCells.Count - arrowCells.Count, MAX_VALUE);
+        foreach (var (i, j) in circleCells)
+            conflictScores[i * WIDTH + j] += priority;
+        foreach (var (i, j) in arrowCells)
+            conflictScores[i * WIDTH + j] += priority;
     }
 
     public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
@@ -109,7 +153,29 @@ public class ArrowSumConstraint : Constraint
             return LogicResult.None;
         }
 
-        return InitLinksByRunningLogic(sudokuSolver, _allCells, logicalStepDescription);
+        // InitLinks is called on every FinalizeConstraints loop iteration, but the
+        // expensive simulation-based link discovery only needs to run once.
+        if (_linksInitialized) return LogicResult.None;
+        _linksInitialized = true;
+
+        if (circleCells.Count == 1)
+        {
+            _circleArrowTupleSupport ??= ArrowTupleSupport.Build(sudokuSolver, circleCells, arrowCells);
+            if (_circleArrowTupleSupport != null)
+            {
+                return _circleArrowTupleSupport.InitLinks(sudokuSolver);
+            }
+        }
+
+        _isDiscoveringLinks = true;
+        try
+        {
+            return InitLinksByRunningLogic(sudokuSolver, _allCells, logicalStepDescription);
+        }
+        finally
+        {
+            _isDiscoveringLinks = false;
+        }
     }
 
     public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value)
