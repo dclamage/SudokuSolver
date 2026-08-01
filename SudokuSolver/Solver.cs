@@ -39,9 +39,15 @@ public partial class Solver
     private bool[] _checkGroupForHiddens;
     private int _numGroupsNeedingHiddenCheck;
 
+    // How many constraints currently have _constraintQueued[i] == true.
+    private int _numConstraintsQueued;
+
     // Private state
     private bool isInSetValue = false;
     private bool isBruteForcing = false;
+    private bool isPooledBruteForceSolver = false;
+    private bool isPooledBruteForceSolverRented = false;
+    private int pooledBruteForceSolverIndex = -1;
     private bool isInvalid;
     private int unsetCellsCount;
     private readonly List<int> pendingNakedSingles;
@@ -56,8 +62,50 @@ public partial class Solver
     // Conflict-score heuristic: shared across all clones in one search tree via reference assignment.
     // Cells that repeatedly cause contradictions get higher scores and are branched on first.
     internal int[] conflictScores;
+    // Shared decay counter: [0] = total increments since last decay, [1] = next decay threshold.
+    // Halve all conflict scores every CONFLICT_DECAY_INTERVAL increments (VSIDS-style decay).
+    internal long[] conflictDecayState;
+    private const long CONFLICT_DECAY_INTERVAL = 1 << 14; // 16 384 increments per decay step
+
     // Index of the cell this solver instance was branched on (-1 = not a branch point).
     internal int branchCellIndex = -1;
+
+    // How many committed branch-point assignments are in this solver's search path.
+    internal int searchDepth = 0;
+
+    // Propagation queue: maps cell index → list of constraint indices that watch that cell.
+    // Shared by reference across all clones (read-only after FinalizeConstraints).
+    internal int[][] cellToConstraintIndices;
+
+    // Per-instance: which constraints are pending re-run due to cell changes.
+    private bool[] _constraintQueued;
+
+    // Constraint indices whose CellIndicesForPropagationQueue was null (run every propagation step).
+    // Shared by reference across clones (read-only after FinalizeConstraints).
+    private int[] _alwaysRunConstraintIndices;
+
+    // Cell index that caused a contradiction in the most-recently-discarded child solver.
+    // Set by FindSolutionInternal/CountSolutionsInternal when a branch fails.
+    internal int _lastContradictionCellIndex = -1;
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    internal void IncrementConflictScore(int cellIndex)
+    {
+        Interlocked.Increment(ref conflictScores[cellIndex]);
+        if (conflictDecayState != null)
+        {
+            long n = Interlocked.Increment(ref conflictDecayState[0]);
+            // One thread wins the decay when total hits each multiple of the interval.
+            if ((n & (CONFLICT_DECAY_INTERVAL - 1)) == 0)
+            {
+                for (int i = 0; i < NUM_CELLS; i++)
+                {
+                    // Approximate halving — slight races in multi-threaded mode are acceptable.
+                    Volatile.Write(ref conflictScores[i], conflictScores[i] >> 1);
+                }
+            }
+        }
+    }
 
     /// <summary>
     /// Groups which cannot contain more than one of the same digit.

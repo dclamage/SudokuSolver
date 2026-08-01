@@ -3,6 +3,20 @@ namespace SudokuSolver;
 public partial class Solver
 {
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void EnqueueConstraintsForCell(int cellIndex)
+    {
+        var indices = cellToConstraintIndices[cellIndex];
+        for (int k = 0; k < indices.Length; k++)
+        {
+            if (!_constraintQueued[indices[k]])
+            {
+                _constraintQueued[indices[k]] = true;
+                _numConstraintsQueued++;
+            }
+        }
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public bool ClearValue(int cellIndex, int v)
     {
         uint cellMask = board[cellIndex];
@@ -20,6 +34,9 @@ public partial class Solver
             isInvalid = true;
             return false;
         }
+
+        if (isBruteForcing && cellToConstraintIndices != null)
+            EnqueueConstraintsForCell(cellIndex);
 
         if (ValueCount(newCellMask) == 1)
         {
@@ -62,7 +79,7 @@ public partial class Solver
 
     public bool SetValue(int cellIndex, int val)
     {
-;       uint prevMask = board[cellIndex];
+        uint prevMask = board[cellIndex];
         uint valMask = ValueMask(val);
         if ((board[cellIndex] & valMask) == 0)
         {
@@ -82,6 +99,8 @@ public partial class Solver
                 board[cellIndex] = valMask;
                 pendingNakedSingles.Add(cellIndex);
                 TrackHiddenSingles(cellIndex, prevMask, valMask);
+                if (isBruteForcing && cellToConstraintIndices != null)
+                    EnqueueConstraintsForCell(cellIndex);
             }
             return true;
         }
@@ -92,6 +111,12 @@ public partial class Solver
         unsetCellsCount--;
 
         TrackHiddenSingles(cellIndex, prevMask, valMask);
+
+        // Enqueue constraints watching this cell — setting a value changes the cell's
+        // state just as much as clearing a candidate, but weak-link ClearValues below
+        // only cover the targets, not cellIndex itself.
+        if (isBruteForcing && cellToConstraintIndices != null)
+            EnqueueConstraintsForCell(cellIndex);
 
         // Apply all weak links
         int setCandidateIndex = CandidateIndex(cellIndex, val);
@@ -129,7 +154,7 @@ public partial class Solver
 
     public LogicResult EvaluateSetValue(int cellIndex, int val, ref string violationString)
     {
-;       uint prevMask = board[cellIndex];
+        uint prevMask = board[cellIndex];
         uint valMask = ValueMask(val);
         if ((board[cellIndex] & valMask) == 0)
         {
@@ -213,6 +238,9 @@ public partial class Solver
         }
 
         TrackHiddenSingles(cellIndex, prevMask, mask);
+
+        if (isBruteForcing && cellToConstraintIndices != null)
+            EnqueueConstraintsForCell(cellIndex);
 
         return true;
     }

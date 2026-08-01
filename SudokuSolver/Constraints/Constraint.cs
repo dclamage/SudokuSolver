@@ -157,6 +157,16 @@ public abstract class Constraint
     }
 
     /// <summary>
+    /// Seed the conflict-score array with structural priority for this constraint's cells.
+    /// Called once during FinalizeConstraints after group-based seeding.
+    /// Override to give key cells (e.g. circle cells in arrows) a head start so
+    /// the cold-start branching heuristic picks them before any contradictions accumulate.
+    /// The default implementation seeds nothing; the group-based seeding in
+    /// FinalizeConstraints already handles distinctness-group constraints.
+    /// </summary>
+    public virtual void SeedConflictPriority(int[] conflictScores) { }
+
+    /// <summary>
     /// Returns a list of cells which must contain the given value.
     /// </summary>
     /// <param name="sudokuSolver">The solver.</param>
