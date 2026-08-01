@@ -15,9 +15,9 @@ internal sealed class DerivedSumConstraint : Constraint
 
     // Exactly one of these drives propagation; set by the factory after construction so the
     // owned SumTerm(s) can reference this constraint as their source.
+    // (A SumEqualityRelation path will be added with arrow-pair discovery.)
     private SumTerm _fixedTerm;
     private SumDifferenceRelation _difference;
-    private SumEqualityRelation _equality;
 
     private DerivedSumConstraint(Solver solver, IReadOnlyList<int> watchedCells, string specificName)
         : base(solver, "")
@@ -70,11 +70,7 @@ internal sealed class DerivedSumConstraint : Constraint
         {
             return _fixedTerm.StepLogic(sudokuSolver, null, isBruteForcing);
         }
-        if (_difference != null)
-        {
-            return _difference.StepLogic(sudokuSolver, null, isBruteForcing);
-        }
-        return _equality.StepLogic(sudokuSolver, null, isBruteForcing);
+        return _difference.StepLogic(sudokuSolver, null, isBruteForcing);
     }
 
     private static int[] ToCellIndices(Solver solver, IReadOnlyList<(int, int)> cells)
