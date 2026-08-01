@@ -108,7 +108,7 @@ internal static class Program
         }
 
         Console.WriteLine($"iterations={iterations}  multithread={forceMultiThread}  cases={cases.Count}");
-        Console.WriteLine($"{"name",-18}{"op",-7}{"result",13}  {"ok",-4}{"min ms",10}{"med ms",10}{"alloc MB",10}   {(baseline.Count > 0 ? "vs base" : "")}");
+        Console.WriteLine($"{"name",-24}{"op",-7}{"result",13}  {"ok",-4}{"min ms",10}{"med ms",10}{"alloc MB",10}   {(baseline.Count > 0 ? "vs base" : "")}");
         Console.WriteLine(new string('-', 96));
 
         var results = new List<BenchResult>();
@@ -124,7 +124,7 @@ internal static class Program
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"{c.Name,-18}{c.Op,-7}{"ERROR",13}  {"ERR",-4}{ex.Message}");
+                Console.WriteLine($"{c.Name,-24}{c.Op,-7}{"ERROR",13}  {"ERR",-4}{ex.Message}");
                 anyFail = true;
                 continue;
             }
@@ -144,7 +144,7 @@ internal static class Program
                 }
             }
 
-            Console.WriteLine($"{c.Name,-18}{c.Op,-7}{r.Result,13}  {(r.Ok ? "ok" : "FAIL"),-4}{r.MinMs,10:0.00}{r.MedianMs,10:0.00}{r.AllocMB,10:0.00}   {cmp}");
+            Console.WriteLine($"{c.Name,-24}{c.Op,-7}{r.Result,13}  {(r.Ok ? "ok" : "FAIL"),-4}{r.MinMs,10:0.00}{r.MedianMs,10:0.00}{r.AllocMB,10:0.00}   {cmp}");
         }
 
         Console.WriteLine(new string('-', 96));
