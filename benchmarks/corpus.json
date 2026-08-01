@@ -65,6 +65,21 @@
     "expected": 1
   },
   {
+    "name": "kropki-search-cap50k",
+    "category": "variant",
+    "comment": "Marker constraints as separate instances, as heavily-constrained kropki/XV puzzles stack them. Exercises the brute-force queue overhead of OrthogonalValueConstraint.",
+    "givens": "100000000000000000000000000000000000000000000000000000000000000000000000000000000",
+    "constraints": [
+      "difference:1r1c2r1c3", "difference:1r2c5r2c6", "difference:1r3c1r4c1", "difference:1r5c5r5c6",
+      "difference:1r6c8r6c9", "difference:1r7c2r7c3", "difference:1r8c5r9c5", "difference:1r4c7r4c8",
+      "ratio:2r1c5r1c6", "ratio:2r2c2r3c2", "ratio:2r3c7r3c8", "ratio:2r5c1r5c2",
+      "ratio:2r6c4r6c5", "ratio:2r7c7r8c7", "ratio:2r9c1r9c2", "ratio:2r4c4r5c4"
+    ],
+    "op": "count",
+    "maxCount": 50000,
+    "expected": 50000
+  },
+  {
     "name": "arrow-search",
     "category": "arrow",
     "blank": 9,
