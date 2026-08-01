@@ -56,6 +56,12 @@ internal sealed class DerivedSumConstraint : Constraint
         return constraint;
     }
 
+    /// <summary>
+    /// The unrestricted achievable-sum mask of the fixed term's cells (uniqueness-aware), for
+    /// scoring how much pinning them to the fixed total would restrict. Fixed-sum constraints only.
+    /// </summary>
+    internal ulong FixedTermScoringMask(Solver solver) => _fixedTerm.PossibleSumsMask(solver);
+
     public override string SpecificName => _specificName;
 
     public override bool NeedsEnforceConstraint => false;
