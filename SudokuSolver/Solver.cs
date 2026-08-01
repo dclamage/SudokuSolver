@@ -31,7 +31,9 @@ public partial class Solver
     private int[] regions = null;
     private List<int>[] weakLinks;
     private int totalWeakLinks = 0;
-    private readonly List<Constraint> constraints;
+    // Not readonly: a root brute-force clone may replace this with a private extended copy
+    // when committing setup-time derived constraints (see CommitDerivedConstraints).
+    private List<Constraint> constraints;
     private readonly List<Constraint> enforceConstraints;
 
     // Hidden single tracking fields

@@ -24,6 +24,7 @@ public partial class Solver
         {
             return false;
         }
+        solver.PrepareDerivedConstraints();
         solver.isBruteForcing = true;
         using FindSolutionState state = new(isRandom, multiThread, cancellationToken, solver.NUM_CANDIDATES + 1);
         if (multiThread)
@@ -237,6 +238,7 @@ public partial class Solver
                     return maxSolutions > 0 && state.numSolutions > maxSolutions ? maxSolutions : state.numSolutions;
                 }
             }
+            boardCopy.PrepareDerivedConstraints();
             boardCopy.isBruteForcing = true;
             state.InitializeSolverPool(boardCopy);
             if (state.multiThread)
@@ -730,6 +732,7 @@ public partial class Solver
             {
                 return state.candidateSolutionCounts;
             }
+            boardCopy.PrepareDerivedConstraints();
             boardCopy.isBruteForcing = true;
 
             if (state.multiThread)

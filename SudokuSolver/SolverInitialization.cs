@@ -261,6 +261,68 @@ public partial class Solver
         }
     }
 
+    /// <summary>
+    /// Rebuilds the brute-force propagation-queue reverse map from the current constraint list.
+    /// cellToConstraintIndices[cell] lists the constraint indices watching that cell (via
+    /// CellIndicesForPropagationQueue); constraints returning null run every step (_alwaysRun...).
+    /// </summary>
+    private void RebuildPropagationQueueMaps()
+    {
+        var cellLists = new List<int>[NUM_CELLS];
+        for (int i = 0; i < NUM_CELLS; i++) cellLists[i] = new List<int>();
+        var alwaysRun = new List<int>();
+        for (int ci = 0; ci < constraints.Count; ci++)
+        {
+            var cells = constraints[ci].CellIndicesForPropagationQueue;
+            if (cells == null || cells.Count == 0)
+            {
+                alwaysRun.Add(ci);
+            }
+            else
+            {
+                foreach (int cell in cells)
+                    if ((uint)cell < (uint)NUM_CELLS)
+                        cellLists[cell].Add(ci);
+            }
+        }
+        cellToConstraintIndices = Array.ConvertAll(cellLists, l => l.ToArray());
+        _alwaysRunConstraintIndices = alwaysRun.Count > 0 ? alwaysRun.ToArray() : null;
+        _constraintQueued = constraints.Count > 0 ? new bool[constraints.Count] : Array.Empty<bool>();
+    }
+
+    /// <summary>
+    /// Commits setup-time derived (synthetic) constraints onto this solver's own copy of the
+    /// constraint list, rebuilds the propagation-queue maps, and enqueues the new constraints so
+    /// their first StepLogic runs on the next brute-force propagation. Intended to be called on a
+    /// root brute-force clone (post-givens, post-base-propagation) before the search / pool init,
+    /// so the caller's solver — which shares these containers by reference — is left untouched.
+    /// </summary>
+    internal void CommitDerivedConstraints(IReadOnlyList<Constraint> derived)
+    {
+        if (derived == null || derived.Count == 0)
+        {
+            return;
+        }
+
+        // Copy-on-write: the constraint list is shared by reference with the caller and any
+        // sibling clones, so replace it with a private extended copy before appending.
+        int firstDerivedIndex = constraints.Count;
+        constraints = [.. constraints, .. derived];
+
+        RebuildPropagationQueueMaps();
+
+        // Enqueue the derived constraints once so their initial deductions are applied on the
+        // next propagation pass (no watched cell has "changed" yet at commit time).
+        for (int ci = firstDerivedIndex; ci < constraints.Count; ci++)
+        {
+            if (!_constraintQueued[ci])
+            {
+                _constraintQueued[ci] = true;
+                _numConstraintsQueued++;
+            }
+        }
+    }
+
     public LogicResult AddWeakLink(int candIndex0, int candIndex1)
     {
         if (candIndex0 == candIndex1)
@@ -613,31 +675,7 @@ public partial class Solver
             constraint.SeedConflictPriority(conflictScores);
         }
 
-        // Build propagation-queue reverse map: cellToConstraintIndices[cell] = constraint indices
-        // that declared that cell via CellIndicesForPropagationQueue.
-        // Constraints that return null go into _alwaysRunConstraintIndices (run every step).
-        {
-            var cellLists = new List<int>[NUM_CELLS];
-            for (int i = 0; i < NUM_CELLS; i++) cellLists[i] = new List<int>();
-            var alwaysRun = new List<int>();
-            for (int ci = 0; ci < constraints.Count; ci++)
-            {
-                var cells = constraints[ci].CellIndicesForPropagationQueue;
-                if (cells == null || cells.Count == 0)
-                {
-                    alwaysRun.Add(ci);
-                }
-                else
-                {
-                    foreach (int cell in cells)
-                        if ((uint)cell < (uint)NUM_CELLS)
-                            cellLists[cell].Add(ci);
-                }
-            }
-            cellToConstraintIndices = Array.ConvertAll(cellLists, l => l.ToArray());
-            _alwaysRunConstraintIndices = alwaysRun.Count > 0 ? alwaysRun.ToArray() : null;
-            _constraintQueued = constraints.Count > 0 ? new bool[constraints.Count] : Array.Empty<bool>();
-        }
+        RebuildPropagationQueueMaps();
 
         // Initialize hidden single tracking array
         if (Groups.Count > 0)
