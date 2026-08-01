@@ -252,6 +252,12 @@ public abstract class OrthogonalValueConstraint : Constraint
         return true;
     }
 
+    // StepLogic short-circuits to None during brute force (see the top of StepLogic) — this
+    // constraint is enforced entirely by the weak links added in InitLinks there, so it never
+    // deduces anything inside the brute-force propagation loop. Exclude it from that loop entirely
+    // rather than paying a per-step no-op (always-run) or per-marker-cell-change enqueue cost.
+    public override bool WantsBruteForcePropagation => false;
+
     public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
     {
         if (isBruteForcing)

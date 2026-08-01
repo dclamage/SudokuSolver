@@ -622,6 +622,11 @@ public partial class Solver
             var alwaysRun = new List<int>();
             for (int ci = 0; ci < constraints.Count; ci++)
             {
+                // Constraints whose StepLogic is a no-op during brute force never need to be queued.
+                if (!constraints[ci].WantsBruteForcePropagation)
+                {
+                    continue;
+                }
                 var cells = constraints[ci].CellIndicesForPropagationQueue;
                 if (cells == null || cells.Count == 0)
                 {

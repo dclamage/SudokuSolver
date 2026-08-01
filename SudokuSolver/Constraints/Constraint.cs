@@ -135,6 +135,15 @@ public abstract class Constraint
     private bool _cellIndicesQueueCached;
 
     /// <summary>
+    /// Whether this constraint's StepLogic can deduce anything during brute force.
+    /// Return false when StepLogic short-circuits while brute forcing (enforcement handled entirely
+    /// by weak links / EnforceConstraint); such a constraint is excluded from the brute-force
+    /// propagation queue completely, avoiding both the always-run per-step no-op and the
+    /// per-cell-change enqueue bookkeeping. Does not affect logical (non-brute-force) solving.
+    /// </summary>
+    public virtual bool WantsBruteForcePropagation => true;
+
+    /// <summary>
     /// Cell indices (row*WIDTH+col) that this constraint monitors during brute force.
     /// The propagation queue will re-run this constraint only when one of these cells changes.
     /// Return null to run on every propagation step (always-run bucket).
