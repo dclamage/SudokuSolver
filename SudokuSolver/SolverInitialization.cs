@@ -105,11 +105,13 @@ public partial class Solver
 
             _checkGroupForHiddens = new bool[other._checkGroupForHiddens.Length];
             other._checkGroupForHiddens.AsSpan().CopyTo(_checkGroupForHiddens);
+            _numGroupsNeedingHiddenCheck = other._numGroupsNeedingHiddenCheck;
         }
         else
         {
             _candidateCountsPerGroupValue = null;
             _checkGroupForHiddens = null;
+            _numGroupsNeedingHiddenCheck = 0;
         }
 
         Groups = other.Groups;
@@ -607,11 +609,15 @@ public partial class Solver
                     _checkGroupForHiddens[groupIdx] = count <= 1;
                 }
             }
+            _numGroupsNeedingHiddenCheck = 0;
+            for (int i = 0; i < Groups.Count; i++)
+                if (_checkGroupForHiddens[i]) _numGroupsNeedingHiddenCheck++;
         }
         else
         {
             _candidateCountsPerGroupValue = null;
             _checkGroupForHiddens = null;
+            _numGroupsNeedingHiddenCheck = 0;
         }
 
         return true;

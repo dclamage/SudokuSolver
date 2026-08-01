@@ -37,6 +37,7 @@ public partial class Solver
     // Hidden single tracking fields
     private int[] _candidateCountsPerGroupValue;
     private bool[] _checkGroupForHiddens;
+    private int _numGroupsNeedingHiddenCheck;
 
     // Private state
     private bool isInSetValue = false;

@@ -321,9 +321,10 @@ public partial class Solver
                 int v = MinValue(curDiffMask);
                 curDiffMask &= ~ValueMask(v);
                 int newCount = --_candidateCountsPerGroupValue[groupIndex * MAX_VALUE + (v - 1)];
-                if (newCount <= 1)
+                if (newCount <= 1 && !_checkGroupForHiddens[groupIndex])
                 {
                     _checkGroupForHiddens[groupIndex] = true;
+                    _numGroupsNeedingHiddenCheck++;
                 }
             }
 
@@ -335,6 +336,7 @@ public partial class Solver
                     if (_candidateCountsPerGroupValue[groupIndex * MAX_VALUE + (v - 1)] <= 1)
                     {
                         _checkGroupForHiddens[groupIndex] = true;
+                        _numGroupsNeedingHiddenCheck++;
                         break;
                     }
                 }
