@@ -309,7 +309,7 @@ public partial class Solver
 
         // Insert into weakLinks[candIndex0]
         var list0 = weakLinks[candIndex0];
-        int idx0 = list0.BinarySearch(candIndex1);
+        int idx0 = WeakLinkSearch(list0, candIndex1);
         if (idx0 < 0)
         {
             list0.Insert(~idx0, candIndex1);
@@ -318,7 +318,7 @@ public partial class Solver
 
         // Insert into weakLinks[candIndex1]
         var list1 = weakLinks[candIndex1];
-        int idx1 = list1.BinarySearch(candIndex0);
+        int idx1 = WeakLinkSearch(list1, candIndex0);
         if (idx1 < 0)
         {
             list1.Insert(~idx1, candIndex0);

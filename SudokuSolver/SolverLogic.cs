@@ -1280,9 +1280,9 @@ public partial class Solver
                         int cand02_2 = CandidateIndex((i2, j2), value02);
                         int cand12_1 = CandidateIndex((i1, j1), value12);
                         int cand12_2 = CandidateIndex((i2, j2), value12);
-                        bool weak01 = weakLinks[cand01_0].BinarySearch(cand01_1) >= 0;
-                        bool weak02 = weakLinks[cand02_0].BinarySearch(cand02_2) >= 0;
-                        bool weak12 = weakLinks[cand12_1].BinarySearch(cand12_2) >= 0;
+                        bool weak01 = IsWeakLink(cand01_0, cand01_1);
+                        bool weak02 = IsWeakLink(cand02_0, cand02_2);
+                        bool weak12 = IsWeakLink(cand12_1, cand12_2);
                         int weakCount = (weak01 ? 1 : 0) + (weak02 ? 1 : 0) + (weak12 ? 1 : 0);
                         if (weakCount != 2)
                         {

@@ -291,7 +291,7 @@ internal class AICSolver
                 newChain.Add(-1);
 
                 // Check for a CNL
-                if (weakLinks[strongIndexEnd].BinarySearch(newChain[0]) >= 0)
+                if (Solver.WeakLinkSearch(weakLinks[strongIndexEnd], newChain[0]) >= 0)
                 {
                     newChain[^1] = newChain[0];
 

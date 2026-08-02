@@ -46,7 +46,7 @@ public partial class Solver
             for (int i1 = i0 + 1; i1 < candIndexes.Count; i1++)
             {
                 int cand1 = candIndexes[i1];
-                if (cand0 != cand1 && weakLinks0.BinarySearch(cand1) < 0)
+                if (cand0 != cand1 && WeakLinkSearch(weakLinks0, cand1) < 0)
                 {
                     return false;
                 }
@@ -130,7 +130,7 @@ public partial class Solver
             var weakLinks0 = weakLinks[candidates[c0]];
             for (int c1 = c0 + 1; c1 < numCells; c1++)
             {
-                if (weakLinks0.BinarySearch(candidates[c1]) >= 0)
+                if (WeakLinkSearch(weakLinks0, candidates[c1]) >= 0)
                 {
                     return false;
                 }
@@ -334,8 +334,54 @@ public partial class Solver
         return true;
     }
 
+    /// <summary>
+    /// Is candIndex1 weakly linked to candIndex0? The weak-link lists are kept sorted, so this is
+    /// a binary search.
+    /// </summary>
+    /// <remarks>
+    /// The search is written out rather than using <see cref="List{T}.BinarySearch(T)"/>, which
+    /// dispatches through <c>Comparer{int}.Default</c>. That indirection costs measurably here
+    /// because this sits in inner loops (<see cref="SkyscraperConstraint"/>'s support search and
+    /// the pair/triple checks in <c>SolverBruteForceLogic</c>), and it is catastrophic under Mono's
+    /// WASM AOT, which emits a <c>call_indirect</c> per comparison step. See
+    /// <c>docs/wasm-perf-investigation-findings.md</c>.
+    /// </remarks>
     internal bool IsWeakLink(int candIndex0, int candIndex1) =>
-        weakLinks[candIndex0].BinarySearch(candIndex1) >= 0;
+        WeakLinkSearch(weakLinks[candIndex0], candIndex1) >= 0;
+
+    /// <summary>
+    /// Binary search of a sorted weak-link list, with the same contract as
+    /// <see cref="List{T}.BinarySearch(T)"/>: the index if found, otherwise the bitwise complement
+    /// of the insertion point.
+    /// </summary>
+    /// <remarks>
+    /// Prefer this over <see cref="List{T}.BinarySearch(T)"/> for weak-link lists. See the remarks
+    /// on <see cref="IsWeakLink"/> for why. Callers that already have the list hoisted out of a
+    /// loop should call this directly rather than going back through <see cref="IsWeakLink"/>.
+    /// </remarks>
+    internal static int WeakLinkSearch(List<int> links, int candIndex)
+    {
+        int low = 0;
+        int high = links.Count - 1;
+        while (low <= high)
+        {
+            int mid = low + ((high - low) >> 1);
+            int value = links[mid];
+            if (value == candIndex)
+            {
+                return mid;
+            }
+            if (value < candIndex)
+            {
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+        return ~low;
+    }
 
     private List<int> InitIntersectWeakLinks(int candIndex)
     {

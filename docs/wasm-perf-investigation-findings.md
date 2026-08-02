@@ -125,14 +125,53 @@ all of `variant-renban-sky` and only a small part of the program-wide tax.
   with a wrapper, but all measured bit-operation ratios remain below the remaining whole-program
   slowdown.
 
-## Recommended production change
+## Production change — applied
 
-- Replace `Solver.IsWeakLink`'s `List<int>.BinarySearch` call with the measured explicit integer
-  binary search. It benefits native and WASM, so no target-specific compilation is needed. The
-  investigation leaves the production solver unchanged pending acceptance of that fix.
-- `BitOpsBench` now includes no-inline TZC/LZC controls, and the Node driver exposes the existing
-  `bitops` export, preserving the diagnostic that resolved the lowering question.
-- The array-backed skyscraper probe and differential-build switches were removed.
+The recommended fix landed, and was **extended beyond `IsWeakLink`**. Eight further call sites
+performed the identical `weakLinks[x].BinarySearch(y)` and bypassed `IsWeakLink` entirely, so they
+kept paying the comparer dispatch:
+
+| site | path | shape |
+| --- | --- | --- |
+| `AICSolver.cs:294` | AIC chain search | membership |
+| `SolverLogic.cs:1283-1285` (×3) | logical solver | membership |
+| `SolverAnalysis.cs:49,133` | `IsGroup`, `CanPlaceDigits` | membership, list hoisted out of a loop |
+| `SolverInitialization.cs:312,321` | `AddWeakLink` | needs the insertion index |
+
+All now route through a shared `Solver.WeakLinkSearch(List<int>, int)` that keeps
+`List<T>.BinarySearch`'s exact contract (index if found, `~insertionPoint` otherwise), so the
+index-returning callers work unchanged and the two hoisted-list loops keep their hoist.
+
+Verification of the applied change:
+
+| measurement | before | after | delta |
+| --- | ---: | ---: | ---: |
+| `variant-renban-sky`, native, 15 iters | 154.45 ms | 103.20 ms | **1.50×** |
+| `variant-renban-sky`, WASM AOT, 15 iters | 3569.36 ms | 164.22 ms | **21.7×** |
+| `variant-renban-sky`, WASM/native ratio | 23.10× | 1.55× | — |
+| corpus geomean, WASM/native | 6.06× | **~5.3×** | −13% |
+| corpus worst case | 23.10× | 10.22× | — |
+
+All 16 corpus cases report `match`, and `dotnet test` passes 94/94.
+
+Two caveats on the numbers. `killer-innie` is a high-variance case — 106 ms at 5 iterations versus
+56 ms at 15 — so 5-iteration corpus figures for it should not be trusted; the geomean above uses
+the 15-iteration value, and the raw 5-iteration pairing would have read an over-optimistic 5.05×.
+And the extension's eight sites are **unmeasured**: they lie in logical-solver paths that the
+corpus never exercises (every case is `count` or `solve`). They are provably the same operation and
+cause no corpus regression, but their benefit is inferred, not demonstrated.
+
+Also unchanged from the investigation: `BitOpsBench` keeps its no-inline TZC/LZC controls, the Node
+driver exposes the `bitops` export, and the array-backed skyscraper probe and differential-build
+switches were removed.
+
+## Benchmark coverage gap
+
+The corpus is entirely brute-force (`count`/`solve`). It has no `solvepath`/`step`/`truecandidates`
+case, so the logical solver — `AICSolver`, `SolverLogic`, `IsGroup`, `CanPlaceDigits` — is
+effectively unmeasured. That is the half of the solver a setting site leans on hardest, and it is
+also where five of the eight newly-fixed call sites live. Adding a logical-solve op to `BenchCore`
+is the prerequisite for measuring any further work in that half.
 
 ## Validation
 
