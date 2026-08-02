@@ -107,6 +107,12 @@ Some overhead is legitimately the price of generality — ISS is a search engine
 also does logical solving, true candidates, and step explanations across 47 constraint types. But
 that does not account for 8× on plain vanilla.
 
+> **Follow-up:** most of the classic-puzzle gap turned out to be `DiscoverWeakLinks`. With it
+> disabled, escargot goes 7.0× → **2.2×** off ISS and golden-nugget 4.6× → **1.6×**. The per-node
+> figures below are therefore inflated by discovery's fixed cost — escargot's 100 µs/guess is
+> mostly setup, not per-node search. See
+> [`weak-link-discovery-tradeoff.md`](weak-link-discovery-tradeoff.md).
+
 ## Suggested next steps
 
 1. **Cost per node** is the bigger, more consistent factor — profile propagation on `escargot`,
