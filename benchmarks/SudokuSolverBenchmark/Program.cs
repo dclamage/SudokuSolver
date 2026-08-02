@@ -12,6 +12,7 @@ namespace SudokuSolverBenchmark;
 ///     [corpus.json]         positional path to the corpus (default: benchmarks/corpus.json)
 ///     --iterations N        timed iterations per case (default 3)
 ///     --filter TEXT         only cases whose name or category contains TEXT
+///                           (the logical-solve cases share the category "logical")
 ///     --multithread         force multi-threaded solving for every case
 ///     --save FILE           write results as JSON (use as a future baseline)
 ///     --baseline FILE       diff min-time against a saved baseline; flags >5% regressions

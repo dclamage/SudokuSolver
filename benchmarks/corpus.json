@@ -70,10 +70,22 @@
     "comment": "Marker constraints as separate instances, as heavily-constrained kropki/XV puzzles stack them. Exercises the brute-force queue overhead of OrthogonalValueConstraint.",
     "givens": "100000000000000000000000000000000000000000000000000000000000000000000000000000000",
     "constraints": [
-      "difference:1r1c2r1c3", "difference:1r2c5r2c6", "difference:1r3c1r4c1", "difference:1r5c5r5c6",
-      "difference:1r6c8r6c9", "difference:1r7c2r7c3", "difference:1r8c5r9c5", "difference:1r4c7r4c8",
-      "ratio:2r1c5r1c6", "ratio:2r2c2r3c2", "ratio:2r3c7r3c8", "ratio:2r5c1r5c2",
-      "ratio:2r6c4r6c5", "ratio:2r7c7r8c7", "ratio:2r9c1r9c2", "ratio:2r4c4r5c4"
+      "difference:1r1c2r1c3",
+      "difference:1r2c5r2c6",
+      "difference:1r3c1r4c1",
+      "difference:1r5c5r5c6",
+      "difference:1r6c8r6c9",
+      "difference:1r7c2r7c3",
+      "difference:1r8c5r9c5",
+      "difference:1r4c7r4c8",
+      "ratio:2r1c5r1c6",
+      "ratio:2r2c2r3c2",
+      "ratio:2r3c7r3c8",
+      "ratio:2r5c1r5c2",
+      "ratio:2r6c4r6c5",
+      "ratio:2r7c7r8c7",
+      "ratio:2r9c1r9c2",
+      "ratio:2r4c4r5c4"
     ],
     "op": "count",
     "maxCount": 50000,
@@ -124,5 +136,43 @@
     "fpuzzles": "N4IgzglgXgpiBcBOANCALhNAbO8QGkIscAnAAgCEsIw0YSRUBDAVzQAsB7BvAJSYB2AczABrRiBIscYGGgQgActwC2TLGQDKLACadRLMlJlkmABzNYAngDoAOgIea0gnUxI6yhYvXhkAKuwwZDoQQphgZBACpmQAxkxCwWAsKmRonOlB8VgswdFZwRlmZDgAZmhknGWF8YkwNmQAImERdQICnJUkMGYwTJUFTHVJ9o4Czq7ungAymNjB3qR+AMK5MJGcbJA6RdlCJBCe0aEJdLUpadW1oeFokeqcwrVmnNF0nqGJT+o2EgdHBAAbSBwAAvshwZCIVDYTD4dCALrIUEIuHQjHo8HI1GYtH4vE4rEE4lIlGkin4okkmmE8m0ylk3GMynUvHs1nIkCiIikBJJYGgOIwYhgYEgXgAZhWAEYJLwACyykBcgBu6jyCgA7CAYSBhaLxYqVgAmeVKyUq1Dq9YKS16g1YMXwIESgCsKwV8o9bu9KwAbFaQDbNXgdQ6RU6jf6VjrULwYwAOeUxxDyrUrNNqjW4EAygAMush+sjztdvBNK0t8elZprVaDIdzMuTEcNLolMbl8Yz3YlieV2dteBNhbbUY7vAzcYlGeT8YHM94A+TQ9DebN47LEplK198cr+4l0qPxt9a+bga30b3KYD6dvPfvC8f/fvF7treLju3y9N8oHas3y9D88BlcNv1LI1d0DeNdyXXd5wlSsdVAkATSvSD23LaVYOPWN5WlJCpUzRscwUGVNy5ag0AWHkfBIS5BRLYgFGNQtUB/I1pT7Ct/zghsuVCHo4gwJ4FAAVV4CQmwUUciyFSM2IHAsJC4ycMzTeMkz9JclTwkjT0rL0BMtISIBEsSBEkmYZPIvBJQgxTWL4AtX3U8tEE9ACGyfOtO0HVBhJgUSIHEvAJNs617I3BSWKwNi3I4+Lfy83iB38qdfICkz3VfY0DOlJdK2I3csyCiyQqsyTpOi4cQDdL0wURMEgA",
     "op": "solve",
     "expected": 1
+  },
+  {
+    "name": "vanilla-u17-logical",
+    "category": "logical",
+    "givens": "000000010400000000020000000000050407008000300001090000300400200050100000000806000",
+    "op": "logical",
+    "expected": 81
+  },
+  {
+    "name": "escargot-logical",
+    "category": "logical",
+    "givens": "100007090030020008009600500005300900010080002600004000300000010040000007007000300",
+    "op": "logical",
+    "expected": 236
+  },
+  {
+    "name": "killer-innie-logical",
+    "category": "logical",
+    "fpuzzles": "N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAawgAbLTAwBjAIZo48QiH0wdYfCABKARgDCDkKjsAmFyDUA3Q1oArqYgiCAUFlZaNmb2zh5ucU4AzImeTgnuXqnuyRk+qP5BIcmpRGqG+gAuEL4wTgD2AHZgVRiGEE1VMXggANLauhgABE7GcLREQA=",
+    "op": "logical",
+    "expected": 683
+  },
+  {
+    "name": "arrow-search-logical",
+    "category": "logical",
+    "blank": 9,
+    "constraints": [
+      "arrow:r1c1;r1c2r1c3r1c4"
+    ],
+    "op": "logical",
+    "expected": 715
+  },
+  {
+    "name": "renban-sky-logical",
+    "category": "logical",
+    "fpuzzles": "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",
+    "op": "logical",
+    "expected": 81
   }
 ]

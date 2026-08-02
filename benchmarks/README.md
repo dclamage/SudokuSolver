@@ -66,7 +66,8 @@ plus how to run it:
   "category": "killer",
   "fpuzzles": "N4Ig...",          // OR "givens": "0000...", OR "blank": 9
   "constraints": ["arrow:r1c1;r1c2r1c3"],   // optional extra constraints
-  "op": "count",                  // "count" (CountSolutions) or "solve" (FindSolution)
+  "op": "count",                  // "count" (CountSolutions), "solve" (FindSolution),
+                                  //   or "logical" (ConsolidateBoard)
   "maxCount": 50000,              // optional cap for "count" (0/absent = uncapped)
   "expected": 1,                  // optional; a mismatch is a validation failure
   "multiThread": false            // optional
@@ -75,6 +76,30 @@ plus how to run it:
 
 Capped counts are deterministic (`min(actual, cap)`), so they make good bounded, validatable
 cases for otherwise-huge search spaces.
+
+## Ops
+
+| op | runs | result value |
+| --- | --- | --- |
+| `count` | `CountSolutions` | number of solutions (capped by `maxCount`) |
+| `solve` | `FindSolution` | 1 if solvable, 0 if not |
+| `logical` | `ConsolidateBoard` | candidates still standing across the grid, or -1 if logic proved the board invalid |
+
+`count` and `solve` exercise only brute force. **`logical` is the only op that touches the logical
+solver** — `AICSolver`, `SolverLogic`, and the constraints' non-brute-force `StepLogic` — which is
+the half a setting UI depends on. Its score is deliberately sensitive to logic changes: a fully
+solved grid scores one per cell (81 on a 9x9), and a puzzle where logic stalls scores higher.
+Adding or improving a technique will move it, which forces a deliberate re-baseline instead of a
+silent drift.
+
+Two things to know before adding `logical` cases:
+
+- **They are slow.** Logic to exhaustion costs far more than brute force on the same puzzle, and a
+  few puzzles are wildly worse (`variant-cloneways` takes ~64 s, `variant-equalsums` ~44 s, versus
+  21 ms and 14 ms to brute-force solve). Probe before adding.
+- **They allocate enormously** — escargot allocates 0.22 MB to brute-force solve and **281 MB** to
+  logic-solve, a ~1300x difference. That matters for the WASM port, which has a 2 GiB heap ceiling
+  and a weaker GC.
 
 ## Adding cases
 

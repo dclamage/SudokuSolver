@@ -224,13 +224,50 @@ sites:
 A **37% reduction in the WASM tax**, with every one of the 16 cases still reporting `match` and
 94/94 tests passing. Native is unchanged-to-slightly-better throughout.
 
-## Benchmark coverage gap
+## Benchmark coverage gap — closed
 
-The corpus is entirely brute-force (`count`/`solve`). It has no `solvepath`/`step`/`truecandidates`
-case, so the logical solver — `AICSolver`, `SolverLogic`, `IsGroup`, `CanPlaceDigits` — is
-effectively unmeasured. That is the half of the solver a setting site leans on hardest, and it is
-also where five of the eight newly-fixed call sites live. Adding a logical-solve op to `BenchCore`
-is the prerequisite for measuring any further work in that half.
+The corpus was entirely brute-force (`count`/`solve`), leaving the logical solver — `AICSolver`,
+`SolverLogic`, `IsGroup`, `CanPlaceDigits` — unmeasured. That is the half a setting site leans on
+hardest, and where five of the eight newly-fixed weak-link call sites live.
+
+`BenchCore` now has a **`logical` op** (`ConsolidateBoard`, scored as candidates still standing —
+one per cell when logic fully solves, -1 if it proves the board invalid), and the corpus has five
+`logical` cases chosen for coverage and speed: `vanilla-u17` (bare pipeline), `escargot` (logic
+stalls, so it works AIC hardest), `killer-innie` (sum logic), `arrow-search` (arrow logic), and
+`renban-sky` (the paths the weak-link fix touched).
+
+First measurement of the logical solver in WASM, 5 iterations:
+
+| case | native ms | WASM ms | ratio |
+| --- | ---: | ---: | ---: |
+| vanilla-u17-logical | 12.42 | 64.28 | 5.18× |
+| escargot-logical | 253.78 | 1164.05 | 4.59× |
+| killer-innie-logical | 512.35 | 2440.35 | 4.76× |
+| arrow-search-logical | 512.31 | 2452.27 | 4.79× |
+| renban-sky-logical | 735.87 | 2637.11 | 3.58× |
+
+**Logical geomean 4.55×, versus 3.84× for the brute-force cases.** The half of the solver the
+product needs most is the half carrying the larger WASM tax, and it had been invisible until now.
+
+### Logical solving allocates enormously
+
+The allocation gap between the two ops on the same puzzle is the striking part:
+
+| puzzle | brute-force solve | logical solve | ratio |
+| --- | ---: | ---: | ---: |
+| escargot | 0.22 MB | 281 MB | ~1300× |
+| killer-innie | 1.76 MB | 808 MB | ~460× |
+| renban-sky | 0.26 MB | 519 MB | ~2000× |
+
+Some puzzles are far worse still: `variant-cloneways` allocates ~105 GB of churn and takes ~64 s
+to logic-solve (versus 21 ms to brute-force solve), and `variant-equalsums` ~57 GB / ~44 s. Those
+were probed and deliberately left out of the corpus as too slow.
+
+This revises the earlier conclusion that allocation is uncorrelated with the WASM tax. That
+finding holds for brute force, which barely allocates. It does **not** generalize to the logical
+solver, where allocation is three orders of magnitude higher and WASM has a 2 GiB heap ceiling
+plus a weaker GC. Allocation reduction in the logical solver is now a first-class concern for the
+setting site, and it is newly measurable.
 
 ## Validation
 
