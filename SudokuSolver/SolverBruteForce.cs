@@ -731,6 +731,7 @@ public partial class Solver
                 return state.candidateSolutionCounts;
             }
             boardCopy.isBruteForcing = true;
+            state.InitializeSolverPool(boardCopy);
 
             if (state.multiThread)
             {
@@ -792,6 +793,39 @@ public partial class Solver
             eventTimer = Stopwatch.StartNew();
             countdownEvent = multiThread ? new CountdownEvent(1) : null;
             maxRunningTasks = Math.Max(1, Environment.ProcessorCount - 1);
+        }
+
+        // Single-threaded searches recycle branch solvers rather than cloning per node. Cloning
+        // dominated true-candidates allocation (~500 bytes/node, against ~1 for brute force, which
+        // has pooled since it was written). The multi-threaded path stays unpooled: a solver handed
+        // to another task cannot safely be released by this one.
+        private BruteForceSolverPool solverPool;
+
+        public void InitializeSolverPool(Solver root)
+        {
+            if (!multiThread)
+            {
+                solverPool = new BruteForceSolverPool(root, root.NUM_CANDIDATES + 1);
+            }
+        }
+
+        /// <summary>Rents a branch solver copied from <paramref name="source"/>.</summary>
+        public Solver RentBranchSolver(Solver source)
+        {
+            if (solverPool == null)
+            {
+                Solver clone = source.Clone(willRunNonSinglesLogic: false);
+                clone.isBruteForcing = true;
+                return clone;
+            }
+
+            return solverPool.RentCopy(source);
+        }
+
+        /// <summary>Returns a solver to the pool. No-ops for solvers that did not come from it.</summary>
+        public void ReleaseSolver(Solver solver)
+        {
+            solverPool?.Release(solver);
         }
 
         public void IncrementSolutions(Solver solver)
@@ -914,12 +948,18 @@ public partial class Solver
         bool isMultithreaded = state.multiThread;
         Stack<Solver> stack = new();
         stack.Push(root);
+
+        // Reused across nodes: this is rebuilt on every node of the search, and allocating it
+        // per node dominated true-candidates allocation.
+        List<int> bestCellIndices = [];
+
         while (stack.TryPop(out Solver solver))
         {
             state.cancellationToken.ThrowIfCancellationRequested();
 
             if (!solver.TrueCandidatesPropogate(state))
             {
+                state.ReleaseSolver(solver);
                 continue;
             }
 
@@ -928,7 +968,7 @@ public partial class Solver
             int val;
             if (state.needCandidateMask != null)
             {
-                List<int> bestCellIndices = null;
+                bestCellIndices.Clear();
                 int bestCellIndicesCount = int.MaxValue;
                 int numCells = solver.NUM_CELLS;
                 for (int curCellIndex = 0; curCellIndex < numCells; curCellIndex++)
@@ -942,7 +982,7 @@ public partial class Solver
                     int candidateCount = ValueCount(curCellMask);
                     if (candidateCount < bestCellIndicesCount)
                     {
-                        bestCellIndices = [];
+                        bestCellIndices.Clear();
                         bestCellIndicesCount = candidateCount;
                     }
 
@@ -957,10 +997,11 @@ public partial class Solver
                     }
                 }
 
-                if (bestCellIndices == null)
+                if (bestCellIndices.Count == 0)
                 {
                     // This is actually a solution (this really shouldn't be happening, it will be caught earlier)
                     state.IncrementSolutions(solver);
+                    state.ReleaseSolver(solver);
                     continue;
                 }
 
@@ -978,6 +1019,7 @@ public partial class Solver
                 if (cellIndex < 0)
                 {
                     state.IncrementSolutions(solver);
+                    state.ReleaseSolver(solver);
                     continue;
                 }
 
@@ -986,7 +1028,7 @@ public partial class Solver
             }
 
             // Create a solver without this value and start a task for it
-            Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
+            Solver newSolver = state.RentBranchSolver(solver);
             newSolver.isBruteForcing = true;
             if (newSolver.ClearValue(cellIndex, val))
             {
@@ -995,11 +1037,19 @@ public partial class Solver
                     stack.Push(newSolver);
                 }
             }
+            else
+            {
+                state.ReleaseSolver(newSolver);
+            }
 
             if (solver.SetValue(cellIndex, val))
             {
                 solver.branchCellIndex = cellIndex;
                 stack.Push(solver);
+            }
+            else
+            {
+                state.ReleaseSolver(solver);
             }
         }
     }
