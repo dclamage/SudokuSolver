@@ -157,13 +157,72 @@ All 16 corpus cases report `match`, and `dotnet test` passes 94/94.
 Two caveats on the numbers. `killer-innie` is a high-variance case — 106 ms at 5 iterations versus
 56 ms at 15 — so 5-iteration corpus figures for it should not be trusted; the geomean above uses
 the 15-iteration value, and the raw 5-iteration pairing would have read an over-optimistic 5.05×.
-And the extension's eight sites are **unmeasured**: they lie in logical-solver paths that the
-corpus never exercises (every case is `count` or `solve`). They are provably the same operation and
-cause no corpus regression, but their benefit is inferred, not demonstrated.
+The extension's eight sites were initially reported as unmeasured. **That was wrong** — they are
+measured below, and the benefit is large in WASM.
 
 Also unchanged from the investigation: `BitOpsBench` keeps its no-inline TZC/LZC controls, the Node
 driver exposes the `bitops` export, and the array-backed skyscraper probe and differential-build
 switches were removed.
+
+## Round 2: the same defect in `SumConstraintRegistry`
+
+Counter instrumentation (temporary, reverted) settled which call sites are actually hot, after a
+first guess went wrong:
+
+| method | calls per 2 solver runs | verdict |
+| --- | ---: | --- |
+| `SumConstraintRegistry.ContainsCell` | 5,848,440 (killer-innie) | **very hot** |
+| | 2,041,554 (killer-cage) | |
+| | 809,028 (littlekiller-10) | |
+| `Solver.WeakLinkSearch` | 43k–174k | hot |
+| `FastFindPairs` / `FastFindTriples` | **2–6** | cold — setup only |
+
+`FastFindPairs`/`FastFindTriples` sort with lambda comparators, which looked like an obvious
+delegate-dispatch target. They are not: `doAdvancedStrategies` is `false` at every brute-force call
+site, and the only `true` caller is `DiscoverWeakLinks`, which runs once per solve immediately
+after the root `Clone` — never inside the search. **Guessing at hot paths from call-graph shape
+produced a wrong target twice; counters settled it in one run.**
+
+`ContainsCell` used `Array.BinarySearch`, the same `Comparer<int>.Default` defect. Replaced with
+`SolverUtility.SortedContains`, which scans linearly for small arrays (bailing out on sort order)
+and falls back to binary search above 16 elements. All four affected arrays are provably sorted.
+
+Paired measurements, same iteration count:
+
+| case | native before | native after | WASM before | WASM after | WASM gain |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| killer-innie | 56.35 | 53.62 | 889.69 | 358.86 | **2.48×** |
+| killer-cage | 39.01 | 36.80 | 311.85 | 138.34 | **2.25×** |
+| littlekiller-8 | — | — | 31.24 | 11.17 | **2.80×** |
+| littlekiller-10 | 54.26 | 53.94 | 297.15 | 217.22 | 1.37× |
+| variant-killerblister | — | — | 54.75 | 16.64 | **3.29×** |
+
+Native gains ~5%; WASM gains up to 3.3×. That asymmetry is the whole thesis of this
+investigation: comparer dispatch is a mild cost natively and a severe one under Mono AOT.
+
+### The weak-link extension was not unmeasured after all
+
+A paired run isolated it. `escargot` is a plain vanilla puzzle with no constraints, so
+`ContainsCell` cannot execute there — its entire gain comes from the eight extended weak-link
+sites:
+
+| case (WASM, 10 iters) | before | after | gain |
+| --- | ---: | ---: | ---: |
+| escargot | 7.44 | 3.21 | **2.32×** |
+| variant-orbit | 102.68 | 61.35 | 1.67× |
+| variant-equalsums | 102.24 | 47.78 | 2.14× |
+| variant-cloneways | 187.77 | 166.88 | 1.13× |
+
+## Cumulative result
+
+| stage | geomean | median | worst case |
+| --- | ---: | ---: | ---: |
+| original prototype | 6.06× | 6.37× | 23.10× |
+| + `IsWeakLink` fix | ~5.3× | — | 10.22× |
+| + extension + `ContainsCell` | **3.84×** | **3.92×** | **7.62×** |
+
+A **37% reduction in the WASM tax**, with every one of the 16 cases still reporting `match` and
+94/94 tests passing. Native is unchanged-to-slightly-better throughout.
 
 ## Benchmark coverage gap
 

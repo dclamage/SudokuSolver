@@ -3,6 +3,55 @@
 public static class SolverUtility
 {
     public const uint valueSetMask = 1u << 31;
+
+    /// <summary>
+    /// Membership test against an ascending-sorted <see cref="int"/> array.
+    /// </summary>
+    /// <remarks>
+    /// Written out rather than calling <see cref="Array.BinarySearch{T}(T[], T)"/>, which
+    /// dispatches through <c>Comparer{int}.Default</c>. That indirection is measurable in hot
+    /// paths and is compiled to an indirect call per comparison step by Mono's WASM AOT — see
+    /// <c>docs/wasm-perf-investigation-findings.md</c>. Small arrays take a linear scan that bails
+    /// out on the sort order, which beats a binary search's unpredictable branches at the sizes
+    /// typical of a constraint's cell list.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool SortedContains(int[] sorted, int value)
+    {
+        if (sorted.Length <= 16)
+        {
+            for (int i = 0; i < sorted.Length; i++)
+            {
+                int current = sorted[i];
+                if (current >= value)
+                {
+                    return current == value;
+                }
+            }
+            return false;
+        }
+
+        int low = 0;
+        int high = sorted.Length - 1;
+        while (low <= high)
+        {
+            int mid = low + ((high - low) >> 1);
+            int current = sorted[mid];
+            if (current == value)
+            {
+                return true;
+            }
+            if (current < value)
+            {
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+        return false;
+    }
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int ValueCount(uint mask)
     {

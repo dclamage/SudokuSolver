@@ -404,7 +404,7 @@ internal sealed class SumTerm
     /// </summary>
     /// <param name="cellIndex">The flattened cell index.</param>
     /// <returns>True if the cell participates in this term.</returns>
-    internal bool ContainsCell(int cellIndex) => Array.BinarySearch(cellIndices, cellIndex) >= 0;
+    internal bool ContainsCell(int cellIndex) => SortedContains(cellIndices, cellIndex);
 
     private List<(int, int)> BuildCellsWithCandidate(Solver solver, uint valueMask, uint[] board)
     {
@@ -451,7 +451,7 @@ internal sealed class SumTerm
             return (fixedSumsMask & (1UL << sum)) != 0;
         }
 
-        return Array.BinarySearch(fixedSums, sum) >= 0;
+        return SortedContains(fixedSums, sum);
     }
 
     private static bool TryBuildSumsMask(IReadOnlyList<int> sums, out ulong sumsMask)
@@ -679,7 +679,7 @@ internal sealed class SumEqualityRelation
         return true;
     }
 
-    private bool ContainsCell(int cellIndex) => Array.BinarySearch(cellIndices, cellIndex) >= 0;
+    private bool ContainsCell(int cellIndex) => SortedContains(cellIndices, cellIndex);
 
     private static List<int> SumsMaskToList(ulong sumsMask)
     {
@@ -900,7 +900,7 @@ internal sealed class SumDifferenceRelation
         return result;
     }
 
-    private bool ContainsCell(int cellIndex) => Array.BinarySearch(cellIndices, cellIndex) >= 0;
+    private bool ContainsCell(int cellIndex) => SortedContains(cellIndices, cellIndex);
 
     private static bool TryGetCompleteSum(Solver solver, IReadOnlyList<int> cells, ref int sum)
     {
