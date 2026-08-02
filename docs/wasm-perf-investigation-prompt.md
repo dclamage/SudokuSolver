@@ -36,6 +36,17 @@ intrinsic against a hand-written software equivalent in the same host):
 **All of those are below the 6.06× whole-program geomean.** If the hottest primitives run at ~2×
 and the program runs at 6×, the remainder must be worse than 6×. So the gap lives somewhere else.
 
+**AOT was verified active** — "you measured an interpreted build" is the obvious objection and it
+does not hold. `RunAOTCompilation=true`, measurements taken from `dotnet publish -c Release` only,
+publish log shows `SudokuSolver.dll.bc -> .o` (LLVM), and `WasmStripILAfterAOT=true` removes the IL
+outright. Empirically the AOT bundle runs the micro-benchmark in ~15 s while the interpreted Debug
+bundle was killed after 25 minutes unfinished.
+
+Note that .NET 10's `BitOperations.TrailingZeroCount(uint)` is documented to check
+`WasmBase.IsSupported` and call `WasmBase.TrailingZeroCount`, which Mono lowers to `OP_CTTZ32` →
+`i32.ctz`. So the *expected* result is a single instruction, and the measurement disagrees with
+that expectation. Resolving that disagreement is the concrete task.
+
 **Allocation volume is not the cause either.** Spearman rank correlation between per-case
 allocation and WASM slowdown is **−0.04**. The highest-allocating case (`variant-cloneways`,
 41 MB) is middling at 7.97×, while the 23× outlier allocates almost nothing (0.23 MB). (Allocation
@@ -65,6 +76,21 @@ roadmap needs re-validating against WASM rather than assumed to carry over.
 **This is an inference from code shape, not a measurement.** Test it directly: write a variant of
 the same algorithm using plain `uint[]` fields (or preallocated per-instance scratch arrays)
 instead of `stackalloc` + `Span`, and measure both hosts. Confirm or kill it before moving on.
+
+## Attributing instructions to methods, given stripped symbols
+
+Counting `i32.ctz` occurrences in the module (there are 197) proves nothing about *your* method,
+because the runtime and BCL contribute their own. The reliable technique is a differential build:
+
+1. Wrap the operation in a `[MethodImpl(MethodImplOptions.NoInlining)]` method, called with a
+   non-constant runtime value so it cannot be constant-folded.
+2. Publish twice — once using `BitOperations.X`, once using a deliberate software fallback.
+3. Diff the two disassemblies and compare the corresponding function bodies.
+
+The sharpest single question to answer first: `LeadingZeroCount` (0.35 ns) and
+`TrailingZeroCount` (1.67 ns) are equally trivial, have equally direct WASM instructions, sit
+behind structurally identical `BitOperations` code, and were compiled in the same AOT pass — yet
+differ by **4.8×**. Any explanation must account for that asymmetry.
 
 ## Secondary hypotheses
 

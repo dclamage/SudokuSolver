@@ -107,6 +107,18 @@ Two tests were run.
 244 `i32.clz`, 197 `i32.ctz`. So the compiler does know how to emit them. (Symbols are stripped,
 so individual methods can't be located by name.)
 
+**AOT was verified active**, since "you measured an interpreted build" is the obvious objection and
+would invalidate everything:
+
+- `RunAOTCompilation=true` is set for Release, and every measurement came from
+  `dotnet publish -c Release` — never `build` or `run`, which leave the app as interpreted IL.
+- The publish log shows the solver going through LLVM bitcode: `SudokuSolver.dll.bc -> .o`.
+- `WasmStripILAfterAOT=true` **removes the IL**, so interpretation is not merely unlikely, it is
+  impossible.
+- Empirically: the AOT bundle finishes this micro-benchmark in ~15 s. The interpreted Debug bundle
+  was killed after **25 minutes** without finishing — a >100× gap that leaves no doubt which one
+  was measured.
+
 **Micro-benchmark** (`BitOpsBench.cs`, shared by both hosts, `--bitops`). Each intrinsic is timed
 against a hand-written software equivalent *in the same host*, so the comparison needs no
 cross-host calibration. Median of 3 runs, nanoseconds per call:
@@ -130,6 +142,11 @@ single-instruction lowering were being inlined.
 - **`LeadingZeroCount` is the control, and it works.** 27× faster than software, and **1.1× of
   native** in absolute terms. This both validates the harness and proves WASM can reach near-native
   on these primitives when lowering succeeds.
+
+The sharpest form of the anomaly: `LeadingZeroCount` (0.35 ns) and `TrailingZeroCount` (1.67 ns)
+are equally trivial operations with equally direct WASM instructions (`i32.clz`, `i32.ctz`), sit
+behind structurally identical `BitOperations` code, and were compiled in the same AOT pass — yet
+differ by **4.8×**. Whatever explains the gap has to explain that asymmetry.
 
 Absolute WASM/native cost on the intrinsic path: `LeadingZeroCount` 1.1×, `Log2` 1.5×,
 `ValueCount` 1.8×, `PopCount` 2.1×, **`TrailingZeroCount` 5.0×**.
