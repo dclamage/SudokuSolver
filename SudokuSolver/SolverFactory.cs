@@ -21,6 +21,11 @@ namespace SudokuSolver
 
     public static class SolverFactory
     {
+        /// <summary>Builds a solver from Interactive Sudoku Solver puzzle text.</summary>
+        /// <exception cref="IssUnsupportedConstraintException">An unmapped constraint was present.</exception>
+        public static Solver CreateFromIss(string issText, IEnumerable<string> additionalConstraints = null)
+            => IssParser.Parse(issText, additionalConstraints);
+
         public static Solver CreateBlank(int size, IEnumerable<string> constraints = null)
         {
             Solver solver = new(size, size, size);

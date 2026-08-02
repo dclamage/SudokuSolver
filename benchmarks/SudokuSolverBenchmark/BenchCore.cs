@@ -14,14 +14,16 @@ internal sealed class BenchCase
     public int? Blank { get; set; }
     public string[]? Constraints { get; set; }
     /// <summary>
-    /// "count" (CountSolutions), "solve" (FindSolution -> 1/0), or "logical" (ConsolidateBoard ->
-    /// remaining candidates).
+    /// "count" (CountSolutions), "solve" (FindSolution -> 1/0), "logical" (ConsolidateBoard ->
+    /// remaining candidates), or "truecandidates" (TrueCandidates -> summed capped counts).
     /// </summary>
     public string Op { get; set; } = "count";
     /// <summary>Expected result; when set, a mismatch is a validation failure.</summary>
     public long? Expected { get; set; }
     /// <summary>Solution cap for "count" (0 = uncapped).</summary>
     public long? MaxCount { get; set; }
+    /// <summary>Per-candidate solution cap for "truecandidates" (default 8, as the UI uses).</summary>
+    public long? NumSolutionsCap { get; set; }
     public bool MultiThread { get; set; }
 }
 
@@ -84,6 +86,39 @@ internal static class BenchCore
         };
     }
 
+    /// <summary>
+    /// Runs the true-candidates scan and scores it as the sum of per-candidate solution counts,
+    /// each clamped to the cap. Invalid boards score -1.
+    /// </summary>
+    /// <remarks>
+    /// This is the operation a setting UI actually leans on: it runs on every grid edit, usually
+    /// against a board that is still under-constrained and has many solutions — which is a very
+    /// different workload from proving a finished puzzle unique. The summed count is a strict
+    /// validation signal: any change in candidate counts anywhere moves it.
+    /// </remarks>
+    private static long RunTrueCandidates(Solver solver, BenchCase c, bool multiThread)
+    {
+        long[] perCandidate = solver.TrueCandidates(
+            multiThread: multiThread,
+            numSolutionsCap: c.NumSolutionsCap ?? 8);
+
+        if (perCandidate is null)
+        {
+            return -1;
+        }
+
+        // The solver returns raw counts; callers clamp (see WebsocketListener.SendTrueCandidates).
+        // Clamping here is also what makes the score deterministic — the raw totals depend on how
+        // many solutions the search happened to enumerate before every candidate was covered.
+        long cap = c.NumSolutionsCap ?? 8;
+        long total = 0;
+        foreach (long n in perCandidate)
+        {
+            total += Math.Min(n, cap);
+        }
+        return total;
+    }
+
     public static Solver Build(BenchCase c)
     {
         IEnumerable<string>? constraints = c.Constraints;
@@ -101,7 +136,8 @@ internal static class BenchCore
             "solve" => solver.FindSolution(multiThread: multiThread) ? 1 : 0,
             "count" => solver.CountSolutions(maxSolutions: c.MaxCount ?? 0, multiThread: multiThread),
             "logical" => RunLogical(solver),
-            _ => throw new InvalidOperationException($"Unknown op '{c.Op}' for case '{c.Name}' (use \"count\", \"solve\", or \"logical\")."),
+            "truecandidates" => RunTrueCandidates(solver, c, multiThread),
+            _ => throw new InvalidOperationException($"Unknown op '{c.Op}' for case '{c.Name}' (use \"count\", \"solve\", \"logical\", or \"truecandidates\")."),
         };
     }
 

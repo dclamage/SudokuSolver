@@ -84,6 +84,7 @@ cases for otherwise-huge search spaces.
 | `count` | `CountSolutions` | number of solutions (capped by `maxCount`) |
 | `solve` | `FindSolution` | 1 if solvable, 0 if not |
 | `logical` | `ConsolidateBoard` | candidates still standing across the grid, or -1 if logic proved the board invalid |
+| `truecandidates` | `TrueCandidates` | sum of per-candidate solution counts, each clamped to `numSolutionsCap` |
 
 `count` and `solve` exercise only brute force. **`logical` is the only op that touches the logical
 solver** — `AICSolver`, `SolverLogic`, and the constraints' non-brute-force `StepLogic` — which is
@@ -91,6 +92,17 @@ the half a setting UI depends on. Its score is deliberately sensitive to logic c
 solved grid scores one per cell (81 on a 9x9), and a puzzle where logic stalls scores higher.
 Adding or improving a technique will move it, which forces a deliberate re-baseline instead of a
 silent drift.
+
+`truecandidates` is **the** setting-UI operation: it runs on every grid edit, usually against a
+board that is still under-constrained. That is the opposite of the rest of the corpus, which is
+finished puzzles with unique solutions. Set `numSolutionsCap` to the cap the UI uses (1 for plain
+true candidates, 8 for the coloured variant).
+
+Clamping matters: the solver returns **raw** counts and callers clamp them (see
+`WebsocketListener.SendTrueCandidates`). Unclamped totals are **not deterministic** — they depend
+on how many solutions the search happened to enumerate before every candidate was covered — so
+never score a `truecandidates` case on raw counts. Clamped, the score is stable and readable: 729
+means every candidate on a 9x9 is still live, 81 means the grid is fully resolved.
 
 Two things to know before adding `logical` cases:
 

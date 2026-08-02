@@ -174,5 +174,40 @@
     "fpuzzles": "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",
     "op": "logical",
     "expected": 81
+  },
+  {
+    "name": "tc-escargot",
+    "category": "setting",
+    "givens": "100007090030020008009600500005300900010080002600004000300000010040000007007000300",
+    "op": "truecandidates",
+    "numSolutionsCap": 1,
+    "expected": 81
+  },
+  {
+    "name": "tc-escargot-partial",
+    "category": "setting",
+    "givens": "100007000000000008000600000005000900000080000000004000000000000040000007000000300",
+    "op": "truecandidates",
+    "numSolutionsCap": 1,
+    "expected": 445
+  },
+  {
+    "name": "tc-blank9",
+    "category": "setting",
+    "blank": 9,
+    "op": "truecandidates",
+    "numSolutionsCap": 1,
+    "expected": 729
+  },
+  {
+    "name": "tc-blank-nonconsecutive",
+    "category": "setting",
+    "blank": 9,
+    "constraints": [
+      "difference:neg1"
+    ],
+    "op": "truecandidates",
+    "numSolutionsCap": 1,
+    "expected": 729
   }
 ]
