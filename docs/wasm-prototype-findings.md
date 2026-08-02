@@ -7,6 +7,11 @@ it needs a TypeScript rewrite.
 
 Prototype lives in [`SudokuSolverWasm/`](../SudokuSolverWasm/README.md). Not in the solution.
 
+> **Follow-up, 2026-08-02:** a head-to-head against Interactive Sudoku Solver found the WASM tax on
+> vanilla search is **~1.0×** — the corpus-wide figure is concentrated in the constraint layer — while
+> ISS is 5–8× faster than this solver *in native C# too*. The competitive gap is algorithmic, not a
+> hosting problem. See [`solver-vs-iss-comparison.md`](solver-vs-iss-comparison.md).
+
 **Verdict: viable.** The solver compiles to WASM unmodified, produces identical results on every
 benchmark case, and runs roughly **6× slower than native single-threaded** and **4.7× slower
 multi-threaded**. Nothing structural blocks the plan. There is one pathological case and one
