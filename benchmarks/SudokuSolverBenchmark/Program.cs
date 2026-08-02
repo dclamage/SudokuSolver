@@ -1,37 +1,6 @@
-using System.Diagnostics;
 using System.Text.Json;
-using SudokuSolver;
 
 namespace SudokuSolverBenchmark;
-
-/// <summary>One puzzle to benchmark. Exactly one of Fpuzzles/Givens/Blank must be set.</summary>
-internal sealed class BenchCase
-{
-    public string Name { get; set; } = "";
-    public string? Category { get; set; }
-    public string? Fpuzzles { get; set; }
-    public string? Givens { get; set; }
-    public int? Blank { get; set; }
-    public string[]? Constraints { get; set; }
-    /// <summary>"count" (CountSolutions) or "solve" (FindSolution -> 1/0).</summary>
-    public string Op { get; set; } = "count";
-    /// <summary>Expected result; when set, a mismatch is a validation failure.</summary>
-    public long? Expected { get; set; }
-    /// <summary>Solution cap for "count" (0 = uncapped).</summary>
-    public long? MaxCount { get; set; }
-    public bool MultiThread { get; set; }
-}
-
-internal sealed class BenchResult
-{
-    public string Name { get; set; } = "";
-    public string Op { get; set; } = "";
-    public long Result { get; set; }
-    public bool Ok { get; set; }
-    public double MinMs { get; set; }
-    public double MedianMs { get; set; }
-    public double AllocMB { get; set; }
-}
 
 /// <summary>
 /// A lean, repeatable performance harness for the solver. Loads a curated corpus, times each
@@ -46,6 +15,7 @@ internal sealed class BenchResult
 ///     --multithread         force multi-threaded solving for every case
 ///     --save FILE           write results as JSON (use as a future baseline)
 ///     --baseline FILE       diff min-time against a saved baseline; flags >5% regressions
+///     --bitops              run the BitOperations vs software micro-benchmark and exit
 ///
 /// Exit codes: 0 ok, 1 validation failure, 3 perf regression vs baseline.
 /// </summary>
@@ -61,6 +31,7 @@ internal static class Program
         string? filter = null;
         int iterations = 3;
         bool forceMultiThread = false;
+        bool runBitOps = false;
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -71,10 +42,17 @@ internal static class Program
                 case "--filter": filter = args[++i]; break;
                 case "--iterations": iterations = int.Parse(args[++i]); break;
                 case "--multithread": forceMultiThread = true; break;
+                case "--bitops": runBitOps = true; break;
                 default:
                     if (!args[i].StartsWith("--")) corpusPath = args[i];
                     break;
             }
+        }
+
+        if (runBitOps)
+        {
+            Console.WriteLine(BitOpsBench.Format(BitOpsBench.Run()));
+            return 0;
         }
 
         if (!File.Exists(corpusPath))
@@ -120,7 +98,7 @@ internal static class Program
             BenchResult r;
             try
             {
-                r = Run(c, iterations, forceMultiThread);
+                r = BenchCore.Run(c, iterations, forceMultiThread);
             }
             catch (Exception ex)
             {
@@ -167,66 +145,5 @@ internal static class Program
             return 3;
         }
         return 0;
-    }
-
-    private static BenchResult Run(BenchCase c, int iterations, bool forceMultiThread)
-    {
-        // Warm up JIT and caches.
-        RunOp(Build(c), c, forceMultiThread);
-
-        var times = new double[iterations];
-        long result = 0;
-        long allocatedBytes = 0;
-        var stopwatch = new Stopwatch();
-
-        for (int i = 0; i < iterations; i++)
-        {
-            // A fresh solver each iteration: FindSolution mutates the board, and a clean start
-            // keeps allocation measurement honest.
-            Solver solver = Build(c);
-            GC.Collect();
-            GC.WaitForPendingFinalizers();
-
-            long before = GC.GetTotalAllocatedBytes(precise: true);
-            stopwatch.Restart();
-            result = RunOp(solver, c, forceMultiThread);
-            stopwatch.Stop();
-            allocatedBytes = GC.GetTotalAllocatedBytes(precise: true) - before;
-
-            times[i] = stopwatch.Elapsed.TotalMilliseconds;
-        }
-
-        Array.Sort(times);
-        bool ok = c.Expected is null || result == c.Expected;
-        return new BenchResult
-        {
-            Name = c.Name,
-            Op = c.Op,
-            Result = result,
-            Ok = ok,
-            MinMs = times[0],
-            MedianMs = times[iterations / 2],
-            AllocMB = allocatedBytes / 1_000_000.0,
-        };
-    }
-
-    private static Solver Build(BenchCase c)
-    {
-        IEnumerable<string>? constraints = c.Constraints;
-        if (c.Fpuzzles is not null) return SolverFactory.CreateFromFPuzzles(c.Fpuzzles, constraints);
-        if (c.Givens is not null) return SolverFactory.CreateFromGivens(c.Givens, constraints);
-        if (c.Blank is int size) return SolverFactory.CreateBlank(size, constraints);
-        throw new InvalidOperationException($"Case '{c.Name}' has no input (set fpuzzles, givens, or blank).");
-    }
-
-    private static long RunOp(Solver solver, BenchCase c, bool forceMultiThread)
-    {
-        bool multiThread = forceMultiThread || c.MultiThread;
-        return c.Op switch
-        {
-            "solve" => solver.FindSolution(multiThread: multiThread) ? 1 : 0,
-            "count" => solver.CountSolutions(maxSolutions: c.MaxCount ?? 0, multiThread: multiThread),
-            _ => throw new InvalidOperationException($"Unknown op '{c.Op}' for case '{c.Name}' (use \"count\" or \"solve\")."),
-        };
     }
 }

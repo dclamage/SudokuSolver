@@ -27,6 +27,7 @@ Options:
 | `--multithread` | Force multi-threaded solving for every case |
 | `--save FILE` | Write results as JSON (use later as a baseline) |
 | `--baseline FILE` | Diff min-time vs a saved baseline; flags regressions > 5% |
+| `--bitops` | Run the `BitOperations` vs software micro-benchmark and exit (see below) |
 
 Exit codes: `0` ok, `1` a result failed validation, `3` a regression vs baseline.
 
@@ -44,6 +45,15 @@ caffeinate -i dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -
 
 Timing on a laptop is noisy; prefer a quiet machine and `--iterations 7+`, and treat only
 consistent, repeatable deltas as real.
+
+## BitOperations micro-benchmark
+
+`--bitops` times each `BitOperations` intrinsic against a hand-written software equivalent *in the
+same host*. A ratio below 1 means the intrinsic lost to software, i.e. it is not being lowered to a
+real machine instruction. This exists because the WASM port needed to know whether Mono AOT emits
+`i32.popcnt` / `i32.clz` / `i32.ctz`; the shared `BitOpsBench.cs` is compiled by both the native
+harness and `SudokuSolverWasm`, so the two are directly comparable. Results:
+[`docs/wasm-prototype-findings.md`](../docs/wasm-prototype-findings.md).
 
 ## Corpus format
 
