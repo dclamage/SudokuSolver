@@ -1,0 +1,58 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-browser</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable>
+    <!-- Required by the [JSImport]/[JSExport] source generators. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <WasmMainJSPath>wwwroot/main.js</WasmMainJSPath>
+    <NoDefaultLaunchSettingsFile>true</NoDefaultLaunchSettingsFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <PublishTrimmed>true</PublishTrimmed>
+  </PropertyGroup>
+
+  <!--
+    Threading is opt-in per build so the prototype can measure single-threaded and multi-threaded
+    WASM separately:
+      dotnet publish -c Release                             (single-threaded)
+      dotnet publish -c Release -p:WasmEnableThreads=true   (multi-threaded; needs COOP/COEP)
+    Multi-threaded builds only work when the page is cross-origin isolated, which is what
+    serve.js sets up.
+  -->
+  <PropertyGroup Condition="'$(WasmEnableThreads)' == 'true'">
+    <DefineConstants>$(DefineConstants);WASM_THREADS</DefineConstants>
+  </PropertyGroup>
+
+  <!-- AOT is what makes the native-vs-WASM comparison meaningful; interpreted mode is far slower. -->
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <WasmStripILAfterAOT>true</WasmStripILAfterAOT>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SudokuSolver\SudokuSolver.csproj" />
+  </ItemGroup>
+
+  <!--
+    Compile the native harness's measurement core rather than reimplementing it, so the browser
+    times cases exactly the way the native benchmark does. Serve the same corpus for the same
+    reason.
+  -->
+  <!--
+    wwwroot files are already default Content items, but this SDK doesn't copy them to the build
+    output on its own. Publish picks them up either way; this keeps `dotnet build` runnable too.
+  -->
+  <ItemGroup>
+    <Content Update="wwwroot\**" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\benchmarks\SudokuSolverBenchmark\BenchCore.cs" Link="BenchCore.cs" />
+    <Compile Include="..\benchmarks\SudokuSolverBenchmark\BitOpsBench.cs" Link="BitOpsBench.cs" />
+    <Content Include="..\benchmarks\corpus.json" Link="wwwroot\corpus.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

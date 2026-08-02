@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SudokuSolver &middot; WASM benchmark</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="app.css" />
+</head>
+
+<body>
+    <header>
+        <h1>SudokuSolver <span class="tag">WASM benchmark</span></h1>
+        <p class="sub">
+            Runs <code>benchmarks/corpus.json</code> through the same <code>BenchCore</code> the
+            native harness compiles, so the numbers line up case for case. Export the JSON and diff
+            it against a native run.
+        </p>
+        <div id="runtime" class="runtime">booting runtime&hellip;</div>
+    </header>
+
+    <main>
+        <section class="panel">
+            <div class="commands">
+                <label class="check">iterations
+                    <input type="number" id="iterations" value="3" min="1" max="25" />
+                </label>
+                <label class="check">filter
+                    <input type="text" id="filter" placeholder="name or category" />
+                </label>
+                <label class="check"><input type="checkbox" id="multithread" /> multithread</label>
+                <button id="run">Run</button>
+                <button id="export" class="ghost" disabled>Export JSON</button>
+            </div>
+        </section>
+
+        <section class="panel grow">
+            <div class="panel-head">
+                <h2>Results</h2>
+                <span id="status" class="status">idle</span>
+            </div>
+            <div id="log" class="log"></div>
+        </section>
+    </main>
+
+    <script type="module" src="bench.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SudokuSolver &middot; WASM testbed</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="app.css" />
+</head>
+
+<body>
+    <header>
+        <h1>SudokuSolver <span class="tag">WASM testbed</span></h1>
+        <p class="sub">
+            The C# solver compiled to WebAssembly, driven by the same JSON protocol the
+            f-puzzles userscript sends over websockets.
+        </p>
+        <div id="runtime" class="runtime">booting runtime&hellip;</div>
+    </header>
+
+    <main>
+        <section class="panel">
+            <label for="puzzle">f-puzzles URL <span class="hint">(full URL, or just the value after <code>?load=</code>)</span></label>
+            <textarea id="puzzle" rows="4" spellcheck="false"
+                placeholder="https://f-puzzles.com/?load=N4Ig..."></textarea>
+
+            <div class="commands">
+                <button data-command="solve">Solve</button>
+                <button data-command="check">Check</button>
+                <button data-command="count">Count</button>
+                <button data-command="truecandidates">True candidates</button>
+                <button data-command="solvepath">Solve path</button>
+                <button data-command="step">Step</button>
+                <button data-command="estimate">Estimate</button>
+                <button id="cancel" class="danger" disabled>Cancel</button>
+            </div>
+
+            <div class="commands secondary">
+                <button id="clear" class="ghost">Clear log</button>
+                <label class="check"><input type="checkbox" id="raw" /> Show raw JSON</label>
+            </div>
+        </section>
+
+        <section class="panel grow">
+            <div class="panel-head">
+                <h2>Output</h2>
+                <span id="status" class="status">idle</span>
+            </div>
+            <div id="log" class="log"></div>
+        </section>
+    </main>
+
+    <script type="module" src="main.js"></script>
+</body>
+
+</html>
