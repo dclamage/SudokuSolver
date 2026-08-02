@@ -92,7 +92,13 @@ one result that says "don't just flip threads on and ship it".
 
 At 23× (1T) and 21× (MT) it is nearly 4× worse than the corpus median and barely benefits from
 threads. It is not noise — 154 ms → 3.6 s is far outside iteration variance. Something in that
-constraint mix hits a path Mono AOT handles badly. Unexplained.
+constraint mix hits a path Mono AOT handles badly. This was originally unexplained.
+
+**Follow-up:** this is now explained and a fix is validated. The cause was generic comparer dispatch in
+`List<int>.BinarySearch` inside the skyscraper search's repeated weak-link checks, not the recursive
+span parameters. An explicit integer binary search reduced the focused WASM time to about 150 ms
+and native to about 102 ms. See
+[`wasm-perf-investigation-findings.md`](wasm-perf-investigation-findings.md).
 
 ## BitOperations: tested, partly broken, but not the main cause
 
@@ -134,19 +140,26 @@ cross-host calibration. Median of 3 runs, nanoseconds per call:
 A ratio below 1 means the "intrinsic" **loses to hand-written software** — which cannot happen if a
 single-instruction lowering were being inlined.
 
-- **`PopCount` and `TrailingZeroCount` are not properly lowered in WASM.** Both lose to software.
+- **`PopCount` and direct-call `TrailingZeroCount` are not properly intrinsicized in these callers.** Both lose to software.
   `PopCount` is beaten by a ~12-operation SWAR sequence; `TrailingZeroCount` by a de Bruijn table
-  lookup. The most likely explanation is that the intrinsic exists as an out-of-line function (the
-  85 `popcnt` sites), so each call pays call overhead that swamps the one-instruction body, while
-  the software version gets inlined.
+  lookup. `PopCount` may exist as an out-of-line function (the 85 `popcnt` sites), so each call pays
+  overhead that swamps the one-instruction body while the software version gets inlined. The TZC
+  follow-up below demonstrates a more specific caller-dependent intrinsic-recognition problem.
 - **`LeadingZeroCount` is the control, and it works.** 27× faster than software, and **1.1× of
   native** in absolute terms. This both validates the harness and proves WASM can reach near-native
   on these primitives when lowering succeeds.
 
-The sharpest form of the anomaly: `LeadingZeroCount` (0.35 ns) and `TrailingZeroCount` (1.67 ns)
+Follow-up no-inlining and differential builds proved that Mono can emit a direct `i32.ctz` for
+`TrailingZeroCount`; the problem is caller-dependent intrinsic recognition/inlining. A no-inline
+user wrapper improved WASM TZC from 1.64 ns to 1.20 ns while slowing native from 0.34 ns to 0.92 ns.
+See the follow-up findings for the disassembly evidence.
+
+The original sharpest form of the anomaly: `LeadingZeroCount` (0.35 ns) and
+`TrailingZeroCount` (1.67 ns)
 are equally trivial operations with equally direct WASM instructions (`i32.clz`, `i32.ctz`), sit
-behind structurally identical `BitOperations` code, and were compiled in the same AOT pass — yet
-differ by **4.8×**. Whatever explains the gap has to explain that asymmetry.
+behind structurally identical `BitOperations` code, and were compiled in the same AOT pass, yet
+differ by **4.8×**. The follow-up above attributes that asymmetry to caller-dependent
+intrinsicization and proves that a no-inline wrapper contains a direct `i32.ctz`.
 
 Absolute WASM/native cost on the intrinsic path: `LeadingZeroCount` 1.1×, `Log2` 1.5×,
 `ValueCount` 1.8×, `PopCount` 2.1×, **`TrailingZeroCount` 5.0×**.
@@ -211,9 +224,9 @@ should not be compared across hosts.
 A self-contained brief for picking these up is in
 [`wasm-perf-investigation-prompt.md`](wasm-perf-investigation-prompt.md).
 
-- **Where the other 6× actually lives** — bit ops are ruled out as the dominant cause (above).
-  Next suspects: bounds checks, virtual dispatch through `Constraint`, Mono AOT code quality.
-- Explain the `variant-renban-sky` 23× outlier.
+- **Where the remaining ~5.4× actually lives** — bit ops and the skyscraper outlier are ruled out
+  as dominant corpus-wide causes. Next suspects: bounds checks, virtual dispatch through
+  `Constraint`, generic BCL helpers, and Mono AOT code quality.
 - Diagnose `blank6-cap5M` under MT (allocation/GC thrashing suspected).
 - **Startup cost was not measured** — runtime boot plus AOT module instantiation. It matters for a
   real site and should be quantified before committing.

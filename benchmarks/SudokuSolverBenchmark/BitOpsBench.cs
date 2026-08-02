@@ -1,6 +1,7 @@
 #nullable enable
 using System.Diagnostics;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using SudokuSolver;
 
 namespace SudokuSolverBenchmark;
@@ -94,6 +95,12 @@ internal static class BitOpsBench
         return count;
     }
 
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int NoInlineTrailingZeroCount(uint x) => BitOperations.TrailingZeroCount(x);
+
+    [MethodImpl(MethodImplOptions.NoInlining)]
+    private static int NoInlineLeadingZeroCount(uint x) => BitOperations.LeadingZeroCount(x);
+
     private static double TimeNs(Func<uint[], long> body, uint[] masks, out long checksum)
     {
         body(masks); // warm up
@@ -137,6 +144,14 @@ internal static class BitOpsBench
 
         Measure("LeadingZeroCount",
             m => { long s = 0; for (int r = 0; r < Repeats; r++) for (int i = 0; i < m.Length; i++) s += BitOperations.LeadingZeroCount(m[i]); return s; },
+            m => { long s = 0; for (int r = 0; r < Repeats; r++) for (int i = 0; i < m.Length; i++) s += SoftwareLeadingZeroCount(m[i]); return s; });
+
+        Measure("NoInline.TrailingZeroCount",
+            m => { long s = 0; for (int r = 0; r < Repeats; r++) for (int i = 0; i < m.Length; i++) s += NoInlineTrailingZeroCount(m[i]); return s; },
+            m => { long s = 0; for (int r = 0; r < Repeats; r++) for (int i = 0; i < m.Length; i++) s += SoftwareTrailingZeroCount(m[i]); return s; });
+
+        Measure("NoInline.LeadingZeroCount",
+            m => { long s = 0; for (int r = 0; r < Repeats; r++) for (int i = 0; i < m.Length; i++) s += NoInlineLeadingZeroCount(m[i]); return s; },
             m => { long s = 0; for (int r = 0; r < Repeats; r++) for (int i = 0; i < m.Length; i++) s += SoftwareLeadingZeroCount(m[i]); return s; });
 
         // The solver's own wrappers, to confirm the helpers inherit whatever the primitives get.

@@ -7,6 +7,7 @@
 //   node SudokuSolverWasm/run-node.mjs <bundleDir> solve <fpuzzles-url>
 //   node SudokuSolverWasm/run-node.mjs <bundleDir> bench [--iterations N] [--filter TEXT]
 //                                                        [--multithread] [--save FILE]
+//   node SudokuSolverWasm/run-node.mjs <bundleDir> bitops
 //
 // <bundleDir> is the published/built wwwroot, e.g.
 //   SudokuSolverWasm/bin/Release/net10.0-browser/publish/wwwroot
@@ -17,7 +18,7 @@ import fs from 'node:fs';
 
 const [bundleDir, mode, ...rest] = process.argv.slice(2);
 if (!bundleDir || !mode) {
-    console.error('usage: run-node.mjs <bundleDir> <solve|bench> [...]');
+    console.error('usage: run-node.mjs <bundleDir> <solve|bench|bitops> [...]');
     process.exit(2);
 }
 
@@ -135,6 +136,11 @@ if (mode === 'bench') {
         console.error(`saved: ${savePath}`);
     }
     process.exit(anyFail ? 1 : 0);
+}
+
+if (mode === 'bitops') {
+    console.log(await bench.RunBitOpsAsync());
+    process.exit(0);
 }
 
 console.error(`Unknown mode: ${mode}`);

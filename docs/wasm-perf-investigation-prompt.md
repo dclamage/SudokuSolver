@@ -1,5 +1,9 @@
 # Investigate: where the WASM slowdown actually comes from
 
+> Follow-up completed 2026-08-02: [`wasm-perf-investigation-findings.md`](wasm-perf-investigation-findings.md).
+> The 23× skyscraper outlier was caused by generic comparer dispatch in
+> `List<int>.BinarySearch`, not recursive spans. The general slowdown remains about 5.4×.
+
 > A self-contained brief for picking this up in a fresh session or handing to another agent.
 > Measurements and background: [`wasm-prototype-findings.md`](wasm-prototype-findings.md).
 
