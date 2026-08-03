@@ -15,7 +15,8 @@ internal sealed class BenchCase
     public string[]? Constraints { get; set; }
     /// <summary>
     /// "count" (CountSolutions), "solve" (FindSolution -> 1/0), "logical" (ConsolidateBoard ->
-    /// remaining candidates), or "truecandidates" (TrueCandidates -> summed capped counts).
+    /// remaining candidates), "truecandidates" (TrueCandidates -> summed capped counts), or
+    /// "estimate" (EstimateSolutions -> samples completed).
     /// </summary>
     public string Op { get; set; } = "count";
     /// <summary>Expected result; when set, a mismatch is a validation failure.</summary>
@@ -24,6 +25,8 @@ internal sealed class BenchCase
     public long? MaxCount { get; set; }
     /// <summary>Per-candidate solution cap for "truecandidates" (default 8, as the UI uses).</summary>
     public long? NumSolutionsCap { get; set; }
+    /// <summary>Sample count for "estimate" (default 200).</summary>
+    public long? EstimateIterations { get; set; }
     public bool MultiThread { get; set; }
 }
 
@@ -119,6 +122,28 @@ internal static class BenchCore
         return total;
     }
 
+    /// <summary>
+    /// Runs the Monte-Carlo solution-count estimator and scores it as the number of samples
+    /// completed.
+    /// </summary>
+    /// <remarks>
+    /// The estimate itself is stochastic, so it cannot be an expected value; the sample count can,
+    /// and it still catches a path that short-circuits or throws. What these cases are really for
+    /// is time and allocation: each sample clones a child per open candidate and keeps only one,
+    /// so allocation scales with sample count — which matters because the browser exposes
+    /// estimation as a long-running operation.
+    /// </remarks>
+    private static long RunEstimate(Solver solver, BenchCase c, bool multiThread)
+    {
+        long iterations = c.EstimateIterations ?? 200;
+        long completed = 0;
+        solver.EstimateSolutions(
+            iterations,
+            progressData => completed = progressData.iterations,
+            multiThread: multiThread);
+        return completed;
+    }
+
     public static Solver Build(BenchCase c)
     {
         IEnumerable<string>? constraints = c.Constraints;
@@ -137,7 +162,8 @@ internal static class BenchCore
             "count" => solver.CountSolutions(maxSolutions: c.MaxCount ?? 0, multiThread: multiThread),
             "logical" => RunLogical(solver),
             "truecandidates" => RunTrueCandidates(solver, c, multiThread),
-            _ => throw new InvalidOperationException($"Unknown op '{c.Op}' for case '{c.Name}' (use \"count\", \"solve\", \"logical\", or \"truecandidates\")."),
+            "estimate" => RunEstimate(solver, c, multiThread),
+            _ => throw new InvalidOperationException($"Unknown op '{c.Op}' for case '{c.Name}' (use \"count\", \"solve\", \"logical\", \"truecandidates\", or \"estimate\")."),
         };
     }
 

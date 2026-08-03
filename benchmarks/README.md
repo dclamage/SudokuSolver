@@ -85,6 +85,7 @@ cases for otherwise-huge search spaces.
 | `solve` | `FindSolution` | 1 if solvable, 0 if not |
 | `logical` | `ConsolidateBoard` | candidates still standing across the grid, or -1 if logic proved the board invalid |
 | `truecandidates` | `TrueCandidates` | sum of per-candidate solution counts, each clamped to `numSolutionsCap` |
+| `estimate` | `EstimateSolutions` | samples completed (`estimateIterations`, default 200) |
 
 `count` and `solve` exercise only brute force. **`logical` is the only op that touches the logical
 solver** — `AICSolver`, `SolverLogic`, and the constraints' non-brute-force `StepLogic` — which is
@@ -103,6 +104,10 @@ Clamping matters: the solver returns **raw** counts and callers clamp them (see
 on how many solutions the search happened to enumerate before every candidate was covered — so
 never score a `truecandidates` case on raw counts. Clamped, the score is stable and readable: 729
 means every candidate on a 9x9 is still live, 81 means the grid is fully resolved.
+
+`estimate` is scored on samples completed rather than the estimate itself, which is stochastic. The
+sample count still catches a path that short-circuits or throws; the point of these cases is time
+and allocation, since each sample clones one child per open candidate and keeps only one.
 
 Two things to know before adding `logical` cases:
 

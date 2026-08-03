@@ -209,5 +209,29 @@
     "op": "truecandidates",
     "numSolutionsCap": 1,
     "expected": 729
+  },
+  {
+    "name": "est-blank6",
+    "category": "estimate",
+    "blank": 6,
+    "op": "estimate",
+    "estimateIterations": 200,
+    "expected": 200
+  },
+  {
+    "name": "est-escargot-6clue",
+    "category": "estimate",
+    "givens": "100000090000020008000600500000300900010080002000004000300000010040000007007000300",
+    "op": "estimate",
+    "estimateIterations": 200,
+    "expected": 200
+  },
+  {
+    "name": "est-killer-cage",
+    "category": "estimate",
+    "fpuzzles": "N4IgzglgXgpiBcBOANCA5gJwgEwQbT2AF9ljSSzKLryBdZQmq8l54+x1p7rjtn/nQaCR3PgIm9hk0UM6zR4rssX0QAawgAbLTAwBjAIZo48QiH0wdYfCABKARgDCDkKkdOATG/ueXPuz9vNQA3Qy0AV1MQBwAOEAoLKy0bM3tnAGYA5wAWbKcAVgC/ItDwqIQQTzzEy2tbDwA2Yqdmssjootrk1Lx0pwB2fPj2ivgY7276tI9EFrnR6Icu0iTpvrsMwYCtkdQwjsrmqZSGraz3LbzLwoCcpwv7AoeQRcrPVxPe+y3Xd3u/k9/O5nsF9uVop4sl8Go1gfY4WCQAcxiAVqA6qcZgN4XZYv43uMHJNVpjvnZELjKUiUUt0WssRscY88S9CSBjqSeg0cUV3PjrvZ8Xz7JS8uyHEMYTN7s0Qa0AnDBXY4SKVQr2Z4SRjuTKnPF/k45vKhvK9siIe8AAwJLnrBHbdxwg32HFy12OoUa8GHcaeTk6+12HHGr2himeiMuiMLH2ozzxIhqQz6AAuEBCMCcAHsAHZgVMYQwQXOp74AaW0ugwAAInMY4LQiEA==",
+    "op": "estimate",
+    "estimateIterations": 200,
+    "expected": 200
   }
 ]
