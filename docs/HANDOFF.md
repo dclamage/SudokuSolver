@@ -1,7 +1,7 @@
 # Handoff: solver performance & the browser port
 
-Last updated 2026-08-03. Branch `wasm-prototype`, working tree clean, **1 commit ahead of origin**
-(`ac3e084`, the ISS corpus import — not yet pushed). Read this first, then the linked docs as needed.
+Last updated 2026-08-03. Branch `wasm-prototype`, working tree clean, pushed. Read this first, then
+the linked docs as needed.
 
 ---
 
@@ -254,7 +254,7 @@ types in minutes and contradicted the intuition on two of them.
   a slower machine quietly drops the slowest cases. Treat the committed file as the artefact.
 - Wrap anything long in `caffeinate -i`; this laptop idle-sleeps and silently suspends builds.
 
-### Validation checklist before committing
+### Validation checklist before committing and pushing
 
 ```bash
 dotnet test -c Release SudokuTests/SudokuTests.csproj                                    # 111 tests
@@ -272,6 +272,11 @@ dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- benchmarks/c
 
 For WASM changes, republish and re-diff — `dotnet publish SudokuSolverWasm -c Release -o /tmp/wasm`
 takes 7–10 minutes, so budget for it. `compare.js` flags result mismatches, not just timing.
+
+**Then push.** `git push` once the checklist is green, rather than stacking commits locally to the end
+of a session — sessions get interrupted, and this branch is the only record of a lot of measurement
+that is expensive to reproduce. Keeping the header line of this file accurate about the branch state
+is part of the same habit.
 
 ---
 
