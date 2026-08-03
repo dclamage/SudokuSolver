@@ -33,10 +33,24 @@ public static class Extensions
 
         if (count <= listCount)
         {
-            int[] indexes = Enumerable.Range(0, count).ToArray();
+            int[] indexes = new int[count];
+            for (int i = 0; i < count; i++)
+            {
+                indexes[i] = i;
+            }
+
             do
             {
-                yield return indexes.Select(i => collection[i]).ToList();
+                // Built by hand rather than `indexes.Select(i => collection[i]).ToList()`: that
+                // allocated a Select iterator and a capturing closure per combination on top of the
+                // list itself. This is called per candidate per tuple size inside the fish and wing
+                // searches, where it dominated logical-solve allocation.
+                List<T> combination = new(count);
+                for (int i = 0; i < count; i++)
+                {
+                    combination.Add(collection[indexes[i]]);
+                }
+                yield return combination;
 
                 SetIndexes(indexes, indexes.Length - 1, listCount);
             }
