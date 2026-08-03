@@ -85,24 +85,35 @@ public partial class Solver
                     // does not increment, since it starts at 1
                     countdownEvent.AddCount();
                 }
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        FindSolutionInternal(solver, this);
-                    }
-                    finally
-                    {
-                        Interlocked.Decrement(ref numRunningTasks);
-                        countdownEvent.Signal();
-                    }
-                });
+                StartSearchTask(solver);
                 return true;
             }
 
             // we overshot: roll back and decline
             Interlocked.Decrement(ref numRunningTasks);
             return false;
+        }
+
+        /// <summary>
+        /// Starts the branch task. Deliberately not inlined into <see cref="PushSolver"/>: the
+        /// lambda captures <paramref name="solver"/>, and the compiler builds that closure's
+        /// display class on entry to whichever method contains it. Inlined, every *offer* allocated
+        /// one closure — including the millions declined because no task slot was free.
+        /// </summary>
+        private void StartSearchTask(Solver solver)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    FindSolutionInternal(solver, this);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref numRunningTasks);
+                    countdownEvent.Signal();
+                }
+            });
         }
 
         public void Dispose()
@@ -439,18 +450,7 @@ public partial class Solver
                     // does not increment, since it starts at 1
                     countdownEvent.AddCount();
                 }
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        CountSolutionsInternal(solver, this);
-                    }
-                    finally
-                    {
-                        Interlocked.Decrement(ref numRunningTasks);
-                        countdownEvent.Signal();
-                    }
-                });
+                StartSearchTask(solver);
                 return true;
             }
             else
@@ -459,6 +459,28 @@ public partial class Solver
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Starts the branch task. Deliberately not inlined into <see cref="PushSolver"/>: the
+        /// lambda captures <paramref name="solver"/>, and the compiler builds that closure's
+        /// display class on entry to whichever method contains it. Inlined, every *offer* allocated
+        /// one closure — including the millions declined because no task slot was free.
+        /// </summary>
+        private void StartSearchTask(Solver solver)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    CountSolutionsInternal(solver, this);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref numRunningTasks);
+                    countdownEvent.Signal();
+                }
+            });
         }
 
         public void Wait()
@@ -976,18 +998,7 @@ public partial class Solver
                     // does not increment, since it starts at 1
                     countdownEvent.AddCount();
                 }
-                Task.Run(() =>
-                {
-                    try
-                    {
-                        TrueCandidatesInternal(solver, this);
-                    }
-                    finally
-                    {
-                        Interlocked.Decrement(ref numRunningTasks);
-                        countdownEvent.Signal();
-                    }
-                });
+                StartSearchTask(solver);
                 return true;
             }
             else
@@ -996,6 +1007,28 @@ public partial class Solver
             }
 
             return false;
+        }
+
+        /// <summary>
+        /// Starts the branch task. Deliberately not inlined into <see cref="PushSolver"/>: the
+        /// lambda captures <paramref name="solver"/>, and the compiler builds that closure's
+        /// display class on entry to whichever method contains it. Inlined, every *offer* allocated
+        /// one closure — including the millions declined because no task slot was free.
+        /// </summary>
+        private void StartSearchTask(Solver solver)
+        {
+            _ = Task.Run(() =>
+            {
+                try
+                {
+                    TrueCandidatesInternal(solver, this);
+                }
+                finally
+                {
+                    Interlocked.Decrement(ref numRunningTasks);
+                    countdownEvent.Signal();
+                }
+            });
         }
 
         public void Wait()
