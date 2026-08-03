@@ -86,6 +86,7 @@ public partial class Solver
         DisableFindShortestContradiction = other.DisableFindShortestContradiction;
         WeakLinkDiscovery = other.WeakLinkDiscovery;
         WeakLinkDiscoveryNodeThreshold = other.WeakLinkDiscoveryNodeThreshold;
+        TrueCandidatesStallLimit = other.TrueCandidatesStallLimit;
         board = new uint[NUM_CELLS];
         other.board.AsSpan().CopyTo(board);
         regions = other.regions;

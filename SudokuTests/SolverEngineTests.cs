@@ -212,6 +212,62 @@ public class SolverEngineTests
     }
 
     /// <summary>
+    /// Checks <see cref="Solver.TrueCandidates"/> against an independent brute-force oracle: for
+    /// every candidate, count the solutions that contain it by forcing the cell and counting
+    /// directly. Run with the stall limit at 0, which sends every candidate through the directed
+    /// endgame, and again at its default, which uses the ordinary undirected search.
+    /// </summary>
+    /// <remarks>
+    /// The endgame stops the bulk search early and resolves the remaining candidates one at a time,
+    /// so it has two ways to be silently wrong: leaving a real candidate uncovered (reported as
+    /// impossible) or stopping short of the cap. Neither shows up in the corpus, whose
+    /// true-candidates cases all use a cap of 1 and only check a summed total. A cap above 1 is
+    /// where the counts, not just the yes/no answers, have to agree.
+    /// </remarks>
+    [TestMethod]
+    public void TrueCandidatesMatchesBruteForceOracle()
+    {
+        // Enough clues to keep the oracle's 729 counts affordable, few enough to leave a real
+        // search with many solutions per candidate.
+        string givens = Puzzles.uniqueClassics[0].Item2[..^24] + new string('0', 24);
+
+        foreach (long cap in new long[] { 1, 8 })
+        {
+            long[] oracle = new long[81 * 9];
+            for (int cellIndex = 0; cellIndex < 81; cellIndex++)
+            {
+                for (int value = 1; value <= 9; value++)
+                {
+                    Solver probe = SolverFactory.CreateFromGivens(givens);
+                    // SetValue reports a trivial contradiction; a surviving board still has to be
+                    // counted, and may yet turn out to have no solutions.
+                    oracle[cellIndex * 9 + value - 1] = probe.SetValue(cellIndex, value)
+                        ? probe.CountSolutions(maxSolutions: cap)
+                        : 0;
+                }
+            }
+
+            // 0 forces the directed endgame for every candidate; null leaves the shipped default,
+            // which normally keeps the search on the undirected path.
+            foreach (long? stallLimit in new long?[] { 0, null })
+            {
+                Solver solver = SolverFactory.CreateFromGivens(givens);
+                if (stallLimit.HasValue)
+                {
+                    solver.TrueCandidatesStallLimit = stallLimit.Value;
+                }
+                long[] actual = solver.TrueCandidates(numSolutionsCap: cap);
+
+                for (int i = 0; i < oracle.Length; i++)
+                {
+                    Assert.AreEqual(oracle[i], Math.Min(actual[i], cap),
+                        $"candidate {i} disagreed with the oracle (cap={cap}, stallLimit={stallLimit?.ToString() ?? "default"})");
+                }
+            }
+        }
+    }
+
+    /// <summary>
     /// A <c>solutionEvent</c> handler must see each solution exactly once. Deferral opts out
     /// entirely when one is attached, because a restart would replay every solution the abandoned
     /// attempt had already reported.

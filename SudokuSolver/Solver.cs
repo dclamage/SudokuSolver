@@ -34,6 +34,12 @@ public partial class Solver
     /// discovery-free search and restarts with discovery. Ignored by the other modes.
     /// </summary>
     public long WeakLinkDiscoveryNodeThreshold { get; set; } = DefaultWeakLinkDiscoveryNodeThreshold;
+    /// <summary>
+    /// How many consecutive solutions <see cref="TrueCandidates"/> may find without covering a new
+    /// candidate before it abandons the undirected search and hunts the stragglers directly.
+    /// Zero switches to the directed phase immediately.
+    /// </summary>
+    public long TrueCandidatesStallLimit { get; set; } = DefaultTrueCandidatesStallLimit;
 
     // Private data
     private uint[] board;

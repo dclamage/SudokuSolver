@@ -150,6 +150,9 @@ is shaped differently: a minority of searches have a **pathological branch-order
 interactive UI that is worse than a uniform slowdown would be: under the old time-seeded generator
 you rolled this dice on *every* edit, so roughly one edit in five stuttered for no visible reason.
 
+*(Diagnosed and fixed the same day — see the next two sections. The cause is not the tie-break at
+all.)*
+
 `tc-blank-nonconsecutive` is the one case with a genuinely broad spread rather than a clean bimodal
 split. It is also the only case where the median seed (~11.7 s) is much better than the shipped one
 (10.0 s is near the good end, so this corpus flatters the default).
@@ -158,32 +161,86 @@ split. It is also the only case where the median seed (~11.7 s) is much better t
 was measured. Picking a seed because it dodges the bad mode on these four cases says nothing about
 the puzzles a user will actually open.
 
-### A caveat this fix introduces
+### A caveat this fix introduced, since resolved
 
-Fixing the seed converts a per-call lottery into a per-puzzle constant. A puzzle that lands in the
-pathological mode is now stuck there on **every** call instead of one in five. That is a real
-regression in the worst case, and it is accepted deliberately: a reproducible bad case can be found
-and fixed, whereas an intermittent one cannot even be measured. It does raise the priority of the
-work below from "optimisation" to "removing a latency cliff".
+Fixing the seed converted a per-call lottery into a per-puzzle constant: a puzzle in the
+pathological mode would be stuck there on **every** call instead of one in five. That was accepted
+deliberately — a reproducible bad case can be found and fixed, an intermittent one cannot even be
+measured — and it stood for exactly as long as it took to do that. The directed endgame below
+removes the mode itself, so neither the lottery nor the constant applies any more.
 
-## What to try
+## The cause: the DFS is trapped in its first root branch
 
-Now that a baseline reproduces, a replacement can be evaluated — which it could not before.
-Reordered by what the corrected data supports:
+Instrumenting the coverage timeline settled this immediately. Comparing the node at which the search
+first backtracks to the top of the stack (`nFirstShallow`) against the node at which the last 10% of
+candidates get covered (`n90`):
 
-1. **Detect and escape the bad mode.** This is now the main event, not a nicety. The search already
-   knows when it has stopped making coverage progress, so restarting the affected subtree with a
-   different choice would cut the tail without touching the 80% of cases that are already fine.
-   Bounding it the way `WeakLinkDiscoveryMode.Deferred` bounds its prefix would keep the cost
-   self-limiting.
-2. **Systematic rotation instead of random** — `bestCellIndices[counter++ % count]` covers the tied
-   set evenly rather than in expectation. Cheap to try, and it may simply not reach the bad mode.
-3. **A real coverage objective**: pick the branch maximising newly-covered candidates instead of
-   sampling proportional to them. Most speculative, and the flat cases suggest the current weighting
-   is already adequate when it does not fall over.
+| seed | total nodes | solutions | n50 | n90 | nFirstShallow | n100 |
+| ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| 0 (good) | 5,117 | 898 | 558 | 3,585 | **3,609** | 5,091 |
+| 4 (good) | 4,751 | 862 | 485 | 3,134 | **3,059** | 4,725 |
+| 3 (bad) | 56,397 | 5,486 | 773 | 54,987 | **54,963** | 56,373 |
+| 1 (worst) | 303,137 | 26,446 | 525 | 301,575 | **301,545** | 303,109 |
 
-Start by finding what distinguishes `tc-escargot-partial`'s two bad seeds from its eight good ones —
-with a fixed seed that is now a reproducible experiment.
+`nFirstShallow ≈ n90` in every run, to within 1%. And `n100 ≈ total nodes`, so the search stops
+almost the moment the last candidate is covered — the entire runtime *is* the coverage hunt.
+
+The mechanism follows: true candidates is a DFS, so it commits to one root branch and **cannot cover
+anything requiring a different one until that whole subtree is exhausted**. The worst seed spent
+301,545 of 303,137 nodes inside the first branch, enumerating 26,446 solutions that kept re-covering
+the same candidates, then finished within 1,600 nodes of escaping. `n50 ≈ 500` for every seed: the
+first half is always easy, and all the variance is in how long the first branch takes to exhaust.
+
+Note this is *not* a tie-break quality problem, so the rotation and coverage-objective ideas
+originally sketched here would not have fixed it. No branch-ordering rule avoids being stuck in a
+subtree that simply lacks the candidates you still need.
+
+## The fix: stop guessing, ask directly
+
+When the search goes `TrueCandidatesStallLimit` consecutive solutions (default 100) without covering
+anything new, the undirected search is abandoned and each remaining candidate is settled on purpose:
+force it, and count its solutions with a capped `CountSolutions`. A capped count is the answer; an
+empty one proves it is not a true candidate. Every pass settles exactly the candidate it targeted,
+so this is bounded at one pass per candidate and the result is identical to a full enumeration.
+
+`tc-escargot-partial`, ten seeds, `--iterations 12`:
+
+| seed | before | after |
+| ---: | ---: | ---: |
+| 0 | 6.68 ms | 6.10 ms |
+| 4 | 5.99 ms | 5.87 ms |
+| 2 | 6.46 ms | 5.99 ms |
+| 5 | 6.82 ms | 6.40 ms |
+| 3 | **76.82 ms** | **21.80 ms** |
+| 1 | **381.31 ms** | **14.72 ms** |
+
+Worst case **26× faster**, and the seed-to-seed spread collapses from **64× to 3.7×**. Healthy seeds
+are untouched, as intended — the threshold sits an order of magnitude above their peak barren run.
+
+### The bug this nearly shipped with
+
+The first version re-entered the shared true-candidates search for each target instead of counting
+separately, so it could credit incidental coverage. That **double-counts**: directed subtrees
+overlap, since every solution contains a whole grid's worth of candidates, so the same solution is
+tallied once per candidate that targeted it.
+
+At a cap of 1 this is invisible — any positive count clamps to the right answer — so the entire
+28-case corpus passed, along with all four `tc-*` expected values. It is silently wrong above a cap
+of 1, which is the API default. Caught only by `TrueCandidatesMatchesBruteForceOracle`, which checks
+every candidate against a forced-cell `CountSolutions` at caps 1 and 8: it reported 8 where the
+oracle said 4. **Any future change here needs a cap > 1 in its test**, because the corpus cannot see
+this class of error at all.
+
+## What is still open
+
+`tc-blank-nonconsecutive` is a different problem and is barely affected (seed 2: 24.1 → 19.1 s;
+seed 5: 28.7 → 29.0 s). Its 8.6–12.6M *invalid* nodes are genuine constraint search, not a coverage
+hunt — consistent with the "Still open" note above. Its ~2.9× seed spread is real search-size
+variance and remains unexplained.
+
+The stall trigger counts *solutions*, which is a poor proxy where solutions are rare: on
+`tc-blank-nonconsecutive` only ~1,300 solutions appear across 18M nodes, so the trigger fires almost
+incidentally. It does no harm there, but a node-relative trigger would be better founded.
 
 ### Reproducing the sweep
 

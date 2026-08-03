@@ -451,6 +451,25 @@ public partial class Solver
         return WeakLinkDiscoveryMode.Deferred;
     }
 
+    /// <summary>
+    /// Process-wide default for <see cref="TrueCandidatesStallLimit"/>, overridable with
+    /// <c>SUDOKU_TC_STALL_LIMIT</c> for sweeps.
+    /// </summary>
+    internal static readonly long DefaultTrueCandidatesStallLimit = ReadDefaultTrueCandidatesStallLimit();
+
+    // Well clear of a healthy search: the good seeds on tc-escargot-partial peak at 5-10 consecutive
+    // barren solutions, the pathological ones at 1,279 and 6,551. See
+    // docs/truecandidates-allocation.md.
+    private const long TC_STALL_LIMIT_DEFAULT = 100;
+
+    private static long ReadDefaultTrueCandidatesStallLimit()
+    {
+        string value = Environment.GetEnvironmentVariable("SUDOKU_TC_STALL_LIMIT");
+        return value != null && long.TryParse(value, out long limit) && limit >= 0
+            ? limit
+            : TC_STALL_LIMIT_DEFAULT;
+    }
+
     private static long ReadDefaultWeakLinkDiscoveryNodeThreshold()
     {
         string value = Environment.GetEnvironmentVariable("SUDOKU_WEAK_LINK_DEFER_NODES");

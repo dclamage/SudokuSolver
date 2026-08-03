@@ -71,14 +71,32 @@ Three things it turned up that affect work elsewhere:
 3. **It fixed `Wb5YT1b-U9Q`**, one of the five pathological outliers in Priority 5 below: 308 ms →
    21 ms against ISS's 7.4 ms. Worth re-measuring the others before diagnosing them.
 
-**True-candidates timing was also made reproducible**, which was a prerequisite for measuring
-anything on that path and immediately exposed a branch-order latency cliff of up to 64× — now
-Priority 2. Its branch choice drew from a time-seeded thread-static `Random`; it now uses a stream
-scoped to the invocation. `tc-blank-nonconsecutive` went from a ~40% run-to-run swing to ~1%.
-**Treat every pre-2026-08-03 `tc-*` timing as optimistic**: each benchmark iteration used to be a
-fresh draw from a wide distribution and the harness reports `min ms`, so old figures fall as
-iteration count rises and are not comparable to current ones. The 28-case corpus total rose
-15,887 → 17,243 ms purely from removing that bias.
+**True candidates was made reproducible, then had a 64× latency cliff removed.** Its branch choice
+drew from a time-seeded thread-static `Random`; it now uses a stream scoped to the invocation, which
+took `tc-blank-nonconsecutive` from a ~40% run-to-run swing to ~1% and made the path measurable for
+the first time. Sweeping the now-fixed seed exposed a cliff: `tc-escargot-partial` ran 5.99–6.82 ms
+on eight of ten seeds and **76.8 ms and 381.3 ms** on the other two.
+
+The cause was not the tie-break heuristic. Instrumenting the coverage timeline showed the DFS
+**trapped in its first root branch** — it spent 301,545 of 303,137 nodes there on the worst seed,
+then finished within 1,600 nodes of escaping, and `nFirstShallow ≈ n90` in every run to within 1%.
+A DFS cannot cover candidates that need a different root branch until the first subtree is
+exhausted, and no branch-ordering rule fixes that. The fix is to stop guessing: after
+`TrueCandidatesStallLimit` (default 100) consecutive solutions that cover nothing new, each
+remaining candidate is settled directly by forcing it and running a capped `CountSolutions`. Worst
+case **381 → 14.7 ms**, seed spread **64× → 3.7×**, healthy seeds untouched.
+
+Two things to carry forward:
+
+- **Treat every pre-2026-08-03 `tc-*` timing as optimistic.** Each benchmark iteration used to be a
+  fresh draw from a wide distribution and the harness reports `min ms`, so old figures fall as
+  iteration count rises. The 28-case corpus total rose 15,887 → 17,243 ms purely from removing that
+  bias, before any of the endgame work.
+- **A cap of 1 cannot detect a whole class of error here.** The first version of the endgame
+  double-counted overlapping directed subtrees. Every corpus `tc-*` case uses `numSolutionsCap: 1`,
+  where any positive count clamps to the right answer, so all four passed while the API default of 8
+  was silently wrong. Only `TrueCandidatesMatchesBruteForceOracle` — which checks every candidate
+  against a forced-cell `CountSolutions` at caps 1 *and* 8 — caught it. Test above a cap of 1.
 
 ### What landed the session before
 
@@ -121,37 +139,25 @@ If you revisit the deferral threshold itself, **tune against `--filter iss-tune`
 picks N=250, which makes the median puzzle slower. The 28-case corpus is too small to separate a
 threshold honestly and is flat across the whole range.
 
-### Priority 2 — The true-candidates branch-order cliff (up to 64×)
+### Priority 2 — What remains on true candidates
 
-**A latency cliff on the operation the setting UI runs on every edit.**
-`TrueCandidatesInternal` picks among equally-good cells at random, weighted by uncovered candidates.
-Now that the stream is seeded deterministically (see above), sweeping the seed isolates what branch
-order costs — ten seeds, `--iterations 12`:
+The 64× branch-order cliff here is **fixed** (see above). Two smaller things are left:
 
-| case | seeds 0–9 | verdict |
-| --- | --- | --- |
-| `tc-escargot` | 0.73–1.02 ms | insensitive |
-| `tc-blank9` | 13.3–14.4 ms | insensitive |
-| `tc-escargot-partial` | eight at 5.99–6.82 ms; then **76.8** and **381.3** | **heavy tail: 12× and 64×** |
-| `tc-blank-nonconsecutive` | 9.1 … 28.7 s | broad, 2.9× |
+1. **`tc-blank-nonconsecutive` has an unexplained ~2.9× seed spread** that the endgame does not
+   touch (seed 2: 24.1 → 19.1 s; seed 5: 28.7 → 29.0 s). Its 8.6–12.6M *invalid* nodes are genuine
+   constraint search, not a coverage hunt, so this is a propagation question. It is also the single
+   largest case in the corpus at ~10 s, so it dominates any `truecandidates` measurement.
+2. **The stall trigger counts solutions**, which is a poor proxy where solutions are rare — only
+   ~1,300 appear across 18M nodes on `tc-blank-nonconsecutive`, so it fires almost incidentally. It
+   does no harm there, but a node-relative trigger would be better founded. Sweep
+   `SUDOKU_TC_STALL_LIMIT` if you revisit it.
 
-The picker is **not** uniformly weak — it is fine on most puzzles. The problem is a **pathological
-branch-order mode** that a minority of searches fall into, at 12–64× normal cost. So the fix is to
-detect and escape that mode (the search already knows when coverage progress stalls), not to replace
-the heuristic wholesale. Options in
-[`truecandidates-allocation.md`](truecandidates-allocation.md) § "Branch order is a tail risk".
+**Do not tune the RNG seed** — the shipped value is the natural counter origin, chosen before any of
+this was measured, and it is not what made the cliff go away.
 
-**Fixing the seed made this worse in the worst case, deliberately:** a puzzle in the bad mode is now
-stuck there on every call rather than one call in five. That is the trade for being able to measure
-it at all — and it is why this is a cliff to remove rather than an optimisation to schedule.
-
-**Do not tune the seed** — the shipped value is the natural counter origin, chosen before any of this
-was measured. A seed that dodges the bad mode on these four cases says nothing about the puzzles a
-user opens.
-
-**Keep the randomisation itself.** It is not a hack: true candidates is a coverage problem, and a
-deterministic DFS yields consecutive solutions differing only in their last few assignments, so each
-covers almost no new candidates. Any replacement has to preserve that decorrelation.
+**Keep the randomisation itself.** True candidates is a coverage problem, and a deterministic DFS
+yields consecutive solutions differing only in their last few assignments, so each covers almost no
+new candidates.
 
 ### Priority 3 — Buffer-reusing `Combinations`
 
