@@ -258,6 +258,12 @@ public partial class Solver
     /// <param name="progressEvent">An event to receive the progress count as solutions are found.</param>
     /// <param name="cancellationToken">Pass in to support cancelling the count.</param>
     /// <returns>The solution count found.</returns>
+    /// <param name="solutionEvent">
+    /// Invoked once per solution found. The <see cref="Solver"/> is <b>borrowed for the duration of
+    /// the call only</b> — it is recycled into the branch-solver pool immediately afterwards, so a
+    /// handler that stores the reference will later observe an unrelated board. Copy whatever you
+    /// need before returning.
+    /// </param>
     public long CountSolutions(long maxSolutions = 0, bool multiThread = false, Action<long> progressEvent = null, Action<Solver> solutionEvent = null, CancellationToken cancellationToken = default)
     {
         if (seenMap == null)
@@ -408,6 +414,10 @@ public partial class Solver
             {
                 lock (solutionLock)
                 {
+                    // The solver is *borrowed*: it is released back to the branch pool right
+                    // after this returns, so a callback that retains the reference would observe
+                    // a later branch's state. Callbacks must copy anything they need (the
+                    // in-tree callers take GivenString synchronously).
                     solutionEvent?.Invoke(solver);
                     if (eventTimer.ElapsedMilliseconds > 500)
                     {
@@ -1180,8 +1190,15 @@ public partial class Solver
             {
                 for (long i = 0; i < numIterations; i++)
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    // Each iteration is an independent random descent, so it must start from its
+                    // own copy. This previously passed `root`, which left the clone unused and the
+                    // sampling sharing one board across iterations. Measured harmless — the shared
+                    // board only ever reached a propagation fixpoint, and 1T/MT estimates agreed
+                    // within their standard errors — but it was a latent trap and inconsistent
+                    // with both the multi-threaded path and EstimateTrueCandidates.
                     Solver solver = root.Clone(willRunNonSinglesLogic: false);
-                    EstimateSolutionsInternal(root, state);
+                    EstimateSolutionsInternal(solver, state);
                 }
             }
         }
