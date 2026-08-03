@@ -1049,6 +1049,12 @@ public partial class Solver
 
         public readonly CountdownEvent countdownEvent;
         public readonly NodeBudget nodeBudget;
+        /// <summary>
+        /// Branch-choice randomisation for the search. Scoped to this state, so a deferred retry
+        /// starts the stream over and is therefore identical to an undeferred search — the same
+        /// property the conflict-score rollback buys.
+        /// </summary>
+        public readonly SearchRandom searchRandom = new();
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
 
@@ -1306,7 +1312,7 @@ public partial class Solver
                     continue;
                 }
 
-                cellIndex = bestCellIndices[RandomNext(0, bestCellIndices.Count)];
+                cellIndex = bestCellIndices[state.searchRandom.NextIndex(bestCellIndices.Count)];
 
                 // Try a possible value for this cell, preferring a value that is still needed, if possible
                 uint cellMask = solver.board[cellIndex];
@@ -2019,5 +2025,50 @@ public partial class Solver
         public static readonly ThreadLocal<Random> _rng =
             new(() => new Random(unchecked(Environment.TickCount * 31 + Thread.CurrentThread.ManagedThreadId)));
         public static Random Instance => _rng.Value!;
+    }
+
+    /// <summary>
+    /// A counter-based pseudo-random stream (SplitMix64) scoped to one brute-force invocation.
+    /// </summary>
+    /// <remarks>
+    /// The true-candidates search randomises its branch choice on purpose — it is a coverage
+    /// problem, and a deterministic DFS produces consecutive solutions that differ only in their
+    /// last few assignments, so each one covers almost no new candidates. What was *not* on purpose
+    /// is that the entropy came from a time-seeded thread-static <see cref="Random"/>, which made
+    /// the operation the setting UI runs on every edit impossible to benchmark:
+    /// <c>tc-blank-nonconsecutive</c> is over half the 28-case corpus by time and swings ~40% run to
+    /// run. Seeding per invocation from a constant keeps the decorrelation and makes it repeatable.
+    ///
+    /// Counter-based rather than a stateful generator because the multi-threaded search draws from
+    /// one instance across tasks. Advancing the counter atomically keeps every draw well-distributed
+    /// and race-free; it does not make the multi-threaded search reproducible, since which task
+    /// receives which draw still depends on scheduling. Single-threaded — which is what the corpus
+    /// measures and what the browser host runs — is fully deterministic.
+    /// </remarks>
+    private sealed class SearchRandom
+    {
+        // Any odd constant works as the SplitMix64 gamma; this is the standard one.
+        private const ulong Gamma = 0x9E3779B97F4A7C15;
+        // Starts at zero: the natural counter origin, deliberately not tuned. Branch order does not
+        // matter much on most puzzles, but a minority have a pathological mode costing up to 64x
+        // (docs/truecandidates-allocation.md), and picking the origin because it dodged those on this
+        // corpus would be over-fitting — the puzzles that matter are the ones not in it.
+        private long counter;
+
+        public int NextIndex(int exclusiveMax)
+        {
+            if (exclusiveMax <= 1)
+            {
+                return 0;
+            }
+
+            ulong z = unchecked((ulong)Interlocked.Increment(ref counter) * Gamma);
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EB;
+            z ^= z >> 31;
+
+            // Lemire's multiply-shift: unbiased enough here and avoids a modulo.
+            return (int)(((uint)z * (ulong)exclusiveMax) >> 32);
+        }
     }
 }

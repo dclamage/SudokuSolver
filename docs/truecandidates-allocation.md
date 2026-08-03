@@ -76,6 +76,11 @@ Its search is randomized — `TrueCandidatesInternal` picks among equally-good c
 `RandomNext` — so run-to-run variance is large and swamps the difference. Allocation is the
 reliable signal here; timing on that case is not.
 
+> **Update 2026-08-03: the timing is now reliable, and the variance turned out to be the story.**
+> See [§ Branch order is worth up to 16x](#branch-order-is-worth-up-to-16x) below. The numbers in
+> this section were taken with the old time-seeded generator and are optimistic — see the caveat
+> there before comparing anything to them.
+
 ## Why this matters more for WASM than native
 
 Natively, 18 GB of gen0 churn is largely absorbed by the GC — which is why this went unnoticed.
@@ -95,3 +100,100 @@ Reducing it is a propagation/heuristic question, not an allocation one.
 
 Worth noting the logical solver has the same untested smell — `escargot-logical` allocates 284 MB
 and `killer-innie-logical` 855 MB. Nothing there has been examined for pooling.
+
+---
+
+# Branch order is a tail risk, not a broad cost
+
+Date: 2026-08-03.
+
+## The determinism fix
+
+`TrueCandidatesInternal` picks among equally-good cells at random, weighted by how many of each
+cell's candidates are still uncovered. **That randomisation is deliberate and should stay.** True
+candidates is a *coverage* problem — the search runs until every candidate has been seen
+`numSolutionsCap` times — and a deterministic DFS produces consecutive solutions that differ only
+in their last few assignments, so each one covers almost no new candidates. Randomised branching is
+the standard fix for diverse-solution enumeration.
+
+What was accidental was the *entropy source*: `SolverUtility.RandomNext`, a `[ThreadStatic]`
+`Random` seeded from a time-seeded global. The stream is now scoped to the invocation
+(`SearchRandom`, a counter-based SplitMix64), so single-threaded runs repeat exactly. It stays
+counter-based rather than stateful because the multi-threaded search draws from one instance across
+tasks; atomic counter advance keeps that race-free, though MT is still not reproducible because
+task scheduling decides who gets which draw.
+
+`tc-blank-nonconsecutive` across three separate processes went from **7,700–10,652 ms** to
+**9,933 / 9,991 / 10,039 ms** — from a ~40% swing to ~1%.
+
+**Old `tc-*` timings are optimistic and must not be compared to new ones.** Every benchmark
+iteration used to be a fresh draw from a wide distribution, and the harness reports `min ms`, so the
+published figures are order statistics that fall as iteration count rises. This is why the case
+"did not clearly improve" above, and why it made the whole 28-case corpus read 26% slower during
+the weak-link deferral work until it was excluded by hand.
+
+## What the fix exposed
+
+With the stream seeded from a constant, sweeping that constant measures what *branch order alone*
+costs. Ten seeds, `--iterations 12`, min ms:
+
+| case | seeds 0–9 | verdict |
+| --- | --- | --- |
+| `tc-escargot` | 0.73–1.02 ms | **insensitive** |
+| `tc-blank9` | 13.3–14.4 ms | **insensitive** |
+| `tc-escargot-partial` | eight seeds 5.99–6.82; then **76.8** and **381.3** | **heavy tail: 12× and 64×** |
+| `tc-blank-nonconsecutive` | 9.1, 9.1, 11.0, 11.3, 12.1, 15.3, 24.1, 28.7 s | broad, **2.9×** |
+
+So the weighted-random tie-break is **not** uniformly weak — it is fine on most puzzles. The problem
+is shaped differently: a minority of searches have a **pathological branch-order mode**, and
+`tc-escargot-partial` falls into it on 2 of 10 seeds at 12× and 64× the normal cost. For an
+interactive UI that is worse than a uniform slowdown would be: under the old time-seeded generator
+you rolled this dice on *every* edit, so roughly one edit in five stuttered for no visible reason.
+
+`tc-blank-nonconsecutive` is the one case with a genuinely broad spread rather than a clean bimodal
+split. It is also the only case where the median seed (~11.7 s) is much better than the shipped one
+(10.0 s is near the good end, so this corpus flatters the default).
+
+**Do not tune the seed.** The shipped value is the natural counter origin, chosen before any of this
+was measured. Picking a seed because it dodges the bad mode on these four cases says nothing about
+the puzzles a user will actually open.
+
+### A caveat this fix introduces
+
+Fixing the seed converts a per-call lottery into a per-puzzle constant. A puzzle that lands in the
+pathological mode is now stuck there on **every** call instead of one in five. That is a real
+regression in the worst case, and it is accepted deliberately: a reproducible bad case can be found
+and fixed, whereas an intermittent one cannot even be measured. It does raise the priority of the
+work below from "optimisation" to "removing a latency cliff".
+
+## What to try
+
+Now that a baseline reproduces, a replacement can be evaluated — which it could not before.
+Reordered by what the corrected data supports:
+
+1. **Detect and escape the bad mode.** This is now the main event, not a nicety. The search already
+   knows when it has stopped making coverage progress, so restarting the affected subtree with a
+   different choice would cut the tail without touching the 80% of cases that are already fine.
+   Bounding it the way `WeakLinkDiscoveryMode.Deferred` bounds its prefix would keep the cost
+   self-limiting.
+2. **Systematic rotation instead of random** — `bestCellIndices[counter++ % count]` covers the tied
+   set evenly rather than in expectation. Cheap to try, and it may simply not reach the bad mode.
+3. **A real coverage objective**: pick the branch maximising newly-covered candidates instead of
+   sampling proportional to them. Most speculative, and the flat cases suggest the current weighting
+   is already adequate when it does not fall over.
+
+Start by finding what distinguishes `tc-escargot-partial`'s two bad seeds from its eight good ones —
+with a fixed seed that is now a reproducible experiment.
+
+### Reproducing the sweep
+
+Seed `SearchRandom.counter` from an environment variable (two lines) and run
+`--filter tc-escargot --iterations 12` per seed.
+
+**Use ≥10 iterations, not 1.** It is tempting to reason that a fixed seed makes every iteration
+follow the identical path, so one iteration suffices — that is wrong, and it produced two entirely
+fabricated findings on the first attempt. The harness's single warm-up call is not enough to escape
+tiered JIT, so a lone timed iteration measures tier-0 code: `tc-escargot` read 0.84–5.41 ms
+(a fake "6.4× spread") against 0.73–1.02 ms measured properly, and `tc-blank9` read 15.9–54.7 ms
+(a fake "3.4×") against 13.3–14.4 ms. Both cases are actually flat. Only
+`tc-blank-nonconsecutive`, at ~10 s per iteration, was unaffected.

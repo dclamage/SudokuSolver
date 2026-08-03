@@ -188,6 +188,30 @@ public class SolverEngineTests
     }
 
     /// <summary>
+    /// True candidates must return identical <b>raw</b> counts on repeated runs, not merely
+    /// identical clamped ones.
+    /// </summary>
+    /// <remarks>
+    /// The search randomises its branch choice deliberately, but from a stream scoped to the
+    /// invocation, so the sequence restarts every call. Reverting that to a time-seeded generator
+    /// would still pass every correctness test — clamped results are stable either way — while
+    /// silently making the operation unbenchmarkable, which is how it went unnoticed before.
+    /// Branch order is worth up to 16x on these puzzles, so this is not a small effect.
+    /// </remarks>
+    [TestMethod]
+    public void TrueCandidatesRawCountsAreReproducible()
+    {
+        string partial = Puzzles.uniqueClassics[0].Item2[..^20] + new string('0', 20);
+
+        long[] first = SolverFactory.CreateFromGivens(partial).TrueCandidates();
+        for (int run = 0; run < 3; run++)
+        {
+            CollectionAssert.AreEqual(first, SolverFactory.CreateFromGivens(partial).TrueCandidates(),
+                $"Raw true-candidate counts differed on run {run + 1}");
+        }
+    }
+
+    /// <summary>
     /// A <c>solutionEvent</c> handler must see each solution exactly once. Deferral opts out
     /// entirely when one is attached, because a restart would replay every solution the abandoned
     /// attempt had already reported.

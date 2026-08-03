@@ -68,8 +68,17 @@ Three things it turned up that affect work elsewhere:
 2. **`Never` cannot finish the ISS tune split at all** — killed after 8 minutes on one puzzle. Real
    CTC puzzles are effectively unsolvable without discovery, which is why the *bounded prefix* shape
    is right and a predictive on/off classifier is not: a misclassification there hangs.
-3. **It fixed `Wb5YT1b-U9Q`**, one of the five pathological outliers in Priority 4 below: 308 ms →
+3. **It fixed `Wb5YT1b-U9Q`**, one of the five pathological outliers in Priority 5 below: 308 ms →
    21 ms against ISS's 7.4 ms. Worth re-measuring the others before diagnosing them.
+
+**True-candidates timing was also made reproducible**, which was a prerequisite for measuring
+anything on that path and immediately exposed a branch-order latency cliff of up to 64× — now
+Priority 2. Its branch choice drew from a time-seeded thread-static `Random`; it now uses a stream
+scoped to the invocation. `tc-blank-nonconsecutive` went from a ~40% run-to-run swing to ~1%.
+**Treat every pre-2026-08-03 `tc-*` timing as optimistic**: each benchmark iteration used to be a
+fresh draw from a wide distribution and the harness reports `min ms`, so old figures fall as
+iteration count rises and are not comparable to current ones. The 28-case corpus total rose
+15,887 → 17,243 ms purely from removing that bias.
 
 ### What landed the session before
 
@@ -81,7 +90,7 @@ Write-up: [`iss-corpus-import.md`](iss-corpus-import.md). Two things it turned u
    caller with a timeout. All fixed and covered by tests;
    [`iss-corpus-import.md`](iss-corpus-import.md) §3 lists them.
 2. **It produced the corrected ISS speed picture above**, and with it four new pathological outliers
-   that are now the most promising perf targets in the file (Priority 4).
+   that are now the most promising perf targets in the file (Priority 5).
 
 Note that the raw ISS data is **not in the repo**: the importer needs `mappings.json` and a directory
 of `.iss` files fetched from the index site. `benchmarks/README.md` has the fetch commands; a fresh
@@ -112,7 +121,39 @@ If you revisit the deferral threshold itself, **tune against `--filter iss-tune`
 picks N=250, which makes the median puzzle slower. The 28-case corpus is too small to separate a
 threshold honestly and is flat across the whole range.
 
-### Priority 2 — Buffer-reusing `Combinations`
+### Priority 2 — The true-candidates branch-order cliff (up to 64×)
+
+**A latency cliff on the operation the setting UI runs on every edit.**
+`TrueCandidatesInternal` picks among equally-good cells at random, weighted by uncovered candidates.
+Now that the stream is seeded deterministically (see above), sweeping the seed isolates what branch
+order costs — ten seeds, `--iterations 12`:
+
+| case | seeds 0–9 | verdict |
+| --- | --- | --- |
+| `tc-escargot` | 0.73–1.02 ms | insensitive |
+| `tc-blank9` | 13.3–14.4 ms | insensitive |
+| `tc-escargot-partial` | eight at 5.99–6.82 ms; then **76.8** and **381.3** | **heavy tail: 12× and 64×** |
+| `tc-blank-nonconsecutive` | 9.1 … 28.7 s | broad, 2.9× |
+
+The picker is **not** uniformly weak — it is fine on most puzzles. The problem is a **pathological
+branch-order mode** that a minority of searches fall into, at 12–64× normal cost. So the fix is to
+detect and escape that mode (the search already knows when coverage progress stalls), not to replace
+the heuristic wholesale. Options in
+[`truecandidates-allocation.md`](truecandidates-allocation.md) § "Branch order is a tail risk".
+
+**Fixing the seed made this worse in the worst case, deliberately:** a puzzle in the bad mode is now
+stuck there on every call rather than one call in five. That is the trade for being able to measure
+it at all — and it is why this is a cliff to remove rather than an optimisation to schedule.
+
+**Do not tune the seed** — the shipped value is the natural counter origin, chosen before any of this
+was measured. A seed that dodges the bad mode on these four cases says nothing about the puzzles a
+user opens.
+
+**Keep the randomisation itself.** It is not a hack: true candidates is a coverage problem, and a
+deterministic DFS yields consecutive solutions differing only in their last few assignments, so each
+covers almost no new candidates. Any replacement has to preserve that decorrelation.
+
+### Priority 3 — Buffer-reusing `Combinations`
 
 Worth **several hundred MB** on logical solves, which is the largest demonstrated browser memory
 problem (2 GiB heap, weaker GC). Attribution is done:
@@ -128,7 +169,7 @@ defer the yielded list, `FindFishes`/`FindWings` first. Document the borrowed-bu
 `CountSolutions`'s `solutionEvent` is documented. **A single retaining caller produces silent,
 data-dependent wrong answers** — the audit is the work, not an afterthought.
 
-### Priority 3 — Extend ISS coverage to NFA/Pair
+### Priority 4 — Extend ISS coverage to NFA/Pair
 
 Optional, and not blocking anything — but it is the one remaining lever on *corpus size*, which is
 what protects every heuristic above from over-fitting. Worth **237 more puzzles**, roughly doubling
@@ -153,7 +194,7 @@ will show up as a disagreement. Don't chase ISS's `Var`/`Or`/`And`/`Replicate` D
 structure with `.End` terminators), weighted `Sum`, or `LittleKiller` (ISS records no direction, so it
 cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) §5.
 
-### Priority 4 — Smaller, well-defined items
+### Priority 5 — Smaller, well-defined items
 
 - **`renban-sky-logical` allocates 2.4 MB per `StepLogic` call**, 4× `killer-innie`'s rate, in only 4
   `ConsolidateBoard` passes. Unexplained by the combination arithmetic. Nothing has instrumented it.
@@ -253,14 +294,24 @@ types in minutes and contradicted the intuition on two of them.
 
 - **`killer-innie` is high-variance**: 106 ms at 5 iterations vs 56 ms at 15. Use ≥15 iterations or
   its numbers mislead. It produced a fake "+46% REGRESSION" once.
-- **`truecandidates` search is randomised** (`RandomNext` in cell selection), so wall-time
-  comparisons on `tc-blank-nonconsecutive` are unreliable — allocation is the trustworthy signal.
-  `count` ops are deterministic and safe to time.
+- **`--iterations 1` measures tier-0 JIT code**, not steady state. The harness's single warm-up call
+  does not escape tiered compilation, so anything under ~100 ms reads several times too slow. This
+  produced *two fabricated findings* in one sitting — a "6.4× spread" on `tc-escargot` and a "3.4×"
+  on `tc-blank9`, both of which are actually flat within 1.1×. Beware the specific trap of reasoning
+  that the workload is deterministic so one iteration is enough: determinism removes *path* variance,
+  not warm-up. Use ≥10 iterations for anything sub-100 ms regardless.
+- **`truecandidates` timing is now trustworthy** (fixed 2026-08-03) — it used to be the loudest trap
+  here. Its branch choice is still randomised, but from a stream scoped to the invocation instead of
+  a time-seeded global, so runs repeat. Beware old numbers: each benchmark iteration used to be a
+  fresh draw from a very wide distribution, so `min ms` was an order statistic that got
+  systematically *lower* the more iterations you ran. Any pre-2026-08-03 `tc-*` timing is optimistic
+  and not comparable to a current one.
 - **MT timing is noisy**; allocation is the reliable MT signal too.
 - **Always A/B paired** via `git stash push -- SudokuSolver/`, measure, `git stash pop`. Stale
   `--baseline` files caused three false regressions in one run.
-- **`truecandidates` raw counts are non-deterministic** — the solver returns unclamped counts and
-  callers clamp them. Score clamped or results won't reproduce.
+- **`truecandidates` returns unclamped counts** and callers clamp them, so score clamped. Raw counts
+  now reproduce run to run, but they still depend on how many solutions the search happened to
+  enumerate, which is a search-order property rather than an answer.
 - **A cancelled `CountSolutions` is indistinguishable from a completed one.** It swallows
   `OperationCanceledException` and returns the partial count. Any timeout-bounded caller must check the
   token itself, or a timed-out count silently reads as a real answer — which is exactly how two fake
