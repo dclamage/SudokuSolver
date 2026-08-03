@@ -1196,6 +1196,7 @@ public partial class Solver
         }
 
         EstimateSolutionsState state = new(multiThread, progressEvent, cancellationToken);
+            state.InitializeSolverPool(this, multiThread);
         try
         {
             Solver root = Clone(willRunNonSinglesLogic: true);
@@ -1279,6 +1280,36 @@ public partial class Solver
             }
         }
 
+        // Recycles the per-candidate child solvers each sample builds. Every sample clones one
+        // child per open candidate and keeps exactly one, so without pooling the discarded children
+        // dominate allocation and it scales with sample count. Multi-threaded estimation runs
+        // independent samples via Parallel.For with no handoff between them, so a synchronised pool
+        // is sufficient — rent and release always happen on the same thread.
+        private BruteForceSolverPool solverPool;
+
+        public void InitializeSolverPool(Solver root, bool multiThread)
+        {
+            solverPool = new BruteForceSolverPool(root.MAX_VALUE * 2 + 2, isThreadSafe: multiThread);
+        }
+
+        public Solver RentBranchSolver(Solver source)
+        {
+            if (solverPool == null)
+            {
+                Solver clone = source.Clone(willRunNonSinglesLogic: false);
+                clone.isBruteForcing = true;
+                return clone;
+            }
+
+            return solverPool.RentCopy(source);
+        }
+
+        /// <summary>Returns a solver to the pool. No-ops for solvers the pool does not own.</summary>
+        public void ReleaseSolver(Solver solver)
+        {
+            solverPool?.Release(solver);
+        }
+
         public void SendEvent()
         {
             double stderr = iterationsCompleted > 1
@@ -1320,11 +1351,13 @@ public partial class Solver
             if (lr == LogicResult.Invalid)
             {
                 state.NewSample(exactCarry); // contributes 0
+                state.ReleaseSolver(solver);
                 return;
             }
             if (lr == LogicResult.PuzzleComplete)
             {
                 state.NewSample(exactCarry + 1.0 / pathProb);
+                state.ReleaseSolver(solver);
                 return;
             }
 
@@ -1336,6 +1369,7 @@ public partial class Solver
             {
                 // Defensive: treat as solved
                 state.NewSample(exactCarry + 1.0 / pathProb);
+                state.ReleaseSolver(solver);
                 return;
             }
 
@@ -1360,9 +1394,10 @@ public partial class Solver
                     continue;
                 }
 
-                Solver childSolver = solver.Clone(willRunNonSinglesLogic: false);
+                Solver childSolver = state.RentBranchSolver(solver);
                 if (!childSolver.SetValue(cell, val))
                 {
+                    state.ReleaseSolver(childSolver);
                     // contradiction
                     continue;
                 }
@@ -1370,6 +1405,7 @@ public partial class Solver
                 LogicResult childResult = childSolver.BruteForcePropagate(false, state.cancellationToken);
                 if (childResult == LogicResult.Invalid)
                 {
+                    state.ReleaseSolver(childSolver);
                     // contradiction
                     continue;
                 }
@@ -1377,6 +1413,7 @@ public partial class Solver
                 {
                     // solved instantly
                     exactSum += 1.0;
+                    state.ReleaseSolver(childSolver);
                     continue;
                 }
 
@@ -1386,6 +1423,7 @@ public partial class Solver
                     // exact enumeration for tiny branch
                     long exactCnt = childSolver.CountSolutions(cancellationToken: state.cancellationToken);
                     exactSum += exactCnt;
+                    state.ReleaseSolver(childSolver);
                     continue;
                 }
 
@@ -1395,6 +1433,9 @@ public partial class Solver
                 H += remaining;
                 kOpen++;
             }
+
+            // Every child has been cloned from it, so the frame's own board is now dead.
+            state.ReleaseSolver(solver);
 
             //------------------------------------------------------------
             // 4.  If no MC children left, emit deterministic total
@@ -1446,6 +1487,14 @@ public partial class Solver
             //------------------------------------------------------------
             double newExactCarry = exactCarry + exactSum / pathProb;
             double newPathProb = pathProb * probCache[chosenIdx];
+            for (int idx = 0; idx < maxVal; idx++)
+            {
+                if (idx != chosenIdx && childSolvers[idx] != null)
+                {
+                    state.ReleaseSolver(childSolvers[idx]);
+                }
+            }
+
             stack.Push(new EstimationFrame(childSolvers[chosenIdx], newPathProb, newExactCarry));
         }
     }
