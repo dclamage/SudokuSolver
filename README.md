@@ -14,6 +14,9 @@
 
 > *Created and maintained by David Clamage (Rangsk)*
 
+> **Working on solver performance or the browser port?** Start with
+> [`docs/HANDOFF.md`](docs/HANDOFF.md).
+
 ## First-Time Setup Guides
 * [Installation Guide](https://github.com/dclamage/SudokuSolver/wiki/installation-guide)
 * [Setting Up and Using f-puzzles.com Integration](https://github.com/dclamage/SudokuSolver/wiki/fpuzzles-integration)
