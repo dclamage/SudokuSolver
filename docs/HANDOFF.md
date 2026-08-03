@@ -1,7 +1,7 @@
 # Handoff: solver performance & the browser port
 
-Last updated 2026-08-03. Branch `wasm-prototype`, pushed, clean. Read this first, then the linked
-docs as needed.
+Last updated 2026-08-03. Branch `wasm-prototype`, working tree clean, **1 commit ahead of origin**
+(`ac3e084`, the ISS corpus import — not yet pushed). Read this first, then the linked docs as needed.
 
 ---
 
@@ -19,17 +19,17 @@ indicated.** The evidence, in one table — exhaustive count, same machine, same
 | escargot | 0.5 ms | 3.49 | 3.48 | **1.00×** | 7.0× |
 | platinum-blonde | 0.6 ms | 4.87 | 4.64 | **0.95×** | 8.1× |
 
-The WASM tax on core search is **~1.0×**. The corpus-wide 3.84× is confined to the *constraint
-layer*. And ISS beats us 5–8× **in native C# too**, so the competitive gap is algorithmic, not a
-hosting or language problem. Full argument in
-[`solver-vs-iss-comparison.md`](solver-vs-iss-comparison.md). Don't re-litigate this; start there.
+The WASM tax on core search is **~1.0×**; the corpus-wide 3.84× is confined to the *constraint layer*.
+And on these two puzzles ISS beats us 5–8× **in native C# too**, so whatever gap exists is algorithmic
+rather than a hosting or language problem. That is the part not to re-litigate — full argument in
+[`solver-vs-iss-comparison.md`](solver-vs-iss-comparison.md).
 
-**The 5–8× does not generalise, though** — it was measured on two hard vanilla classics. Across 402
-real CTC puzzles imported from the ISS index, **we are faster than ISS on 84% of them and ~2.6×
-faster at the median** (p50 0.38×, p90 1.39×). The gap is confined to hard vanilla and to a thin
-pathological tail (12 puzzles >5×, worst >3,300×). For a setting site, which runs variants, the
-relevant distribution is favourable. Data and caveats:
-[`iss-corpus-import.md`](iss-corpus-import.md).
+**Don't read the 5–8× as a general verdict, though.** Those are two hard *vanilla* classics. Across
+402 real CTC puzzles imported from the ISS index, **we are faster than ISS on 84% of them and ~2.6×
+faster at the median** (p50 0.38×, p90 1.39×). The deficit is confined to hard vanilla and to a thin
+pathological tail (12 puzzles >5× slower, worst >3,300×). Since the product runs variant puzzles, the
+relevant distribution is the favourable one. Data and caveats:
+[`iss-corpus-import.md`](iss-corpus-import.md) §2.
 
 ### Infrastructure you now have
 
@@ -45,36 +45,31 @@ relevant distribution is favourable. Data and caveats:
   server. `run-node.mjs` for headless 1T, `drive-chrome.mjs` for MT (MT WASM refuses to run outside
   a browser).
 
+### What landed in the last session
+
+The corpus expansion that used to be Priority 1 here — it was a prerequisite for trusting any
+heuristic tuned against the corpus, and it is now done. `benchmarks/corpus-iss.json`, 398 cases,
+402 agree / 0 disagree, tune/holdout split in place. Write-up:
+[`iss-corpus-import.md`](iss-corpus-import.md).
+
+Two things it turned up that affect work elsewhere:
+
+1. **The self-validation found four silent-wrong-answer defects** in `IssParser`, plus one trap in
+   `CountSolutions` — cancellation returns a partial count that looks completed, which can bite any
+   caller with a timeout. All fixed and covered by tests;
+   [`iss-corpus-import.md`](iss-corpus-import.md) §3 lists them.
+2. **It produced the corrected ISS speed picture above**, and with it four new pathological outliers
+   that are now the most promising perf targets in the file (Priority 4).
+
+Note that the raw ISS data is **not in the repo**: the importer needs `mappings.json` and a directory
+of `.iss` files fetched from the index site. `benchmarks/README.md` has the fetch commands; a fresh
+machine has to run them before `--import-iss` will work.
+
 ---
 
 ## 2. Recommended order of work
 
-Priority 1 is **done**, which is what unblocks Priority 2.
-
-### ~~Priority 1~~ — Corpus expansion: DONE
-
-398 cases in `benchmarks/corpus-iss.json`, 402 agree / 0 disagree, tune/holdout split in place. The
-self-validation earned its keep immediately: it found **four silent-wrong-answer defects**, including
-a digit set the parser was ignoring (`.Shape~9x9~0-8` solved a different puzzle) and a cancelled
-`CountSolutions` being indistinguishable from a completed one. All fixed, all covered by tests (111,
-up from 102). Full write-up: [`iss-corpus-import.md`](iss-corpus-import.md).
-
-**The one thing to know before using it:** the holdout split is a pure function of the puzzle id
-precisely so that re-importing can't move a puzzle out of the holdout. Don't replace it with anything
-random, and don't tune against `iss-holdout`.
-
-Remaining upside, in value order — details in the doc's §5:
-
-- **NFA/Pair is worth 237 more puzzles**, roughly doubling the corpus. `NFAConstraint` already
-  deserializes ISS's own serializer format; the blocker is structural (it can't be built from a
-  constraint string, and `IssParser` only produces strings), and the f-puzzles path at
-  `SolverFactory.cs:1017` already shows the shape needed.
-- Cheap: `GreaterThan` with 3–5 arguments (6 puzzles) — implement the chain reading and let the
-  import adjudicate it.
-- Don't chase: ISS's `Var`/`Or`/`And`/`Replicate` DSL (note it has **block structure** with `.End`
-  terminators), weighted `Sum`, and `LittleKiller` (ISS records no direction, so it can't be inferred).
-
-### Priority 2 — Deferred (heuristically triggered) weak-link discovery
+### Priority 1 — Deferred (heuristically triggered) weak-link discovery
 
 **This is the single largest performance lever found so far**, and it cuts both ways:
 
@@ -106,7 +101,7 @@ count (7,550 vs 2,554 on the first). It degrades the conflict-score branch order
 a defect rather than an inherent trade-off, and fixing it would remove the downside for a whole group
 of puzzles without giving up `kropki`/`orbit`.
 
-### Priority 3 — Buffer-reusing `Combinations`
+### Priority 2 — Buffer-reusing `Combinations`
 
 Worth **several hundred MB** on logical solves, which is the largest demonstrated browser memory
 problem (2 GiB heap, weaker GC). Attribution is done:
@@ -122,19 +117,45 @@ defer the yielded list, `FindFishes`/`FindWings` first. Document the borrowed-bu
 `CountSolutions`'s `solutionEvent` is documented. **A single retaining caller produces silent,
 data-dependent wrong answers** — the audit is the work, not an afterthought.
 
+### Priority 3 — Extend ISS coverage to NFA/Pair
+
+Optional, and not blocking anything — but it is the one remaining lever on *corpus size*, which is
+what protects every heuristic above from over-fitting. Worth **237 more puzzles**, roughly doubling
+the corpus. Coverage is currently 30% of the index and this is most of the reachable remainder.
+
+`NFAConstraint` already deserializes ISS's own `NFASerializer` base64url format, so this is plumbing
+rather than invention. The blocker is structural: it has `ConsoleName = null` and a constructor taking
+`(solver, int[] cellIndices, string serializedNFA, name)`, so it cannot be built from a constraint
+string — and `IssParser` produces strings for `SolverFactory.CreateFromGivens`, which calls
+`FinalizeConstraints()` internally, after which constraints can no longer be added. The f-puzzles path
+at `SolverFactory.cs:1017` already does the programmatic version; give `IssParser` that shape.
+
+Check two things first: that ISS's own serialized strings round-trip through `NFADeserializer`
+(compatibility is by construction but untested against ISS's output), and how `.Pair`'s
+`~~`-separated groups and `_named-relation` segments are meant to be read. Many `.NFA` instances
+address ISS variables rather than cells and stay out of reach regardless.
+
+Also cheap while you are in there: `GreaterThan` with 3–5 arguments (6 puzzles) is probably a
+descending chain, i.e. one reversed thermometer. It is ambiguous against "greater than each of", so
+implement the chain reading and **let the import adjudicate** — a wrong reading over-constrains and
+will show up as a disagreement. Don't chase ISS's `Var`/`Or`/`And`/`Replicate` DSL (it has block
+structure with `.End` terminators), weighted `Sum`, or `LittleKiller` (ISS records no direction, so it
+cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) §5.
+
 ### Priority 4 — Smaller, well-defined items
 
 - **`renban-sky-logical` allocates 2.4 MB per `StepLogic` call**, 4× `killer-innie`'s rate, in only 4
   `ConsolidateBoard` passes. Unexplained by the combination arithmetic. Nothing has instrumented it.
 - **`platinum-blonde` is still 8.9× off ISS** even with discovery disabled (the other hard classics
   drop to 1.6–2.2×). It's the cleanest remaining outlier, and it explores 3.4× more nodes than ISS.
-- **Four new pathological cases from the ISS import**, all far worse than `platinum-blonde` and none
-  previously known. The best one to start on is `1HuNjcLWlPE` "N is for Naomi": ISS solves it in
-  **72 ms**, we did not finish in **240 s**, and it is only whispers, renban and dots — four
-  constraint types, so the diagnosis surface is small. Then `h-ymyScJa2s` (93×), `OqyXKDOhfDA` (53×),
-  `blPgSzctUMg` (63×). All are in `iss-tune`, except the timeouts which are excluded from the corpus;
-  the .iss text is in the report the importer writes. See
-  [`iss-corpus-import.md`](iss-corpus-import.md) §2.
+- **New pathological cases from the ISS import**, far worse than `platinum-blonde` and none previously
+  known. Start with `1HuNjcLWlPE` "N is for Naomi": ISS solves it in **72 ms**, we did not finish in
+  **240 s**, and it uses only whispers, renban and dots — four constraint types, so the diagnosis
+  surface is small. Then `h-ymyScJa2s` (9.7 s vs 105 ms), `OqyXKDOhfDA` (>10 s vs 411 ms),
+  `blPgSzctUMg` (887 ms vs 14 ms), `Wb5YT1b-U9Q` (308 ms vs 7.4 ms).
+  Only the last two are in the corpus (`iss-tune`); the rest exceed the import's ceilings, so **fetch
+  their `.iss` text by id from the index site** — the import report records outcomes and timings, not
+  puzzle text. See [`iss-corpus-import.md`](iss-corpus-import.md) §2.
 - **The constraint-layer WASM tax**: vanilla is 1.0×, `killer-innie` is 5.73×. Two dispatch fixes
   already took 37% off corpus-wide. Same defect class is worth hunting: comparer/delegate dispatch in
   inner loops is mildly costly natively and severe under Mono AOT.
@@ -150,9 +171,9 @@ data-dependent wrong answers** — the audit is the work, not an afterthought.
 
 ## 3. Working with Sol (GPT-5.6-sol via Codex)
 
-Sol earned its keep this session: it found a bug I'd missed entirely, and corrected three claims I'd
-made too strongly. Use it for **design review and hard diagnosis**, not bulk work — the Codex token
-window is shared and capped.
+Sol has earned its keep here: it found a bug that had been missed entirely, and corrected three claims
+that had been made too strongly. Use it for **design review and hard diagnosis**, not bulk work — the
+Codex token window is shared and capped.
 
 ### Mechanics
 
@@ -177,8 +198,8 @@ Run it backgrounded and poll — a `high`-effort review takes 10–20 minutes. I
 ### Its track record here, for calibration
 
 - **Found** the `PushSolver` closure bug: the `Task.Run` lambda captures `solver`, so the compiler
-  builds the display class on method entry, allocating on every *declined* offer. This was the
-  session's biggest MT win and I had misdiagnosed it as accepted-task churn.
+  builds the display class on method entry, allocating on every *declined* offer. This was the biggest
+  MT win to date, and it had been misdiagnosed as accepted-task churn.
 - **Corrected** "cross-thread release doesn't happen" (it does, via `PushSolver`), so thread-local
   pools would have been unsound.
 - **Corrected** "lock contention causes the MT slowdown" — plausible but unproven, since the path is
@@ -193,17 +214,25 @@ Run it backgrounded and poll — a `high`-effort review takes 10–20 minutes. I
 
 ## 4. Methodology, hard-won
 
-**Measure before optimising. I guessed wrong three times this session**, and each time a
-five-minute counter settled it:
+**Measure before optimising.** Confident guesses have been wrong here at least four times, and each
+time a five-minute counter settled it:
 
 - `FastFindPairs`/`FastFindTriples` lambda sorts looked like a perfect delegate target. They run
   **2–6 times per solve** — `doAdvancedStrategies` is false at every brute-force call site.
-- Recursive `Span<T>`/`stackalloc` was my confident explanation for the 23× skyscraper outlier. It
+- Recursive `Span<T>`/`stackalloc` was the confident explanation for the 23× skyscraper outlier. It
   was `List<int>.BinarySearch`'s comparer dispatch.
 - MT allocation "must be" accepted-task churn. It was declined-offer closures.
+- Two ISS puzzles "disagreed" with their known solution counts, which looked like translation bugs.
+  Both were just slow, and the real bug was in the harness reading a cancelled count as a completed
+  one.
 
 Technique that works: drop a temporary `XxxCounters.cs` static class in `SudokuSolver/`, increment at
 the sites in question, print from the harness, `git checkout --` to revert. Cheap and decisive.
+
+The same applies to *semantics*, not just performance: when it mattered whether a constraint means
+the same thing after a translation, the decisive move was an exhaustive count on a 6x6 — small enough
+to enumerate fully, big enough to be a real puzzle — comparing the two forms. That settled four line
+types in minutes and contradicted the intuition on two of them.
 
 ### Benchmarking traps in this repo
 
@@ -217,12 +246,18 @@ the sites in question, print from the harness, `git checkout --` to revert. Chea
   `--baseline` files caused three false regressions in one run.
 - **`truecandidates` raw counts are non-deterministic** — the solver returns unclamped counts and
   callers clamp them. Score clamped or results won't reproduce.
+- **A cancelled `CountSolutions` is indistinguishable from a completed one.** It swallows
+  `OperationCanceledException` and returns the partial count. Any timeout-bounded caller must check the
+  token itself, or a timed-out count silently reads as a real answer — which is exactly how two fake
+  "disagreements" got reported during the ISS import.
+- **`corpus-iss.json` membership is wall-clock gated**, so it is not bit-reproducible: regenerating on
+  a slower machine quietly drops the slowest cases. Treat the committed file as the artefact.
 - Wrap anything long in `caffeinate -i`; this laptop idle-sleeps and silently suspends builds.
 
 ### Validation checklist before committing
 
 ```bash
-dotnet test -c Release SudokuTests/SudokuTests.csproj                                    # 102 tests
+dotnet test -c Release SudokuTests/SudokuTests.csproj                                    # 111 tests
 dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --iterations 3        # 0 FAIL
 dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --iterations 3 --multithread
 dotnet build -c Release SudokuSolver.sln                                                 # sln excludes the WASM project
