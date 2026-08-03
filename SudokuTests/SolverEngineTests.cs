@@ -106,4 +106,101 @@ public class SolverEngineTests
                 "Returned board is not a valid unique complete grid");
         }
     }
+
+    /// <summary>
+    /// Builds a solver with an explicit weak-link-discovery mode. The node threshold is forced to 1
+    /// so that <see cref="WeakLinkDiscoveryMode.Deferred"/> abandons and retries on anything with a
+    /// real search tree — otherwise most test puzzles finish inside the default budget and the
+    /// retry path never runs.
+    /// </summary>
+    private static Solver WithDiscovery(Func<Solver> create, WeakLinkDiscoveryMode mode)
+    {
+        Solver solver = create();
+        solver.WeakLinkDiscovery = mode;
+        solver.WeakLinkDiscoveryNodeThreshold = 1;
+        return solver;
+    }
+
+    /// <summary>
+    /// Deferred discovery abandons its first search and restarts, which is only sound if the
+    /// abandoned attempt's partial state is fully discarded. A restarted count that carried over
+    /// the solutions it had already found would over-count — silently, and only on the puzzles big
+    /// enough to trigger the retry.
+    /// </summary>
+    [TestMethod]
+    public void DeferredDiscoveryCountsMatchImmediateDiscovery()
+    {
+        (string label, Func<Solver> create)[] cases =
+        [
+            ("blank 4x4", () => SolverFactory.CreateBlank(4)),
+            ("miracle", () => SolverFactory.CreateBlank(9, MiracleConstraints)),
+            ("classic minus one clue", () =>
+            {
+                string givens = Puzzles.uniqueClassics[0].Item1;
+                int idx = givens.IndexOfAny(['1', '2', '3', '4', '5', '6', '7', '8', '9']);
+                return SolverFactory.CreateFromGivens(givens.Remove(idx, 1).Insert(idx, "."));
+            }),
+        ];
+
+        foreach ((string label, Func<Solver> create) in cases)
+        {
+            foreach (bool multiThread in new[] { false, true })
+            {
+                long expected = WithDiscovery(create, WeakLinkDiscoveryMode.Always)
+                    .CountSolutions(maxSolutions: 1000, multiThread: multiThread);
+                long deferred = WithDiscovery(create, WeakLinkDiscoveryMode.Deferred)
+                    .CountSolutions(maxSolutions: 1000, multiThread: multiThread);
+                Assert.AreEqual(expected, deferred,
+                    $"Deferred discovery changed the count for {label} (multiThread={multiThread})");
+            }
+        }
+    }
+
+    /// <summary>
+    /// The other two deferrable operations must also survive the restart: FindSolution has to
+    /// return a genuine solution rather than the abandoned attempt's "no solution found", and
+    /// TrueCandidates has to report the same candidates rather than the partial counts it had
+    /// accumulated when it gave up.
+    /// </summary>
+    [TestMethod]
+    public void DeferredDiscoverySolveAndTrueCandidatesMatchImmediateDiscovery()
+    {
+        string partial = Puzzles.uniqueClassics[0].Item2[..^12] + new string('0', 12);
+        Func<Solver> create = () => SolverFactory.CreateFromGivens(partial);
+
+        foreach (bool multiThread in new[] { false, true })
+        {
+            Solver deferredSolver = WithDiscovery(create, WeakLinkDiscoveryMode.Deferred);
+            Assert.IsTrue(deferredSolver.FindSolution(multiThread: multiThread),
+                $"Deferred FindSolution found nothing (multiThread={multiThread})");
+            Assert.AreEqual(1, SolverFactory.CreateFromGivens(deferredSolver.ToGivenString()).CountSolutions(),
+                $"Deferred FindSolution returned an invalid grid (multiThread={multiThread})");
+        }
+
+        // Raw true-candidate counts are not deterministic, so compare them the way callers do:
+        // clamped to the cap. See docs/HANDOFF.md section 4.
+        const long cap = 8;
+        static long[] Clamp(long[] counts) => [.. counts.Select(n => Math.Min(n, cap))];
+
+        long[] expected = Clamp(WithDiscovery(create, WeakLinkDiscoveryMode.Always).TrueCandidates(numSolutionsCap: cap));
+        long[] deferred = Clamp(WithDiscovery(create, WeakLinkDiscoveryMode.Deferred).TrueCandidates(numSolutionsCap: cap));
+        CollectionAssert.AreEqual(expected, deferred, "Deferred discovery changed the true candidates");
+    }
+
+    /// <summary>
+    /// A <c>solutionEvent</c> handler must see each solution exactly once. Deferral opts out
+    /// entirely when one is attached, because a restart would replay every solution the abandoned
+    /// attempt had already reported.
+    /// </summary>
+    [TestMethod]
+    public void DeferredDiscoveryDoesNotReplaySolutionEvents()
+    {
+        List<string> solutions = [];
+        Solver solver = WithDiscovery(() => SolverFactory.CreateBlank(4), WeakLinkDiscoveryMode.Deferred);
+        long count = solver.CountSolutions(solutionEvent: s => solutions.Add(s.ToGivenString()));
+
+        Assert.AreEqual(288, count);
+        Assert.AreEqual(288, solutions.Count, "solutionEvent fired a different number of times than the count");
+        Assert.AreEqual(288, solutions.Distinct().Count(), "solutionEvent reported the same solution more than once");
+    }
 }

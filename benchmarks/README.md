@@ -32,6 +32,18 @@ Options:
 
 Exit codes: `0` ok, `1` a result failed validation, `3` a regression vs baseline.
 
+## Solver switches for A/B runs
+
+A few solver options can be set from the environment so both arms of a comparison come from one
+build — which also sidesteps the stale-`--baseline` problem below:
+
+| Variable | Effect |
+| --- | --- |
+| `SUDOKU_WEAK_LINK_DISCOVERY` | `always` / `never` / `deferred` (default). See [`docs/weak-link-discovery-tradeoff.md`](../docs/weak-link-discovery-tradeoff.md) |
+| `SUDOKU_WEAK_LINK_DEFER_NODES` | Node budget before `deferred` gives up and restarts with discovery. Default 2000 |
+
+Beware `never` on `corpus-iss.json`: some puzzles there do not finish without weak-link discovery.
+
 ## Baseline workflow
 
 Timings are machine-specific, so baselines are **not** committed. On a known-good commit, save

@@ -26,6 +26,15 @@ public partial class Solver
     public bool DisableContradictions { get; set; } = false;
     public bool DisableFindShortestContradiction { get; set; } = false;
 
+    // Brute force solver options
+    /// <summary>When brute-force operations pay for dynamic weak-link discovery.</summary>
+    public WeakLinkDiscoveryMode WeakLinkDiscovery { get; set; } = DefaultWeakLinkDiscovery;
+    /// <summary>
+    /// Node count after which <see cref="WeakLinkDiscoveryMode.Deferred"/> gives up on the
+    /// discovery-free search and restarts with discovery. Ignored by the other modes.
+    /// </summary>
+    public long WeakLinkDiscoveryNodeThreshold { get; set; } = DefaultWeakLinkDiscoveryNodeThreshold;
+
     // Private data
     private uint[] board;
     private int[] regions = null;
@@ -107,6 +116,32 @@ public partial class Solver
                 }
             }
         }
+    }
+
+    /// <summary>
+    /// Snapshots the conflict-score heuristic so that an abandoned
+    /// <see cref="WeakLinkDiscoveryMode.Deferred"/> attempt can be rolled back.
+    /// </summary>
+    /// <remarks>
+    /// Search-tree clones share these arrays with this solver by reference, so an abandoned
+    /// attempt's branch-ordering learning would otherwise leak into the retry. That is not a
+    /// correctness problem — the scores only decide which cell to branch on next — but it makes the
+    /// retry explore a different tree than an undeferred search would. Rolling back is what buys
+    /// the property that a deferred retry is exactly an undeferred search, so the only cost of
+    /// deferral is its bounded wasted prefix. Measured on <c>variant-orbit</c>, leaking the scores
+    /// cost 5x more than the prefix itself.
+    /// </remarks>
+    private (int[] scores, long[] decay) SnapshotConflictState()
+        => ((int[])conflictScores?.Clone(), (long[])conflictDecayState?.Clone());
+
+    /// <summary>
+    /// Restores a <see cref="SnapshotConflictState"/> result. Copies into the existing arrays rather
+    /// than replacing them, because live clones hold the same references.
+    /// </summary>
+    private void RestoreConflictState((int[] scores, long[] decay) snapshot)
+    {
+        snapshot.scores?.AsSpan().CopyTo(conflictScores);
+        snapshot.decay?.AsSpan().CopyTo(conflictDecayState);
     }
 
     /// <summary>

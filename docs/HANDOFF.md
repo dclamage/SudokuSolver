@@ -47,12 +47,34 @@ relevant distribution is the favourable one. Data and caveats:
 
 ### What landed in the last session
 
-The corpus expansion that used to be Priority 1 here — it was a prerequisite for trusting any
-heuristic tuned against the corpus, and it is now done. `benchmarks/corpus-iss.json`, 398 cases,
-402 agree / 0 disagree, tune/holdout split in place. Write-up:
-[`iss-corpus-import.md`](iss-corpus-import.md).
+**Deferred weak-link discovery** — the Priority 1 item — is built, tuned and **on by default**.
+`WeakLinkDiscoveryMode` (`Always`/`Never`/`Deferred`) is now a real solver option with
+`Solver.WeakLinkDiscoveryNodeThreshold` beside it, default N=2000, chosen by sweeping `iss-tune` and
+confirmed on `iss-holdout` (0 result mismatches on either). Full write-up:
+[`weak-link-discovery-tradeoff.md`](weak-link-discovery-tradeoff.md) § "Deferred discovery, as built".
 
-Two things it turned up that affect work elsewhere:
+**It is a latency/throughput dial, not the free win the plan assumed.** Total corpus time and median
+puzzle latency want opposite thresholds: raising N makes the typical puzzle much faster and a
+handful of puzzles much slower. At the shipped N=2000 the median ISS puzzle is **~1.5× faster** while
+total corpus time is **unchanged** (0.994× tune, 1.003× holdout), and the 28-case corpus is flat
+(0.99–1.00×) once the untimeable randomised case is excluded. N≈5000, the value this file previously
+suggested, is past the point where the total turns negative.
+
+Three things it turned up that affect work elsewhere:
+
+1. **Search-tree clones share `conflictScores` by reference**, so the abandoned attempt's branch
+   ordering leaked into the retry — a 431% regression on `variant-orbit` until it was rolled back.
+   Anything else that reruns a search on the same `Solver` needs `SnapshotConflictState`.
+2. **`Never` cannot finish the ISS tune split at all** — killed after 8 minutes on one puzzle. Real
+   CTC puzzles are effectively unsolvable without discovery, which is why the *bounded prefix* shape
+   is right and a predictive on/off classifier is not: a misclassification there hangs.
+3. **It fixed `Wb5YT1b-U9Q`**, one of the five pathological outliers in Priority 4 below: 308 ms →
+   21 ms against ISS's 7.4 ms. Worth re-measuring the others before diagnosing them.
+
+### What landed the session before
+
+`benchmarks/corpus-iss.json`, 398 cases, 402 agree / 0 disagree, tune/holdout split in place.
+Write-up: [`iss-corpus-import.md`](iss-corpus-import.md). Two things it turned up:
 
 1. **The self-validation found four silent-wrong-answer defects** in `IssParser`, plus one trap in
    `CountSolutions` — cancellation returns a partial count that looks completed, which can bite any
@@ -69,37 +91,26 @@ machine has to run them before `--import-iss` will work.
 
 ## 2. Recommended order of work
 
-### Priority 1 — Deferred (heuristically triggered) weak-link discovery
+### Priority 1 — The two remaining weak-link-discovery levers
 
-**This is the single largest performance lever found so far**, and it cuts both ways:
+Deferral is done (see above). Two follow-ups from
+[`weak-link-discovery-tradeoff.md`](weak-link-discovery-tradeoff.md) remain, and they are
+*complementary* to it rather than superseded — both attack the **cost** side, which is exactly what
+deferral cannot: a puzzle that exceeds the budget still pays full price for discovery.
 
-| case | discovery ON | OFF | |
-| --- | ---: | ---: | --- |
-| variant-cloneways | 20.42 ms | 0.90 ms | **22.6× faster off** |
-| variant-equalsums | 14.33 ms | 0.69 ms | **20.7× faster off** |
-| escargot | 0.99 ms | 0.12 ms | 8.5× faster off |
-| kropki-search | 2225 ms | 10630 ms | 4.8× *slower* off |
-| variant-orbit | 17.37 ms | 303.97 ms | **17.5× slower off** |
+1. **Discovery *increases* node count on `littlekiller-10`, `killer-cage` and `escargot`** (7,550 vs
+   2,554 on the first). It degrades the conflict-score branch ordering. That looks like a defect
+   rather than an inherent trade-off, and fixing it would remove the downside for a whole group of
+   puzzles without giving up `kropki`/`orbit`.
+2. **Abort a discovery pass early when it is unproductive.** Discovery loops
+   `do { … } while (innerResult == Changed)`. The pure-cost cases (`killer-innie`, `blank6`,
+   `arrow-search` — identical guess counts with and without) might be detectable after a partial
+   pass. Needs data on how many links each puzzle class actually yields; nothing has counted this.
 
-Corpus total still favours ON, so **do not flip the default**. Full data in
-[`weak-link-discovery-tradeoff.md`](weak-link-discovery-tradeoff.md).
-
-**Tune the trigger against `--filter iss-tune` and confirm on `--filter iss-holdout`** — that is what
-the new corpus is for. The 28-case corpus is too small to separate a threshold honestly.
-
-**The design to implement** (self-limiting, so it cannot over-fit — a *predictive* trigger that
-classifies puzzles is exactly the trap to avoid): don't run discovery up front. Start brute force;
-if the search exceeds N nodes, stop, run discovery, restart. Every corpus case separates cleanly at
-N ≈ 5,000, and the mechanism generalises because "the search is actually expensive" is precisely the
-condition under which discovery pays.
-
-Costs to be honest about: pure-cost cases (`killer-innie`, `blank6`) still trigger and gain nothing,
-plus a wasted prefix. Restarting means discarding partial work — fine for count/solve/true-candidates.
-
-**Also worth fixing:** on `littlekiller-10`, `killer-cage` and `escargot`, discovery *increases* node
-count (7,550 vs 2,554 on the first). It degrades the conflict-score branch ordering. That looks like
-a defect rather than an inherent trade-off, and fixing it would remove the downside for a whole group
-of puzzles without giving up `kropki`/`orbit`.
+If you revisit the deferral threshold itself, **tune against `--filter iss-tune` and confirm on
+`--filter iss-holdout`**, and score the *ratio distribution*, not `total min ms` — the total alone
+picks N=250, which makes the median puzzle slower. The 28-case corpus is too small to separate a
+threshold honestly and is flat across the whole range.
 
 ### Priority 2 — Buffer-reusing `Combinations`
 
@@ -152,8 +163,12 @@ cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) �
   known. Start with `1HuNjcLWlPE` "N is for Naomi": ISS solves it in **72 ms**, we did not finish in
   **240 s**, and it uses only whispers, renban and dots — four constraint types, so the diagnosis
   surface is small. Then `h-ymyScJa2s` (9.7 s vs 105 ms), `OqyXKDOhfDA` (>10 s vs 411 ms),
-  `blPgSzctUMg` (887 ms vs 14 ms), `Wb5YT1b-U9Q` (308 ms vs 7.4 ms).
-  Only the last two are in the corpus (`iss-tune`); the rest exceed the import's ceilings, so **fetch
+  `blPgSzctUMg` (887 ms vs 14 ms). `Wb5YT1b-U9Q` was on this list at 308 ms and **deferred discovery
+  fixed it** (21 ms, against ISS's 7.4 ms) — so **re-measure the rest under the new default before
+  diagnosing anything**, since every timing here predates it. `blPgSzctUMg` did *not* benefit; it is
+  one of the few cases deferral costs (603 → 709 ms on the tune split), which makes it the better
+  target of the two.
+  Only `blPgSzctUMg` is in the corpus (`iss-tune`); the rest exceed the import's ceilings, so **fetch
   their `.iss` text by id from the index site** — the import report records outcomes and timings, not
   puzzle text. See [`iss-corpus-import.md`](iss-corpus-import.md) §2.
 - **The constraint-layer WASM tax**: vanilla is 1.0×, `killer-innie` is 5.73×. Two dispatch fixes

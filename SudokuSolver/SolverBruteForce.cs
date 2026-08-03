@@ -5,6 +5,53 @@ namespace SudokuSolver;
 public partial class Solver
 {
     /// <summary>
+    /// Charges search nodes against an optional budget, so that a search started without weak-link
+    /// discovery can be abandoned once it has proven expensive enough to be worth discovering for.
+    /// See <see cref="WeakLinkDiscoveryMode.Deferred"/>.
+    /// </summary>
+    /// <remarks>
+    /// A budget of 0 means unlimited and costs one field read per node — it has to be free, because
+    /// the unbudgeted retry is the attempt that runs the whole multi-million-node search.
+    ///
+    /// Once the budget is gone, <see cref="ChargeNode"/> keeps returning true rather than only
+    /// signalling the single node that crossed the line. That is what makes multi-threaded searches
+    /// unwind: every task exits at its next node instead of only the one that noticed.
+    /// </remarks>
+    private sealed class NodeBudget
+    {
+        private readonly long budget;
+        private long nodesVisited;
+        private volatile bool exhausted;
+
+        public NodeBudget(long budget)
+        {
+            this.budget = Math.Max(budget, 0);
+        }
+
+        /// <summary>Whether the budget ran out, i.e. the search was abandoned rather than finished.</summary>
+        public bool Exhausted => exhausted;
+
+        /// <summary>Charges one search node. Returns true if the search should stop now.</summary>
+        public bool ChargeNode()
+        {
+            if (budget <= 0)
+            {
+                return false;
+            }
+            if (exhausted)
+            {
+                return true;
+            }
+            if (Interlocked.Increment(ref nodesVisited) <= budget)
+            {
+                return false;
+            }
+            exhausted = true;
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Finds a single solution to the board. This may not be the only solution.
     /// For the exact same board inputs, the solution will always be the same.
     /// The board itself is modified to have the solution as its board values.
@@ -19,13 +66,39 @@ public partial class Solver
             throw new InvalidOperationException("Must call FinalizeConstraints() first (even if there are no constraints)");
         }
 
+        if (WeakLinkDiscovery == WeakLinkDiscoveryMode.Deferred)
+        {
+            (int[], long[]) conflictSnapshot = SnapshotConflictState();
+            bool? deferredResult = FindSolutionAttempt(multiThread, cancellationToken, isRandom,
+                probeWeakLinks: false, nodeBudget: WeakLinkDiscoveryNodeThreshold);
+            if (deferredResult.HasValue)
+            {
+                return deferredResult.Value;
+            }
+            RestoreConflictState(conflictSnapshot);
+        }
+
+        return FindSolutionAttempt(multiThread, cancellationToken, isRandom,
+            probeWeakLinks: WeakLinkDiscovery != WeakLinkDiscoveryMode.Never, nodeBudget: 0) ?? false;
+    }
+
+    /// <summary>
+    /// Runs one brute-force search for a single solution.
+    /// </summary>
+    /// <param name="nodeBudget">Node budget for the search, or 0 for unlimited.</param>
+    /// <returns>
+    /// Whether a solution was found, or <see langword="null"/> if the node budget ran out first — in
+    /// which case nothing is known about the board and <see cref="board"/> is left untouched.
+    /// </returns>
+    private bool? FindSolutionAttempt(bool multiThread, CancellationToken cancellationToken, bool isRandom, bool probeWeakLinks, long nodeBudget)
+    {
         Solver solver = Clone(willRunNonSinglesLogic: true);
-        if (solver.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
+        if (solver.DiscoverWeakLinks(cancellationToken, probeWeakLinks) == LogicResult.Invalid)
         {
             return false;
         }
         solver.isBruteForcing = true;
-        using FindSolutionState state = new(isRandom, multiThread, cancellationToken, solver.NUM_CANDIDATES + 1);
+        using FindSolutionState state = new(isRandom, multiThread, cancellationToken, solver.NUM_CANDIDATES + 1, nodeBudget);
         state.InitializeSolverPool(solver);
         if (multiThread)
         {
@@ -46,8 +119,10 @@ public partial class Solver
         if (state.result != null)
         {
             board = state.result;
+            return true;
         }
-        return state.result != null;
+        // Distinguish "searched the whole space, no solution" from "gave up early".
+        return state.nodeBudget.Exhausted ? null : false;
     }
 
     private class FindSolutionState : IDisposable
@@ -58,15 +133,17 @@ public partial class Solver
         public CancellationToken cancellationToken;
         public bool isRandom = false;
         public bool isMultiThreaded = false;
+        public readonly NodeBudget nodeBudget;
 
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
 
-        public FindSolutionState(bool isRandom, bool isMultiThreaded, CancellationToken cancellationToken, int searchStackCapacity)
+        public FindSolutionState(bool isRandom, bool isMultiThreaded, CancellationToken cancellationToken, int searchStackCapacity, long nodeBudget)
         {
             this.cancellationToken = cancellationToken;
             this.isRandom = isRandom;
             this.isMultiThreaded = isMultiThreaded;
+            this.nodeBudget = new NodeBudget(nodeBudget);
             countdownEvent = isMultiThreaded ? new CountdownEvent(1) : null;
             searchStack = isMultiThreaded ? null : new Solver[searchStackCapacity];
 
@@ -185,6 +262,12 @@ public partial class Solver
                     continue;
                 }
 
+                if (state.nodeBudget.ChargeNode())
+                {
+                    state.ReleaseSolver(solver);
+                    break;
+                }
+
                 if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintIndices != null)
                 {
                     solver.EnqueueConstraintsForCell(solver._lastContradictionCellIndex);
@@ -290,11 +373,45 @@ public partial class Solver
         // Any negative count is treated as infinite
         maxSolutions = Math.Max(maxSolutions, 0);
 
-        using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken, NUM_CANDIDATES + 1);
+        // Deferral throws away the first attempt and recounts from zero, which would replay
+        // solutionEvent for every solution that attempt had already reported. So it is only
+        // available when nobody is listening for individual solutions.
+        if (WeakLinkDiscovery == WeakLinkDiscoveryMode.Deferred && solutionEvent == null)
+        {
+            // progressEvent is deliberately not forwarded to the budgeted attempt: its running
+            // count would rewind when the retry starts over. Nothing is lost in practice — the
+            // budgeted attempt is bounded to a few thousand nodes, well under the event's timer.
+            (int[], long[]) conflictSnapshot = SnapshotConflictState();
+            long? deferredCount = CountSolutionsAttempt(maxSolutions, multiThread, progressEvent: null,
+                solutionEvent: null, cancellationToken, probeWeakLinks: false,
+                nodeBudget: WeakLinkDiscoveryNodeThreshold);
+            if (deferredCount.HasValue)
+            {
+                return deferredCount.Value;
+            }
+            RestoreConflictState(conflictSnapshot);
+        }
+
+        return CountSolutionsAttempt(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken,
+            probeWeakLinks: WeakLinkDiscovery != WeakLinkDiscoveryMode.Never, nodeBudget: 0) ?? 0;
+    }
+
+    /// <summary>
+    /// Runs one counting search.
+    /// </summary>
+    /// <param name="nodeBudget">Node budget for the search, or 0 for unlimited.</param>
+    /// <returns>
+    /// The solution count, or <see langword="null"/> if the node budget ran out first, in which case
+    /// the partial count is discarded rather than returned. A cancelled search still returns its
+    /// partial count, matching <see cref="CountSolutions"/>'s documented behaviour.
+    /// </returns>
+    private long? CountSolutionsAttempt(long maxSolutions, bool multiThread, Action<long> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken, bool probeWeakLinks, long nodeBudget)
+    {
+        using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken, NUM_CANDIDATES + 1, nodeBudget);
         try
         {
             Solver boardCopy = Clone(willRunNonSinglesLogic: true);
-            LogicResult discoveryResult = boardCopy.DiscoverWeakLinks(cancellationToken);
+            LogicResult discoveryResult = boardCopy.DiscoverWeakLinks(cancellationToken, probeWeakLinks);
             if (discoveryResult == LogicResult.Invalid)
             {
                 return 0;
@@ -337,6 +454,13 @@ public partial class Solver
         }
         catch (OperationCanceledException) { }
 
+        // Cancellation wins over the budget: the caller asked to stop, so give it the partial count
+        // it expects rather than restarting a search it no longer wants.
+        if (state.nodeBudget.Exhausted && !cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
         return maxSolutions > 0 && state.numSolutions > maxSolutions ? maxSolutions : state.numSolutions;
     }
 
@@ -350,6 +474,7 @@ public partial class Solver
         public readonly CancellationToken cancellationToken;
         public readonly CountdownEvent countdownEvent;
         public readonly Solver[] searchStack;
+        public readonly NodeBudget nodeBudget;
         private BruteForceSolverPool solverPool;
         private SearchStackPool searchStackPool;
         private readonly int searchStackCapacity;
@@ -360,8 +485,9 @@ public partial class Solver
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
 
-        public CountSolutionsState(long maxSolutions, bool multiThread, Action<long> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken, int searchStackCapacity)
+        public CountSolutionsState(long maxSolutions, bool multiThread, Action<long> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken, int searchStackCapacity, long nodeBudget)
         {
+            this.nodeBudget = new NodeBudget(nodeBudget);
             this.maxSolutions = maxSolutions;
             this.multiThread = multiThread;
             this.progressEvent = progressEvent;
@@ -512,6 +638,12 @@ public partial class Solver
             while (TryPopSearchStack(stack, ref stackCount, out Solver solver) && !state.MaxSolutionsReached)
             {
                 state.cancellationToken.ThrowIfCancellationRequested();
+
+                if (state.nodeBudget.ChargeNode())
+                {
+                    state.ReleaseSolver(solver);
+                    break;
+                }
 
                 if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintIndices != null)
                 {
@@ -836,11 +968,40 @@ public partial class Solver
 
         numSolutionsCap = Math.Max(numSolutionsCap, 0);
 
-        using TrueCandidatesState state = new(this, multiThread, progressEvent, numSolutionsCap, cancellationToken);
+        if (WeakLinkDiscovery == WeakLinkDiscoveryMode.Deferred)
+        {
+            // progressEvent is withheld from the budgeted attempt for the same reason as in
+            // CountSolutions: its counts would rewind if the attempt is abandoned.
+            (int[], long[]) conflictSnapshot = SnapshotConflictState();
+            long[] deferredCounts = TrueCandidatesAttempt(multiThread, progressEvent: null, numSolutionsCap,
+                cancellationToken, probeWeakLinks: false, nodeBudget: WeakLinkDiscoveryNodeThreshold);
+            if (deferredCounts != null)
+            {
+                return deferredCounts;
+            }
+            RestoreConflictState(conflictSnapshot);
+        }
+
+        // An unbudgeted attempt is never abandoned, so this never returns null.
+        return TrueCandidatesAttempt(multiThread, progressEvent, numSolutionsCap, cancellationToken,
+            probeWeakLinks: WeakLinkDiscovery != WeakLinkDiscoveryMode.Never, nodeBudget: 0);
+    }
+
+    /// <summary>
+    /// Runs one true-candidates search.
+    /// </summary>
+    /// <param name="nodeBudget">Node budget for the search, or 0 for unlimited.</param>
+    /// <returns>
+    /// The per-candidate solution counts, or <see langword="null"/> if the node budget ran out first,
+    /// in which case the partial counts are discarded rather than returned.
+    /// </returns>
+    private long[] TrueCandidatesAttempt(bool multiThread, Action<long[]> progressEvent, long numSolutionsCap, CancellationToken cancellationToken, bool probeWeakLinks, long nodeBudget)
+    {
+        using TrueCandidatesState state = new(this, multiThread, progressEvent, numSolutionsCap, cancellationToken, nodeBudget);
         try
         {
             Solver boardCopy = Clone(willRunNonSinglesLogic: false);
-            if (boardCopy.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
+            if (boardCopy.DiscoverWeakLinks(cancellationToken, probeWeakLinks) == LogicResult.Invalid)
             {
                 return state.candidateSolutionCounts;
             }
@@ -862,6 +1023,13 @@ public partial class Solver
         }
         catch (OperationCanceledException) { }
 
+        // Cancellation wins over the budget: return the partial counts the caller expects rather
+        // than restarting a search it no longer wants.
+        if (state.nodeBudget.Exhausted && !cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
         return state.candidateSolutionCounts;
     }
 
@@ -880,11 +1048,13 @@ public partial class Solver
         public bool boardInvalid = false;
 
         public readonly CountdownEvent countdownEvent;
+        public readonly NodeBudget nodeBudget;
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
 
-        public TrueCandidatesState(Solver initialSolver, bool multiThread, Action<long[]> progressEvent, long numSolutionsCap, CancellationToken cancellationToken)
+        public TrueCandidatesState(Solver initialSolver, bool multiThread, Action<long[]> progressEvent, long numSolutionsCap, CancellationToken cancellationToken, long nodeBudget)
         {
+            this.nodeBudget = new NodeBudget(nodeBudget);
             if (numSolutionsCap > 0)
             {
                 needCandidateMask = new uint[initialSolver.NUM_CELLS];
@@ -1082,6 +1252,12 @@ public partial class Solver
         {
             state.cancellationToken.ThrowIfCancellationRequested();
 
+            if (state.nodeBudget.ChargeNode())
+            {
+                state.ReleaseSolver(solver);
+                break;
+            }
+
             if (!solver.TrueCandidatesPropogate(state))
             {
                 state.ReleaseSolver(solver);
@@ -1205,7 +1381,9 @@ public partial class Solver
         try
         {
             Solver root = Clone(willRunNonSinglesLogic: true);
-            if (root.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
+            // Deferral is not offered here: the estimators sample random paths rather than searching
+            // an exhaustible space, so there is no "this search got expensive" moment to trigger on.
+            if (root.DiscoverWeakLinks(cancellationToken, probeWeakLinks: WeakLinkDiscovery != WeakLinkDiscoveryMode.Never) == LogicResult.Invalid)
             {
                 progressEvent((0, 0, 0));
                 return;
@@ -1526,7 +1704,9 @@ public partial class Solver
         try
         {
             Solver root = Clone(willRunNonSinglesLogic: true);
-            if (root.DiscoverWeakLinks(cancellationToken) == LogicResult.Invalid)
+            // Deferral is not offered here: the estimators sample random paths rather than searching
+            // an exhaustible space, so there is no "this search got expensive" moment to trigger on.
+            if (root.DiscoverWeakLinks(cancellationToken, probeWeakLinks: WeakLinkDiscovery != WeakLinkDiscoveryMode.Never) == LogicResult.Invalid)
             {
                 state.SendEvent();
                 return (state.GetEstimates(), state.GetStdErrs());

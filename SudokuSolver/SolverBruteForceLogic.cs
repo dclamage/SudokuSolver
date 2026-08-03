@@ -279,12 +279,16 @@ public partial class Solver
     }
 
     /// <summary>
-    /// Discovers non-trivial weak links by setting candidates and seeing what happens.
-    /// Only call for brute force methods on deeply cloned grids, otherwise there will
-    /// be a lot of "magical" eliminations during logical stepping.
+    /// Prepares a cloned grid for brute force: propagates once, then — if
+    /// <paramref name="probeWeakLinks"/> — discovers non-trivial weak links by setting candidates
+    /// and seeing what happens. Only call for brute force methods on deeply cloned grids, otherwise
+    /// there will be a lot of "magical" eliminations during logical stepping.
     /// </summary>
-    /// <returns></returns>
-    private LogicResult DiscoverWeakLinks(CancellationToken cancellationToken)
+    /// <param name="probeWeakLinks">
+    /// Whether to run the probing pass. The propagation happens either way, so a caller that skips
+    /// probing still gets the setup work and the early-out on an already-solved grid.
+    /// </param>
+    private LogicResult DiscoverWeakLinks(CancellationToken cancellationToken, bool probeWeakLinks)
     {
         // Run logic on the base solver first
         LogicResult result = BruteForcePropagate(true, cancellationToken);
@@ -293,7 +297,7 @@ public partial class Solver
             return result;
         }
 
-        if (IsDynamicWeakLinkDiscoveryDisabled())
+        if (!probeWeakLinks)
         {
             return result;
         }
@@ -389,13 +393,70 @@ public partial class Solver
         return result;
     }
 
-    private static bool IsDynamicWeakLinkDiscoveryDisabled()
+    /// <summary>
+    /// Process-wide default for <see cref="WeakLinkDiscovery"/>, read once from the environment.
+    /// </summary>
+    /// <remarks>
+    /// The environment variables exist so that a benchmark run can A/B the modes without a rebuild
+    /// — which matters because the two arms differ by up to 22x in both directions and stale
+    /// baselines have caused false regressions here before. Ordinary callers set the property.
+    /// <list type="bullet">
+    /// <item><c>SUDOKU_WEAK_LINK_DISCOVERY=always|never|deferred</c></item>
+    /// <item><c>SUDOKU_DISABLE_DYNAMIC_WEAK_LINK_DISCOVERY=1</c> — the older gate, still honoured
+    /// because the published measurements were taken with it; equivalent to <c>never</c>.</item>
+    /// </list>
+    /// </remarks>
+    internal static readonly WeakLinkDiscoveryMode DefaultWeakLinkDiscovery = ReadDefaultWeakLinkDiscovery();
+
+    /// <summary>
+    /// Process-wide default for <see cref="WeakLinkDiscoveryNodeThreshold"/>, overridable with
+    /// <c>SUDOKU_WEAK_LINK_DEFER_NODES</c> so the threshold can be swept from the benchmark harness.
+    /// </summary>
+    internal static readonly long DefaultWeakLinkDiscoveryNodeThreshold = ReadDefaultWeakLinkDiscoveryNodeThreshold();
+
+    // Chosen by sweeping 250..100000 over the iss-tune split and confirmed on iss-holdout; see
+    // docs/weak-link-discovery-tradeoff.md. The threshold is a latency-vs-throughput dial: raising
+    // it makes the median puzzle faster and the slowest ones slower. 2000 is where the median
+    // puzzle is ~1.5x faster while total corpus time is still unchanged.
+    private const long WEAK_LINK_DEFER_NODES_DEFAULT = 2000;
+
+    private static WeakLinkDiscoveryMode ReadDefaultWeakLinkDiscovery()
     {
-        string value = Environment.GetEnvironmentVariable("SUDOKU_DISABLE_DYNAMIC_WEAK_LINK_DISCOVERY");
-        return value != null &&
-            (value == "1" ||
-            value.Equals("true", StringComparison.OrdinalIgnoreCase) ||
-            value.Equals("yes", StringComparison.OrdinalIgnoreCase));
+        string mode = Environment.GetEnvironmentVariable("SUDOKU_WEAK_LINK_DISCOVERY");
+        if (mode != null)
+        {
+            if (mode.Equals("always", StringComparison.OrdinalIgnoreCase))
+            {
+                return WeakLinkDiscoveryMode.Always;
+            }
+            if (mode.Equals("never", StringComparison.OrdinalIgnoreCase))
+            {
+                return WeakLinkDiscoveryMode.Never;
+            }
+            if (mode.Equals("deferred", StringComparison.OrdinalIgnoreCase))
+            {
+                return WeakLinkDiscoveryMode.Deferred;
+            }
+        }
+
+        string disabled = Environment.GetEnvironmentVariable("SUDOKU_DISABLE_DYNAMIC_WEAK_LINK_DISCOVERY");
+        if (disabled != null &&
+            (disabled == "1" ||
+            disabled.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+            disabled.Equals("yes", StringComparison.OrdinalIgnoreCase)))
+        {
+            return WeakLinkDiscoveryMode.Never;
+        }
+
+        return WeakLinkDiscoveryMode.Deferred;
+    }
+
+    private static long ReadDefaultWeakLinkDiscoveryNodeThreshold()
+    {
+        string value = Environment.GetEnvironmentVariable("SUDOKU_WEAK_LINK_DEFER_NODES");
+        return value != null && long.TryParse(value, out long nodes) && nodes > 0
+            ? nodes
+            : WEAK_LINK_DEFER_NODES_DEFAULT;
     }
 
     private LogicResult FastFindPairs(CancellationToken cancellationToken)
