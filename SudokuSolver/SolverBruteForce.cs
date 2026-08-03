@@ -26,6 +26,7 @@ public partial class Solver
         }
         solver.isBruteForcing = true;
         using FindSolutionState state = new(isRandom, multiThread, cancellationToken, solver.NUM_CANDIDATES + 1);
+        state.InitializeSolverPool(solver);
         if (multiThread)
         {
             if (!state.PushSolver(solver, true))
@@ -109,14 +110,50 @@ public partial class Solver
             ((IDisposable)countdownEvent)?.Dispose();
         }
 
+        /// <summary>
+        /// Records a solution. The board is <b>copied</b>: the reporting solver may be pooled and
+        /// rented out again, which would otherwise mutate the result we just handed back.
+        /// </summary>
         public void ReportSolution(Solver solver)
         {
-            Interlocked.CompareExchange(ref result, solver.board, null);
+            uint[] solution = (uint[])solver.board.Clone();
+            Interlocked.CompareExchange(ref result, solution, null);
         }
 
         public void Wait()
         {
             countdownEvent.Wait(cancellationToken);
+        }
+
+        // Recycles branch solvers instead of cloning per node. Single-threaded only for now: the
+        // multi-threaded path hands solvers between tasks, and that ownership transfer wants the
+        // local-cache design described in docs/solver-pooling-audit.md.
+        private BruteForceSolverPool solverPool;
+
+        public void InitializeSolverPool(Solver root)
+        {
+            if (!isMultiThreaded)
+            {
+                solverPool = new BruteForceSolverPool(root.NUM_CANDIDATES + 1);
+            }
+        }
+
+        public Solver RentBranchSolver(Solver source)
+        {
+            if (solverPool == null)
+            {
+                Solver clone = source.Clone(willRunNonSinglesLogic: false);
+                clone.isBruteForcing = true;
+                return clone;
+            }
+
+            return solverPool.RentCopy(source);
+        }
+
+        /// <summary>Returns a solver to the pool. No-ops for solvers the pool does not own.</summary>
+        public void ReleaseSolver(Solver solver)
+        {
+            solverPool?.Release(solver);
         }
     }
 
@@ -126,65 +163,89 @@ public partial class Solver
         int stackCount = 0;
         PushSearchStack(ref stack, ref stackCount, root);
 
-        while (state.result is null && TryPopSearchStack(stack, ref stackCount, out Solver solver))
+        try
         {
-            state.cancellationToken.ThrowIfCancellationRequested();
-            if (state.result != null)
+            while (state.result is null && TryPopSearchStack(stack, ref stackCount, out Solver solver))
             {
-                continue;
-            }
-
-            if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintIndices != null)
-            {
-                solver.EnqueueConstraintsForCell(solver._lastContradictionCellIndex);
-                solver._lastContradictionCellIndex = -1;
-            }
-
-            LogicResult logicResult = solver.BruteForcePropagate(false, state.cancellationToken);
-            if (logicResult == LogicResult.PuzzleComplete)
-            {
-                state.ReportSolution(solver);
-                continue;
-            }
-
-            if (logicResult == LogicResult.Invalid)
-            {
-                if (solver.branchCellIndex >= 0)
+                state.cancellationToken.ThrowIfCancellationRequested();
+                if (state.result != null)
                 {
-                    solver.IncrementConflictScore(solver.branchCellIndex);
-                    if (TryPeekSearchStack(stack, stackCount, out Solver findSolParent))
-                        findSolParent._lastContradictionCellIndex = solver.branchCellIndex;
+                    state.ReleaseSolver(solver);
+                    continue;
                 }
-                continue;
-            }
 
-            (int cellIndex, int v) = solver.GetLeastCandidateCell(allowBilocals: false);
-            if (cellIndex < 0)
-            {
-                state.ReportSolution(solver);
-                continue;
-            }
-
-            // Try a possible value for this cell
-            int val = v != 0 ? v : state.isRandom ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
-
-            // Create a backup board in case it needs to be restored
-            Solver newSolver = solver.Clone(willRunNonSinglesLogic: false);
-            newSolver.isBruteForcing = true;
-            if (newSolver.ClearValue(cellIndex, val))
-            {
-                if (!state.isMultiThreaded || !state.PushSolver(newSolver))
+                if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintIndices != null)
                 {
-                    PushSearchStack(ref stack, ref stackCount, newSolver);
+                    solver.EnqueueConstraintsForCell(solver._lastContradictionCellIndex);
+                    solver._lastContradictionCellIndex = -1;
+                }
+
+                LogicResult logicResult = solver.BruteForcePropagate(false, state.cancellationToken);
+                if (logicResult == LogicResult.PuzzleComplete)
+                {
+                    // ReportSolution copies the board, so releasing this solver is safe.
+                    state.ReportSolution(solver);
+                    state.ReleaseSolver(solver);
+                    continue;
+                }
+
+                if (logicResult == LogicResult.Invalid)
+                {
+                    if (solver.branchCellIndex >= 0)
+                    {
+                        solver.IncrementConflictScore(solver.branchCellIndex);
+                        if (TryPeekSearchStack(stack, stackCount, out Solver findSolParent))
+                            findSolParent._lastContradictionCellIndex = solver.branchCellIndex;
+                    }
+                    state.ReleaseSolver(solver);
+                    continue;
+                }
+
+                (int cellIndex, int v) = solver.GetLeastCandidateCell(allowBilocals: false);
+                if (cellIndex < 0)
+                {
+                    state.ReportSolution(solver);
+                    state.ReleaseSolver(solver);
+                    continue;
+                }
+
+                // Try a possible value for this cell
+                int val = v != 0 ? v : state.isRandom ? GetRandomValue(solver.board[cellIndex]) : MinValue(solver.board[cellIndex]);
+
+                // Create a backup board in case it needs to be restored
+                Solver newSolver = state.RentBranchSolver(solver);
+                newSolver.isBruteForcing = true;
+                if (newSolver.ClearValue(cellIndex, val))
+                {
+                    if (!state.isMultiThreaded || !state.PushSolver(newSolver))
+                    {
+                        PushSearchStack(ref stack, ref stackCount, newSolver);
+                    }
+                }
+                else
+                {
+                    state.ReleaseSolver(newSolver);
+                }
+
+                // Change the board to only allow this value in the slot
+                if (solver.SetValue(cellIndex, val))
+                {
+                    solver.branchCellIndex = cellIndex;
+                    solver.searchDepth++;
+                    PushSearchStack(ref stack, ref stackCount, solver);
+                }
+                else
+                {
+                    state.ReleaseSolver(solver);
                 }
             }
-
-            // Change the board to only allow this value in the slot
-            if (solver.SetValue(cellIndex, val))
+        }
+        finally
+        {
+            // A found result or a cancellation can leave entries on the stack.
+            while (TryPopSearchStack(stack, ref stackCount, out Solver remaining))
             {
-                solver.branchCellIndex = cellIndex;
-                solver.searchDepth++;
-                PushSearchStack(ref stack, ref stackCount, solver);
+                state.ReleaseSolver(remaining);
             }
         }
     }
@@ -296,12 +357,12 @@ public partial class Solver
         {
             if (multiThread)
             {
-                solverPool = new BruteForceSolverPool(root, searchStackCapacity * maxRunningTasks, isThreadSafe: true);
+                solverPool = new BruteForceSolverPool(searchStackCapacity * maxRunningTasks, isThreadSafe: true);
                 searchStackPool = new SearchStackPool(searchStackCapacity, maxRunningTasks);
             }
             else
             {
-                solverPool = new BruteForceSolverPool(root, root.NUM_CANDIDATES + 1);
+                solverPool = new BruteForceSolverPool(root.NUM_CANDIDATES + 1);
             }
         }
 
@@ -493,43 +554,47 @@ public partial class Solver
         }
     }
 
+    /// <summary>
+    /// Recycles per-branch <see cref="Solver"/> clones for one brute-force invocation.
+    /// </summary>
+    /// <remarks>
+    /// Growth is lazy: the pool starts empty and clones on a miss, so it only ever holds the
+    /// search's high-water mark of simultaneously live branches. Preallocating instead charged
+    /// every call for a worst-case search — ~1.5 MB single-threaded and ~15 MB multi-threaded —
+    /// which dominates the workload that matters here, where a setting UI issues mostly trivial
+    /// searches on every grid edit.
+    ///
+    /// The pool is scoped to a single invocation, so "no steady-state allocation" holds within one
+    /// call, not across calls.
+    /// </remarks>
     private sealed class BruteForceSolverPool
     {
-        private readonly Solver[] solvers;
-        private readonly int[] freeStack;
+        private readonly List<Solver> free;
         private readonly bool isThreadSafe;
         private readonly object syncLock = new();
-        private int freeCount;
+        private readonly int maxRetained;
 
-        public BruteForceSolverPool(Solver root, int capacity, bool isThreadSafe = false)
+        public BruteForceSolverPool(int maxRetained, bool isThreadSafe = false)
         {
             this.isThreadSafe = isThreadSafe;
-            solvers = new Solver[capacity];
-            freeStack = new int[capacity];
-            for (int i = 0; i < capacity; i++)
-            {
-                Solver solver = root.Clone(willRunNonSinglesLogic: false);
-                solver.isBruteForcing = true;
-                solver.isPooledBruteForceSolver = true;
-                solver.pooledBruteForceSolverIndex = i;
-                solver.pendingNakedSingles.Capacity = Math.Max(solver.pendingNakedSingles.Capacity, root.NUM_CELLS);
-                solvers[i] = solver;
-                freeStack[i] = i;
-            }
-            freeCount = capacity;
+            this.maxRetained = Math.Max(1, maxRetained);
+            free = new List<Solver>(Math.Min(this.maxRetained, 32));
         }
 
+        /// <summary>Rents a solver holding a copy of <paramref name="source"/>'s search state.</summary>
         public Solver RentCopy(Solver source)
         {
-            Solver solver = RentSolver();
+            Solver solver = TakeFree();
             if (solver == null)
             {
-                // Pool exhausted (should not happen given the capacity bound, but degrade
-                // gracefully instead of crashing): hand back a non-pooled clone. Release
-                // no-ops for non-pooled solvers, so this is safe to mix with pooled ones.
+                // Miss: clone the caller-owned source. Cloning already copies the brute-force
+                // runtime state, so no separate copy is needed here. Deliberately done outside
+                // the lock — cloning is far more expensive than the pool bookkeeping.
                 Solver clone = source.Clone(willRunNonSinglesLogic: false);
                 clone.isBruteForcing = true;
-                clone.CopyBruteForceRuntimeStateFrom(source);
+                clone.pendingNakedSingles.Capacity = Math.Max(clone.pendingNakedSingles.Capacity, source.NUM_CELLS);
+                clone.pooledBruteForceSolverOwner = this;
+                clone.isPooledBruteForceSolverRented = true;
                 return clone;
             }
 
@@ -537,34 +602,37 @@ public partial class Solver
             return solver;
         }
 
-        private Solver RentSolver()
+        private Solver TakeFree()
         {
             if (isThreadSafe)
             {
                 lock (syncLock)
                 {
-                    return RentSolverUnsynchronized();
+                    return TakeFreeUnsynchronized();
                 }
             }
 
-            return RentSolverUnsynchronized();
+            return TakeFreeUnsynchronized();
         }
 
-        private Solver RentSolverUnsynchronized()
+        private Solver TakeFreeUnsynchronized()
         {
-            if (freeCount == 0)
+            int last = free.Count - 1;
+            if (last < 0)
             {
                 return null;
             }
 
-            Solver solver = solvers[freeStack[--freeCount]];
+            Solver solver = free[last];
+            free.RemoveAt(last);
             solver.isPooledBruteForceSolverRented = true;
             return solver;
         }
 
+        /// <summary>Returns a solver to the pool. No-ops for solvers this pool does not own.</summary>
         public void Release(Solver solver)
         {
-            if (!solver.isPooledBruteForceSolver)
+            if (!ReferenceEquals(solver.pooledBruteForceSolverOwner, this))
             {
                 return;
             }
@@ -589,7 +657,16 @@ public partial class Solver
             }
 
             solver.isPooledBruteForceSolverRented = false;
-            freeStack[freeCount++] = solver.pooledBruteForceSolverIndex;
+            if (free.Count < maxRetained)
+            {
+                free.Add(solver);
+            }
+            else
+            {
+                // Over the retention cap: drop it and let the GC take it rather than holding a
+                // pathological search's high-water set alive.
+                solver.pooledBruteForceSolverOwner = null;
+            }
         }
     }
 
@@ -805,7 +882,7 @@ public partial class Solver
         {
             if (!multiThread)
             {
-                solverPool = new BruteForceSolverPool(root, root.NUM_CANDIDATES + 1);
+                solverPool = new BruteForceSolverPool(root.NUM_CANDIDATES + 1);
             }
         }
 

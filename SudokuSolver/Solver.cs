@@ -45,9 +45,11 @@ public partial class Solver
     // Private state
     private bool isInSetValue = false;
     private bool isBruteForcing = false;
-    private bool isPooledBruteForceSolver = false;
+    // Set when a solver belongs to a brute-force pool. The owner reference — rather than a bare
+    // flag — lets a release into the wrong invocation's pool be detected instead of silently
+    // corrupting that pool's free list.
+    private object pooledBruteForceSolverOwner = null;
     private bool isPooledBruteForceSolverRented = false;
-    private int pooledBruteForceSolverIndex = -1;
     private bool isInvalid;
     private int unsetCellsCount;
     private readonly List<int> pendingNakedSingles;
