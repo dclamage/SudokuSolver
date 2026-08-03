@@ -1,6 +1,6 @@
 # Handoff: solver performance & the browser port
 
-Last updated 2026-08-02. Branch `wasm-prototype`, pushed, clean. Read this first, then the linked
+Last updated 2026-08-03. Branch `wasm-prototype`, pushed, clean. Read this first, then the linked
 docs as needed.
 
 ---
@@ -24,13 +24,23 @@ layer*. And ISS beats us 5–8× **in native C# too**, so the competitive gap is
 hosting or language problem. Full argument in
 [`solver-vs-iss-comparison.md`](solver-vs-iss-comparison.md). Don't re-litigate this; start there.
 
+**The 5–8× does not generalise, though** — it was measured on two hard vanilla classics. Across 402
+real CTC puzzles imported from the ISS index, **we are faster than ISS on 84% of them and ~2.6×
+faster at the median** (p50 0.38×, p90 1.39×). The gap is confined to hard vanilla and to a thin
+pathological tail (12 puzzles >5×, worst >3,300×). For a setting site, which runs variants, the
+relevant distribution is favourable. Data and caveats:
+[`iss-corpus-import.md`](iss-corpus-import.md).
+
 ### Infrastructure you now have
 
 - **28-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
   `benchmarks/README.md` documents each. `truecandidates` is the operation a setting UI actually
   runs on every edit; `logical` is the half the product leans on hardest.
-- **`SolverFactory.CreateFromIss`** — parses the ISS text format. Validated 160/171 agree, 0
-  disagree, against sigh's CTC index. Format details and the arrow nuance are in Priority 1 below.
+- **398-case ISS corpus** in `benchmarks/corpus-iss.json`, generated from sigh's CTC index with
+  `--import-iss` and validated against the solution counts ISS recorded — **402 agree, 0 disagree**.
+  Split `iss-tune` (280) / `iss-holdout` (118) by a hash of the puzzle id, so re-importing never
+  reassigns a puzzle. **Never tune against the holdout.**
+- **`SolverFactory.CreateFromIss`** — parses the ISS text format, now covering 30% of the index.
 - **WASM prototype** in `SudokuSolverWasm/` (not in the .sln). Same JSON protocol as the websocket
   server. `run-node.mjs` for headless 1T, `drive-chrome.mjs` for MT (MT WASM refuses to run outside
   a browser).
@@ -39,32 +49,30 @@ hosting or language problem. Full argument in
 
 ## 2. Recommended order of work
 
-The ordering matters, because item 1 is a prerequisite for trusting item 2.
+Priority 1 is **done**, which is what unblocks Priority 2.
 
-### Priority 1 — Expand the corpus from the CTC index
+### ~~Priority 1~~ — Corpus expansion: DONE
 
-**Why first:** the current corpus is 28 hand-picked cases. Any heuristic tuned against it will
-over-fit, and the next item *is* a heuristic. This was raised explicitly as a concern and it is
-correct.
+398 cases in `benchmarks/corpus-iss.json`, 402 agree / 0 disagree, tune/holdout split in place. The
+self-validation earned its keep immediately: it found **four silent-wrong-answer defects**, including
+a digit set the parser was ignoring (`.Shape~9x9~0-8` solved a different puzzle) and a cancelled
+`CountSolutions` being indistinguishable from a completed one. All fixed, all covered by tests (111,
+up from 102). Full write-up: [`iss-corpus-import.md`](iss-corpus-import.md).
 
-**What exists:** sigh's index at <https://sigh.github.io/iss-sudoku-index/>, machine-readable at
-`data/mappings.json` (1,671 puzzles), individual puzzles at `data/puzzles/<id>/puzzle.iss`. Each row
-carries `constraint_types`, `unique_solution`, `guesses`, `solve_ms` — so **imports validate
-themselves** against ISS's recorded answers.
+**The one thing to know before using it:** the holdout split is a pure function of the puzzle id
+precisely so that re-importing can't move a puzzle out of the holdout. Don't replace it with anything
+random, and don't tune against `iss-holdout`.
 
-**Scope reality:** 6,093 distinct ISS constraint types with a long tail. **472 of 1,671 (28%) use
-only types this solver already has.** The blockers are ISS's general constraint DSL (`Var`,
-`Replicate`, `AllDifferent`, `Or`, `And`), which is a different modelling approach — do not plan on
-"full ISS support".
+Remaining upside, in value order — details in the doc's §5:
 
-**Do:**
-- Import the reachable puzzles into a second corpus file, with `expected` taken from
-  `unique_solution` / `solutions_found`.
-- Hold out a random split that no heuristic is ever tuned against.
-- Extend `IssParser` opportunistically for types that unlock many puzzles cheaply; it already throws
-  `IssUnsupportedConstraintException` rather than mistranslating, so bulk import can skip cleanly.
-- Watch for the arrow nuance: ISS counts a repeated shaft cell *once per occurrence*, which this
-  solver's arrow can't express, so the parser refuses those. Don't "fix" it by de-duplicating.
+- **NFA/Pair is worth 237 more puzzles**, roughly doubling the corpus. `NFAConstraint` already
+  deserializes ISS's own serializer format; the blocker is structural (it can't be built from a
+  constraint string, and `IssParser` only produces strings), and the f-puzzles path at
+  `SolverFactory.cs:1017` already shows the shape needed.
+- Cheap: `GreaterThan` with 3–5 arguments (6 puzzles) — implement the chain reading and let the
+  import adjudicate it.
+- Don't chase: ISS's `Var`/`Or`/`And`/`Replicate` DSL (note it has **block structure** with `.End`
+  terminators), weighted `Sum`, and `LittleKiller` (ISS records no direction, so it can't be inferred).
 
 ### Priority 2 — Deferred (heuristically triggered) weak-link discovery
 
@@ -80,6 +88,9 @@ only types this solver already has.** The blockers are ISS's general constraint 
 
 Corpus total still favours ON, so **do not flip the default**. Full data in
 [`weak-link-discovery-tradeoff.md`](weak-link-discovery-tradeoff.md).
+
+**Tune the trigger against `--filter iss-tune` and confirm on `--filter iss-holdout`** — that is what
+the new corpus is for. The 28-case corpus is too small to separate a threshold honestly.
 
 **The design to implement** (self-limiting, so it cannot over-fit — a *predictive* trigger that
 classifies puzzles is exactly the trap to avoid): don't run discovery up front. Start brute force;
@@ -117,6 +128,13 @@ data-dependent wrong answers** — the audit is the work, not an afterthought.
   `ConsolidateBoard` passes. Unexplained by the combination arithmetic. Nothing has instrumented it.
 - **`platinum-blonde` is still 8.9× off ISS** even with discovery disabled (the other hard classics
   drop to 1.6–2.2×). It's the cleanest remaining outlier, and it explores 3.4× more nodes than ISS.
+- **Four new pathological cases from the ISS import**, all far worse than `platinum-blonde` and none
+  previously known. The best one to start on is `1HuNjcLWlPE` "N is for Naomi": ISS solves it in
+  **72 ms**, we did not finish in **240 s**, and it is only whispers, renban and dots — four
+  constraint types, so the diagnosis surface is small. Then `h-ymyScJa2s` (93×), `OqyXKDOhfDA` (53×),
+  `blPgSzctUMg` (63×). All are in `iss-tune`, except the timeouts which are excluded from the corpus;
+  the .iss text is in the report the importer writes. See
+  [`iss-corpus-import.md`](iss-corpus-import.md) §2.
 - **The constraint-layer WASM tax**: vanilla is 1.0×, `killer-innie` is 5.73×. Two dispatch fixes
   already took 37% off corpus-wide. Same defect class is worth hunting: comparer/delegate dispatch in
   inner loops is mildly costly natively and severe under Mono AOT.
@@ -210,6 +228,13 @@ dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --iterations
 dotnet build -c Release SudokuSolver.sln                                                 # sln excludes the WASM project
 ```
 
+Add the ISS corpus to that list for anything touching the solver or `IssParser` — 398 puzzles with
+known answers is the strongest correctness signal available, and it takes about 15 s per iteration:
+
+```bash
+dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- benchmarks/corpus-iss.json --iterations 1
+```
+
 For WASM changes, republish and re-diff — `dotnet publish SudokuSolverWasm -c Release -o /tmp/wasm`
 takes 7–10 minutes, so budget for it. `compare.js` flags result mismatches, not just timing.
 
@@ -219,11 +244,13 @@ takes 7–10 minutes, so budget for it. `compare.js` flags result mismatches, no
 
 1. This file.
 2. [`solver-vs-iss-comparison.md`](solver-vs-iss-comparison.md) — why WASM isn't the problem.
-3. [`weak-link-discovery-tradeoff.md`](weak-link-discovery-tradeoff.md) — the biggest lever.
-4. [`logical-solver-allocation.md`](logical-solver-allocation.md) — the browser memory problem.
-5. [`solver-pooling-audit.md`](solver-pooling-audit.md) + [`truecandidates-allocation.md`](truecandidates-allocation.md) — what's already pooled and why MT is deliberately off.
-6. [`wasm-prototype-findings.md`](wasm-prototype-findings.md) — the .NET-WASM constraints that dictate host architecture.
-7. `SudokuSolverWasm/README.md` — how to build and run the browser prototype.
+3. [`iss-corpus-import.md`](iss-corpus-import.md) — the 398-puzzle corpus, where we actually stand
+   against ISS, and the coverage ceiling.
+4. [`weak-link-discovery-tradeoff.md`](weak-link-discovery-tradeoff.md) — the biggest lever.
+5. [`logical-solver-allocation.md`](logical-solver-allocation.md) — the browser memory problem.
+6. [`solver-pooling-audit.md`](solver-pooling-audit.md) + [`truecandidates-allocation.md`](truecandidates-allocation.md) — what's already pooled and why MT is deliberately off.
+7. [`wasm-prototype-findings.md`](wasm-prototype-findings.md) — the .NET-WASM constraints that dictate host architecture.
+8. `SudokuSolverWasm/README.md` — how to build and run the browser prototype.
 
 `docs/optimization-roadmap.md` predates this work and covers the earlier per-session solver-perf
 plan; it is still accurate but narrower in scope.

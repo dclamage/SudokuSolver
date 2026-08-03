@@ -28,6 +28,7 @@ Options:
 | `--save FILE` | Write results as JSON (use later as a baseline) |
 | `--baseline FILE` | Diff min-time vs a saved baseline; flags regressions > 5% |
 | `--bitops` | Run the `BitOperations` vs software micro-benchmark and exit (see below) |
+| `--import-iss` | Rebuild `corpus-iss.json` from sigh's CTC index and exit (see below) |
 
 Exit codes: `0` ok, `1` a result failed validation, `3` a regression vs baseline.
 
@@ -57,14 +58,15 @@ harness and `SudokuSolverWasm`, so the two are directly comparable. Results:
 
 ## Corpus format
 
-`corpus.json` is a list of cases. Each sets exactly one input (`fpuzzles` / `givens` / `blank`)
-plus how to run it:
+`corpus.json` is a list of cases. Each sets exactly one input (`fpuzzles` / `givens` / `iss` /
+`blank`) plus how to run it:
 
 ```json
 {
   "name": "killer-cage",
   "category": "killer",
-  "fpuzzles": "N4Ig...",          // OR "givens": "0000...", OR "blank": 9
+  "fpuzzles": "N4Ig...",          // OR "givens": "0000...", OR "iss": ".Cage~10~R1C1…",
+                                  //   OR "blank": 9
   "constraints": ["arrow:r1c1;r1c2r1c3"],   // optional extra constraints
   "op": "count",                  // "count" (CountSolutions), "solve" (FindSolution),
                                   //   or "logical" (ConsolidateBoard)
@@ -117,6 +119,79 @@ Two things to know before adding `logical` cases:
 - **They allocate enormously** — escargot allocates 0.22 MB to brute-force solve and **281 MB** to
   logic-solve, a ~1300x difference. That matters for the WASM port, which has a 2 GiB heap ceiling
   and a weaker GC.
+
+## The ISS corpus (`corpus-iss.json`)
+
+A second corpus, generated rather than hand-maintained: **398 real CTC puzzles** imported from
+[sigh's ISS index](https://sigh.github.io/iss-sudoku-index/), each an uncapped `count` whose
+`expected` is the solution count **ISS itself recorded**. It exists because `corpus.json` is 28
+hand-picked cases, which is far too few to tune a heuristic against without over-fitting.
+
+```bash
+caffeinate -i dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- benchmarks/corpus-iss.json
+```
+
+### The tune/holdout split is the point — respect it
+
+Every case is in category `iss-tune` (280) or `iss-holdout` (118):
+
+```bash
+--filter iss-tune       # develop and tune against these
+--filter iss-holdout    # only ever to check the result generalises
+```
+
+**Never tune a heuristic against `iss-holdout`.** The split is a pure function of the puzzle id
+(FNV-1a, not `string.GetHashCode()`, which is randomised per process), so re-importing — with more
+puzzles, or after extending the parser — never moves a puzzle from holdout to tune. That property is
+what makes the holdout worth anything; a reshuffle would silently contaminate it.
+
+### Regenerating
+
+Needs the index JSON and a directory of `<puzzle_id>.iss` files, both fetched from the index site
+(`data/mappings.json` is the machine-readable index; each puzzle is at
+`data/puzzles/<puzzle_id>/puzzle.iss`, and ~18 of the 1,671 ids 404):
+
+```bash
+curl -sS -o /tmp/iss-index.json https://sigh.github.io/iss-sudoku-index/data/mappings.json
+mkdir -p /tmp/iss-puzzles && python3 -c "
+import json, urllib.request, os
+from concurrent.futures import ThreadPoolExecutor
+ids = [r['puzzle_id'] for r in json.load(open('/tmp/iss-index.json'))['rows']]
+def get(i):
+    p = f'/tmp/iss-puzzles/{i}.iss'
+    if os.path.exists(p): return
+    try:
+        with urllib.request.urlopen(f'https://sigh.github.io/iss-sudoku-index/data/puzzles/{i}/puzzle.iss', timeout=60) as r:
+            open(p, 'wb').write(r.read())
+    except Exception as e: print(i, e)
+list(ThreadPoolExecutor(8).map(get, ids))
+"
+```
+
+Then:
+
+```bash
+caffeinate -i dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --import-iss \
+    --iss-index /tmp/iss-index.json --iss-dir /tmp/iss-puzzles \
+    --out benchmarks/corpus-iss.json --report /tmp/iss-report.json
+```
+
+A puzzle is imported **only if our count equals ISS's**. Disagreements are printed, excluded, and
+make the run exit non-zero, because a disagreement means either the parser mistranslated something
+or the solver is wrong. The report explains every skipped puzzle, and its
+`unsupported constraints, most-blocking first` tally is the list to work from when extending
+`IssParser`. Coverage is capped at roughly 30% of the index by ISS's general constraint DSL — see
+[`docs/iss-corpus-import.md`](../docs/iss-corpus-import.md).
+
+Two flags worth knowing: `--budget-ms` is the wall-clock ceiling per puzzle while validating (a
+puzzle that exceeds it is reported as a timeout and left out, since an unfinished count proves
+nothing), and `--corpus-max-ms` keeps a full corpus run quick by admitting only puzzles that counted
+faster than it. Agreeing-but-slower puzzles are listed in the report for deliberate promotion.
+
+Because both gates are wall-clock, membership is **not** bit-reproducible: a puzzle sitting near
+either threshold can fall on the other side of it on a different machine or a noisier run. Which
+puzzles are in is therefore a committed artefact, not something to be regenerated casually — and
+regenerating on a slower machine will quietly drop the slowest cases.
 
 ## Adding cases
 

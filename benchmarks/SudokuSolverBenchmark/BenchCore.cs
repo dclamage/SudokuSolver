@@ -4,13 +4,15 @@ using SudokuSolver;
 
 namespace SudokuSolverBenchmark;
 
-/// <summary>One puzzle to benchmark. Exactly one of Fpuzzles/Givens/Blank must be set.</summary>
+/// <summary>One puzzle to benchmark. Exactly one of Fpuzzles/Givens/Iss/Blank must be set.</summary>
 internal sealed class BenchCase
 {
     public string Name { get; set; } = "";
     public string? Category { get; set; }
     public string? Fpuzzles { get; set; }
     public string? Givens { get; set; }
+    /// <summary>Interactive Sudoku Solver puzzle text; see <see cref="IssImport"/>.</summary>
+    public string? Iss { get; set; }
     public int? Blank { get; set; }
     public string[]? Constraints { get; set; }
     /// <summary>
@@ -149,8 +151,9 @@ internal static class BenchCore
         IEnumerable<string>? constraints = c.Constraints;
         if (c.Fpuzzles is not null) return SolverFactory.CreateFromFPuzzles(c.Fpuzzles, constraints);
         if (c.Givens is not null) return SolverFactory.CreateFromGivens(c.Givens, constraints);
+        if (c.Iss is not null) return SolverFactory.CreateFromIss(c.Iss, constraints);
         if (c.Blank is int size) return SolverFactory.CreateBlank(size, constraints);
-        throw new InvalidOperationException($"Case '{c.Name}' has no input (set fpuzzles, givens, or blank).");
+        throw new InvalidOperationException($"Case '{c.Name}' has no input (set fpuzzles, givens, iss, or blank).");
     }
 
     public static long RunOp(Solver solver, BenchCase c, bool forceMultiThread)

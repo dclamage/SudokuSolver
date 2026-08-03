@@ -267,7 +267,12 @@ public partial class Solver
     /// <param name="maxSolutions">The maximum number of solutions to find. Pass 0 or a negative value for no maximum.</param>
     /// <param name="multiThread">Whether to use multiple threads.</param>
     /// <param name="progressEvent">An event to receive the progress count as solutions are found.</param>
-    /// <param name="cancellationToken">Pass in to support cancelling the count.</param>
+    /// <param name="cancellationToken">
+    /// Pass in to support cancelling the count. Cancellation is <b>not</b> reported by an exception:
+    /// the count returns however many solutions it had found so far, which is indistinguishable
+    /// from a completed count. A caller that needs to know whether the answer is final must check
+    /// the token itself afterwards.
+    /// </param>
     /// <returns>The solution count found.</returns>
     /// <param name="solutionEvent">
     /// Invoked once per solution found. The <see cref="Solver"/> is <b>borrowed for the duration of

@@ -17,6 +17,15 @@ namespace SudokuSolverBenchmark;
 ///     --save FILE           write results as JSON (use as a future baseline)
 ///     --baseline FILE       diff min-time against a saved baseline; flags >5% regressions
 ///     --bitops              run the BitOperations vs software micro-benchmark and exit
+///     --import-iss          bulk-import sigh's ISS index into a corpus and exit; see IssImport
+///       --iss-index FILE      the index JSON (rows[] with puzzle_id and solutions_found)
+///       --iss-dir DIR         directory of <puzzle_id>.iss files
+///       --out FILE            corpus to write
+///       --report FILE         per-puzzle import report to write
+///       --budget-ms N         wall-clock ceiling per puzzle while validating
+///       --corpus-max-ms N     only puzzles faster than this enter the corpus
+///       --holdout F           fraction reserved as a never-tuned-against holdout
+///       --limit N             only the first N index rows (for a smoke test)
 ///
 /// Exit codes: 0 ok, 1 validation failure, 3 perf regression vs baseline.
 /// </summary>
@@ -33,6 +42,8 @@ internal static class Program
         int iterations = 3;
         bool forceMultiThread = false;
         bool runBitOps = false;
+        bool importIss = false;
+        var issOptions = new IssImport.Options();
 
         for (int i = 0; i < args.Length; i++)
         {
@@ -44,6 +55,15 @@ internal static class Program
                 case "--iterations": iterations = int.Parse(args[++i]); break;
                 case "--multithread": forceMultiThread = true; break;
                 case "--bitops": runBitOps = true; break;
+                case "--import-iss": importIss = true; break;
+                case "--iss-index": issOptions.IndexPath = args[++i]; break;
+                case "--iss-dir": issOptions.PuzzleDir = args[++i]; break;
+                case "--out": issOptions.OutPath = args[++i]; break;
+                case "--report": issOptions.ReportPath = args[++i]; break;
+                case "--budget-ms": issOptions.BudgetMs = int.Parse(args[++i]); break;
+                case "--corpus-max-ms": issOptions.CorpusMaxMs = int.Parse(args[++i]); break;
+                case "--holdout": issOptions.HoldoutFraction = double.Parse(args[++i]); break;
+                case "--limit": issOptions.Limit = int.Parse(args[++i]); break;
                 default:
                     if (!args[i].StartsWith("--")) corpusPath = args[i];
                     break;
@@ -54,6 +74,11 @@ internal static class Program
         {
             Console.WriteLine(BitOpsBench.Format(BitOpsBench.Run()));
             return 0;
+        }
+
+        if (importIss)
+        {
+            return IssImport.Run(issOptions);
         }
 
         if (!File.Exists(corpusPath))
