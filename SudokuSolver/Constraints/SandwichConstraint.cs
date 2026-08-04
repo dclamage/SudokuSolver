@@ -84,7 +84,7 @@ public class SandwichConstraint : Constraint
             {
                 foreach (var combination in Enumerable.Range(2, MAX_VALUE - 2).Combinations(curFillingLength))
                 {
-                    if (combination.Sum() != sum)
+                    if (SumOf(combination) != sum)
                     {
                         continue;
                     }
@@ -312,9 +312,9 @@ public class SandwichConstraint : Constraint
             }
 
             uint[] fillingKeepMasks = new uint[fillingSize];
-            foreach (var combination in possibleValues.Combinations(numUnsetCells))
+            foreach (var combination in possibleValues.CombinationsBuffered(numUnsetCells))
             {
-                if (combination.Sum() != remainingSum)
+                if (SumOf(combination) != remainingSum)
                 {
                     continue;
                 }
@@ -416,9 +416,9 @@ public class SandwichConstraint : Constraint
 
                             if (possibleValues.Count >= numUnsetCells)
                             {
-                                foreach (var combination in possibleValues.Combinations(numUnsetCells))
+                                foreach (var combination in possibleValues.CombinationsBuffered(numUnsetCells))
                                 {
-                                    if (combination.Sum() != remainingSum)
+                                    if (SumOf(combination) != remainingSum)
                                     {
                                         continue;
                                     }
@@ -541,9 +541,9 @@ public class SandwichConstraint : Constraint
 
                             if (possibleValues.Count >= numUnsetCells)
                             {
-                                foreach (var combination in possibleValues.Combinations(numUnsetCells))
+                                foreach (var combination in possibleValues.CombinationsBuffered(numUnsetCells))
                                 {
-                                    if (combination.Sum() != remainingSum)
+                                    if (SumOf(combination) != remainingSum)
                                     {
                                         continue;
                                     }
@@ -583,6 +583,21 @@ public class SandwichConstraint : Constraint
         }
 
         return ApplyKeepMask(sudokuSolver, keepMasks, cells, logicalStepDescription);
+    }
+
+    /// <summary>
+    /// Sums a combination without LINQ. <c>Enumerable.Sum</c> on a <c>List&lt;int&gt;</c> boxes the
+    /// list's struct enumerator, and this runs once per enumerated combination — 4.2 million times
+    /// in a single count of the ISS puzzle blPgSzctUMg. See docs/sandwich-allocation.md.
+    /// </summary>
+    private static int SumOf(List<int> values)
+    {
+        int sum = 0;
+        for (int i = 0; i < values.Count; i++)
+        {
+            sum += values[i];
+        }
+        return sum;
     }
 
     private static LogicResult ApplyKeepMask(Solver sudokuSolver, uint[] keepMasks, List<(int, int)> cells, StringBuilder logicalStepDescription)

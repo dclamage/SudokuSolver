@@ -288,18 +288,28 @@ cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) �
   open now that `FindWings` is known not to use `Combinations`.
 - **`platinum-blonde` is still 8.9× off ISS** even with discovery disabled (the other hard classics
   drop to 1.6–2.2×). It's the cleanest remaining outlier, and it explores 3.4× more nodes than ISS.
-- **New pathological cases from the ISS import**, far worse than `platinum-blonde` and none previously
-  known. Start with `1HuNjcLWlPE` "N is for Naomi": ISS solves it in **72 ms**, we did not finish in
-  **240 s**, and it uses only whispers, renban and dots — four constraint types, so the diagnosis
-  surface is small. Then `h-ymyScJa2s` (9.7 s vs 105 ms), `OqyXKDOhfDA` (>10 s vs 411 ms),
-  `blPgSzctUMg` (887 ms vs 14 ms). `Wb5YT1b-U9Q` was on this list at 308 ms and **deferred discovery
-  fixed it** (21 ms, against ISS's 7.4 ms) — so **re-measure the rest under the new default before
-  diagnosing anything**, since every timing here predates it. `blPgSzctUMg` did *not* benefit; it is
-  one of the few cases deferral costs (603 → 709 ms on the tune split), which makes it the better
-  target of the two.
-  Only `blPgSzctUMg` is in the corpus (`iss-tune`); the rest exceed the import's ceilings, so **fetch
-  their `.iss` text by id from the index site** — the import report records outcomes and timings, not
-  puzzle text. See [`iss-corpus-import.md`](iss-corpus-import.md) §2.
+- **The pathological ISS outliers are re-measured and split by cause** — see
+  [`pathological-outliers.md`](pathological-outliers.md). **The tail is not fixed**: deferral rescued
+  only `Wb5YT1b-U9Q` (now 20.8 ms, 2.8× off ISS — drop it from the list). `1HuNjcLWlPE` still
+  **does not finish in 28 minutes** against ISS's 72 ms, i.e. >23,000×.
+  A node-rate probe splits them into **two opposite diseases**, and they should not be worked as one
+  list:
+  - **Propagation strength** (`1HuNjcLWlPE`, `OqyXKDOhfDA`, `h-ymyScJa2s`): ~1M nodes/sec, which is
+    *healthy* — there are just far too many nodes. We are missing deductions ISS makes; no inner-loop
+    work will help. Corpus-wide, **`Renban` puzzles have a 4.50× slower median and `Whisper` 2.89×**
+    (n=97 and 134, with a constraint-count control), while `Thermo` puzzles are **0.20×** — five times
+    *faster*. `1HuNjcLWlPE` is the extreme: whispers, renban and dots with **no givens at all**.
+  - **Cost per node** (`blPgSzctUMg`): only **2,870 nodes** yet 680 ms — 280 µs/node against ~1 µs
+    in the group above, and 533 KB allocated per node. This one is `SandwichConstraint`, and partly
+    fixed (below).
+- **`SandwichConstraint` allocation, partly fixed.** `SandwichConstraint.cs:544` alone yielded
+  **4.2M combinations in a single count** of `blPgSzctUMg` (1,469 per node). Buffered enumeration plus
+  replacing `combination.Sum()` (which boxes a `List<int>` struct enumerator 4.2M times) took it
+  1,529 → 1,229 MB, −19.6%. **The remaining 1.2 GB is `Extensions.Permutations`** — a recursive
+  iterator yielding k! permutations with nested iterator state per level, called per surviving
+  combination. The loop only wants "which values can appear at which position", which is bipartite
+  matching; enumerating k! placements is the wrong algorithm rather than a slow one. Best-defined
+  remaining perf item in this file.
 - **The constraint-layer WASM tax**: vanilla is 1.0×, `killer-innie` is 5.73×. Two dispatch fixes
   already took 37% off corpus-wide. Same defect class is worth hunting: comparer/delegate dispatch in
   inner loops is mildly costly natively and severe under Mono AOT.
@@ -445,6 +455,8 @@ is part of the same habit.
    tier, and why discovery raises node count.
 4c. [`weak-link-representation.md`](weak-link-representation.md) — how weak links are applied in the
    search, and why the grouped form is faster.
+4d. [`pathological-outliers.md`](pathological-outliers.md) — the worst puzzles in the corpus, split
+   into a propagation-strength group and a cost-per-node group.
 5. [`logical-solver-allocation.md`](logical-solver-allocation.md) — the browser memory problem.
 6. [`solver-pooling-audit.md`](solver-pooling-audit.md) + [`truecandidates-allocation.md`](truecandidates-allocation.md) — what's already pooled and why MT is deliberately off.
 7. [`wasm-prototype-findings.md`](wasm-prototype-findings.md) — the .NET-WASM constraints that dictate host architecture.
