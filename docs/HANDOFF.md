@@ -125,19 +125,56 @@ Deferral is done (see above). Two follow-ups from
 *complementary* to it rather than superseded — both attack the **cost** side, which is exactly what
 deferral cannot: a puzzle that exceeds the budget still pays full price for discovery.
 
-1. **Discovery *increases* node count on `littlekiller-10`, `killer-cage` and `escargot`** (7,550 vs
-   2,554 on the first). It degrades the conflict-score branch ordering. That looks like a defect
-   rather than an inherent trade-off, and fixing it would remove the downside for a whole group of
-   puzzles without giving up `kropki`/`orbit`.
-2. **Abort a discovery pass early when it is unproductive.** Discovery loops
-   `do { … } while (innerResult == Changed)`. The pure-cost cases (`killer-innie`, `blank6`,
-   `arrow-search` — identical guess counts with and without) might be detectable after a partial
-   pass. Needs data on how many links each puzzle class actually yields; nothing has counted this.
+Both were investigated on 2026-08-04 and **both conclusions changed**. Full write-up:
+[`branch-ordering.md`](branch-ordering.md).
+
+1. **The node-count increase is real but it is not a defect — don't hunt for a bug.** Confirmed
+   `never`→`always`: `littlekiller-10` 5,104 → 15,090 nodes (2.96×), `killer-cage` 5,450 → 6,303
+   (1.16×). Two plausible mechanisms were ruled out by inspection: it is *not* conflict-score
+   pollution (discovery's scratch clone shares `conflictScores` by reference, but
+   `IncrementConflictScore` is only reachable from the search loops, which the scratch solver never
+   enters) and *not* bilocals (disabled at every search call site). The real mechanism is that
+   `SetValue` propagates along weak links (`SolverModification.cs:123`), so more links change
+   candidate counts, which changes the `score/count` ranking. It is a second-order consequence of
+   stronger propagation — the same two-sided trade-off as deferral itself.
+   **Also: take `escargot` off this list.** At the shipped `Deferred` default it never triggers
+   discovery at all (16 nodes, 0.23 ms); only `Always` hurts it, by 32×.
+2. **Aborting an unproductive pass: counted at last, and capping passes is the wrong fix.** On the
+   258 `iss-tune` puzzles that trigger discovery, passes ≥2 are 56.5% of probes but still yield
+   **39.4% of all links** — and `variant-equalsums` gets 4× more links from later passes than from
+   pass 1. The provable waste is narrower: **8.3% of probes on `iss-tune`** (27.9% on the 28-case
+   corpus, 66% on `killer-cage`) go to passes that yield zero links, and 93 of 251 multi-pass puzzles
+   gain nothing from their extra passes. The output-preserving fix is a **targeted re-probe** — only
+   candidates probed before the last board change in a pass are stale — not a pass cap. Watch that
+   `AddWeakLink` can itself mutate the board, so use a version counter rather than counting elims.
 
 If you revisit the deferral threshold itself, **tune against `--filter iss-tune` and confirm on
 `--filter iss-holdout`**, and score the *ratio distribution*, not `total min ms` — the total alone
 picks N=250, which makes the median puzzle slower. The 28-case corpus is too small to separate a
 threshold honestly and is flat across the whole range.
+
+### Priority 1b — The bilocal branch-ordering lever (new, and the biggest one found)
+
+`GetLeastCandidateCell` has a bilocal tier that explicitly "mirrors ISS `CandidateFinders.House`" —
+and **it is disabled at every search call site**. All four pass `allowBilocals: false`; only
+`SolverBruteForce.cs:1446` uses the default. It is effectively dead code for `solve` and `count`.
+
+Enabling it at the two main search loops moves node counts hard in both directions:
+`kropki-search-cap50k` **3,045,565 → 822,348 (0.27×)**, `killer-cage` 0.52×, `littlekiller-10` 0.69×,
+`variant-cloneways` 0.20× — against `variant-equalsums` **6.13× worse**, `variant-killerblister`
+3.65×, `variant-orbit` 2.12×. Six better, three worse, eight unchanged.
+
+The kropki result is the **largest single branch-ordering effect measured in this repo** and it is big
+enough to move wall time (2,209 → 1,089 ms). Two caveats before anyone gets excited:
+
+- **Vanilla is bit-identical across the board** (`escargot`, `blank6`, `vanilla-u17`, `killer-innie`,
+  `arrow-search`). This does *not* touch the hard-vanilla gap versus ISS, which was the reason for
+  looking. Every effect is on variant puzzles — which is, at least, the distribution the product runs.
+- It is a **two-sided dial, not a free win**, so it wants the same treatment deferral got: score the
+  ratio distribution over `iss-tune`, confirm on `iss-holdout`, and consider a conditional rather
+  than a global flip. Do not score `total min ms`.
+
+Details in [`branch-ordering.md`](branch-ordering.md).
 
 ### Priority 2 — What remains on true candidates
 
@@ -376,6 +413,8 @@ is part of the same habit.
 3. [`iss-corpus-import.md`](iss-corpus-import.md) — the 398-puzzle corpus, where we actually stand
    against ISS, and the coverage ceiling.
 4. [`weak-link-discovery-tradeoff.md`](weak-link-discovery-tradeoff.md) — the biggest lever.
+4b. [`branch-ordering.md`](branch-ordering.md) — what decides the branch cell, the disabled bilocal
+   tier, and why discovery raises node count.
 5. [`logical-solver-allocation.md`](logical-solver-allocation.md) — the browser memory problem.
 6. [`solver-pooling-audit.md`](solver-pooling-audit.md) + [`truecandidates-allocation.md`](truecandidates-allocation.md) — what's already pooled and why MT is deliberately off.
 7. [`wasm-prototype-findings.md`](wasm-prototype-findings.md) — the .NET-WASM constraints that dictate host architecture.
