@@ -98,7 +98,7 @@ public partial class Solver
             return false;
         }
         solver.isBruteForcing = true;
-        using FindSolutionState state = new(isRandom, multiThread, cancellationToken, solver.NUM_CANDIDATES + 1, nodeBudget);
+        using FindSolutionState state = new(isRandom, multiThread, cancellationToken, solver.NUM_CANDIDATES + 1, nodeBudget, BilocalSearchWeightPercent);
         state.InitializeSolverPool(solver);
         if (multiThread)
         {
@@ -134,16 +134,19 @@ public partial class Solver
         public bool isRandom = false;
         public bool isMultiThreaded = false;
         public readonly NodeBudget nodeBudget;
+        /// <summary>See <see cref="Solver.BilocalSearchWeightPercent"/>.</summary>
+        public readonly long bilocalWeightPercent;
 
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
 
-        public FindSolutionState(bool isRandom, bool isMultiThreaded, CancellationToken cancellationToken, int searchStackCapacity, long nodeBudget)
+        public FindSolutionState(bool isRandom, bool isMultiThreaded, CancellationToken cancellationToken, int searchStackCapacity, long nodeBudget, long bilocalWeightPercent)
         {
             this.cancellationToken = cancellationToken;
             this.isRandom = isRandom;
             this.isMultiThreaded = isMultiThreaded;
             this.nodeBudget = new NodeBudget(nodeBudget);
+            this.bilocalWeightPercent = bilocalWeightPercent;
             countdownEvent = isMultiThreaded ? new CountdownEvent(1) : null;
             searchStack = isMultiThreaded ? null : new Solver[searchStackCapacity];
 
@@ -295,7 +298,7 @@ public partial class Solver
                     continue;
                 }
 
-                (int cellIndex, int v) = solver.GetLeastCandidateCell(allowBilocals: false);
+                (int cellIndex, int v) = solver.GetLeastCandidateCell(state.bilocalWeightPercent);
                 if (cellIndex < 0)
                 {
                     state.ReportSolution(solver);
@@ -407,7 +410,7 @@ public partial class Solver
     /// </returns>
     private long? CountSolutionsAttempt(long maxSolutions, bool multiThread, Action<long> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken, bool probeWeakLinks, long nodeBudget)
     {
-        using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken, NUM_CANDIDATES + 1, nodeBudget);
+        using CountSolutionsState state = new(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken, NUM_CANDIDATES + 1, nodeBudget, BilocalSearchWeightPercent);
         try
         {
             Solver boardCopy = Clone(willRunNonSinglesLogic: true);
@@ -475,6 +478,8 @@ public partial class Solver
         public readonly CountdownEvent countdownEvent;
         public readonly Solver[] searchStack;
         public readonly NodeBudget nodeBudget;
+        /// <summary>See <see cref="Solver.BilocalSearchWeightPercent"/>.</summary>
+        public readonly long bilocalWeightPercent;
         private BruteForceSolverPool solverPool;
         private SearchStackPool searchStackPool;
         private readonly int searchStackCapacity;
@@ -485,9 +490,10 @@ public partial class Solver
         private int numRunningTasks = 0;
         private readonly int maxRunningTasks;
 
-        public CountSolutionsState(long maxSolutions, bool multiThread, Action<long> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken, int searchStackCapacity, long nodeBudget)
+        public CountSolutionsState(long maxSolutions, bool multiThread, Action<long> progressEvent, Action<Solver> solutionEvent, CancellationToken cancellationToken, int searchStackCapacity, long nodeBudget, long bilocalWeightPercent)
         {
             this.nodeBudget = new NodeBudget(nodeBudget);
+            this.bilocalWeightPercent = bilocalWeightPercent;
             this.maxSolutions = maxSolutions;
             this.multiThread = multiThread;
             this.progressEvent = progressEvent;
@@ -672,7 +678,7 @@ public partial class Solver
                 }
 
                 // Start with the cell that has the least possible candidates
-                (int cellIndex, int v) = solver.GetLeastCandidateCell(allowBilocals: false);
+                (int cellIndex, int v) = solver.GetLeastCandidateCell(state.bilocalWeightPercent);
                 if (cellIndex < 0)
                 {
                     state.IncrementSolutions(solver);
@@ -1670,7 +1676,7 @@ public partial class Solver
             //------------------------------------------------------------
             // 2.  Choose MRV cell
             //------------------------------------------------------------
-            (int cell, _) = solver.GetLeastCandidateCell(allowBilocals: false);
+            (int cell, _) = solver.GetLeastCandidateCell(bilocalWeightPercent: 0);
             if (cell < 0)
             {
                 // Defensive: treat as solved
@@ -2008,7 +2014,7 @@ public partial class Solver
             //------------------------------------------------------------
             // 2.  Choose MRV cell
             //------------------------------------------------------------
-            (int cell, _) = solver.GetLeastCandidateCell(allowBilocals: false);
+            (int cell, _) = solver.GetLeastCandidateCell(bilocalWeightPercent: 0);
             if (cell < 0)
             {
                 state.RecordPathSample(visited, exactCarry + 1.0 / pathProb);

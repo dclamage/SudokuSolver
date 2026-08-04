@@ -2,7 +2,15 @@
 
 public partial class Solver
 {
-    private (int, int) GetLeastCandidateCell(bool allowBilocals = true)
+    /// <summary>
+    /// Picks the cell to branch on next, and optionally the value.
+    /// </summary>
+    /// <param name="bilocalWeightPercent">
+    /// How strongly a bilocal may override the conflict-score choice, as a percentage. 0 disables
+    /// the bilocal tier entirely; <see cref="BILOCAL_WEIGHT_ISS"/> (50) reproduces ISS's weighting.
+    /// Higher values pick bilocals more often. See docs/branch-ordering.md.
+    /// </param>
+    private (int, int) GetLeastCandidateCell(long bilocalWeightPercent = BILOCAL_WEIGHT_ISS)
     {
         // Conflict-score path: rank cells by (score / candidateCount), highest first.
         // Only considers cells with score > 0 so a cold-start (all zeros) falls through to MRV.
@@ -33,14 +41,14 @@ public partial class Solver
         }
 
         // Bilocal path — mirrors ISS CandidateFinders.House.
-        // ISS scores bilocals as maxConflictScore(c0,c1) * 0.5 and compares against
+        // ISS scores bilocals as maxConflictScore(c0,c1) * w (w = 0.5) and compares against
         // the regular score/count metric.  A bilocal wins when:
-        //   maxCS * 0.5 > csBestScore / csBestCount
-        //   ↔  maxCS * csBestCount > 2 * csBestScore
+        //   maxCS * w > csBestScore / csBestCount
+        //   ↔  maxCS * csBestCount * weightPercent > csBestScore * 100
         //
         // Run this alongside the conflict-score path (not only as a fallback) so that
         // a well-scoring bilocal can override even a strong conflict-score candidate.
-        if (allowBilocals)
+        if (bilocalWeightPercent > 0)
         {
             var (bCell, bOtherCell, bVal) = FindBestBilocal();
             if (bVal > 0)
@@ -51,10 +59,9 @@ public partial class Solver
                     return (bCell, bVal);
                 }
 
-                // Compare: bilocal wins if maxCS * csBestCount > 2 * csBestScore
-                int bMaxCS = Math.Max(conflictScores[bCell],
-                                      bOtherCell >= 0 ? conflictScores[bOtherCell] : 0);
-                if (bMaxCS * csBestCount > 2 * csBestScore)
+                long bMaxCS = Math.Max(conflictScores[bCell],
+                                       bOtherCell >= 0 ? conflictScores[bOtherCell] : 0);
+                if (bMaxCS * csBestCount * bilocalWeightPercent > (long)csBestScore * 100)
                 {
                     return (bCell, bVal);
                 }
@@ -476,6 +483,33 @@ public partial class Solver
         return value != null && long.TryParse(value, out long nodes) && nodes > 0
             ? nodes
             : WEAK_LINK_DEFER_NODES_DEFAULT;
+    }
+
+    /// <summary>
+    /// The bilocal override weight ISS itself uses (it scores a bilocal at half the cell's conflict
+    /// score). This is the weight the true-candidates search has always run with.
+    /// </summary>
+    internal const long BILOCAL_WEIGHT_ISS = 50;
+
+    /// <summary>
+    /// Process-wide default for <see cref="BilocalSearchWeightPercent"/>, overridable with
+    /// <c>SUDOKU_BILOCAL_WEIGHT</c> so it can be swept from the benchmark harness without a rebuild.
+    /// </summary>
+    internal static readonly long DefaultBilocalSearchWeightPercent = ReadDefaultBilocalSearchWeightPercent();
+
+    // Zero because it is measured to be worse, not because it is untried. The bilocal tier was
+    // unexplained dead code in the solve/count searches until 2026-08-04; enabling it at ISS's own
+    // weight of 50 costs 7.7x total nodes over the 221 non-trivial iss-tune puzzles (p90 2.56x,
+    // worst 180x), even though it looks like a 0.83x win on the 28-case corpus. Don't re-derive
+    // this from the small corpus; see docs/branch-ordering.md.
+    private const long BILOCAL_SEARCH_WEIGHT_DEFAULT = 0;
+
+    private static long ReadDefaultBilocalSearchWeightPercent()
+    {
+        string value = Environment.GetEnvironmentVariable("SUDOKU_BILOCAL_WEIGHT");
+        return value != null && long.TryParse(value, out long weight) && weight >= 0
+            ? weight
+            : BILOCAL_SEARCH_WEIGHT_DEFAULT;
     }
 
     private LogicResult FastFindPairs(CancellationToken cancellationToken)

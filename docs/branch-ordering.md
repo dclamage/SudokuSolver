@@ -19,44 +19,88 @@ A "node" is one iteration of the search loop in `FindSolutionInternal` /
    scores, allowed to *override* tier 1.
 3. **MRV fallback** — fewest candidates, preferring small groups.
 
-**Tier 2 is disabled everywhere the search actually runs.** All four search call sites pass
-`allowBilocals: false`; only `SolverBruteForce.cs:1446` uses the default `true`. So the ISS-derived
-bilocal finder is, in practice, dead code for `solve` and `count`.
+**Tier 2 is disabled everywhere the `solve`/`count` search runs**, and as of 2026-08-04 that is a
+measured decision rather than an unexplained one. The `solve`/`count` sites pass
+`state.bilocalWeightPercent`, which defaults to 0; the true-candidates search
+(`SolverBruteForce.cs:1442`) passes nothing and so gets ISS's weight of 50, which is what it has
+always used. The section below is why the search sites are 0.
 
-## What enabling bilocals does
+## Enabling bilocals is worse on real puzzles — and the small corpus says the opposite
 
-Flipping the two main search sites (`SolverBruteForce.cs:300` and `:679`) to
-`allowBilocals: true`, default `Deferred` discovery, node counts on the 28-case corpus:
+**Conclusion first: leave `BilocalSearchWeightPercent` at 0.** It is 0 because it was measured, not
+because it was never tried.
 
-| case | bilocal OFF | bilocal ON | ratio |
-| --- | ---: | ---: | ---: |
-| kropki-search-cap50k | 3,045,565 | **822,348** | **0.27×** |
-| variant-cloneways | 71 | 14 | 0.20× |
-| variant-renban-sky | 13 | 6 | 0.46× |
-| killer-cage | 8,303 | 4,289 | 0.52× |
-| littlekiller-10 | 17,090 | 11,743 | 0.69× |
-| est-escargot-6clue | 1,530 | 1,335 | 0.87× |
-| variant-orbit | 5,255 | 11,142 | 2.12× |
-| variant-killerblister | 150 | 547 | 3.65× |
-| variant-equalsums | 204 | **1,250** | **6.13×** |
-| blank4, blank6-cap5M, vanilla-u17-s, escargot, killer-innie, arrow-search, littlekiller-8, est-blank6 | — | — | 1.00× |
+The tier is now controlled by a weight rather than a bool (`bilocalWeightPercent`, env
+`SUDOKU_BILOCAL_WEIGHT`). A bilocal wins when
+`maxCS * csBestCount * weightPercent > csBestScore * 100`, so weight 50 reproduces ISS exactly and 0
+disables the tier.
 
-**6 better, 3 worse, 8 unchanged.** This is a genuine two-sided ordering lever, not a free win — the
-same shape as the weak-link-discovery trade-off, and it should be treated the same way.
+### First, on the 28-case corpus — which is misleading
 
-Two things worth noting:
+| case | w=0 | w=25 | w=50 | w=100 | w=200 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| kropki-search-cap50k | 3,045,565 | 0.96× | **0.27×** | 0.27× | 0.29× |
+| variant-cloneways | 71 | 0.70× | 0.20× | 0.25× | 0.25× |
+| variant-renban-sky | 13 | 1.00× | 0.46× | 0.46× | 0.46× |
+| killer-cage | 8,303 | 1.02× | 0.52× | 0.90× | 0.72× |
+| littlekiller-10 | 17,090 | 1.06× | 0.69× | **7.71×** | 6.48× |
+| escargot | 16 | 1.00× | 1.00× | 6.81× | 6.81× |
+| littlekiller-8 | 9 | 1.00× | 1.00× | 5.44× | 5.44× |
+| variant-orbit | 5,255 | 1.00× | 2.12× | 2.51× | 3.04× |
+| variant-killerblister | 150 | 1.00× | 3.65× | 8.79× | 9.01× |
+| variant-equalsums | 204 | 1.00× | **6.13×** | 9.81× | 9.81× |
+| **total nodes** | 13,227,164 | 0.992× | **0.832×** | 0.842× | 0.845× |
 
-- **`kropki-search-cap50k` at 3.7× fewer nodes is the largest single branch-ordering effect measured
-  in this repo**, and it is large enough that its wall time moved with it (2,209 → 1,089 ms) despite
-  the tier-0 JIT caveat.
-- **Vanilla is completely untouched** — `escargot` (16 nodes), `blank6-cap5M`, `vanilla-u17`,
-  `killer-innie` and `arrow-search` are all bit-identical. So this does **not** address the hard-vanilla
-  gap versus ISS, which was the original hypothesis for looking here. The wins and losses are all on
-  *variant* puzzles, which is the distribution the product actually runs.
+Read alone, that says weight 50 is a 17% win. **It is not.**
 
-Anyone tuning this should score the **ratio distribution across `iss-tune`**, not the 28-case corpus
-and not a total — exactly the lesson from the discovery threshold, where scoring `total min ms`
-picked a value that made the median puzzle slower.
+### Then, on `iss-tune` — 221 non-trivial puzzles, which is the authority
+
+| | total nodes | p10 | p50 | p90 | worst | better / same / worse |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| w=50 | **7.71× worse** | 0.62× | 1.000× | 2.56× | **180×** | 63 / 64 / 94 |
+| w=75 | 13.74× worse | 0.70× | 1.335× | 6.10× | 108× | 30 / 62 / 129 |
+
+The median puzzle is untouched and the tail is savage: `L4BKOaUr1GE` 180×, `NjpUueqFEHY` 77×,
+`AIV47AgKIO0` 32×. A handful of puzzles do improve enormously (`qIqlRzG5x5E` 0.03×,
+`1t-ASgvUrEw` 0.04×), which is what the small corpus was picking up on.
+
+**This is the clearest example yet of why the ISS corpus exists.** The 28-case corpus and the
+398-puzzle corpus disagree about the *sign* of the effect, by an order of magnitude in each
+direction. `handoff.md` already warned that the small corpus "is too small to separate a threshold
+honestly"; this is what that failure looks like in practice, and it caught out the first pass of this
+very investigation.
+
+### Why the dial is coarse
+
+Conflict scores are seeded uniformly at `MAX_VALUE * 3`, so early in a search
+`maxCS ≈ csBestScore` and the condition collapses to `csBestCount * weightPercent > 100`. The weight
+is therefore really encoding *"how many candidates must the conflict-score cell have before a 2-way
+bilocal beats it"*:
+
+- w ≤ 33 → needs `csBestCount ≥ 4`, which almost never wins. w=10 and w=25 are near no-ops.
+- w = 34..99 → beats cells with **3+** candidates. This is the sane band, and ISS's 50 sits in it.
+- w ≥ 100 → beats even **bivalue** cells, i.e. it overrides an already-minimal 2-way branch. That is
+  why `escargot`, `littlekiller-8` and `littlekiller-10` fall off a cliff between 50 and 100.
+
+So there is no intermediate weight that keeps the wins and drops the losses; the transition happens
+all at once, and both sides of it are present at every setting in the sane band.
+
+### Vanilla is untouched either way
+
+`escargot` (16 nodes), `blank6-cap5M`, `vanilla-u17`, `killer-innie` and `arrow-search` are
+bit-identical at w=50. This does **not** address the hard-vanilla gap versus ISS, which was the
+original reason for looking here. Every effect is on variant puzzles.
+
+### If anyone returns to this
+
+Don't re-run the static sweep — that question is answered. The only shape that could still work is a
+**deferred** one, mirroring `WeakLinkDiscoveryMode.Deferred`: search without bilocals, and if the
+node budget blows, restart with them. The asymmetry that makes it plausible is that a restart only
+triggers on searches that are *already* expensive, which is exactly where the 0.03× puzzles live, and
+`SnapshotConflictState` already exists to make the retry clean. The risk is that the bad tail is just
+as heavy as the good one, so a wrong-arm restart could make an expensive search far worse — it would
+need scoring on the ratio distribution over `iss-tune`, confirmed on `iss-holdout`, before it could
+ship.
 
 ## Why weak-link discovery increases node count (Priority 1.1)
 

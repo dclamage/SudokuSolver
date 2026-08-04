@@ -153,28 +153,29 @@ If you revisit the deferral threshold itself, **tune against `--filter iss-tune`
 picks N=250, which makes the median puzzle slower. The 28-case corpus is too small to separate a
 threshold honestly and is flat across the whole range.
 
-### Priority 1b — The bilocal branch-ordering lever (new, and the biggest one found)
+### Priority 1b — The bilocal branch-ordering tier: **closed, answered "no"**
 
-`GetLeastCandidateCell` has a bilocal tier that explicitly "mirrors ISS `CandidateFinders.House`" —
-and **it is disabled at every search call site**. All four pass `allowBilocals: false`; only
-`SolverBruteForce.cs:1446` uses the default. It is effectively dead code for `solve` and `count`.
+`GetLeastCandidateCell` has a bilocal tier that explicitly "mirrors ISS `CandidateFinders.House`" and
+was unexplained dead code in the `solve`/`count` searches. It is now a weight
+(`BilocalSearchWeightPercent`, env `SUDOKU_BILOCAL_WEIGHT`) that **defaults to 0 because enabling it
+is measurably worse**, not because it was never tried.
 
-Enabling it at the two main search loops moves node counts hard in both directions:
-`kropki-search-cap50k` **3,045,565 → 822,348 (0.27×)**, `killer-cage` 0.52×, `littlekiller-10` 0.69×,
-`variant-cloneways` 0.20× — against `variant-equalsums` **6.13× worse**, `variant-killerblister`
-3.65×, `variant-orbit` 2.12×. Six better, three worse, eight unchanged.
+At ISS's own weight of 50, over the 221 non-trivial `iss-tune` puzzles: **7.71× total nodes**, p50
+1.000×, p90 2.56×, **worst 180×**. Weight 75 is worse still (13.7×).
 
-The kropki result is the **largest single branch-ordering effect measured in this repo** and it is big
-enough to move wall time (2,209 → 1,089 ms). Two caveats before anyone gets excited:
+**The cautionary tale is the reason to read this one.** On the 28-case corpus the same change scores
+**0.832× total** — a 17% win, with `kropki-search-cap50k` at 0.27× — and that is what the first pass
+of this investigation reported. The two corpora disagree about the *sign* of the effect by an order of
+magnitude in each direction. This is the concrete demonstration of the warning already in this file
+that the 28-case corpus is too small to separate a heuristic honestly: **take any branch-ordering or
+threshold result to `iss-tune` before believing it.**
 
-- **Vanilla is bit-identical across the board** (`escargot`, `blank6`, `vanilla-u17`, `killer-innie`,
-  `arrow-search`). This does *not* touch the hard-vanilla gap versus ISS, which was the reason for
-  looking. Every effect is on variant puzzles — which is, at least, the distribution the product runs.
-- It is a **two-sided dial, not a free win**, so it wants the same treatment deferral got: score the
-  ratio distribution over `iss-tune`, confirm on `iss-holdout`, and consider a conditional rather
-  than a global flip. Do not score `total min ms`.
-
-Details in [`branch-ordering.md`](branch-ordering.md).
+Don't re-run the static sweep. The write-up in [`branch-ordering.md`](branch-ordering.md) explains why
+the dial is coarse (the weight really encodes "how many candidates must the conflict-score cell have
+before a 2-way bilocal beats it", so there is no setting that keeps the wins and drops the losses),
+and sketches the only shape that could still work: a *deferred* bilocal arm reusing the
+`WeakLinkDiscoveryMode.Deferred` machinery, since a restart only fires on already-expensive searches,
+which is where the 0.03× puzzles live.
 
 ### Priority 2 — What remains on true candidates
 

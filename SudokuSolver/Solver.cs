@@ -40,6 +40,28 @@ public partial class Solver
     /// Zero switches to the directed phase immediately.
     /// </summary>
     public long TrueCandidatesStallLimit { get; set; } = DefaultTrueCandidatesStallLimit;
+    /// <summary>
+    /// How strongly a bilocal (a value with exactly two positions in a house) may override the
+    /// conflict-score branch choice in the <see cref="FindSolution"/> and
+    /// <see cref="CountSolutions"/> searches, as a percentage. 0, the default, disables the bilocal
+    /// tier there; 50 is the weight ISS uses.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Deliberately 0, and deliberately not public.</b> Enabling this is measurably *worse* on
+    /// real puzzles: across the 221 non-trivial <c>iss-tune</c> puzzles it costs 7.7x total nodes at
+    /// weight 50, with p90 2.56x and a worst case of 180x. It looks like a win on the 28-case corpus
+    /// (0.83x total) — that corpus is too small to separate a branch-ordering rule, which is the
+    /// whole reason the ISS corpus exists. See docs/branch-ordering.md.
+    /// </para>
+    /// <para>
+    /// It survives as a knob only so the experiment is one env var away instead of a re-derivation,
+    /// and so the <c>bilocalWeightPercent: 0</c> at each search call site reads as a measured
+    /// decision rather than an unexplained <c>false</c>. It does not affect
+    /// <see cref="TrueCandidates"/>, which has always branched with ISS's weight.
+    /// </para>
+    /// </remarks>
+    internal long BilocalSearchWeightPercent { get; set; } = DefaultBilocalSearchWeightPercent;
 
     // Private data
     private uint[] board;
