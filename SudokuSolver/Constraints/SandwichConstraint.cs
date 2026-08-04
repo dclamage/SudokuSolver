@@ -296,40 +296,14 @@ public class SandwichConstraint : Constraint
             }
             possibleValuesMask &= nonCrustsMask;
 
-            List<int> possibleValues = new(ValueCount(possibleValuesMask));
-            for (int v = 1; v <= MAX_VALUE; v++)
-            {
-                if ((possibleValuesMask & ValueMask(v)) != 0)
-                {
-                    possibleValues.Add(v);
-                }
-            }
-
-            if (possibleValues.Count < numUnsetCells)
+            if (ValueCount(possibleValuesMask) < numUnsetCells)
             {
                 logicalStepDescription?.Append($"Remaining sandwich sum values {MaskToString(possibleValuesMask)} do not fit into {numUnsetCells} remaining cells.");
                 return LogicResult.Invalid;
             }
 
             uint[] fillingKeepMasks = new uint[fillingSize];
-            foreach (var combination in possibleValues.CombinationsBuffered(numUnsetCells))
-            {
-                if (SumOf(combination) != remainingSum)
-                {
-                    continue;
-                }
-
-                foreach (var permuatation in combination.Permutations())
-                {
-                    if (sudokuSolver.CanPlaceDigits(unsetCells, permuatation))
-                    {
-                        for (int cellIndex = 0; cellIndex < numUnsetCells; cellIndex++)
-                        {
-                            fillingKeepMasks[cellIndex] |= ValueMask(permuatation[cellIndex]);
-                        }
-                    }
-                }
-            }
+            ApplySumCombinations(sudokuSolver, possibleValuesMask, unsetCells, remainingSum, fillingKeepMasks, null);
 
             return ApplyKeepMask(sudokuSolver, fillingKeepMasks, unsetCells, logicalStepDescription);
         }
@@ -405,36 +379,10 @@ public class SandwichConstraint : Constraint
                             }
                             possibleValuesMask &= nonCrustsMask;
 
-                            List<int> possibleValues = new(ValueCount(possibleValuesMask));
-                            for (int v = 1; v <= MAX_VALUE; v++)
+                            if (ValueCount(possibleValuesMask) >= numUnsetCells)
                             {
-                                if ((possibleValuesMask & ValueMask(v)) != 0)
-                                {
-                                    possibleValues.Add(v);
-                                }
-                            }
-
-                            if (possibleValues.Count >= numUnsetCells)
-                            {
-                                foreach (var combination in possibleValues.CombinationsBuffered(numUnsetCells))
-                                {
-                                    if (SumOf(combination) != remainingSum)
-                                    {
-                                        continue;
-                                    }
-
-                                    foreach (var permuatation in combination.Permutations())
-                                    {
-                                        if (sudokuSolver.CanPlaceDigits(unsetCells, permuatation))
-                                        {
-                                            for (int cellIndex = 0; cellIndex < numUnsetCells; cellIndex++)
-                                            {
-                                                keepMasks[unsetCellIndices[cellIndex]] |= ValueMask(permuatation[cellIndex]);
-                                            }
-                                            haveValidPlacement = true;
-                                        }
-                                    }
-                                }
+                                haveValidPlacement |= ApplySumCombinations(
+                                    sudokuSolver, possibleValuesMask, unsetCells, remainingSum, keepMasks, unsetCellIndices);
                             }
                         }
                     }
@@ -530,36 +478,10 @@ public class SandwichConstraint : Constraint
                             }
                             possibleValuesMask &= nonCrustsMask;
 
-                            List<int> possibleValues = new(ValueCount(possibleValuesMask));
-                            for (int v = 1; v <= MAX_VALUE; v++)
+                            if (ValueCount(possibleValuesMask) >= numUnsetCells)
                             {
-                                if ((possibleValuesMask & ValueMask(v)) != 0)
-                                {
-                                    possibleValues.Add(v);
-                                }
-                            }
-
-                            if (possibleValues.Count >= numUnsetCells)
-                            {
-                                foreach (var combination in possibleValues.CombinationsBuffered(numUnsetCells))
-                                {
-                                    if (SumOf(combination) != remainingSum)
-                                    {
-                                        continue;
-                                    }
-
-                                    foreach (var permuatation in combination.Permutations())
-                                    {
-                                        if (sudokuSolver.CanPlaceDigits(unsetCells, permuatation))
-                                        {
-                                            for (int cellIndex = 0; cellIndex < numUnsetCells; cellIndex++)
-                                            {
-                                                keepMasks[unsetCellIndices[cellIndex]] |= ValueMask(permuatation[cellIndex]);
-                                            }
-                                            haveValidPlacement = true;
-                                        }
-                                    }
-                                }
+                                haveValidPlacement |= ApplySumCombinations(
+                                    sudokuSolver, possibleValuesMask, unsetCells, remainingSum, keepMasks, unsetCellIndices);
                             }
                         }
                     }
@@ -590,6 +512,103 @@ public class SandwichConstraint : Constraint
     /// list's struct enumerator, and this runs once per enumerated combination — 4.2 million times
     /// in a single count of the ISS puzzle blPgSzctUMg. See docs/sandwich-allocation.md.
     /// </summary>
+    /// <summary>
+    /// For every set of <paramref name="unsetCells"/>.Count distinct values that sums to
+    /// <paramref name="remainingSum"/> and is available in <paramref name="possibleValuesMask"/>,
+    /// records which value can appear in which cell by OR-ing it into <paramref name="keepMasks"/>.
+    /// Returns whether any placement was possible at all.
+    /// </summary>
+    /// <param name="keepMaskIndices">
+    /// Maps position within <paramref name="unsetCells"/> to its index in
+    /// <paramref name="keepMasks"/>, or null when those are the same thing.
+    /// </param>
+    /// <remarks>
+    /// The candidate value sets come from <see cref="ValueCombinationTable"/> rather than being
+    /// enumerated and sum-filtered per call, which is what made this the most expensive constraint in
+    /// the corpus. The permutation step is unchanged and is now the remaining cost.
+    /// </remarks>
+    private bool ApplySumCombinations(
+        Solver sudokuSolver,
+        uint possibleValuesMask,
+        List<(int, int)> unsetCells,
+        int remainingSum,
+        uint[] keepMasks,
+        List<int> keepMaskIndices)
+    {
+        int numUnsetCells = unsetCells.Count;
+        bool foundAny = false;
+
+        uint[] tabulated = ValueCombinationTable.MasksFor(MAX_VALUE, numUnsetCells, remainingSum);
+        if (tabulated != null)
+        {
+            List<int> combination = new(numUnsetCells);
+            foreach (uint comboMask in tabulated)
+            {
+                // Needs a value that no remaining cell can take.
+                if ((comboMask & ~possibleValuesMask) != 0)
+                {
+                    continue;
+                }
+
+                combination.Clear();
+                for (int v = 1; v <= MAX_VALUE; v++)
+                {
+                    if ((comboMask & ValueMask(v)) != 0)
+                    {
+                        combination.Add(v);
+                    }
+                }
+
+                foundAny |= ApplyPermutations(sudokuSolver, combination, unsetCells, keepMasks, keepMaskIndices);
+            }
+            return foundAny;
+        }
+
+        // Grids above ValueCombinationTable.MAX_TABULATED_VALUE are not tabulated, so fall back to
+        // enumerating combinations and filtering by sum.
+        List<int> possibleValues = new(ValueCount(possibleValuesMask));
+        for (int v = 1; v <= MAX_VALUE; v++)
+        {
+            if ((possibleValuesMask & ValueMask(v)) != 0)
+            {
+                possibleValues.Add(v);
+            }
+        }
+        foreach (var combination in possibleValues.CombinationsBuffered(numUnsetCells))
+        {
+            if (SumOf(combination) != remainingSum)
+            {
+                continue;
+            }
+            foundAny |= ApplyPermutations(sudokuSolver, combination, unsetCells, keepMasks, keepMaskIndices);
+        }
+        return foundAny;
+    }
+
+    private static bool ApplyPermutations(
+        Solver sudokuSolver,
+        List<int> combination,
+        List<(int, int)> unsetCells,
+        uint[] keepMasks,
+        List<int> keepMaskIndices)
+    {
+        bool foundAny = false;
+        foreach (var permutation in combination.Permutations())
+        {
+            if (!sudokuSolver.CanPlaceDigits(unsetCells, permutation))
+            {
+                continue;
+            }
+            for (int cellIndex = 0; cellIndex < unsetCells.Count; cellIndex++)
+            {
+                int target = keepMaskIndices == null ? cellIndex : keepMaskIndices[cellIndex];
+                keepMasks[target] |= ValueMask(permutation[cellIndex]);
+            }
+            foundAny = true;
+        }
+        return foundAny;
+    }
+
     private static int SumOf(List<int> values)
     {
         int sum = 0;
