@@ -33,7 +33,7 @@ relevant distribution is the favourable one. Data and caveats:
 
 ### Infrastructure you now have
 
-- **28-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
+- **30-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
   `benchmarks/README.md` documents each. `truecandidates` is the operation a setting UI actually
   runs on every edit; `logical` is the half the product leans on hardest.
 - **398-case ISS corpus** in `benchmarks/corpus-iss.json`, generated from sigh's CTC index with
@@ -317,6 +317,13 @@ cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) �
   brotli measured informally in Node; never measured properly in a browser. Matters for the product.
 - **`EstimateTrueCandidates` is unpooled** — same shape as `EstimateSolutions`, which is now pooled,
   but it has no benchmark case, so changing it would be unmeasured. Add a case first.
+- **`SkyscraperConstraint` costs ~130× more per solution than `XSumConstraint`** — 3.3 ms against
+  0.025 ms, measured on blank 9x9 grids with a couple of clues. Setup is not the problem (21 ms of a
+  16.6 s run), so this is per-node cost, the same disease as `SandwichConstraint` in
+  [`pathological-outliers.md`](pathological-outliers.md) but worse. Undiagnosed; `skyscraper-search`
+  now covers it.
+- **`xsum-search` allocates 53 MB for a 51 ms count**, which is out of proportion and unexplained.
+  Probably the `SumGroup` path, which has no memoization of its own.
 - **MT pooling** stays off for `TrueCandidates`/`FindSolution`. Per-invocation local caches are **not
   worth building**: the pool already hits 99.99% (9.68M rents, 272 misses), so they'd only address
   lock contention, which remains unproven. See [`solver-pooling-audit.md`](solver-pooling-audit.md).

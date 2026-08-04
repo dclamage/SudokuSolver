@@ -138,6 +138,32 @@
     "expected": 1
   },
   {
+    "name": "xsum-search",
+    "category": "variant",
+    "blank": 9,
+    "constraints": [
+      "xsum:20r1c0",
+      "xsum:25r9c10",
+      "xsum:15r0c1",
+      "xsum:30r10c9"
+    ],
+    "op": "count",
+    "maxCount": 5000,
+    "expected": 5000
+  },
+  {
+    "name": "skyscraper-search",
+    "category": "variant",
+    "blank": 9,
+    "constraints": [
+      "skyscraper:4r1c0",
+      "skyscraper:4r9c10"
+    ],
+    "op": "count",
+    "maxCount": 100,
+    "expected": 100
+  },
+  {
     "name": "vanilla-u17-logical",
     "category": "logical",
     "givens": "000000010400000000020000000000050407008000300001090000300400200050100000000806000",

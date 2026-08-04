@@ -123,6 +123,25 @@ means every candidate on a 9x9 is still live, 81 means the grid is fully resolve
 sample count still catches a path that short-circuits or throws; the point of these cases is time
 and allocation, since each sample clones one child per open candidate and keeps only one.
 
+### Capped counts on a blank grid, for constraints no real puzzle covers
+
+`xsum-search` and `skyscraper-search` are blank 9x9 grids with a few clues, counted to a cap. Neither
+constraint appears in *any* of the 398 ISS puzzles, so before these two cases nothing in either
+corpus exercised `XSumConstraint` or `SkyscraperConstraint` at all — changing them would have been
+unmeasured, and a regression invisible. A capped count on a blank grid is the cheapest way to cover a
+constraint that has no real-world puzzles to import: it needs no hand-authored puzzle, and the cap
+makes the score deterministic (the search stops at the cap, it does not sample).
+
+Their expected counts were cross-checked for agreement across all three `WeakLinkDiscoveryMode`
+values and single- vs multi-threaded, which is the strongest independent check available without an
+external oracle.
+
+Pick the cap from the per-solution cost, not a round number. `skyscraper-search` uses a cap of 100
+where `xsum-search` uses 5,000, because **Skyscraper costs ~3.3 ms per solution against X-Sum's
+0.025 ms** — about 130× more. That gap is a real and so far undiagnosed per-node cost problem in
+`SkyscraperConstraint`; see [`docs/pathological-outliers.md`](../docs/pathological-outliers.md) for
+the same shape diagnosed in `SandwichConstraint`.
+
 Two things to know before adding `logical` cases:
 
 - **They are slow.** Logic to exhaustion costs far more than brute force on the same puzzle, and a
