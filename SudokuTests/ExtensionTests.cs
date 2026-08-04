@@ -118,4 +118,88 @@ public class ExtensionTests
         Assert.AreEqual(-45, -123045.Skip(3, out int leading));
         Assert.AreEqual(1, leading);
     }
+
+    /// <summary>
+    /// CombinationsBuffered must enumerate exactly what Combinations does, in the same order, for
+    /// every (n, k) the solver can reach. Snapshotting each yielded buffer is the point: the
+    /// borrowed buffer is only correct if its *contents at yield time* match the fresh list.
+    /// </summary>
+    [TestMethod]
+    public void CombinationsBufferedMatchesCombinations()
+    {
+        // n up to 9 covers a 9x9 grid's row/col and candidate lists; k up to n covers the tuple
+        // sizes the fish, tuple and ALS searches ask for, including the k > n no-op case.
+        for (int n = 0; n <= 9; n++)
+        {
+            List<int> source = new();
+            for (int i = 0; i < n; i++)
+            {
+                source.Add(i * 7 + 1);
+            }
+
+            for (int k = 1; k <= n + 1; k++)
+            {
+                List<List<int>> expected = source.Combinations(k).ToList();
+                List<List<int>> actual = source.CombinationsBuffered(k)
+                    .Select(buffer => buffer.ToList())
+                    .ToList();
+
+                Assert.AreEqual(expected.Count, actual.Count, $"count mismatch for n={n}, k={k}");
+                for (int c = 0; c < expected.Count; c++)
+                {
+                    CollectionAssert.AreEqual(expected[c], actual[c], $"combination {c} differs for n={n}, k={k}");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// The buffer is allocated per enumerator, which is what makes the nested pair in
+    /// FindFinnedFishes safe. If it were shared, the outer combination would be corrupted by the
+    /// inner enumeration.
+    /// </summary>
+    [TestMethod]
+    public void CombinationsBufferedNestsWithoutInterference()
+    {
+        List<int> outerSource = [1, 2, 3, 4];
+        List<int> innerSource = [10, 20, 30, 40, 50];
+
+        int outerCount = 0;
+        foreach (List<int> outer in outerSource.CombinationsBuffered(2))
+        {
+            List<int> outerBefore = outer.ToList();
+            foreach (List<int> inner in innerSource.CombinationsBuffered(3))
+            {
+                Assert.AreEqual(3, inner.Count);
+                // The outer buffer must be untouched while the inner enumeration runs.
+                CollectionAssert.AreEqual(outerBefore, outer);
+            }
+            CollectionAssert.AreEqual(outerBefore, outer);
+            outerCount++;
+        }
+
+        Assert.AreEqual(6, outerCount);
+    }
+
+    /// <summary>
+    /// Documents the borrowed-buffer contract as a behaviour: retaining the yielded reference is
+    /// wrong, and this is what it looks like when you do. A caller that stores it ends up with N
+    /// references to one list holding only the last combination.
+    /// </summary>
+    [TestMethod]
+    public void CombinationsBufferedYieldsTheSameListInstance()
+    {
+        List<int> source = [1, 2, 3];
+        List<List<int>> retained = source.CombinationsBuffered(2).ToList();
+
+        Assert.AreEqual(3, retained.Count);
+        Assert.AreSame(retained[0], retained[1]);
+        Assert.AreSame(retained[1], retained[2]);
+        CollectionAssert.AreEqual(new List<int> { 2, 3 }, retained[0]);
+
+        // Whereas Combinations gives each caller its own list.
+        List<List<int>> fresh = source.Combinations(2).ToList();
+        Assert.AreNotSame(fresh[0], fresh[1]);
+        CollectionAssert.AreEqual(new List<int> { 1, 2 }, fresh[0]);
+    }
 }

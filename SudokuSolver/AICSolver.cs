@@ -537,7 +537,10 @@ internal class AICSolver
 
             for (int alsSize = 2; alsSize < unsetCells.Count; alsSize++)
             {
-                foreach (List<int> combination in unsetCells.Combinations(alsSize))
+                // Borrowed buffer: combination is read within the iteration, and the one place it
+                // escapes — the StrongLinkDesc constructor — copies it via new(alsCells) rather
+                // than keeping the reference.
+                foreach (List<int> combination in unsetCells.CombinationsBuffered(alsSize))
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 

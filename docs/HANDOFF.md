@@ -1,6 +1,6 @@
 # Handoff: solver performance & the browser port
 
-Last updated 2026-08-03. Branch `wasm-prototype`, working tree clean, pushed. Read this first, then
+Last updated 2026-08-04. Branch `wasm-prototype`, working tree clean, pushed. Read this first, then
 the linked docs as needed.
 
 ---
@@ -159,21 +159,35 @@ this was measured, and it is not what made the cliff go away.
 yields consecutive solutions differing only in their last few assignments, so each covers almost no
 new candidates.
 
-### Priority 3 — Buffer-reusing `Combinations`
+### Priority 3 — Buffer-reusing `Combinations` — **DONE**, and it found something bigger
 
-Worth **several hundred MB** on logical solves, which is the largest demonstrated browser memory
-problem (2 GiB heap, weaker GC). Attribution is done:
+Logical-solve allocation is **down 50%** across the five `logical` cases (2,593 → 1,289 MB), with
+time down 8% as a side effect. Full write-up:
 [`logical-solver-allocation.md`](logical-solver-allocation.md).
 
-Allocation is `FindFishes` + `FindWings`, **not AIC** (AIC runs *twice* per logical solve). The
-`List<T>` allocated per combination is the cost: ~4,400 combinations per `FindFishes` call × ~72
-bytes × ~1,500 calls ≈ 480 MB, matching the 570 MB the bisect attributes to fishes.
+`Extensions.CombinationsBuffered` exists and is adopted at the six audited-safe call sites; the
+other 12 stay on fresh-list `Combinations` because a counter showed they yield **nothing** on the
+logical corpus, so there was no benefit to weigh the retention risk against.
 
-**Do:** add a *separate* buffer-reusing method — don't change `Combinations`, whose 19 call sites all
-rely on fresh-list semantics. Adopt it only in call sites individually verified not to retain or
-defer the yielded list, `FindFishes`/`FindWings` first. Document the borrowed-buffer contract the way
-`CountSolutions`'s `solutionEvent` is documented. **A single retaining caller produces silent,
-data-dependent wrong answers** — the audit is the work, not an afterthought.
+**But the scoped item was only 5% of it.** The plan's arithmetic was wrong in three ways — it named
+`FindFishes` (which yields almost nothing), counted the outer fish loop rather than the 10×-larger
+inner one, and multiplied by the `StepLogic` call count instead of the fish-search call count. The
+real win, found by the same counter, was next door: **`FindFinnedFishes` allocated a fresh
+`HashSet<int>` per inner combination** (429k per `killer-innie` solve, ~1.1 KB each because it grew
+through the 3→7→17→37→89 resize sequence). Hoisting it to one per call and reusing via `Clear()` is
+where 90% of the reduction came from — `killer-innie` 831 → 317 MB.
+
+Two things worth carrying forward:
+
+1. **`FindWings` never called `Combinations`.** `FindNWing` hand-rolls its combination walk over a
+   reused array, so it was already doing the right thing. The bisect's 49% wings attribution on
+   `renban-sky` therefore remains unexplained.
+2. **In a hot loop, look for the container that *grows*, not the one that is merely numerous.** The
+   `HashSet` was 15× the per-instance cost of the `List` it sat beside, which is the whole story of
+   why the scoped item under-delivered and its neighbour over-delivered.
+
+The `[CallerFilePath]`/`[CallerLineNumber]` trick is worth reusing: it attributes yields per call
+site without editing a single call site, so the probe is one file plus one revert.
 
 ### Priority 4 — Extend ISS coverage to NFA/Pair
 
@@ -202,8 +216,11 @@ cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) �
 
 ### Priority 5 — Smaller, well-defined items
 
-- **`renban-sky-logical` allocates 2.4 MB per `StepLogic` call**, 4× `killer-innie`'s rate, in only 4
-  `ConsolidateBoard` passes. Unexplained by the combination arithmetic. Nothing has instrumented it.
+- **`renban-sky-logical` is still the allocation odd-one-out**, now 331 MB in only 4
+  `ConsolidateBoard` passes and 220 `StepLogic` calls. Its dominant `Combinations` site is
+  `IsBoardValid` (496,661 yields, >2× any other case) — a *contradiction check*, not a deduction
+  step, so ask why that check costs so much here. The bisect's 49% wings attribution is also still
+  open now that `FindWings` is known not to use `Combinations`.
 - **`platinum-blonde` is still 8.9× off ISS** even with discovery disabled (the other hard classics
   drop to 1.6–2.2×). It's the cleanest remaining outlier, and it explores 3.4× more nodes than ISS.
 - **New pathological cases from the ISS import**, far worse than `platinum-blonde` and none previously
@@ -329,7 +346,7 @@ types in minutes and contradicted the intuition on two of them.
 ### Validation checklist before committing and pushing
 
 ```bash
-dotnet test -c Release SudokuTests/SudokuTests.csproj                                    # 111 tests
+dotnet test -c Release SudokuTests/SudokuTests.csproj                                    # 119 tests
 dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --iterations 3        # 0 FAIL
 dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --iterations 3 --multithread
 dotnet build -c Release SudokuSolver.sln                                                 # sln excludes the WASM project

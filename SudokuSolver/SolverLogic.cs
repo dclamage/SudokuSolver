@@ -291,7 +291,9 @@ public partial class Solver
                     continue;
                 }
 
-                foreach (var tupleCells in unsetCells.Combinations(tupleSize))
+                // Borrowed buffer: tupleCells is only read here and by the description, which
+                // materialises it eagerly in the LogicalStepDesc constructor.
+                foreach (var tupleCells in unsetCells.CombinationsBuffered(tupleSize))
                 {
                     uint tupleMask = CandidateMask(tupleCells);
                     if (ValueCount(tupleMask) < tupleSize)
@@ -582,7 +584,9 @@ public partial class Solver
                         continue;
                     }
 
-                    foreach (var tupleCells in unsetCells.Combinations(numCells))
+                    // Borrowed buffer: CalcElims, CandidateIndexes and CompactName all enumerate
+                    // tupleCells eagerly, and the loop returns as soon as it finds anything.
+                    foreach (var tupleCells in unsetCells.CombinationsBuffered(numCells))
                     {
                         uint tupleMask = CandidateMask(tupleCells);
                         if (ValueCount(tupleMask) == numCells)
@@ -957,7 +961,8 @@ public partial class Solver
                         continue;
                     }
 
-                    foreach (var tupleRowOrCols in unsetRowOrCols.Combinations(tupleSize))
+                    // Borrowed buffer: tupleRowOrCols is only read within the iteration.
+                    foreach (var tupleRowOrCols in unsetRowOrCols.CombinationsBuffered(tupleSize))
                     {
                         uint tupleMask = 0;
                         foreach (int j in tupleRowOrCols)
@@ -1067,6 +1072,13 @@ public partial class Solver
         }
         List<int> unsetRowOrCols = new(MAX_VALUE);
 
+        // Reused across every position combination below. A fresh HashSet per combination was the
+        // single largest allocation site in the logical solver: 429k of them per killer-innie
+        // logical solve, one for every inner combination the search examines. It escapes only in
+        // the success block, which copies it (the LogicalStepDesc constructor) or consumes it
+        // eagerly (DescribeElims, ClearCandidates) and then returns immediately.
+        HashSet<int> elims = new();
+
         // Look for finned fishes
         for (int tupleSize = 2; tupleSize <= MAX_VALUE / 2; tupleSize++)
         {
@@ -1096,7 +1108,10 @@ public partial class Solver
                         continue;
                     }
 
-                    foreach (var tupleRowOrCols in unsetRowOrCols.Combinations(tupleSize))
+                    // Borrowed buffer, and it stays live across the inner CombinationsBuffered loop
+                    // below. That is safe because each enumerator owns its own buffer, and the two
+                    // enumerate different source lists (unsetRowOrCols vs positions).
+                    foreach (var tupleRowOrCols in unsetRowOrCols.CombinationsBuffered(tupleSize))
                     {
                         uint tupleMask = 0;
                         foreach (int j in tupleRowOrCols)
@@ -1124,7 +1139,10 @@ public partial class Solver
                                     positions.Add(j);
                                 }
                             }
-                            foreach (var positionCombo in positions.Combinations(tupleSize))
+                            // Borrowed buffer: positionCombo is consumed immediately into
+                            // positionMask and never referenced again. This is the highest-volume
+                            // Combinations call site in the logical solver.
+                            foreach (var positionCombo in positions.CombinationsBuffered(tupleSize))
                             {
                                 uint positionMask = 0;
                                 foreach (int j in positionCombo)
@@ -1133,7 +1151,8 @@ public partial class Solver
                                 }
 
                                 // Calculate the eliminations from the fish formed by these positions
-                                HashSet<int> elims = null;
+                                elims.Clear();
+                                bool hasElims = false;
                                 foreach (int j in nonTupleRowOrCols)
                                 {
                                     uint mask = indexByValue[valueIndex, j];
@@ -1144,14 +1163,14 @@ public partial class Solver
                                         {
                                             if ((elimMask & (1u << i)) != 0)
                                             {
-                                                elims ??= new();
+                                                hasElims = true;
                                                 elims.Add(CandidateIndex(rowOrCol == 0 ? (i, j) : (j, i), value));
                                             }
                                         }
                                     }
                                 }
 
-                                if (elims != null)
+                                if (hasElims)
                                 {
                                     // Calcuate the eliminations from individual candidates not in the fish
                                     uint notPostionMask = tupleMask & ~positionMask;
@@ -1176,7 +1195,7 @@ public partial class Solver
                                     }
                                 }
 
-                                if (elims != null && elims.Count > 0)
+                                if (hasElims && elims.Count > 0)
                                 {
                                     string techniqueName = tupleSize switch
                                     {

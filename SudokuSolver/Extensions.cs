@@ -58,6 +58,67 @@ public static class Extensions
         }
     }
 
+    /// <summary>
+    /// Enumerates the same combinations as <see cref="Combinations{T}"/> but yields a single
+    /// <b>borrowed</b> list that is overwritten on every step, so the enumeration allocates one list
+    /// instead of one per combination.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Borrowed-buffer contract.</b> The yielded list belongs to the enumerator, not to the
+    /// caller. It is valid only until the next iteration of the <c>foreach</c>. A caller may read it
+    /// and may pass it to anything that consumes it eagerly, but must <b>not</b>:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><description>store the reference anywhere that outlives the loop iteration,</description></item>
+    /// <item><description>pass it to something that keeps the reference rather than copying (e.g. a
+    /// constructor that assigns it to a field),</description></item>
+    /// <item><description>hand it to a deferred/lazy sequence (a LINQ <c>Select</c> is fine only if
+    /// it is materialised before the next iteration), or</description></item>
+    /// <item><description>mutate it.</description></item>
+    /// </list>
+    /// <para>
+    /// A caller that retains the buffer sees it silently change underneath, which produces
+    /// data-dependent wrong answers rather than an exception. That is why this is a separate method:
+    /// <see cref="Combinations{T}"/> keeps fresh-list semantics for the call sites that need them,
+    /// and each adoption of this method has to be individually verified not to retain. This is the
+    /// same hazard as <c>CountSolutions</c>'s <c>solutionEvent</c> board argument.
+    /// </para>
+    /// <para>
+    /// The buffer is allocated per enumerator, so nesting two of these enumerations — as the finned
+    /// fish search does — is safe: each <c>foreach</c> gets its own buffer.
+    /// </para>
+    /// </remarks>
+    public static IEnumerable<List<T>> CombinationsBuffered<T>(this List<T> collection, int count)
+    {
+        int listCount = collection.Count;
+
+        if (count <= listCount)
+        {
+            int[] indexes = new int[count];
+            List<T> buffer = new(count);
+            for (int i = 0; i < count; i++)
+            {
+                indexes[i] = i;
+                buffer.Add(default);
+            }
+
+            do
+            {
+                // Overwrite in place rather than Clear/Add: the buffer's length is always `count`,
+                // which also keeps `.Count` meaningful to callers.
+                for (int i = 0; i < count; i++)
+                {
+                    buffer[i] = collection[indexes[i]];
+                }
+                yield return buffer;
+
+                SetIndexes(indexes, indexes.Length - 1, listCount);
+            }
+            while (!AllPlacesChecked(indexes, listCount));
+        }
+    }
+
     public static IEnumerable<List<T>> Permutations<T>(this IEnumerable<T> c)
     {
         var clist = c.ToList();
