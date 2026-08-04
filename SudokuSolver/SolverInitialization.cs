@@ -134,6 +134,15 @@ public partial class Solver
         }
         totalWeakLinks = other.totalWeakLinks;
 
+        // Inherit the grouped weak-link table by reference, even when the lists themselves were
+        // copied: CloneWeakLinks copies contents, so the table still describes them. Any later
+        // mutation goes through AddWeakLink, which nulls the table on whichever instance mutated —
+        // and because a copied list diverges only on that instance, the parent's table stays
+        // correct for the parent. The invariant is simply "non-null implies matches these lists".
+        wlGroupedOffsets = other.wlGroupedOffsets;
+        wlGroupedCells = other.wlGroupedCells;
+        wlGroupedMasks = other.wlGroupedMasks;
+
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
         conflictDecayState = other.conflictDecayState;
@@ -264,12 +273,102 @@ public partial class Solver
         }
     }
 
+    /// <summary>
+    /// Builds the grouped (cell, mask) form of <see cref="weakLinks"/> that <see cref="SetValue"/>
+    /// uses during brute force, collapsing all targets that share a cell into one masked clear.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Safe to compile once and share because weak links are frozen for the duration of a
+    /// brute-force search: the only mutator reachable from a search is <c>DiscoverWeakLinks</c>,
+    /// which runs at the root before the search loop starts, and <c>StepLogic</c>'s "re-evaluate
+    /// weak links" block returns early when <c>isBruteForcing</c>. <see cref="AddWeakLink"/>
+    /// invalidates the table anyway, so a stale table cannot outlive a mutation on this instance.
+    /// </para>
+    /// <para>
+    /// The sorted candidate lists are still the authoritative representation — AIC, the fish and
+    /// wing searches and <c>IsWeakLink</c> all need candidate-to-candidate adjacency with binary
+    /// search and set intersection, which this form cannot answer.
+    /// </para>
+    /// </remarks>
+    internal void CompileGroupedWeakLinks()
+    {
+        // Already valid: the table is nulled by every mutation, so non-null implies it still matches
+        // weakLinks. Without this the estimators rebuilt it once per sample — they run a nested
+        // CountSolutions per descent, which cost 400 rebuilds and doubled their allocation.
+        if (weakLinks == null || wlGroupedOffsets != null)
+        {
+            return;
+        }
+
+        int numCandidates = weakLinks.Length;
+        int[] offsets = new int[numCandidates + 1];
+
+        // Pass 1: count distinct target cells per candidate. weakLinks lists are sorted by candidate
+        // index, and candIndex = cell * MAX_VALUE + (v - 1), so entries sharing a cell are adjacent.
+        int total = 0;
+        for (int c = 0; c < numCandidates; c++)
+        {
+            offsets[c] = total;
+            List<int> targets = weakLinks[c];
+            int prevCell = -1;
+            for (int i = 0; i < targets.Count; i++)
+            {
+                int cell = targets[i] / MAX_VALUE;
+                if (cell != prevCell)
+                {
+                    total++;
+                    prevCell = cell;
+                }
+            }
+        }
+        offsets[numCandidates] = total;
+
+        int[] cells = new int[total];
+        uint[] masks = new uint[total];
+
+        // Pass 2: fill, OR-ing every value that targets the same cell into one mask.
+        int w = 0;
+        for (int c = 0; c < numCandidates; c++)
+        {
+            List<int> targets = weakLinks[c];
+            int prevCell = -1;
+            for (int i = 0; i < targets.Count; i++)
+            {
+                int target = targets[i];
+                int cell = target / MAX_VALUE;
+                uint valueMask = ValueMask(target - cell * MAX_VALUE + 1);
+                if (cell != prevCell)
+                {
+                    cells[w] = cell;
+                    masks[w] = valueMask;
+                    w++;
+                    prevCell = cell;
+                }
+                else
+                {
+                    masks[w - 1] |= valueMask;
+                }
+            }
+        }
+
+        wlGroupedCells = cells;
+        wlGroupedMasks = masks;
+        wlGroupedOffsets = offsets;
+
+    }
+
     public LogicResult AddWeakLink(int candIndex0, int candIndex1)
     {
         if (candIndex0 == candIndex1)
         {
             return LogicResult.None;
         }
+
+        // Any mutation invalidates the grouped table; it is rebuilt before the next search.
+        wlGroupedOffsets = null;
+        wlGroupedCells = null;
+        wlGroupedMasks = null;
 
         var (cell0, v0) = CandIndexToCellAndValue(candIndex0);
         var (cell1, v1) = CandIndexToCellAndValue(candIndex1);

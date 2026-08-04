@@ -97,6 +97,7 @@ public partial class Solver
         {
             return false;
         }
+        solver.CompileGroupedWeakLinks();
         solver.isBruteForcing = true;
         using FindSolutionState state = new(isRandom, multiThread, cancellationToken, solver.NUM_CANDIDATES + 1, nodeBudget, BilocalSearchWeightPercent);
         state.InitializeSolverPool(solver);
@@ -440,6 +441,7 @@ public partial class Solver
                     return maxSolutions > 0 && state.numSolutions > maxSolutions ? maxSolutions : state.numSolutions;
                 }
             }
+            boardCopy.CompileGroupedWeakLinks();
             boardCopy.isBruteForcing = true;
             state.InitializeSolverPool(boardCopy);
             if (state.multiThread)
@@ -1011,6 +1013,7 @@ public partial class Solver
             {
                 return state.candidateSolutionCounts;
             }
+            boardCopy.CompileGroupedWeakLinks();
             boardCopy.isBruteForcing = true;
             state.InitializeSolverPool(boardCopy);
 
@@ -1517,6 +1520,7 @@ public partial class Solver
                 progressEvent((0, 0, 0));
                 return;
             }
+            root.CompileGroupedWeakLinks();
             root.isBruteForcing = true;
             if (state.multiThread && Environment.ProcessorCount > 1)
             {
@@ -1840,6 +1844,7 @@ public partial class Solver
                 state.SendEvent();
                 return (state.GetEstimates(), state.GetStdErrs());
             }
+            root.CompileGroupedWeakLinks();
             root.isBruteForcing = true;
 
             if (state.multiThread && Environment.ProcessorCount > 1)

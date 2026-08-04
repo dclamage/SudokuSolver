@@ -53,6 +53,48 @@ public partial class Solver
         return ClearValue(CellIndex(i, j), v);
     }
 
+    /// <summary>
+    /// Clears every value in <paramref name="clearMask"/> from one cell at once. Equivalent to
+    /// calling <see cref="ClearValue(int, int)"/> for each of those values, but pays the per-cell
+    /// bookkeeping — the constraint enqueue, the naked-single check and
+    /// <see cref="TrackHiddenSingles"/>'s walk over the cell's groups — once instead of once per
+    /// value. Used by the grouped weak-link path in <see cref="SetValue"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="TrackHiddenSingles"/> is composable here: it iterates the bits of
+    /// <c>oldMask &amp; ~newMask</c> and decrements each value's per-group count independently, so
+    /// one call with a multi-bit diff lands in the same state as one call per bit.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private bool ClearMaskFromCell(int cellIndex, uint clearMask)
+    {
+        uint cellMask = board[cellIndex];
+        if ((cellMask & clearMask) == 0)
+        {
+            return true;
+        }
+
+        uint newCellMask = cellMask & ~clearMask;
+        board[cellIndex] = newCellMask;
+
+        if ((newCellMask & ~valueSetMask) == 0)
+        {
+            isInvalid = true;
+            return false;
+        }
+
+        if (isBruteForcing && cellToConstraintIndices != null)
+            EnqueueConstraintsForCell(cellIndex);
+
+        if (ValueCount(newCellMask) == 1)
+        {
+            pendingNakedSingles.Add(cellIndex);
+        }
+
+        TrackHiddenSingles(cellIndex, cellMask, newCellMask);
+        return true;
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     internal bool ClearCandidate(int candidate)
     {
@@ -120,16 +162,36 @@ public partial class Solver
 
         // Apply all weak links
         int setCandidateIndex = CandidateIndex(cellIndex, val);
-        List<int> curWeakLinks = weakLinks[setCandidateIndex];
-        int curWeakLinksCount = curWeakLinks.Count;
-        for (int curWeakLinkIndex = 0; curWeakLinkIndex < curWeakLinksCount; curWeakLinkIndex++)
+        if (wlGroupedOffsets != null)
         {
-            int elimCandIndex = curWeakLinks[curWeakLinkIndex];
-            (int cellIndex1, int v1) = CandIndexToCellAndValue(elimCandIndex);
-            if (!ClearValue(cellIndex1, v1))
+            // Grouped path: one masked clear per target *cell*. Most targets are already gone (the
+            // measured hit rate is 5-30%), so testing a whole cell with a single mask, and doing the
+            // per-cell bookkeeping once rather than once per candidate, is where this pays.
+            int[] groupedCells = wlGroupedCells;
+            uint[] groupedMasks = wlGroupedMasks;
+            int end = wlGroupedOffsets[setCandidateIndex + 1];
+            for (int k = wlGroupedOffsets[setCandidateIndex]; k < end; k++)
             {
-                isInvalid = true;
-                return false;
+                if (!ClearMaskFromCell(groupedCells[k], groupedMasks[k]))
+                {
+                    isInvalid = true;
+                    return false;
+                }
+            }
+        }
+        else
+        {
+            List<int> curWeakLinks = weakLinks[setCandidateIndex];
+            int curWeakLinksCount = curWeakLinks.Count;
+            for (int curWeakLinkIndex = 0; curWeakLinkIndex < curWeakLinksCount; curWeakLinkIndex++)
+            {
+                int elimCandIndex = curWeakLinks[curWeakLinkIndex];
+                (int cellIndex1, int v1) = CandIndexToCellAndValue(elimCandIndex);
+                if (!ClearValue(cellIndex1, v1))
+                {
+                    isInvalid = true;
+                    return false;
+                }
             }
         }
 

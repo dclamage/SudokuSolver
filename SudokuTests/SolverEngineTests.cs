@@ -283,4 +283,64 @@ public class SolverEngineTests
         Assert.AreEqual(288, solutions.Count, "solutionEvent fired a different number of times than the count");
         Assert.AreEqual(288, solutions.Distinct().Count(), "solutionEvent reported the same solution more than once");
     }
+
+    /// <summary>
+    /// SetValue applies weak links through a grouped (cell, mask) table that collapses every target
+    /// sharing a cell into one masked clear. That must be indistinguishable from clearing the
+    /// targets one candidate at a time, including the bookkeeping each clear performs — the
+    /// naked-single queue, the hidden-single group counts and the "cell became empty" check.
+    /// </summary>
+    /// <remarks>
+    /// Exact solution counts are the strongest available probe: a grouped clear that dropped a
+    /// candidate it should not have, or skipped bookkeeping, changes the count. Constraints that
+    /// link *different* digits across cells are the interesting ones, because those are what make a
+    /// candidate's targets cluster into a cell at all — a vanilla grid produces no clustering.
+    /// </remarks>
+    [TestMethod]
+    public void GroupedWeakLinksMatchPerCandidateClears()
+    {
+        // nonconsecutive is the case that matters: it links *different* digits across cells, so a
+        // candidate's targets cluster into a cell and the grouped table actually has something to
+        // collapse. A plain grid produces no clustering at all, and is here as the control.
+        // Both counts were established by exhaustive enumeration; keep them small, because
+        // WeakLinkDiscoveryMode.Never is pathologically slow on densely linked boards.
+        (string name, Func<Solver> create, long expected)[] cases =
+        [
+            ("nonconsecutive 6x6", () => SolverFactory.CreateBlank(6, ["difference:neg1"]), 48),
+            ("plain 4x4", () => SolverFactory.CreateBlank(4), 288),
+        ];
+
+        foreach ((string name, Func<Solver> create, long expected) in cases)
+        {
+            // The three modes end up with very different numbers of weak links, and therefore very
+            // different amounts of clustering for the grouped table to collapse. All must agree.
+            long never = WithDiscovery(create, WeakLinkDiscoveryMode.Never).CountSolutions();
+            long always = WithDiscovery(create, WeakLinkDiscoveryMode.Always).CountSolutions();
+            long deferred = WithDiscovery(create, WeakLinkDiscoveryMode.Deferred).CountSolutions();
+
+            Assert.AreEqual(expected, never, $"{name}: wrong count with discovery Never");
+            Assert.AreEqual(expected, always, $"{name}: wrong count with discovery Always");
+            Assert.AreEqual(expected, deferred, $"{name}: wrong count with discovery Deferred");
+        }
+    }
+
+    /// <summary>
+    /// The grouped table is inherited by clones by reference and invalidated by AddWeakLink, so the
+    /// invariant "non-null implies it matches these lists" has to survive discovery adding links
+    /// between two searches on the same solver.
+    /// </summary>
+    [TestMethod]
+    public void GroupedWeakLinksSurviveRepeatedSearchesOnOneSolver()
+    {
+        Solver solver = SolverFactory.CreateBlank(6, ["difference:neg1"]);
+        solver.WeakLinkDiscovery = WeakLinkDiscoveryMode.Always;
+
+        long first = solver.CountSolutions();
+        long second = solver.CountSolutions();
+        long third = solver.CountSolutions();
+
+        Assert.AreEqual(48, first);
+        Assert.AreEqual(first, second, "a second search on the same solver disagreed with the first");
+        Assert.AreEqual(first, third, "a third search on the same solver disagreed with the first");
+    }
 }

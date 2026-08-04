@@ -68,6 +68,14 @@ public partial class Solver
     private int[] regions = null;
     private List<int>[] weakLinks;
     private int totalWeakLinks = 0;
+
+    // Grouped form of weakLinks for the brute-force hot path, in CSR layout: the targets of
+    // candidate c are wlGroupedCells/wlGroupedMasks over [wlGroupedOffsets[c], wlGroupedOffsets[c+1]),
+    // one entry per distinct target *cell* rather than one per target candidate. Null until compiled.
+    // See CompileGroupedWeakLinks and docs/weak-link-representation.md.
+    private int[] wlGroupedOffsets;
+    private int[] wlGroupedCells;
+    private uint[] wlGroupedMasks;
     private readonly List<Constraint> constraints;
     private readonly List<Constraint> enforceConstraints;
 

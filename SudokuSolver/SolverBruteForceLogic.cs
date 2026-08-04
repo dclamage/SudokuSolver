@@ -309,6 +309,13 @@ public partial class Solver
             return result;
         }
 
+        // Drop the grouped table before cloning the scratch solver below: probing mutates the weak
+        // link lists, and a clone that inherited the table by reference would not see AddWeakLink's
+        // invalidation. The caller recompiles once discovery is done.
+        wlGroupedOffsets = null;
+        wlGroupedCells = null;
+        wlGroupedMasks = null;
+
         LogicResult innerResult;
         do
         {

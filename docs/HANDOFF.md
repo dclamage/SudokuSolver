@@ -177,6 +177,33 @@ and sketches the only shape that could still work: a *deferred* bilocal arm reus
 `WeakLinkDiscoveryMode.Deferred` machinery, since a restart only fires on already-expensive searches,
 which is where the 0.03× puzzles live.
 
+### Priority 1c — Grouped weak-link application — **DONE**, −5.6% on the ISS corpus
+
+`SetValue` used to apply weak links by walking `weakLinks[cand]` and calling `ClearValue` per target
+candidate. It now walks a compiled `candidate → (cell, mask)` table and clears a whole cell at once.
+**ISS corpus 13,618 → 12,862 ms (−5.6%)**; `tc-blank-nonconsecutive` −8.8%, `kropki` −11.7%,
+`killer-innie` −9.3%, `arrow-search` −8.5% (the last three paired at 15 iterations).
+Write-up: [`weak-link-representation.md`](weak-link-representation.md).
+
+Three findings from it worth carrying:
+
+1. **The win is mostly *not* the clustering it was aimed at.** 70–95% of weak-link iterations find
+   the target already gone, so the real lever is dismissing a whole cell with one
+   `board[cell] & mask` test; plus `TrackHiddenSingles` used to walk `CellToGroupsLookup[cell]` once
+   per *cleared candidate* and now runs once per cell. Vanilla has **zero** clustering yet still
+   improves 4–8%.
+2. **Vanilla clusters not at all, structurally.** Same-cell exclusivity isn't stored as weak links —
+   `SetValue` wipes the cell directly — so vanilla targets are all "same digit, peer cell", one per
+   cell. Clustering comes only from constraints linking *different* digits across cells
+   (nonconsecutive, kropki, killer, clones) and from discovered links.
+3. **`EstimateSolutions` runs a nested `CountSolutions` per sample** (~400 attempts for 200 samples).
+   Anything that does per-search setup work must be idempotent or it gets multiplied by the sample
+   count — the first version doubled `est-escargot-6clue`'s time and allocation this way.
+
+Left undone: the table is ~116 KB of *additional* memory per compiled search (+0.12 MB per call,
+`tc-escargot` 0.03 → 0.15 MB), which pooling the two arrays would mostly remove — worth doing for the
+browser, where true candidates runs on every edit.
+
 ### Priority 2 — What remains on true candidates
 
 The 64× branch-order cliff here is **fixed** (see above). Two smaller things are left:
@@ -384,7 +411,7 @@ types in minutes and contradicted the intuition on two of them.
 ### Validation checklist before committing and pushing
 
 ```bash
-dotnet test -c Release SudokuTests/SudokuTests.csproj                                    # 119 tests
+dotnet test -c Release SudokuTests/SudokuTests.csproj                                    # 121 tests
 dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --iterations 3        # 0 FAIL
 dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --iterations 3 --multithread
 dotnet build -c Release SudokuSolver.sln                                                 # sln excludes the WASM project
@@ -416,6 +443,8 @@ is part of the same habit.
 4. [`weak-link-discovery-tradeoff.md`](weak-link-discovery-tradeoff.md) — the biggest lever.
 4b. [`branch-ordering.md`](branch-ordering.md) — what decides the branch cell, the disabled bilocal
    tier, and why discovery raises node count.
+4c. [`weak-link-representation.md`](weak-link-representation.md) — how weak links are applied in the
+   search, and why the grouped form is faster.
 5. [`logical-solver-allocation.md`](logical-solver-allocation.md) — the browser memory problem.
 6. [`solver-pooling-audit.md`](solver-pooling-audit.md) + [`truecandidates-allocation.md`](truecandidates-allocation.md) — what's already pooled and why MT is deliberately off.
 7. [`wasm-prototype-findings.md`](wasm-prototype-findings.md) — the .NET-WASM constraints that dictate host architecture.
