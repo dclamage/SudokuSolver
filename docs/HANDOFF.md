@@ -308,10 +308,16 @@ cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) �
   from 49× off ISS to **1.9×**. `StepLogic` is propagation only — `EnforceConstraint` and the weak
   links own correctness — so **the brute-force and logical arms can and should differ**, and a weaker
   brute-force arm cannot change a solution count. `SUDOKU_SANDWICH_BF_ARM` switches between them.
-  Two constraints to look at next with the same lens, both of which currently accept `isBruteForcing`
-  and ignore it: **`SkyscraperConstraint`** (~130× the per-solution cost of X-Sum) and
-  **`XSumConstraint`** (53 MB for a 51 ms count). Details:
-  [`pathological-outliers.md`](pathological-outliers.md).
+  **`SkyscraperConstraint` was checked with the same lens and is fine — do not "fix" it.** Skipping
+  its DFS looks 14–137× faster on blank grids with a cap, and is **209× slower** on a 36-clue board
+  and blows up to 227M nodes when counted exhaustively. Its cost is propagation that repays itself.
+  **The lesson generalises and nearly cost a 209× regression: never tune propagation strength on
+  blank-grid capped counts** — including the three `*-search` cases in `corpus.json`, which are good
+  regression detectors and bad tuning targets, because they systematically favour propagating less.
+  Tune on real puzzles, uncapped. The sandwich change survives that test (an 18-clue constructed
+  puzzle: heuristic 12.7 ms vs exact 103.9 ms, both 364), which is why it shipped.
+  Still open with the same lens, but measure it properly: **`XSumConstraint`** allocates 53 MB for a
+  51 ms count. Details: [`pathological-outliers.md`](pathological-outliers.md).
 - **Historical note on the same item, partly superseded.** `SandwichConstraint.cs:544` alone yielded
   **4.2M combinations in a single count** of `blPgSzctUMg` (1,469 per node). Buffered enumeration plus
   replacing `combination.Sum()` (which boxes a `List<int>` struct enumerator 4.2M times) took it

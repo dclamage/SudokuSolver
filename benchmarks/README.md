@@ -143,6 +143,13 @@ Sandwich *is* covered by the ISS corpus (8 puzzles), but it had no case in this 
 that moved the ISS total by 7% left the default `--iterations 3` run completely flat. Real-world
 coverage in one corpus is not a substitute for a case in the one people run by habit.
 
+**These three are regression detectors, not tuning targets.** A blank grid counted to a small cap
+asks for a few solutions out of an astronomical set, so almost nothing needs pruning and any change
+that propagates *less* looks like a win. Tuning `SkyscraperConstraint`'s propagation this way
+measured 14–137× faster and was really **209× slower** on a realistic board. Tune propagation
+strength on real puzzles, uncapped — see
+[`docs/pathological-outliers.md`](../docs/pathological-outliers.md) § "The regime trap".
+
 Pick the cap from the per-solution cost, not a round number. `skyscraper-search` uses a cap of 100
 where `xsum-search` uses 5,000, because **Skyscraper costs ~3.3 ms per solution against X-Sum's
 0.025 ms** — about 130× more. That gap is a real and so far undiagnosed per-node cost problem in

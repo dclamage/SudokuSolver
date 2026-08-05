@@ -111,6 +111,58 @@ defect. The range/Hall argument a human actually makes is both cheaper and the t
 displaying, so the logical arm may want to move too. That is a product call about step quality rather
 than a perf one, and it is left open.
 
+## The regime trap: the same experiment on Skyscraper reached the opposite answer
+
+Date: 2026-08-05. `SkyscraperConstraint` looked like the next sandwich: ~130× X-Sum's cost per
+solution, and an `isBruteForcing` flag it accepts and ignores. It is **not** a defect, and the way
+that nearly went wrong is the most transferable thing on this page.
+
+Its `StepLogic` runs `SkyscraperSearch`, an allocation-free DFS over full-line assignments that
+already replaced an older permutation filter. `EnforceConstraint` checks the visible count and
+`InitCandidates` applies the static "restrict high digits" bounds, so the DFS is pure propagation and
+skipping it is answer-preserving. Measured on blank grids with a few clues and a cap of 100, skipping
+it looked like a triumph:
+
+| case | arm | nodes | time |
+| --- | --- | ---: | ---: |
+| sky2-c4 | exact | 240 | 150.3 ms |
+| | none | 1,335 | **5.9 ms** |
+| sky4-mixed | exact | 248 | 300.4 ms |
+| | none | 463 | **2.2 ms** |
+| sky2-c2 | exact | 242 | 236.1 ms |
+| | none | 7,161 | **17.2 ms** |
+
+14–137× faster. Then the same two arms on workloads that look like real puzzles — 36 clues derived
+from a solved grid, and the 8-clue board counted *exhaustively* instead of to a cap:
+
+| case | arm | nodes | time |
+| --- | --- | ---: | ---: |
+| sky36-real (36 clues, uncapped) | **exact** | 555 | **46.3 ms** |
+| | none | 7,068,913 | **9,702.6 ms** |
+| sky8-blank (uncapped) | **exact** | 226 | **309.2 ms** |
+| | none | 227,358,502 | **>120,000 ms** |
+
+**Exact is 209× faster, and skipping propagation explodes to 227M nodes.** The DFS earns its keep;
+the 130×-per-solution figure is the price of propagation that repays 209×. No change was made.
+
+### Why the first measurement lied
+
+A blank grid with 2–4 clues counted to a cap of 100 asks for a hundred solutions out of an
+astronomically large set. Almost nothing needs pruning, so propagation is close to pure overhead and
+*any* arm that does less looks better. Requiring an exhaustive count, or adding enough clues to make
+the board nearly unique, inverts it.
+
+**Do not tune propagation strength on blank-grid capped counts.** That includes the
+`xsum-search` / `skyscraper-search` / `sandwich-search` cases added to `corpus.json` on 2026-08-04 —
+they are good *regression detectors* (they notice when behaviour changes) and bad *tuning targets*
+(they systematically favour propagating less). Tune on real puzzles, uncapped.
+
+The sandwich result above survives this test, which is why it shipped: it was measured on two real
+uncapped unique-solution puzzles and the whole 398-puzzle ISS corpus, and a follow-up 18-clue
+constructed puzzle confirms it — heuristic 12.7 ms against exact's 103.9 ms, both returning 364.
+Had sandwich only been measured the way skyscraper first was, the same 8× win would have been
+indistinguishable from skyscraper's 137× illusion.
+
 ## Group A: what the constraint statistics say
 
 Renban appears in all five outliers, which looks damning but needed checking — it is in 97 of 398
