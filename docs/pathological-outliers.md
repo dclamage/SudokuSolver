@@ -65,12 +65,51 @@ Paired A/B at 15 iterations:
 | blPgSzctUMg | 710.99 ms / 1,528.90 MB | 679.92 / **1,228.74** | time −4.4%, **alloc −19.6%** |
 | Wb5YT1b-U9Q | 21.13 ms / 35.58 MB | 20.80 / 31.32 | flat, alloc −12.0% |
 
-**The remaining 1,229 MB is `Permutations()`, and that is the next target here.**
-`Extensions.Permutations` is a recursive iterator: for a k-element combination it yields k!
-permutations and allocates nested iterator state at every level, and `SandwichConstraint` calls it
-for every combination that passes the sum filter. The loop's actual goal is only "which values can
-appear at which position", which is a bipartite-matching question — enumerating k! placements to
-answer it is the wrong algorithm, not merely a slow one.
+### Then the framing changed: exactness was the problem, not its cost
+
+The remaining cost was `Extensions.Permutations` — a recursive iterator yielding k! permutations per
+surviving combination — and the obvious move was to compute the same answer faster with bipartite
+matching. **That was the wrong question.** `StepLogic` is propagation only; `EnforceConstraint` plus
+the weak links are what make an answer correct. So the real question is not "how do we compute the
+exact placement set cheaply" but "do we want the exact placement set here at all", and brute force
+and logical solving get to answer it differently.
+
+`blPgSzctUMg` was already the evidence. **2,870 nodes** is an extraordinarily small tree; a solver
+spending 680 ms to keep it that small is *over*-propagating — paying eagerly at every node to avoid
+branches the search dispatches lazily and only where needed.
+
+Three arms, best of 5 runs, `SUDOKU_SANDWICH_BF_ARM`:
+
+| case | arm | nodes | time | alloc |
+| --- | --- | ---: | ---: | ---: |
+| blPgSzctUMg | exact | 2,870 | 630.1 ms | 1,195 MB |
+| | **heuristic** | 3,790 | **26.6 ms** | **47 MB** |
+| | none | 55,802,068+ | **>60,000 ms** | — |
+| Wb5YT1b-U9Q | exact | 178 | 20.1 ms | 31 MB |
+| | **heuristic** | 174 | **0.7 ms** | **1 MB** |
+| | none | 2,000 | 5.7 ms | — |
+| blank-sw2 (cap 5k) | exact | 13,672 | 157.5 ms | 275 MB |
+| | **heuristic** | 13,721 | **12.5 ms** | **8 MB** |
+| | none | 82,142 | 59.6 ms | — |
+
+**The exact placement test bought almost no search reduction** — 32% more nodes at worst, and
+slightly *fewer* on one case — for 12–29× the time and 25–34× the allocation. `heuristic` (union whole
+value sets, skip the placement enumeration) is now the brute-force default; logical solving keeps
+`exact`.
+
+`none` is the opposite mistake and worth recording: it beats `exact` on easy boards but explodes to
+55M nodes on `blPgSzctUMg`. The shape `IndexerConstraint` uses ("just let weak links handle it when
+brute forcing") does **not** transfer here. The sandwich needs propagation; it did not need exactness.
+
+Effect on the real distribution: **ISS corpus 12,772 → 11,872 ms, −7.0%**, from this one constraint.
+`blPgSzctUMg` goes from 49× off ISS to about **1.9×**, which closes it as an outlier.
+
+There is a second reason to prefer the heuristic that has nothing to do with speed. An elimination
+justified by "I enumerated 40,320 permutations and 6 never landed in the second cell" is not a weak
+explanation, it is a *non*-explanation — and for a UI whose value is showing solve paths, that is a
+defect. The range/Hall argument a human actually makes is both cheaper and the thing worth
+displaying, so the logical arm may want to move too. That is a product call about step quality rather
+than a perf one, and it is left open.
 
 ## Group A: what the constraint statistics say
 

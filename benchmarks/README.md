@@ -41,6 +41,7 @@ build — which also sidesteps the stale-`--baseline` problem below:
 | --- | --- |
 | `SUDOKU_WEAK_LINK_DISCOVERY` | `always` / `never` / `deferred` (default). See [`docs/weak-link-discovery-tradeoff.md`](../docs/weak-link-discovery-tradeoff.md) |
 | `SUDOKU_WEAK_LINK_DEFER_NODES` | Node budget before `deferred` gives up and restarts with discovery. Default 2000 |
+| `SUDOKU_SANDWICH_BF_ARM` | `heuristic` (default) / `exact` / `none` — how much `SandwichConstraint` propagates while brute forcing. Logical solving always uses `exact`. See [`docs/pathological-outliers.md`](../docs/pathological-outliers.md) |
 
 Beware `never` on `corpus-iss.json`: some puzzles there do not finish without weak-link discovery.
 
@@ -125,16 +126,22 @@ and allocation, since each sample clones one child per open candidate and keeps 
 
 ### Capped counts on a blank grid, for constraints no real puzzle covers
 
-`xsum-search` and `skyscraper-search` are blank 9x9 grids with a few clues, counted to a cap. Neither
-constraint appears in *any* of the 398 ISS puzzles, so before these two cases nothing in either
-corpus exercised `XSumConstraint` or `SkyscraperConstraint` at all — changing them would have been
+`xsum-search`, `skyscraper-search` and `sandwich-search` are blank 9x9 grids with a few clues,
+counted to a cap. Neither X-Sum nor Skyscraper appears in *any* of the 398 ISS puzzles, so before
+these cases nothing in either corpus exercised `XSumConstraint` or `SkyscraperConstraint` at all — changing them would have been
 unmeasured, and a regression invisible. A capped count on a blank grid is the cheapest way to cover a
 constraint that has no real-world puzzles to import: it needs no hand-authored puzzle, and the cap
 makes the score deterministic (the search stops at the cap, it does not sample).
 
 Their expected counts were cross-checked for agreement across all three `WeakLinkDiscoveryMode`
 values and single- vs multi-threaded, which is the strongest independent check available without an
-external oracle.
+external oracle. `sandwich-search` is additionally checked across both of
+`SandwichConstraint`'s propagation arms (`SUDOKU_SANDWICH_BF_ARM`), since agreement there is the
+invariant that lets the brute-force arm be weaker than the logical one.
+
+Sandwich *is* covered by the ISS corpus (8 puzzles), but it had no case in this corpus, so a change
+that moved the ISS total by 7% left the default `--iterations 3` run completely flat. Real-world
+coverage in one corpus is not a substitute for a case in the one people run by habit.
 
 Pick the cap from the per-solution cost, not a round number. `skyscraper-search` uses a cap of 100
 where `xsum-search` uses 5,000, because **Skyscraper costs ~3.3 ms per solution against X-Sum's

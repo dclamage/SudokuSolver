@@ -302,7 +302,17 @@ cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) �
   - **Cost per node** (`blPgSzctUMg`): only **2,870 nodes** yet 680 ms — 280 µs/node against ~1 µs
     in the group above, and 533 KB allocated per node. This one is `SandwichConstraint`, and partly
     fixed (below).
-- **`SandwichConstraint` allocation, partly fixed.** `SandwichConstraint.cs:544` alone yielded
+- **`SandwichConstraint` is fixed, and the lesson generalises.** Its brute-force arm was
+  *over*-propagating: exact placement enumeration bought at most 32% fewer nodes for 12–29× the time.
+  Swapping it for a set-level union took **ISS corpus 12,772 → 11,872 ms (−7.0%)** and `blPgSzctUMg`
+  from 49× off ISS to **1.9×**. `StepLogic` is propagation only — `EnforceConstraint` and the weak
+  links own correctness — so **the brute-force and logical arms can and should differ**, and a weaker
+  brute-force arm cannot change a solution count. `SUDOKU_SANDWICH_BF_ARM` switches between them.
+  Two constraints to look at next with the same lens, both of which currently accept `isBruteForcing`
+  and ignore it: **`SkyscraperConstraint`** (~130× the per-solution cost of X-Sum) and
+  **`XSumConstraint`** (53 MB for a 51 ms count). Details:
+  [`pathological-outliers.md`](pathological-outliers.md).
+- **Historical note on the same item, partly superseded.** `SandwichConstraint.cs:544` alone yielded
   **4.2M combinations in a single count** of `blPgSzctUMg` (1,469 per node). Buffered enumeration plus
   replacing `combination.Sum()` (which boxes a `List<int>` struct enumerator 4.2M times) took it
   1,529 → 1,229 MB, −19.6%. **The remaining 1.2 GB is `Extensions.Permutations`** — a recursive

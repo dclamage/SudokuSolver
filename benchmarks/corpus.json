@@ -164,6 +164,18 @@
     "expected": 100
   },
   {
+    "name": "sandwich-search",
+    "category": "variant",
+    "blank": 9,
+    "constraints": [
+      "sandwich:20r1c0",
+      "sandwich:20r9c0"
+    ],
+    "op": "count",
+    "maxCount": 5000,
+    "expected": 5000
+  },
+  {
     "name": "vanilla-u17-logical",
     "category": "logical",
     "givens": "000000010400000000020000000000050407008000300001090000300400200050100000000806000",

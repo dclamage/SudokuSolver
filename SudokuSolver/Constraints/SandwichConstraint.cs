@@ -236,6 +236,13 @@ public class SandwichConstraint : Constraint
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
+        if (isBruteForcing && DefaultBruteForceArm == BruteForceArm.None)
+        {
+            // Let EnforceConstraint and the weak links carry it, as IndexerConstraint does.
+            return LogicResult.None;
+        }
+        bool useHeuristic = isBruteForcing && DefaultBruteForceArm == BruteForceArm.Heuristic;
+
         var board = sudokuSolver.Board;
         (int crustIndex0, int crustIndex1) = GetCrustIndices(sudokuSolver);
         if (crustIndex1 != -1)
@@ -303,7 +310,7 @@ public class SandwichConstraint : Constraint
             }
 
             uint[] fillingKeepMasks = new uint[fillingSize];
-            ApplySumCombinations(sudokuSolver, possibleValuesMask, unsetCells, remainingSum, fillingKeepMasks, null);
+            ApplySumCombinations(sudokuSolver, possibleValuesMask, unsetCells, remainingSum, fillingKeepMasks, null, useHeuristic);
 
             return ApplyKeepMask(sudokuSolver, fillingKeepMasks, unsetCells, logicalStepDescription);
         }
@@ -382,7 +389,7 @@ public class SandwichConstraint : Constraint
                             if (ValueCount(possibleValuesMask) >= numUnsetCells)
                             {
                                 haveValidPlacement |= ApplySumCombinations(
-                                    sudokuSolver, possibleValuesMask, unsetCells, remainingSum, keepMasks, unsetCellIndices);
+                                    sudokuSolver, possibleValuesMask, unsetCells, remainingSum, keepMasks, unsetCellIndices, useHeuristic);
                             }
                         }
                     }
@@ -481,7 +488,7 @@ public class SandwichConstraint : Constraint
                             if (ValueCount(possibleValuesMask) >= numUnsetCells)
                             {
                                 haveValidPlacement |= ApplySumCombinations(
-                                    sudokuSolver, possibleValuesMask, unsetCells, remainingSum, keepMasks, unsetCellIndices);
+                                    sudokuSolver, possibleValuesMask, unsetCells, remainingSum, keepMasks, unsetCellIndices, useHeuristic);
                             }
                         }
                     }
@@ -527,13 +534,73 @@ public class SandwichConstraint : Constraint
     /// enumerated and sum-filtered per call, which is what made this the most expensive constraint in
     /// the corpus. The permutation step is unchanged and is now the remaining cost.
     /// </remarks>
+    /// <summary>
+    /// How much propagation the sandwich does <b>while brute forcing</b>. Logical solving always uses
+    /// <see cref="BruteForceArm.Exact"/>. Overridable with
+    /// <c>SUDOKU_SANDWICH_BF_ARM=exact|heuristic|none</c> so the arms can be re-measured without a
+    /// rebuild.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Correctness does not depend on this.</b> <see cref="EnforceConstraint"/> validates the sum
+    /// once both crusts are placed and this constraint inherits
+    /// <c>NeedsEnforceConstraint =&gt; true</c>, so <c>StepLogic</c> is pure propagation: a weaker arm
+    /// can cost search nodes but cannot change a solution count. Every arm here concludes a subset of
+    /// what <c>Exact</c> concludes.
+    /// </para>
+    /// <para>
+    /// <b>Heuristic is the default because Exact was over-propagating.</b> Exact enumerates every
+    /// permutation of every candidate value set and tests placement, which is work the search would
+    /// otherwise do lazily and only where needed. Measured over 5 runs, best of:
+    /// </para>
+    /// <code>
+    /// case         arm         nodes        time        alloc
+    /// blPgSzctUMg  exact        2,870     630.1 ms    1,195 MB
+    ///              heuristic    3,790      26.6 ms       47 MB
+    ///              none    55,802,068+   &gt;60,000 ms         -
+    /// Wb5YT1b-U9Q  exact          178      20.1 ms       31 MB
+    ///              heuristic      174       0.7 ms        1 MB
+    ///              none         2,000       5.7 ms         -
+    /// blank-sw2    exact       13,672     157.5 ms      275 MB
+    ///              heuristic   13,721      12.5 ms        8 MB
+    ///              none        82,142      59.6 ms         -
+    /// </code>
+    /// <para>
+    /// The exact placement test bought almost no search reduction — at worst 32% more nodes, and
+    /// slightly *fewer* on one case — for 12-29x the time. Dropping propagation altogether
+    /// (<c>None</c>, the shape <c>IndexerConstraint</c> uses) is the opposite mistake: it is faster
+    /// than <c>Exact</c> on easy boards but explodes to 55M nodes on <c>blPgSzctUMg</c>. The sandwich
+    /// needs propagation; it did not need exactness.
+    /// </para>
+    /// </remarks>
+    internal enum BruteForceArm
+    {
+        /// <summary>Enumerate placements exactly. What the logical solver uses.</summary>
+        Exact,
+        /// <summary>Union whole value sets without enumerating placements. Default while brute forcing.</summary>
+        Heuristic,
+        /// <summary>Propagate nothing; leave it to EnforceConstraint and the weak links.</summary>
+        None,
+    }
+
+    internal static readonly BruteForceArm DefaultBruteForceArm = ReadBruteForceArm();
+
+    private static BruteForceArm ReadBruteForceArm() =>
+        Environment.GetEnvironmentVariable("SUDOKU_SANDWICH_BF_ARM")?.ToLowerInvariant() switch
+        {
+            "exact" => BruteForceArm.Exact,
+            "none" => BruteForceArm.None,
+            _ => BruteForceArm.Heuristic,
+        };
+
     private bool ApplySumCombinations(
         Solver sudokuSolver,
         uint possibleValuesMask,
         List<(int, int)> unsetCells,
         int remainingSum,
         uint[] keepMasks,
-        List<int> keepMaskIndices)
+        List<int> keepMaskIndices,
+        bool useHeuristic)
     {
         int numUnsetCells = unsetCells.Count;
         bool foundAny = false;
@@ -559,7 +626,7 @@ public class SandwichConstraint : Constraint
                     }
                 }
 
-                foundAny |= ApplyPermutations(sudokuSolver, combination, unsetCells, keepMasks, keepMaskIndices);
+                foundAny |= ApplyPermutations(sudokuSolver, combination, unsetCells, keepMasks, keepMaskIndices, useHeuristic);
             }
             return foundAny;
         }
@@ -580,7 +647,7 @@ public class SandwichConstraint : Constraint
             {
                 continue;
             }
-            foundAny |= ApplyPermutations(sudokuSolver, combination, unsetCells, keepMasks, keepMaskIndices);
+            foundAny |= ApplyPermutations(sudokuSolver, combination, unsetCells, keepMasks, keepMaskIndices, useHeuristic);
         }
         return foundAny;
     }
@@ -590,9 +657,40 @@ public class SandwichConstraint : Constraint
         List<int> combination,
         List<(int, int)> unsetCells,
         uint[] keepMasks,
-        List<int> keepMaskIndices)
+        List<int> keepMaskIndices,
+        bool useHeuristic)
     {
         bool foundAny = false;
+
+        if (useHeuristic)
+        {
+            // Set-level union: if this value set is placeable at all, allow any of its values in any
+            // of its cells, skipping the k! placement enumeration. Strictly a superset of what the
+            // exact arm concludes, so it only ever propagates less.
+            uint comboMask = 0;
+            for (int i = 0; i < combination.Count; i++)
+            {
+                comboMask |= ValueMask(combination[i]);
+            }
+
+            // Necessary condition for any placement: every cell can take some value of the set.
+            for (int cellIndex = 0; cellIndex < unsetCells.Count; cellIndex++)
+            {
+                var (ci, cj) = unsetCells[cellIndex];
+                if ((sudokuSolver.Board[ci, cj] & comboMask) == 0)
+                {
+                    return false;
+                }
+            }
+
+            for (int cellIndex = 0; cellIndex < unsetCells.Count; cellIndex++)
+            {
+                int target = keepMaskIndices == null ? cellIndex : keepMaskIndices[cellIndex];
+                keepMasks[target] |= comboMask;
+            }
+            return true;
+        }
+
         foreach (var permutation in combination.Permutations())
         {
             if (!sudokuSolver.CanPlaceDigits(unsetCells, permutation))
