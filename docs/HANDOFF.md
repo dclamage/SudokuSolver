@@ -41,6 +41,14 @@ relevant distribution is the favourable one. Data and caveats:
   Split `iss-tune` (280) / `iss-holdout` (118) by a hash of the puzzle id, so re-importing never
   reassigns a puzzle. **Never tune against the holdout.**
 - **`SolverFactory.CreateFromIss`** — parses the ISS text format, now covering 30% of the index.
+- **ISS itself is checked out** at `/Users/d.clamage/git/Interactive-Sudoku-Solver`, and reading its
+  handler for whichever constraint you are chasing is the highest-leverage first move on any
+  propagation gap. `js/solver/handlers.js` holds them. Doing exactly this for sandwich (its
+  `Lunchbox` handler) answered the question immediately and produced a 7% corpus-wide win: it
+  memoizes a combination table per grid size where we enumerated per node, represents a combination
+  as a bitmask rather than a `List<int>`, and replaces exact placement with a cardinality test. Note
+  ISS also has an `Or`/`And`/`Var` DSL and we have `NFAConstraint`, either of which may be how it
+  gets stronger line deductions than we do.
 - **WASM prototype** in `SudokuSolverWasm/` (not in the .sln). Same JSON protocol as the websocket
   server. `run-node.mjs` for headless 1T, `drive-chrome.mjs` for MT (MT WASM refuses to run outside
   a browser).
