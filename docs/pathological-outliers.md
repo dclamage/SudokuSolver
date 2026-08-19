@@ -5,6 +5,10 @@ Date: 2026-08-04. The four outliers from the ISS import, re-measured under the c
 
 **The tail is not fixed.** Deferred discovery rescued `Wb5YT1b-U9Q`; it did nothing for the rest.
 
+> **Superseded in part, 2026-08-19.** `h-ymyScJa2s` and `blPgSzctUMg` are fixed — 26 ms and 4 ms —
+> by renban required-value exclusion. The two whisper-dominated puzzles are not. See the update
+> before "Suggested next steps", and [`renban-required-values.md`](renban-required-values.md).
+
 | id | ISS | previously | now | vs ISS | constraints |
 | --- | ---: | ---: | ---: | ---: | --- |
 | `Wb5YT1b-U9Q` | 7.4 ms | 308 → 21 ms | **20.8 ms** | 2.8× | AntiKnight, Renban, Sandwich |
@@ -190,13 +194,30 @@ instead of by median made `RegionSumLine` look like the top suspect at 2.36× en
 tail-driven, and those puzzles have *fewer* constraints than average. Median with a count control is
 the honest statistic here.
 
+## Update 2026-08-19: step 2 was done, and it closed the renban half
+
+**Renban propagation was the gap, and the missing deduction was required-value exclusion.**
+`h-ymyScJa2s` 8,293 → **26 ms** (321×, and 4× faster than ISS), `blPgSzctUMg` 26 → **4 ms**. The
+group-A table above is superseded for those two. Full write-up, including why
+`FastAdvancedStrategies` during brute force is a trap and why deferral does not rescue it:
+[`renban-required-values.md`](renban-required-values.md).
+
+The group-A/group-B split held up, and the node-rate probe is now cheaper than that: **ISS's own
+`guesses` and `solve_ms` are in `data/mappings.json`** for every puzzle in the index, so the
+"nodes or cost per node?" question can be answered before writing any probe.
+
+One correction to the framing above: the `Thermo` 0.20× / `Renban` 4.50× / `Whisper` 2.89× spread is
+not really about those constraints. It is about **which constraints have brute-force propagation at
+all** — `ThermometerConstraint` has a real `StepLogic`, while whispers and dots declare that weak
+links enforce them, and weak links only fire on `SetValue`.
+
 ## Suggested next steps
 
-1. **Sandwich's `Permutations()`** — group B's remaining 1.2 GB, and a self-contained fix.
-2. **Compare Renban propagation against ISS's** on `1HuNjcLWlPE`. `RenbanConstraint` has
-   `NeedsEnforceConstraint => false`, so it contributes nothing during `SetValue` and does all its
-   work in a ~155-line `StepLogic`. Whether that is the gap is unmeasured — but the node counts say
-   the deductions, not the speed, are what is missing.
+1. **The whisper half.** `OqyXKDOhfDA` is 19.0 s / 42.7 M nodes against ISS's 411 ms / 3,936
+   guesses, and `1HuNjcLWlPE` still does not finish. A generic weak-link arc-consistency probe
+   already measures **19,054 → 1,913 ms** on the former, so the prize is known and the fix is
+   contained: [`renban-required-values.md`](renban-required-values.md) §6.
+2. **Sandwich's `Permutations()`** — group B's remaining 1.2 GB, and a self-contained fix.
 3. Leave `Wb5YT1b-U9Q` alone; at 2.8× off ISS it is no longer an outlier.
 
 ## Reproducing

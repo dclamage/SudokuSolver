@@ -1,6 +1,6 @@
 # Handoff: solver performance & the browser port
 
-Last updated 2026-08-05. Branch `wasm-prototype`, working tree clean, pushed. Read this first, then
+Last updated 2026-08-19. Branch `wasm-prototype`, working tree clean, pushed. Read this first, then
 the linked docs as needed.
 
 ---
@@ -33,7 +33,7 @@ relevant distribution is the favourable one. Data and caveats:
 
 ### Infrastructure you now have
 
-- **31-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
+- **32-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
   `benchmarks/README.md` documents each. `truecandidates` is the operation a setting UI actually
   runs on every edit; `logical` is the half the product leans on hardest.
 - **398-case ISS corpus** in `benchmarks/corpus-iss.json`, generated from sigh's CTC index with
@@ -41,6 +41,10 @@ relevant distribution is the favourable one. Data and caveats:
   Split `iss-tune` (280) / `iss-holdout` (118) by a hash of the puzzle id, so re-importing never
   reassigns a puzzle. **Never tune against the holdout.**
 - **`SolverFactory.CreateFromIss`** — parses the ISS text format, now covering 30% of the index.
+- **ISS's own node counts, for free.** `data/mappings.json` carries `guesses` and `solve_ms` for all
+  1,671 puzzles, so you can compare tree sizes against ISS without running it. Use this before
+  diagnosing any slow puzzle: it tells you immediately whether you are losing on nodes or on cost
+  per node.
 - **ISS itself is checked out** at `/Users/d.clamage/git/Interactive-Sudoku-Solver`, and reading its
   handler for whichever constraint you are chasing is the highest-leverage first move on any
   propagation gap. `js/solver/handlers.js` holds them. Doing exactly this for sandwich (its
@@ -53,7 +57,51 @@ relevant distribution is the favourable one. Data and caveats:
   server. `run-node.mjs` for headless 1T, `drive-chrome.mjs` for MT (MT WASM refuses to run outside
   a browser).
 
-### What landed in the last session
+### What landed in this session
+
+**The Renban propagation gap is closed.** `h-ymyScJa2s` went **8,293 ms → 26 ms (321×)** and from
+14.0 M search nodes to essentially none — we now beat ISS on it by 4×. `blPgSzctUMg` 26 → 4 ms.
+Full 398-puzzle ISS corpus: **p50 1.00, geomean 0.967, 0 result mismatches**; 32-case corpus −2.8%.
+Write-up: [`renban-required-values.md`](renban-required-values.md).
+
+The deduction is ISS's `BinaryPairwise` **required values**, which we had no form of: the
+*intersection* of a renban's still-valid range masks are values that must appear on the line, so one
+remaining cell for one is a hidden single and two or more lets you eliminate it from every cell that
+sees them all. One extra `&=` in a loop `RenbanConstraint.StepLogic` was already running, plus
+`ApplyRequiredValues` / `EliminateSeenByAll`.
+
+Four things it turned up that matter beyond renban:
+
+1. **ISS records its own node counts.** `data/mappings.json` has `guesses` and `solve_ms` per
+   puzzle, for all 1,671, without running ISS. That turns the group-A diagnosis into an exchange
+   rate: **ISS spends ~29 µs/node against our ~1 µs and explores 2,700× fewer nodes.**
+2. **Our brute-force loop propagates singles and `constraint.StepLogic` — and nothing else.** So a
+   constraint that says "weak links enforce me" (whispers, dots) contributes *nothing* at
+   candidate level during brute force, because weak links only fire on `SetValue`. That, not
+   anything about renban, is why the corpus statistic put `Thermo` at 0.20× (it has a real
+   `StepLogic`) and `Renban`/`Whisper` at 4.50×/2.89×.
+3. **Do not enable `FastAdvancedStrategies` during brute force.** It takes `h-ymyScJa2s` from 8,426
+   to 226 ms and, with discovery on, solves it with **zero** search nodes — and costs **p50 2.24×,
+   geomean 2.19× on `iss-tune`**. Pointing-only is *worse* than pointing-plus-everything (geomean
+   2.59, one puzzle 345×): the strategies are not additive, because each changes candidate counts and
+   so the `score/count` branch ranking. **Deferral does not rescue it either** — simulated at every
+   threshold from 5 to 800 ms it is a 3.1× loss, because of the 14 `iss-tune` puzzles over 100 ms, 8
+   improve and 6 get worse (worst 20.9×).
+4. **`corpus-iss.json` systematically excludes the puzzles escalation exists for.** Membership is
+   wall-clock gated, so `h-ymyScJa2s` (8.3 s) and `1HuNjcLWlPE` are not in it. Any "escalate on
+   expensive searches" measurement against that corpus is honest about the corpus and silent about
+   the tail. Keep a pathological side-corpus when judging one.
+
+Two puzzles regressed and both are the known second-order effects, not bugs: `iss-NjpUueqFEHY`
+241 → 985 ms on **4.5× more nodes** (branch ordering — stronger propagation is not monotone in tree
+size), and `iss--Uj9xZPyzM4` 1,314 → 1,898 ms on **17% fewer** nodes (more propagation rounds per
+node, not the 81-cell scan — capping holders changes it by under 2%). Together they are the entire
+reason the corpus *total* rose 7.3% while every distribution statistic improved.
+
+Also added: `renban-vivian` to `corpus.json` (the corpus had no real renban `count` case at all, so
+a 321× win was invisible in the run people make by habit) and `SudokuTests/RenbanTests.cs`.
+
+### What landed in the session before that
 
 Eight commits. **ISS corpus 13,618 → 11,585 ms (−15%)**. Green at the end: 121 tests, 31-case corpus
 0 FAIL, 398/398 ISS puzzles 0 FAIL.
@@ -96,7 +144,7 @@ Also added `xsum-search`, `skyscraper-search` and `sandwich-search` to `corpus.j
 Skyscraper appear in **zero** of the 398 ISS puzzles and had no case anywhere, so changes to them
 were unmeasurable. They are regression detectors, **not** tuning targets — see the rule above.
 
-### What landed the session before
+### And the session before that
 
 **Deferred weak-link discovery** — the Priority 1 item — is built, tuned and **on by default**.
 `WeakLinkDiscoveryMode` (`Always`/`Never`/`Deferred`) is now a real solver option with
@@ -175,7 +223,7 @@ What is genuinely open, roughly by value:
 
 | what | where | shape |
 | --- | --- | --- |
-| **The Renban/Whisper propagation gap.** `1HuNjcLWlPE` still does not finish in 28 min against ISS's 72 ms. `Renban` puzzles have a 4.50× slower median, `Whisper` 2.89×, `Thermo` 0.20×. | Priority 5 + [`pathological-outliers.md`](pathological-outliers.md) | Biggest gap left; open-ended research, not a contained fix |
+| **The Whisper propagation gap** — the Renban half is done (321× on `h-ymyScJa2s`), the Whisper half is not. `OqyXKDOhfDA` is 19.0 s / 42.7 M nodes against ISS's 411 ms / 3,936 guesses; `1HuNjcLWlPE` still does not finish. A probe already shows the fix is worth **10×**. | [`renban-required-values.md`](renban-required-values.md) §6 | Biggest gap left, but now a *contained* fix with a measured prize |
 | **Sandwich's `Permutations` in the *logical* arm.** Still enumerates k! to justify eliminations. | [`pathological-outliers.md`](pathological-outliers.md) | A product call about step explainability, not perf |
 | **`XSumConstraint` allocates 53 MB for a 51 ms count.** | Priority 5 | Contained, but build a many-clue *uncapped* case first |
 | **Pool the grouped weak-link arrays** (~116 KB per compiled search). | [`weak-link-representation.md`](weak-link-representation.md) | Contained; matters for per-edit true candidates in the browser |
@@ -353,9 +401,12 @@ cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) �
 - **`platinum-blonde` is still 8.9× off ISS** even with discovery disabled (the other hard classics
   drop to 1.6–2.2×). It's the cleanest remaining outlier, and it explores 3.4× more nodes than ISS.
 - **The pathological ISS outliers are re-measured and split by cause** — see
-  [`pathological-outliers.md`](pathological-outliers.md). **The tail is not fixed**: deferral rescued
-  only `Wb5YT1b-U9Q` (now 20.8 ms, 2.8× off ISS — drop it from the list). `1HuNjcLWlPE` still
-  **does not finish in 28 minutes** against ISS's 72 ms, i.e. >23,000×.
+  [`pathological-outliers.md`](pathological-outliers.md). **Two of the four are now fixed**:
+  `h-ymyScJa2s` 8,293 → **26 ms** and `blPgSzctUMg` 26 → **4 ms**, both by renban required-value
+  exclusion ([`renban-required-values.md`](renban-required-values.md)); `Wb5YT1b-U9Q` was already
+  closed by deferral. **The whisper pair is not fixed**: `OqyXKDOhfDA` is 19.0 s against ISS's
+  411 ms and `1HuNjcLWlPE` still does not finish against ISS's 72 ms. Both are whisper-dominated and
+  the fix is scoped in [`renban-required-values.md`](renban-required-values.md) §6.
   A node-rate probe splits them into **two opposite diseases**, and they should not be worked as one
   list:
   - **Propagation strength** (`1HuNjcLWlPE`, `OqyXKDOhfDA`, `h-ymyScJa2s`): ~1M nodes/sec, which is
@@ -556,6 +607,8 @@ is part of the same habit.
    search, and why the grouped form is faster.
 4d. [`pathological-outliers.md`](pathological-outliers.md) — the worst puzzles in the corpus, split
    into a propagation-strength group and a cost-per-node group.
+4e. [`renban-required-values.md`](renban-required-values.md) — what our brute-force loop actually
+   propagates, why "weak links enforce it" is not enough, and the Whisper fix that is still open.
 5. [`logical-solver-allocation.md`](logical-solver-allocation.md) — the browser memory problem.
 6. [`solver-pooling-audit.md`](solver-pooling-audit.md) + [`truecandidates-allocation.md`](truecandidates-allocation.md) — what's already pooled and why MT is deliberately off.
 7. [`wasm-prototype-findings.md`](wasm-prototype-findings.md) — the .NET-WASM constraints that dictate host architecture.

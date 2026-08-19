@@ -143,6 +143,11 @@ Sandwich *is* covered by the ISS corpus (8 puzzles), but it had no case in this 
 that moved the ISS total by 7% left the default `--iterations 3` run completely flat. Real-world
 coverage in one corpus is not a substitute for a case in the one people run by habit.
 
+The same gap cost renban a 321× win in silence. `renban-vivian` (CTC `h-ymyScJa2s`, an uncapped
+count of 14 renban lines and two givens) was added for exactly that reason: it ran in 8.3 s, runs in
+26 ms, and neither number would have appeared anywhere in this corpus before. Unlike the three
+`*-search` cases it is a real uncapped puzzle, so it *is* a legitimate tuning target.
+
 **These three are regression detectors, not tuning targets.** A blank grid counted to a small cap
 asks for a few solutions out of an astronomical set, so almost nothing needs pruning and any change
 that propagates *less* looks like a win. Tuning `SkyscraperConstraint`'s propagation this way
@@ -169,8 +174,12 @@ Two things to know before adding `logical` cases:
 
 A second corpus, generated rather than hand-maintained: **398 real CTC puzzles** imported from
 [sigh's ISS index](https://sigh.github.io/iss-sudoku-index/), each an uncapped `count` whose
-`expected` is the solution count **ISS itself recorded**. It exists because `corpus.json` is 28
+`expected` is the solution count **ISS itself recorded**. It exists because `corpus.json` is 32
 hand-picked cases, which is far too few to tune a heuristic against without over-fitting.
+
+The index's `data/mappings.json` also records ISS's own **`guesses` and `solve_ms` per puzzle**, for
+all 1,671 — so you can compare tree sizes against ISS without running it. That is the first thing to
+look at on a slow puzzle: it says whether you are losing on node count or on cost per node.
 
 ```bash
 caffeinate -i dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- benchmarks/corpus-iss.json

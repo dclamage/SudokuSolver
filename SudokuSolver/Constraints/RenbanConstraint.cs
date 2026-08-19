@@ -214,6 +214,7 @@ public class RenbanConstraint : Constraint
         (uint allCellsCandidateUnion, uint allSetValuesUnion) = GetCellMasks(board);
 
         uint unionOfCurrentlyValidRangeMasks = 0;
+        uint intersectionOfCurrentlyValidRangeMasks = sudokuSolver.ALL_VALUES_MASK;
         int validRangesFound = 0;
 
         foreach (uint currentRangeSequenceMask in rangeMasks)
@@ -221,6 +222,7 @@ public class RenbanConstraint : Constraint
             if (IsRangeMaskValid(currentRangeSequenceMask, allCellsCandidateUnion, allSetValuesUnion, board))
             {
                 unionOfCurrentlyValidRangeMasks |= currentRangeSequenceMask;
+                intersectionOfCurrentlyValidRangeMasks &= currentRangeSequenceMask;
                 validRangesFound++;
             }
         }
@@ -355,7 +357,136 @@ public class RenbanConstraint : Constraint
             return LogicResult.Changed;
         }
 
+        return ApplyRequiredValues(sudokuSolver, intersectionOfCurrentlyValidRangeMasks & ~allSetValuesUnion, logicalStepDescription);
+    }
+
+    /// <summary>
+    /// Required-value exclusion, the deduction ISS gets from its <c>BinaryPairwise</c> handler's
+    /// <c>requiredValues</c> table. A value present in *every* still-possible sequence must appear
+    /// somewhere on the line, so:
+    /// <list type="bullet">
+    /// <item>if only one cell can still hold it, that cell is it — a hidden single within the line;</item>
+    /// <item>otherwise every cell that sees all of the cells which can hold it is eliminated.</item>
+    /// </list>
+    /// This is the deduction that separates us from ISS on renban puzzles: without it the search on
+    /// <c>h-ymyScJa2s</c> explores 14M nodes; with it, 8k. See docs/renban-required-values.md.
+    /// Allocation-free on the common path so it is cheap enough to run at every brute-force node.
+    /// </summary>
+    private LogicResult ApplyRequiredValues(Solver sudokuSolver, uint requiredMask, List<LogicalStepDesc> logicalStepDescription)
+    {
+        if (requiredMask == 0)
+        {
+            return LogicResult.None;
+        }
+
+        BoardView board = sudokuSolver.Board;
+        int numCells = cellIndices.Count;
+        Span<int> holders = stackalloc int[numCells];
+
+        while (requiredMask != 0)
+        {
+            int v = MinValue(requiredMask);
+            uint valueMask = ValueMask(v);
+            requiredMask &= ~valueMask;
+
+            int holderCount = 0;
+            for (int i = 0; i < numCells; i++)
+            {
+                int cellIndex = cellIndices[i];
+                uint cellMask = board[cellIndex];
+                if (!IsValueSet(cellMask) && (cellMask & valueMask) != 0)
+                {
+                    holders[holderCount++] = cellIndex;
+                }
+            }
+
+            if (holderCount == 0)
+            {
+                // The value is required but has nowhere left to go.
+                logicalStepDescription?.Add(new LogicalStepDesc(
+                    desc: $"Every possible Renban sequence contains {v}, but no cell on the line can hold it.",
+                    highlightCells: cells
+                ));
+                return LogicResult.Invalid;
+            }
+
+            if (holderCount == 1)
+            {
+                int cellIndex = holders[0];
+                if (logicalStepDescription != null)
+                {
+                    logicalStepDescription.Add(new LogicalStepDesc(
+                        desc: $"Hidden Single in {SpecificName}: {CellName(sudokuSolver.CellIndexToCoord(cellIndex))}={v} (every possible sequence contains {v})",
+                        sourceCandidates: sudokuSolver.CandidateIndex(cellIndex, v).ToEnumerable(),
+                        elimCandidates: null,
+                        isSingle: true));
+                }
+                return sudokuSolver.SetValue(cellIndex, v) ? LogicResult.Changed : LogicResult.Invalid;
+            }
+
+            // Eliminate the value from every cell outside the line that sees all of its holders.
+            LogicResult elimResult = EliminateSeenByAll(sudokuSolver, board, holders[..holderCount], v, valueMask, logicalStepDescription);
+            if (elimResult != LogicResult.None)
+            {
+                return elimResult;
+            }
+        }
+
         return LogicResult.None;
+    }
+
+    private LogicResult EliminateSeenByAll(Solver sudokuSolver, BoardView board, ReadOnlySpan<int> holders, int v, uint valueMask, List<LogicalStepDesc> logicalStepDescription)
+    {
+        int firstHolder = holders[0];
+        List<int> elims = null;
+        int numGridCells = sudokuSolver.NUM_CELLS;
+
+        for (int targetCell = 0; targetCell < numGridCells; targetCell++)
+        {
+            uint targetMask = board[targetCell];
+            if (IsValueSet(targetMask) || (targetMask & valueMask) == 0)
+            {
+                continue;
+            }
+
+            // Cheapest test first: everything eliminated must be seen by the first holder.
+            // A cell never sees itself, but say so rather than relying on that.
+            if (targetCell == firstHolder || !sudokuSolver.IsSeen(targetCell, firstHolder))
+            {
+                continue;
+            }
+
+            bool seenByAll = true;
+            for (int i = 1; i < holders.Length; i++)
+            {
+                int holder = holders[i];
+                if (targetCell == holder || !sudokuSolver.IsSeen(targetCell, holder))
+                {
+                    seenByAll = false;
+                    break;
+                }
+            }
+            if (!seenByAll)
+            {
+                continue;
+            }
+
+            elims ??= [];
+            elims.Add(sudokuSolver.CandidateIndex(targetCell, v));
+        }
+
+        if (elims == null)
+        {
+            return LogicResult.None;
+        }
+
+        bool valid = sudokuSolver.ClearCandidates(elims);
+        logicalStepDescription?.Add(new LogicalStepDesc(
+            desc: $"Every possible Renban sequence for {SpecificName} contains {v}, which is confined to {sudokuSolver.CompactName(valueMask, holders.ToArray().Select(sudokuSolver.CellIndexToCoord).ToList())} => {sudokuSolver.DescribeElims(elims)}",
+            sourceCandidates: holders.ToArray().Select(cellIndex => sudokuSolver.CandidateIndex(cellIndex, v)),
+            elimCandidates: elims
+        ));
+        return valid ? LogicResult.Changed : LogicResult.Invalid;
     }
 
     public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
