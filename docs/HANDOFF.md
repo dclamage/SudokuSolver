@@ -1,6 +1,6 @@
 # Handoff: solver performance & the browser port
 
-Last updated 2026-08-04. Branch `wasm-prototype`, working tree clean, pushed. Read this first, then
+Last updated 2026-08-05. Branch `wasm-prototype`, working tree clean, pushed. Read this first, then
 the linked docs as needed.
 
 ---
@@ -33,7 +33,7 @@ relevant distribution is the favourable one. Data and caveats:
 
 ### Infrastructure you now have
 
-- **30-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
+- **31-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
   `benchmarks/README.md` documents each. `truecandidates` is the operation a setting UI actually
   runs on every edit; `logical` is the half the product leans on hardest.
 - **398-case ISS corpus** in `benchmarks/corpus-iss.json`, generated from sigh's CTC index with
@@ -46,6 +46,49 @@ relevant distribution is the favourable one. Data and caveats:
   a browser).
 
 ### What landed in the last session
+
+Eight commits. **ISS corpus 13,618 → 11,585 ms (−15%)**. Green at the end: 121 tests, 31-case corpus
+0 FAIL, 398/398 ISS puzzles 0 FAIL.
+
+Four changes shipped:
+
+1. **Logical-solver allocation halved** — 2,593 → 1,289 MB over the five `logical` cases, time −8%.
+   `Extensions.CombinationsBuffered` (borrowed buffer, adopted only at audited non-retaining sites)
+   plus reusing one `HashSet` in `FindFinnedFishes` instead of allocating 429k of them per solve.
+   [`logical-solver-allocation.md`](logical-solver-allocation.md).
+2. **Weak links apply per cell, not per candidate** — `SetValue` walks a compiled
+   `candidate → (cell, mask)` table instead of calling `ClearValue` per target. **ISS corpus −5.6%.**
+   [`weak-link-representation.md`](weak-link-representation.md).
+3. **Sandwich combinations come from a table** (`ValueCombinationTable`) instead of being enumerated
+   and sum-filtered at every node, which is how ISS's `Lunchbox` does it.
+4. **Sandwich stopped over-propagating while brute forcing** — **ISS corpus −7.0%**, and
+   `blPgSzctUMg` went from 49× off ISS to ~1.9×, closing it as an outlier.
+   [`pathological-outliers.md`](pathological-outliers.md).
+
+Four things were investigated and deliberately **not** changed, which matters as much:
+
+- **The bilocal branch-ordering tier stays off.** It scores 0.83× on the 28-case corpus and **7.7×
+  worse** on `iss-tune` — the two corpora disagree on the *sign* of the effect.
+- **Discovery raising node count is not a defect**, so don't hunt for a bug; it is a second-order
+  consequence of stronger propagation.
+- **Capping discovery passes is the wrong fix** — passes ≥2 yield 39% of all discovered links.
+- **`SkyscraperConstraint`'s DFS is fine — do not "fix" it.** Skipping it measures 14–137× *faster*
+  on blank capped grids and is **209× slower** on realistic ones.
+
+**The rule the last two produced. If you read one thing here before tuning propagation, read this:**
+
+> `StepLogic` is propagation only — `EnforceConstraint` plus the weak links own correctness — so the
+> brute-force and logical arms may legitimately differ, and a *weaker* brute-force arm cannot change
+> a solution count. But **never tune propagation strength on blank-grid capped counts.** They ask for
+> a handful of solutions out of an astronomical set, so almost nothing needs pruning and any arm that
+> propagates less looks better. Tune on real puzzles, uncapped. This nearly shipped a 209×
+> regression.
+
+Also added `xsum-search`, `skyscraper-search` and `sandwich-search` to `corpus.json`: X-Sum and
+Skyscraper appear in **zero** of the 398 ISS puzzles and had no case anywhere, so changes to them
+were unmeasurable. They are regression detectors, **not** tuning targets — see the rule above.
+
+### What landed the session before
 
 **Deferred weak-link discovery** — the Priority 1 item — is built, tuned and **on by default**.
 `WeakLinkDiscoveryMode` (`Always`/`Never`/`Deferred`) is now a real solver option with
@@ -98,7 +141,7 @@ Two things to carry forward:
   was silently wrong. Only `TrueCandidatesMatchesBruteForceOracle` — which checks every candidate
   against a forced-cell `CountSolutions` at caps 1 *and* 8 — caught it. Test above a cap of 1.
 
-### What landed the session before
+### Earlier: the ISS corpus import
 
 `benchmarks/corpus-iss.json`, 398 cases, 402 agree / 0 disagree, tune/holdout split in place.
 Write-up: [`iss-corpus-import.md`](iss-corpus-import.md). Two things it turned up:
@@ -117,6 +160,19 @@ machine has to run them before `--import-iss` will work.
 ---
 
 ## 2. Recommended order of work
+
+**Start here.** Several priorities below are now resolved and kept only for their findings —
+**1b, 1c and 3 are closed or done**, and Priority 1's two items were both investigated and answered.
+What is genuinely open, roughly by value:
+
+| what | where | shape |
+| --- | --- | --- |
+| **The Renban/Whisper propagation gap.** `1HuNjcLWlPE` still does not finish in 28 min against ISS's 72 ms. `Renban` puzzles have a 4.50× slower median, `Whisper` 2.89×, `Thermo` 0.20×. | Priority 5 + [`pathological-outliers.md`](pathological-outliers.md) | Biggest gap left; open-ended research, not a contained fix |
+| **Sandwich's `Permutations` in the *logical* arm.** Still enumerates k! to justify eliminations. | [`pathological-outliers.md`](pathological-outliers.md) | A product call about step explainability, not perf |
+| **`XSumConstraint` allocates 53 MB for a 51 ms count.** | Priority 5 | Contained, but build a many-clue *uncapped* case first |
+| **Pool the grouped weak-link arrays** (~116 KB per compiled search). | [`weak-link-representation.md`](weak-link-representation.md) | Contained; matters for per-edit true candidates in the browser |
+| **Extend ISS coverage to NFA/Pair**, +237 puzzles. | Priority 4 | Plumbing; corpus size is what protects every heuristic here from over-fitting, and it misled us twice last session |
+| **True-candidates leftovers** — the ~2.9× seed spread, and a node-relative stall trigger. | Priority 2 | Smaller |
 
 ### Priority 1 — The two remaining weak-link-discovery levers
 
@@ -413,6 +469,18 @@ types in minutes and contradicted the intuition on two of them.
 
 ### Benchmarking traps in this repo
 
+- **A blank grid counted to a small cap is the wrong workload for propagation strength.** It asks for
+  a handful of solutions out of an astronomical set, so almost nothing needs pruning and any arm that
+  propagates *less* wins. Skipping `SkyscraperConstraint`'s DFS measured **14–137× faster** that way
+  and is **209× slower** on a 36-clue board, exploding to 227M nodes when counted exhaustively. Tune
+  on real puzzles, uncapped. The three `*-search` corpus cases are regression detectors only.
+- **The 28-case corpus can disagree with `iss-tune` about the *sign* of a heuristic.** Enabling the
+  bilocal branch tier scores 0.83× on the small corpus and **7.7× worse** on `iss-tune` (p90 2.56×,
+  worst 180×). Take any branch-ordering or threshold result to `iss-tune` before believing it.
+- **`min ms` is an order statistic, so compare medians on high-variance cases.** `Wb5YT1b-U9Q` read
+  as a 26% regression at 3 iterations (min 21.78 against its own median of 79.00) and was flat at 15.
+  `killer-innie` and `littlekiller-10` both read as *large* regressions at 3 iterations and are fine
+  at 15. Use ≥15 iterations before believing any delta on those.
 - **`killer-innie` is high-variance**: 106 ms at 5 iterations vs 56 ms at 15. Use ≥15 iterations or
   its numbers mislead. It produced a fake "+46% REGRESSION" once.
 - **`--iterations 1` measures tier-0 JIT code**, not steady state. The harness's single warm-up call
