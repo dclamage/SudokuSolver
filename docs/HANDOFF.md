@@ -33,7 +33,7 @@ relevant distribution is the favourable one. Data and caveats:
 
 ### Infrastructure you now have
 
-- **32-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
+- **33-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
   `benchmarks/README.md` documents each. `truecandidates` is the operation a setting UI actually
   runs on every edit; `logical` is the half the product leans on hardest.
 - **398-case ISS corpus** in `benchmarks/corpus-iss.json`, generated from sigh's CTC index with
@@ -100,6 +100,26 @@ reason the corpus *total* rose 7.3% while every distribution statistic improved.
 
 Also added: `renban-vivian` to `corpus.json` (the corpus had no real renban `count` case at all, so
 a 321× win was invisible in the run people make by habit) and `SudokuTests/RenbanTests.cs`.
+
+**Then the Whisper half, from the scoping the renban write-up left behind.**
+[`whisper-arc-consistency.md`](whisper-arc-consistency.md). `WhispersConstraint.StepLogic` returned
+`None` unconditionally — "weak links enforce it" — so it propagated nothing at candidate level. It
+now does pairwise arc consistency (ISS's `BinaryConstraint.enforceConsistency`), one forward and one
+backward sweep per call, off a per-value `compatibleMask` table built in the constructor.
+
+- **`OqyXKDOhfDA` 19,566 → 116 ms (169×)**, against ISS's 411 ms — we are now 3.6× faster than ISS.
+- **`1HuNjcLWlPE` finishes for the first time**: 18.9 s and the right answer, having previously not
+  completed in 28 minutes. Still 263× off ISS, but finite, which is what lets it be worked on.
+- ISS corpus **geomean 0.771, 0 mismatches**, and the **holdout gains more than the tune split**
+  (0.708 vs 0.799) — the cleanest generalisation signal in this file. `corpus.json` flat.
+- Worst regression anywhere is 2.94×, and `iss-NjpUueqFEHY` — the puzzle the renban change cost
+  4.08× — *improves* 978 → 569 ms here. Two independent propagation additions partially cancelling on
+  one puzzle is a good reason not to chase an individual branch-ordering casualty.
+
+Also added `whisper-zoomout` to `corpus.json` (there was no whisper case of *any* kind) and
+`SudokuTests/WhispersTests.cs`. The interesting test is negative: the "cell fixed to an unsupported
+value" branch is unreachable in normal play, because `SetValue` applies the pair's weak links first —
+which is the half of the old "weak links enforce it" comment that was correct.
 
 ### What landed in the session before that
 
@@ -223,7 +243,8 @@ What is genuinely open, roughly by value:
 
 | what | where | shape |
 | --- | --- | --- |
-| **The Whisper propagation gap** — the Renban half is done (321× on `h-ymyScJa2s`), the Whisper half is not. `OqyXKDOhfDA` is 19.0 s / 42.7 M nodes against ISS's 411 ms / 3,936 guesses; `1HuNjcLWlPE` still does not finish. A probe already shows the fix is worth **10×**. | [`renban-required-values.md`](renban-required-values.md) §6 | Biggest gap left, but now a *contained* fix with a measured prize |
+| **Give `OrthogonalValueConstraint` brute-force propagation.** Kropki/difference/ratio/XV have the same defect renban and whisper had — `WantsBruteForcePropagation => false` plus an `isBruteForcing` short-circuit — and the deduction is *already written* in its `StepLogic`. Deleting both guards takes `1HuNjcLWlPE` from 18.9 s to **6.35 s**, but allocation from 1.0 to 7.8 GB. | [`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5 | Contained; the work is making the existing pass allocation-free and queue-driven |
+| **`1HuNjcLWlPE` is still 263× off ISS** (18.9 s vs 71.8 ms) — the last pathological outlier, and now finite enough to iterate on. After the dots, the lever is ISS's required-value exclusion for a *binary pair*. | [`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5 | Open-ended, but with two named next steps |
 | **Sandwich's `Permutations` in the *logical* arm.** Still enumerates k! to justify eliminations. | [`pathological-outliers.md`](pathological-outliers.md) | A product call about step explainability, not perf |
 | **`XSumConstraint` allocates 53 MB for a 51 ms count.** | Priority 5 | Contained, but build a many-clue *uncapped* case first |
 | **Pool the grouped weak-link arrays** (~116 KB per compiled search). | [`weak-link-representation.md`](weak-link-representation.md) | Contained; matters for per-edit true candidates in the browser |
@@ -608,7 +629,9 @@ is part of the same habit.
 4d. [`pathological-outliers.md`](pathological-outliers.md) — the worst puzzles in the corpus, split
    into a propagation-strength group and a cost-per-node group.
 4e. [`renban-required-values.md`](renban-required-values.md) — what our brute-force loop actually
-   propagates, why "weak links enforce it" is not enough, and the Whisper fix that is still open.
+   propagates, and why "weak links enforce it" is not enough.
+4f. [`whisper-arc-consistency.md`](whisper-arc-consistency.md) — the same lesson applied to whispers,
+   and the dots, which still have the defect.
 5. [`logical-solver-allocation.md`](logical-solver-allocation.md) — the browser memory problem.
 6. [`solver-pooling-audit.md`](solver-pooling-audit.md) + [`truecandidates-allocation.md`](truecandidates-allocation.md) — what's already pooled and why MT is deliberately off.
 7. [`wasm-prototype-findings.md`](wasm-prototype-findings.md) — the .NET-WASM constraints that dictate host architecture.

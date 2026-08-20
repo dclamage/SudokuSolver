@@ -117,6 +117,13 @@
     "expected": 1
   },
   {
+    "name": "whisper-zoomout",
+    "category": "variant-hard",
+    "iss": ".~R1C8_5~R5C5_6~R9C2_8\n.Thermo~R4C1~R3C2~R2C3~R1C4\n.Thermo~R6C9~R7C8~R8C7~R9C6\n.Thermo~R8C5~R7C4~R6C3~R5C4\n.Thermo~R2C5~R3C6~R4C7~R5C6\n.Whisper~5~R1C2~R1C3\n.Whisper~5~R2C1~R3C1\n.Whisper~5~R7C9~R8C9\n.Whisper~5~R9C7~R9C8\n.Whisper~5~R3C5~R4C5\n.Whisper~5~R6C5~R7C5\n.Whisper~5~R5C7~R5C8\n.Whisper~5~R5C2~R5C3\n.Whisper~5~R9C3~R9C4\n.Whisper~5~R6C1~R7C1\n.Whisper~5~R3C9~R4C9\n.Whisper~5~R1C6~R1C7",
+    "op": "count",
+    "expected": 1
+  },
+  {
     "name": "variant-cloneways",
     "category": "variant-hard",
     "fpuzzles": "N4IgzglgXgpiBcBOANCALhNAbO8QGEsB7AOxgHcBDATzAAIBxSgWxjqIDM6AZCDuVJQCuaABZEATghAA1ShIhEhYEKglCcYGGmkA5Sc0pY6AY2Jk66zXUoAHW1mp0AFCcoBzGPU50xbMCxsJkTEEjYSbBAAJjAkGG5YAJQAOiT6EobGzBAkAPSGAB429o6p6Zl0AIISEkTklhpexQ7UZQZGdAAauTIN1nYtLiREdGTulBgAbkGkYGgSlDloKSQAQtTwqZSiwrZoqatEaJQA1kIHsamdpDBRqQAKohBYELZ0uhSGJKkAEpQmJwgEAC3xIAEl8D8AKoAFQAogBlVIARRyWCEBVSDBethgCywqhA7gUUQQAG0yaATNIAMSrAAMADFGQyQABfZBU2kM5msjlcvA05m8+nszkgamC4Us0X8uWc+XANkAXWQlIl3KZMrFApAdK1fPFkr10sNuqFwrNGqlltlCqNmpFOutep52rlqspiv5LotTu9DsFbqtxv1/oVnvNzMq9JjztD0djdqjjJjcYDSvtmaVkYzvtNyfztp1PoTqaT8dpifTgZN5fTuazparxebNvDKY73sb2cVRa7tb97sHBZLPd9wcLocnJabI9b847/fd4+nBqnjuHvbnna3KtVEvMuHVJhgWCwKngZJAACUAIz4ADMhPv+AALC+AExPr/v38AVhfR8/wPMwbnwM8L3JW9/z/VAb1gwD4IANjg29UKQ9D8GQl8AHZ8EA5VS0gy9rwQtDyMwm9UI/FCCJfVCcPg/DCNQMCyAg89SNvfDcLw/AAA4XwE/A+PgkShPE/BEBfRBBJAIijRI6Cb14/jJNvESxM0+SpJk+C5KE0Cj04qCr1vB9n3gh9aNvb8rLsijvyo4CP0UqllPM187xfB9P1/Hz4O/fzjPAzyyO/bSb2/DSb2AqLgKM4iuJUyLf1i+KgPk0KOPCnT/Kkhybzkgrbzk593IlPKbxE0qap/Az8Dq8qFLYkzqofQKLKagLfxC5KzLI2Cotg2LYJknKYFM7ibzffAutmnr4LmiqBpmuaFrmuqVtaw8wpSrzhpfUbjukhSVUEGo6nJUAXjIUiyJ2+DYNs6j6OY7DhNE2TstA6qtpfHbKrurxySGs7nt0mDvuVP6DvBiafRBh6sKY6G0cWjG5r42G2OqxjzvFZGwcc2Lv307qJrhwbSfOg9shICBmCEZgbqq89pHq/yLpAQomZZtnTw5vBor/AbOfwnyeYKSZBeqiSvpx1BJiMIRcBATp43l77GqVkAVfRdWZHZUCPGPDz4e6ha/N6oKeoPJRsByKbaXpN33cJDhSDQfBXfdt2tct18ips38iu/V7nKytzUEdkHfcFf2A9QL24gTvUk6naqXtOqiaIY97Uf41iQDj5305pTPPe9iuq7WlS1I+2KtK+5uIbK7LY5EeO/f96u097j368OnXobGs6He78vB+TkBU59mes6DjbAaW28ga7p2OMX/uF8TpPA5p0WopirKEs70up+3/e+5Tmud+Hsjaq+oqSp+irN57m+Pbvgfv4DlUbIgA==",

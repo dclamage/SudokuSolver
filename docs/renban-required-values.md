@@ -1,7 +1,8 @@
 # The Renban propagation gap: required-value exclusion
 
 Date: 2026-08-19. Closes the Renban half of `HANDOFF.md` §2's top item ("The Renban/Whisper
-propagation gap"). The Whisper half is still open and is quantified at the bottom.
+propagation gap"). The Whisper half was closed the same day —
+[`whisper-arc-consistency.md`](whisper-arc-consistency.md) — from the scoping in §6 here.
 
 **Result: `h-ymyScJa2s` goes from 8,293 ms to 26 ms — 321× — and from 14.0 M search nodes to
 essentially none.** ISS takes 105 ms on it, so we now beat ISS by 4×. The whole 398-puzzle ISS
@@ -186,7 +187,18 @@ They are opposite failures and neither is a bug in the deduction:
   propagation rounds per node, which re-runs every constraint. If this is ever worth chasing, that
   is where to look — not at the scan.
 
-## 6. Still open: the Whisper half
+## 6. The Whisper half — **done the same day**, see [`whisper-arc-consistency.md`](whisper-arc-consistency.md)
+
+**`OqyXKDOhfDA` 19,566 → 116 ms (169×) and `1HuNjcLWlPE` finishes for the first time** (18.9 s,
+correct answer, having previously not completed in 28 minutes). ISS corpus geomean 0.771, holdout
+0.708, 0 mismatches. The prediction below was right about the shape and low by 17× on the size: the
+10× came from a generic full-grid probe, and the targeted queue-driven version is 169×. What remains
+open is the *dots* (`OrthogonalValueConstraint`), which has the identical defect — a probe gives 3×
+on `1HuNjcLWlPE` — and required-value exclusion for binary pairs.
+
+The original scoping is kept below because it is what the measurement said before the work.
+
+### The scoping, as written
 
 `OqyXKDOhfDA` (Thermo + twelve 2-cell whispers, 3 givens) is **untouched** by this change: 19,054 ms
 and 42,672,862 nodes against ISS's 410.9 ms and 3,936 guesses. `1HuNjcLWlPE` (whispers, renban and

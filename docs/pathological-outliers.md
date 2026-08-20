@@ -5,9 +5,12 @@ Date: 2026-08-04. The four outliers from the ISS import, re-measured under the c
 
 **The tail is not fixed.** Deferred discovery rescued `Wb5YT1b-U9Q`; it did nothing for the rest.
 
-> **Superseded in part, 2026-08-19.** `h-ymyScJa2s` and `blPgSzctUMg` are fixed — 26 ms and 4 ms —
-> by renban required-value exclusion. The two whisper-dominated puzzles are not. See the update
-> before "Suggested next steps", and [`renban-required-values.md`](renban-required-values.md).
+> **Superseded, 2026-08-19.** Four of the five are fixed: `h-ymyScJa2s` 26 ms and `blPgSzctUMg` 4 ms
+> by renban required-value exclusion, `OqyXKDOhfDA` **116 ms** by whisper arc consistency, and
+> `Wb5YT1b-U9Q` was already closed by deferral. `1HuNjcLWlPE` now **finishes** (18.9 s vs never) but
+> is still 263× off ISS. See the update before "Suggested next steps",
+> [`renban-required-values.md`](renban-required-values.md) and
+> [`whisper-arc-consistency.md`](whisper-arc-consistency.md).
 
 | id | ISS | previously | now | vs ISS | constraints |
 | --- | ---: | ---: | ---: | ---: | --- |
@@ -213,10 +216,10 @@ links enforce them, and weak links only fire on `SetValue`.
 
 ## Suggested next steps
 
-1. **The whisper half.** `OqyXKDOhfDA` is 19.0 s / 42.7 M nodes against ISS's 411 ms / 3,936
-   guesses, and `1HuNjcLWlPE` still does not finish. A generic weak-link arc-consistency probe
-   already measures **19,054 → 1,913 ms** on the former, so the prize is known and the fix is
-   contained: [`renban-required-values.md`](renban-required-values.md) §6.
+1. ~~**The whisper half.**~~ **Done** — `OqyXKDOhfDA` 19,566 → **116 ms** (169×, and 3.6× faster
+   than ISS), and `1HuNjcLWlPE` **finishes for the first time** at 18.9 s. That leaves the *dots*:
+   `OrthogonalValueConstraint` has the identical defect and a probe gives 3× on `1HuNjcLWlPE`.
+   [`whisper-arc-consistency.md`](whisper-arc-consistency.md).
 2. **Sandwich's `Permutations()`** — group B's remaining 1.2 GB, and a self-contained fix.
 3. Leave `Wb5YT1b-U9Q` alone; at 2.8× off ISS it is no longer an outlier.
 

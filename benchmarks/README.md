@@ -143,10 +143,12 @@ Sandwich *is* covered by the ISS corpus (8 puzzles), but it had no case in this 
 that moved the ISS total by 7% left the default `--iterations 3` run completely flat. Real-world
 coverage in one corpus is not a substitute for a case in the one people run by habit.
 
-The same gap cost renban a 321× win in silence. `renban-vivian` (CTC `h-ymyScJa2s`, an uncapped
-count of 14 renban lines and two givens) was added for exactly that reason: it ran in 8.3 s, runs in
-26 ms, and neither number would have appeared anywhere in this corpus before. Unlike the three
-`*-search` cases it is a real uncapped puzzle, so it *is* a legitimate tuning target.
+The same gap cost renban a 321× win and whispers a 169× win in silence. `renban-vivian` (CTC
+`h-ymyScJa2s`, 14 renban lines and two givens) and `whisper-zoomout` (CTC `OqyXKDOhfDA`, four
+thermometers and twelve whispers) were added for exactly that reason: they ran in 8.3 s and 19.6 s,
+run in 26 ms and 113 ms, and there was previously no renban `count` case and **no whisper case of any
+kind**. Unlike the three `*-search` cases these are real uncapped unique-solution puzzles, so they
+*are* legitimate tuning targets.
 
 **These three are regression detectors, not tuning targets.** A blank grid counted to a small cap
 asks for a few solutions out of an astronomical set, so almost nothing needs pruning and any change
@@ -174,7 +176,7 @@ Two things to know before adding `logical` cases:
 
 A second corpus, generated rather than hand-maintained: **398 real CTC puzzles** imported from
 [sigh's ISS index](https://sigh.github.io/iss-sudoku-index/), each an uncapped `count` whose
-`expected` is the solution count **ISS itself recorded**. It exists because `corpus.json` is 32
+`expected` is the solution count **ISS itself recorded**. It exists because `corpus.json` is 33
 hand-picked cases, which is far too few to tune a heuristic against without over-fitting.
 
 The index's `data/mappings.json` also records ISS's own **`guesses` and `solve_ms` per puzzle**, for
