@@ -13,6 +13,9 @@ namespace SudokuSolver.Constraints
 
         public override string SpecificName => $"Double Arrow from {CellName(lineCells[0])} - {CellName(lineCells[^1])}";
 
+        /// <summary>Measured: 505 ns / 17.9% fire.</summary>
+        public override int BruteForcePropagationCost => 2821;
+
         public DoubleArrowConstraint(Solver solver, string options) : base(solver, options)
         {
             var groups = ParseCells(options);

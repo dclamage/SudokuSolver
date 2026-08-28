@@ -197,6 +197,9 @@ public class RenbanConstraint : Constraint
     }
 
     public override bool NeedsEnforceConstraint => false;
+    /// <summary>Measured: 636 ns / 16.8% fire.</summary>
+    public override int BruteForcePropagationCost => 3782;
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         return true;

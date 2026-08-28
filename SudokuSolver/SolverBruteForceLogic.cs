@@ -244,20 +244,22 @@ public partial class Solver
                 for (int word = 0; word < _constraintQueued.Length; word++)
                     _constraintQueued[word] |= _alwaysRunConstraintBits[word];
 
-            // Drain queued constraints in declaration order; stop on first change. The word is
-            // cached across the inner loop: a StepLogic that returns None wrote nothing, so it
-            // cannot have queued anything, and any other result returns out of the loop.
+            // Drain queued constraints cheapest-first; stop on first change. Slots are assigned in
+            // cost order at FinalizeConstraints time, so the ascending bit walk *is* the cost
+            // order — no comparator here. The word is cached across the inner loop: a StepLogic
+            // that returns None wrote nothing, so it cannot have queued anything, and any other
+            // result returns out of the loop.
             for (int word = 0; word < _constraintQueued.Length; word++)
             {
-                ulong remainingConstraints = _constraintQueued[word];
-                while (remainingConstraints != 0)
+                ulong remainingSlots = _constraintQueued[word];
+                while (remainingSlots != 0)
                 {
-                    int constraintIndex = (word << 6) + BitOperations.TrailingZeroCount(remainingConstraints);
-                    remainingConstraints &= remainingConstraints - 1;
-                    _constraintQueued[word] &= ~(1UL << (constraintIndex & 63));
+                    int slot = (word << 6) + BitOperations.TrailingZeroCount(remainingSlots);
+                    remainingSlots &= remainingSlots - 1;
+                    _constraintQueued[word] &= ~(1UL << (slot & 63));
 
                     cancellationToken.ThrowIfCancellationRequested();
-                    curResult = constraints[constraintIndex].StepLogic(this, (List<LogicalStepDesc>)null, true);
+                    curResult = constraints[_propagationSlotToConstraint[slot]].StepLogic(this, (List<LogicalStepDesc>)null, true);
                     if (curResult != LogicResult.None) return curResult;
                 }
             }

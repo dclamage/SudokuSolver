@@ -34,6 +34,10 @@ public partial class Solver
         _candidateCountsPerGroupValue = null;
         _checkGroupForHiddens = Array.Empty<ulong>();
 
+        // Real contents are built by FinalizeConstraints; the drain is guarded on _constraintQueued
+        // being non-empty, but keep the slot map non-null so a stray deref cannot NRE.
+        _propagationSlotToConstraint = Array.Empty<int>();
+
         Groups = [];
         CellToGroupsLookup = new List<SudokuGroup>[NUM_CELLS];
         for (int ci = 0; ci < NUM_CELLS; ci++)
@@ -150,7 +154,13 @@ public partial class Solver
         // Share the read-only propagation-queue maps; allocate a fresh queued-flags array.
         cellToConstraintMask = other.cellToConstraintMask;
         _alwaysRunConstraintBits = other._alwaysRunConstraintBits;
-        _constraintQueued = other.constraints.Count > 0 ? new ulong[BitsetWords(other.constraints.Count)] : Array.Empty<ulong>();
+        // Both may still be unset: Constraint.InitLinksByRunningLogic clones mid-FinalizeConstraints,
+        // before the slot map exists. Such a clone gets an empty queue, which is correct — it runs
+        // logic, not brute force, and the brute-force drain is guarded on a non-empty queue.
+        _propagationSlotToConstraint = other._propagationSlotToConstraint ?? Array.Empty<int>();
+        _constraintQueued = other._constraintQueued is { Length: > 0 }
+            ? new ulong[other._constraintQueued.Length]
+            : Array.Empty<ulong>();
         _lastContradictionCellIndex = -1;
     }
 
@@ -716,32 +726,55 @@ public partial class Solver
         // to queue when that cell changes, from the cells each constraint declared via
         // CellIndicesForPropagationQueue. Constraints that declare none go into
         // _alwaysRunConstraintBits (run every step).
+        //
+        // The queue is indexed by *slot*, not by constraint index. Slots are assigned in order of
+        // BruteForcePropagationCost, so the drain's ascending bit walk runs the cheapest queued
+        // constraint first and an expensive one is skipped entirely whenever a cheaper one ends the
+        // step. Ties keep declaration order, so equal costs reproduce the old behavior exactly.
+        // Slots also cover only the constraints that actually queue, so a constraint with
+        // WantsBruteForcePropagation == false no longer occupies a bit.
         {
-            int numQueueWords = constraints.Count > 0 ? BitsetWords(constraints.Count) : 0;
+            List<int> slotOrder = new(constraints.Count);
+            for (int ci = 0; ci < constraints.Count; ci++)
+            {
+                // Constraints whose StepLogic is a no-op during brute force never need to be queued.
+                if (constraints[ci].WantsBruteForcePropagation)
+                {
+                    slotOrder.Add(ci);
+                }
+            }
+            // Stable ordering on (cost, declaration index): List.Sort is unstable, so the index is
+            // part of the key rather than relied upon implicitly.
+            slotOrder.Sort((leftIndex, rightIndex) =>
+            {
+                int costDelta = constraints[leftIndex].BruteForcePropagationCost
+                              - constraints[rightIndex].BruteForcePropagationCost;
+                return costDelta != 0 ? costDelta : leftIndex - rightIndex;
+            });
+
+            _propagationSlotToConstraint = slotOrder.Count > 0 ? slotOrder.ToArray() : Array.Empty<int>();
+            int numQueueWords = _propagationSlotToConstraint.Length > 0
+                ? BitsetWords(_propagationSlotToConstraint.Length)
+                : 0;
             _constraintQueued = numQueueWords > 0 ? new ulong[numQueueWords] : Array.Empty<ulong>();
             cellToConstraintMask = new ulong[NUM_CELLS * numQueueWords];
             ulong[] alwaysRunBits = null;
 
-            for (int ci = 0; ci < constraints.Count; ci++)
+            for (int slot = 0; slot < _propagationSlotToConstraint.Length; slot++)
             {
-                // Constraints whose StepLogic is a no-op during brute force never need to be queued.
-                if (!constraints[ci].WantsBruteForcePropagation)
-                {
-                    continue;
-                }
-                var cells = constraints[ci].CellIndicesForPropagationQueue;
+                var cells = constraints[_propagationSlotToConstraint[slot]].CellIndicesForPropagationQueue;
                 if (cells == null || cells.Count == 0)
                 {
                     alwaysRunBits ??= new ulong[numQueueWords];
-                    BitsetSet(alwaysRunBits, ci);
+                    BitsetSet(alwaysRunBits, slot);
                 }
                 else
                 {
-                    ulong constraintBit = 1UL << (ci & 63);
-                    int wordOffset = ci >> 6;
+                    ulong slotBit = 1UL << (slot & 63);
+                    int wordOffset = slot >> 6;
                     foreach (int cell in cells)
                         if ((uint)cell < (uint)NUM_CELLS)
-                            cellToConstraintMask[cell * numQueueWords + wordOffset] |= constraintBit;
+                            cellToConstraintMask[cell * numQueueWords + wordOffset] |= slotBit;
                 }
             }
             _alwaysRunConstraintBits = alwaysRunBits;

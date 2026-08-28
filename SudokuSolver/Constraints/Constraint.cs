@@ -144,6 +144,45 @@ public abstract class Constraint
     public virtual bool WantsBruteForcePropagation => true;
 
     /// <summary>
+    /// Scheduling weight for the brute-force propagation queue: approximately the nanoseconds this
+    /// constraint costs per deduction it produces, i.e. measured ns per <see cref="StepLogic"/>
+    /// call divided by the fraction of calls that change anything. Lower runs earlier; ties keep
+    /// declaration order.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Ordering matters because the constraint stage returns on the first constraint that changes
+    /// anything, so everything called before it was paid for and thrown away. Measured over the ISS
+    /// tune corpus, the stage averages 2.77 calls per entry and 27.8% of all constraint calls land
+    /// before a firing one — about 19% of total solve time sitting in front of the deduction that
+    /// ends the step.
+    /// </para>
+    /// <para>
+    /// The weight is cost divided by fire rate, not cost alone, because the stage is a scan that
+    /// stops at the first success: the expected cost of such a scan is minimized by ordering on
+    /// cost / P(success), not on cost. Raw cost mis-schedules the two extremes — a constraint that
+    /// is cheap but almost never deduces (Quadruple, 41 ns, fires 1.6%) is worth running late, and
+    /// one that is expensive but usually deduces (RegionSumLines, 531 ns, fires 27%) early.
+    /// </para>
+    /// <para>
+    /// <b>This must be a constant of the instance, fixed at construction.</b> A cost that adapts at
+    /// runtime makes propagation order depend on timing and destroys reproducibility, which this
+    /// repo has already paid for once (see the true-candidates branch-order cliff). It is a virtual
+    /// property rather than a constant so an override may scale with its own geometry — a 3-cell
+    /// sandwich and a 9-cell sandwich are not the same animal — but it must not consult solver
+    /// state.
+    /// </para>
+    /// <para>
+    /// The defaults come from a per-type measurement run (see <c>docs/cell-forcing-worklist.md</c>).
+    /// They are per-type only: the same type measured 2-4x apart across the two corpora, which is
+    /// instance geometry the numbers do not yet capture. Treat them as a ranking, not a budget.
+    /// The unmeasured default sits mid-range rather than low, so a constraint nobody has profiled
+    /// is not promoted ahead of ones known to be cheap.
+    /// </para>
+    /// </remarks>
+    public virtual int BruteForcePropagationCost => 2000;
+
+    /// <summary>
     /// Cell indices (row*WIDTH+col) that this constraint monitors during brute force.
     /// The propagation queue will re-run this constraint only when one of these cells changes.
     /// Return null to run on every propagation step (always-run bucket).

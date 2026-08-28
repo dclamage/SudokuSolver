@@ -146,6 +146,11 @@ public class WhispersConstraint : Constraint
 
     public override bool NeedsEnforceConstraint => false;
 
+    /// <summary>Measured: 129 ns / 20.9% fire.</summary>
+
+    public override int BruteForcePropagationCost => 616;
+
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         return true;

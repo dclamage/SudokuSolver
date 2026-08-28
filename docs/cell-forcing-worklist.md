@@ -248,6 +248,102 @@ validation), so `set -e` in a measurement script kills the run mid-sequence. And
 arms concurrently to save wall-clock silently contaminates both — an early ISS pair here read
 −1.2% that way and was discarded.
 
+## Step 2 is done: cost-ordered propagation, and what it is worth
+
+Date: 2026-08-28, same branch. Constraints are **~70% of brute-force runtime** (12.6 s of a ~17.9 s
+`iss-tune` run), so how they are scheduled is worth measuring properly.
+
+### Sizing it first — the number that nearly killed it
+
+The aggregate says 46.7M constraint calls against 47.6M `StepBruteForceLogic` entries: **0.98 calls
+per step**. At a queue depth of 1 the order is irrelevant no matter how far the costs spread, and
+the right answer would have been to report that and stop.
+
+That average is wrong, because two-thirds of steps never reach the constraint stage. Per *stage
+entry*:
+
+```
+stage entries        16,823,148      ended in a fire 7,838,958   exhausted 8,984,190
+calls per entry            2.77
+entries with >=2 calls    62.8%
+calls before a firing constraint   12,927,446   (27.8% of all calls, ~3.5 s, ~19% of the run)
+```
+
+Those 12.9M pre-fire calls are the reorderable budget. **Always take the depth distribution, never
+the mean** — the mean here understated the opportunity by ~3x.
+
+### Order by cost / P(fire), not by cost
+
+The stage is a scan that stops at the first success, and the expected cost of such a scan is
+minimized by ordering on cost / P(success) — not on cost. Raw cost mis-schedules both extremes, and
+measurably so:
+
+| | ns/call | fires | rank by cost | rank by cost/P |
+| --- | ---: | ---: | ---: | ---: |
+| Quadruple | 41 | 1.6% | 3 | **9** |
+| RegionSumLines | 531 | 27.3% | 11 | **8** |
+| InnieCage | 486 | 6.9% | 9 | **12** |
+
+Both variants were measured. They save the same modeled cost (-4.4% raw, -4.5% cost/P) but raw cost
+grew total calls **+8.6%** against **+1.4%** — it promotes constraints that are cheap and never
+deduce. Nine types recorded **zero deductions across 9.5M calls** (ExtraRegion, ModularLine,
+Knight/King, EntropicLine, the diagonal groups); at P->0 their weight goes to the top of the range
+and they now run last. The modeled cost cannot see that improvement — those types price at 0 ns —
+so **cost/P is better than its own headline number**.
+
+Ordering can never affect correctness: propagation runs to fixpoint regardless. A wrong weight costs
+time, not answers. That is what makes this safe to tune.
+
+### Result
+
+| corpus | modeled constraint cost | total calls |
+| --- | ---: | ---: |
+| `iss-tune` (fitted) | **-4.5%** | +1.4% |
+| `iss-holdout` (never tuned on) | **-1.9%** | -2.4% |
+| `corpus.json` | ~0 | +0.05% |
+
+Holdout generalizes with attenuation, which is the honest shape for weights fitted on tune.
+
+**Call this ~1-3% of total runtime, and call it modeled.** Wall clock could not resolve it: the
+machine developed 26% within-arm noise (base ranged 15,427-19,444 ms) against ~5% earlier the same
+day. Three alternating pairs disagreed in sign. The modeled figure stands; a measured one still
+needs a quiet machine.
+
+### The negative result: single-constraint puzzles gain nothing
+
+`corpus.json` did not move, and Skyscraper stayed at exactly 194 calls — despite being the most
+expensive constraint measured anywhere, at **1.20 ms per call**, 26% of that corpus's constraint time
+from 194 calls. The expectation that the pathological outlier was where ordering would pay was
+**wrong**. Those cases have effectively one constraint type each, so there is nothing to reorder
+against.
+
+Cost ordering pays only where constraints of *differing* cost compete in one queue — real mixed
+variant puzzles. Do not reach for `skyscraper-search` or the other `*-search` cases to evaluate a
+scheduling change; they cannot show one.
+
+### How it is built
+
+Slot renumbering, not a sorted scan. Each queue-participating constraint gets a slot ordered by
+`(BruteForcePropagationCost, declaration index)` at `FinalizeConstraints` time, and
+`_constraintQueued`, `cellToConstraintMask` and `_alwaysRunConstraintBits` are all built in slot
+space. Ascending bit order *is* cost order, so the drain stays the same `TrailingZeroCount` walk with
+one indirection through `_propagationSlotToConstraint`. No comparator, no heap, no per-step sort.
+Ties keep declaration order, so equal weights reproduce the old behavior exactly. Slots cover only
+participating constraints, so `WantsBruteForcePropagation == false` no longer occupies a bit.
+
+**Trap:** `Constraint.InitLinksByRunningLogic` clones a solver *during* `FinalizeConstraints`, before
+the slot map exists. Sizing the clone's queue from `other._constraintQueued.Length` NREs on 22 tests;
+the old code read `constraints.Count`, which is always valid. Such a clone runs logic, not brute
+force, so an empty queue is correct for it.
+
+### Known gap: the weights are per-type, the cost is per-instance
+
+The same type measured **2-4x apart** across the two corpora (InnieCage 486 vs 889 ns, Renban 636 vs
+202 ns) while the rank order stayed stable. That spread is instance geometry, which per-type
+constants cannot capture. `BruteForcePropagationCost` is a virtual property precisely so an override
+can scale with its own cell count — but doing that now would be a guess, since the measurement is
+per-type. Attribute per-instance before adding a geometry term.
+
 ## Methodology — read before measuring anything
 
 **Node counts are reproducible. The harness allocation column is not.** Same binary, same config,
@@ -346,17 +442,10 @@ row can never fire. That prune happens to remove every ordinary house link (`A=v
    `perf/propagation-worklist`, −14.3%. Decoupling was the right call for the reason given: the
    bitset scan alone was a **4.7% regression**, and only separate measurement made that visible
    instead of being absorbed into a cell-forcing bundle.
-2. **Cost-sorted constraint iteration.** Now cheaper to build than when this was written, but no
-   longer "one changed loop" — `_constraintQueued` is a bitset, so ascending bit order *is* the
-   iteration order. The clean form is to renumber: give each queue-participating constraint a slot
-   ordered by `(cost, declaration index)`, build `cellToConstraintMask` and
-   `_alwaysRunConstraintBits` in slot space, and keep `slotToConstraint[]` for the `StepLogic` call.
-   The scan stays a plain ascending walk and cost order falls out for free. Bonus: slots are dense
-   over *participating* constraints only, so the bitset shrinks by whatever `WantsBruteForcePropagation`
-   excludes.
-   **The blocker is cost data, not plumbing.** With every cost equal the reordering is a no-op, so
-   there is nothing to measure until per-constraint brute-force `StepLogic` time is attributed.
-   Do that measurement first; it is its own task.
+2. ~~**Cost-sorted constraint iteration.**~~ — **done**, see § "Step 2 is done". Built as slot
+   renumbering; weights are cost/P(fire), not cost. Worth ~1-3% of runtime on mixed-constraint
+   puzzles and nothing at all on single-constraint ones. The prediction that the blocker was cost
+   data held: the plumbing was an afternoon, the measurement was the work.
 3. **The enqueue filter**, then cell forcing as a tier on top, measured separately against the bar
    above. Note the filter's stated risk — "the lookup lands on the board-write path" — is exactly
    what step 1 got wrong in its first attempt. Budget for it: on that path a redundant load or a

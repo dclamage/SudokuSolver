@@ -7,6 +7,9 @@ public class RegionSumLinesConstraint : EqualSumsConstraint
 {
     public override string SpecificName => $"Region Sum Line from {CellName(lineCells[0])} - {CellName(lineCells[^1])}";
 
+    /// <summary>Measured: 531 ns / 27.3% fire.</summary>
+    public override int BruteForcePropagationCost => 1947;
+
     public readonly List<(int, int)> lineCells;
 
     public RegionSumLinesConstraint(Solver solver, string options) : base(solver, options)

@@ -133,6 +133,11 @@ public class LittleKillerConstraint : Constraint
         return sumTerm.InitCandidates(sudokuSolver);
     }
 
+    /// <summary>Measured: 971 ns / 25.9% fire, corpus.json.</summary>
+
+    public override int BruteForcePropagationCost => 3753;
+
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         return sumTerm?.EnforceComplete(sudokuSolver, i * WIDTH + j) ?? true;

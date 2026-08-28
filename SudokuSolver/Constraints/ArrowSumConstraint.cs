@@ -84,6 +84,11 @@ public class ArrowSumConstraint : Constraint
         return _logicStrategy.InitCandidates(sudokuSolver, circleCells, arrowCells, _arrowSumHelperInstance);
     }
 
+    /// <summary>Measured: 123 ns / 34.0% fire.</summary>
+
+    public override int BruteForcePropagationCost => 362;
+
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         if (_isDegenerate || _isClone)

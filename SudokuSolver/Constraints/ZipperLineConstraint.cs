@@ -13,6 +13,9 @@ namespace SudokuSolver.Constraints
 
         public override string SpecificName => $"Zipper Line from {CellName(lineCells[0])} - {CellName(lineCells[^1])}";
 
+        /// <summary>Measured: 404 ns / 31.1% fire.</summary>
+        public override int BruteForcePropagationCost => 1297;
+
         public ZipperLineConstraint(Solver solver, string options) : base(solver, options)
         {
             var groups = ParseCells(options);

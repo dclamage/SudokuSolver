@@ -144,6 +144,11 @@ public class QuadrupleConstraint : Constraint
         return outstandingMask;
     }
 
+    /// <summary>Measured: 41 ns / 1.6% fire.</summary>
+
+    public override int BruteForcePropagationCost => 2580;
+
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         if (cells == null || requiredValues.Count == 0)

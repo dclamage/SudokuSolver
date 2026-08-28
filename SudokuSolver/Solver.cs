@@ -129,8 +129,14 @@ public partial class Solver
     // reference across clones (read-only after FinalizeConstraints); null until then.
     internal ulong[] cellToConstraintMask;
 
-    // Per-instance: bit i set == constraint i is pending re-run due to cell changes.
+    // Per-instance: bit s set == propagation slot s is pending re-run due to cell changes.
     private ulong[] _constraintQueued;
+
+    // Propagation slot -> index into constraints. Slots are ordered by
+    // Constraint.BruteForcePropagationCost so the queue drains cheapest-first, and cover only the
+    // constraints that participate in the queue at all. Shared by reference across clones
+    // (read-only after FinalizeConstraints).
+    private int[] _propagationSlotToConstraint;
 
     // Bit i set == constraint i's CellIndicesForPropagationQueue was null, so it runs on every
     // propagation step. OR'd into _constraintQueued at the top of the constraint stage, which is

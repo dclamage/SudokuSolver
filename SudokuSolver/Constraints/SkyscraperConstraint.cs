@@ -133,6 +133,11 @@ public class SkyscraperConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
+    /// <summary>Measured: 1.20 ms / 16.5% fire, corpus.json; see docs/pathological-outliers.md.</summary>
+
+    public override int BruteForcePropagationCost => 7293000;
+
+
     public override bool EnforceConstraint(Solver solver, int i, int j, int val)
     {
         if (!needsLogic || !cellsLookup.Contains((i, j)))

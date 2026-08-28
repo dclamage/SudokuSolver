@@ -54,6 +54,11 @@ public class KillerCageConstraint : Constraint
         return sumTerm.InitCandidates(sudokuSolver);
     }
 
+    /// <summary>Measured: 179 ns / 12.7% fire.</summary>
+
+    public override int BruteForcePropagationCost => 1411;
+
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         return sumTerm?.EnforceComplete(sudokuSolver, i * WIDTH + j) ?? true;

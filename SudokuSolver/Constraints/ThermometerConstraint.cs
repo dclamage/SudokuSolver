@@ -61,6 +61,11 @@ public class ThermometerConstraint : Constraint
     // This property indicates to the solver that EnforceConstraint does not need to be called.
     public override bool NeedsEnforceConstraint => false;
 
+    /// <summary>Measured: 14 ns / 14.7% fire.</summary>
+
+    public override int BruteForcePropagationCost => 95;
+
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         // Logic is now handled by weak links and general solver mechanisms.

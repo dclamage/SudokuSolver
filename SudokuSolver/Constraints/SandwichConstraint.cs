@@ -159,6 +159,11 @@ public class SandwichConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
+    /// <summary>Measured: 267 ns / 14.6% fire.</summary>
+
+    public override int BruteForcePropagationCost => 1830;
+
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         if (!cellsLookup.Contains((i, j)))

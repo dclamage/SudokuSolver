@@ -94,6 +94,9 @@ public class PalindromeConstraint : Constraint
     }
 
     public override bool NeedsEnforceConstraint => false;
+    /// <summary>Measured: 6 ns / 3.6% fire.</summary>
+    public override int BruteForcePropagationCost => 167;
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         // Enforced by weak links

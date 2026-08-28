@@ -98,6 +98,9 @@ public class ChessConstraint : Constraint
     }
 
     public override bool NeedsEnforceConstraint => false;
+
+    /// <summary>Measured: 0 fires in 857,538 calls across Knight and King (ISS tune corpus).</summary>
+    public override int BruteForcePropagationCost => 100000;
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         return true; // Enforced by weak links

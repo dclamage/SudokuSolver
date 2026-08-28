@@ -45,6 +45,11 @@ public class InnieCageConstraint : Constraint
         return sumRelation.InitCandidates(solver);
     }
 
+    /// <summary>Measured: 486 ns / 6.9% fire.</summary>
+
+    public override int BruteForcePropagationCost => 7084;
+
+
     public override bool EnforceConstraint(Solver solver, int i, int j, int val)
     {
         int cellIndex = i * WIDTH + j;

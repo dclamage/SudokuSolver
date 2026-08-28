@@ -122,6 +122,11 @@ public class XSumConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
+    /// <summary>Measured: 360 ns / 8.0% fire, corpus.json.</summary>
+
+    public override int BruteForcePropagationCost => 4517;
+
+
     public override bool EnforceConstraint(Solver solver, int i, int j, int val)
     {
         if (!needsLogic || !cellsLookup.Contains((i, j)))
