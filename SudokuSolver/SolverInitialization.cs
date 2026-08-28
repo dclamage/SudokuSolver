@@ -767,13 +767,11 @@ public partial class Solver
                         }
                     }
                     _candidateCountsPerGroupValue[groupIdx * MAX_VALUE + (v - 1)] = count;
+                    // Any one value with nowhere left to go is reason to check the whole group, so
+                    // this accumulates across values and never clears — the bitset starts zeroed.
                     if (count <= 1)
                     {
                         BitsetSet(_checkGroupForHiddens, groupIdx);
-                    }
-                    else
-                    {
-                        BitsetClear(_checkGroupForHiddens, groupIdx);
                     }
                 }
             }
