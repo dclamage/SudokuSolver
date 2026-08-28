@@ -118,6 +118,47 @@ defect. The range/Hall argument a human actually makes is both cheaper and the t
 displaying, so the logical arm may want to move too. That is a product call about step quality rather
 than a perf one, and it is left open.
 
+### The brute-force arm is now allocation-free
+
+Date: 2026-08-28. With `Heuristic` as the default, what was left in the brute-force path was not
+combination enumeration but the per-call containers around it: a `uint[]` of keep masks, and a
+`List<(int, int)>` plus a `List<int>` of unset cells rebuilt **inside** the placement loops — so a
+line with neither crust placed allocated a fresh pair for every (crust, filling-size) candidate it
+considered.
+
+`StepLogic` now takes two `stackalloc` scratch buffers for the whole call, the keep masks and the
+unset-cell indices, and every path below indexes them by position within `cells`. That also retires
+the `keepMaskIndices` mapping, which existed only to reconcile two indexing schemes. The heuristic
+arm works from the `ValueCombinationTable` mask directly instead of materializing each value set as a
+`List<int>`; only the exact arm still builds lists, because `Permutations` and `CanPlaceDigits` take
+them.
+
+Measured with a counter around `StepLogic` when `isBruteForcing`, over the 8 sandwich puzzles in the
+ISS corpus plus `sandwich-search`: **287,708 calls, 0 bytes allocated.**
+
+Whole-solve time and allocation, 15 iterations:
+
+| case | before | after | |
+| --- | ---: | ---: | --- |
+| blPgSzctUMg | 25.30 ms / 47.19 MB | 15.16 / **0.71** | time -40%, **alloc -98.5%** |
+| -ieekoAnd-w | 19.62 ms / 38.59 MB | 12.95 / **1.00** | time -34%, **alloc -97.4%** |
+| sandwich-search | 12.56 ms / 8.22 MB | 11.02 / **0.65** | time -12%, alloc -92% |
+| Wb5YT1b-U9Q | 0.65 ms / 1.06 MB | 0.53 / **0.29** | time -18%, alloc -73% |
+
+What is left is solver setup, not the constraint: the two puzzles that allocate 0.14 MB allocated
+0.14 MB before the change too. ISS corpus total 12,560 -> 12,441 ms at 3 iterations, with all 398
+puzzles and all 31 `corpus.json` cases still validating, and all three `SUDOKU_SANDWICH_BF_ARM` arms
+still agreeing with each other.
+
+The untabulated path — grids above `ValueCombinationTable.MAX_TABULATED_VALUE`, which no corpus case
+reaches — was rewritten as an allocation-free recursive walk. It was checked by temporarily lowering
+`MAX_TABULATED_VALUE` to 8 to force 9x9 grids down it: same counts and the same allocation, on both
+arms.
+
+**`Exact` was deliberately left allocating.** It is what logical solving uses, its cost is
+`Permutations`, and replacing that is the open item below rather than something to fold into an
+allocation change.
+
 ## The regime trap: the same experiment on Skyscraper reached the opposite answer
 
 Date: 2026-08-05. `SkyscraperConstraint` looked like the next sandwich: ~130× X-Sum's cost per
@@ -220,7 +261,9 @@ links enforce them, and weak links only fire on `SetValue`.
    than ISS), and `1HuNjcLWlPE` **finishes for the first time** at 18.9 s. That leaves the *dots*:
    `OrthogonalValueConstraint` has the identical defect and a probe gives 3× on `1HuNjcLWlPE`.
    [`whisper-arc-consistency.md`](whisper-arc-consistency.md).
-2. **Sandwich's `Permutations()`** — group B's remaining 1.2 GB, and a self-contained fix.
+2. **Sandwich's `Permutations()`** — now the *only* thing group B allocates, since the brute-force
+   arm was made allocation-free (above). It costs `Exact` 1.2 GB on `blPgSzctUMg`, and only logical
+   solving pays it now. Still a self-contained fix.
 3. Leave `Wb5YT1b-U9Q` alone; at 2.8× off ISS it is no longer an outlier.
 
 ## Reproducing
