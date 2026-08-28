@@ -192,6 +192,29 @@ makes this case a clean probe of the *board-write* path — every weak-link `Cle
 hidden-single group marking — with the constraint-queue machinery contributing nothing. It measured
 -19.6% on the propagation-worklist packing change while the ISS corpus median was -14.3%.
 
+### `tc-nc-no-*`, leave-one-out true candidates on the non-consecutive puzzle
+
+Four boards built by removing one given at a time from `nc-4given`, each run as `truecandidates`.
+They cost nothing to author — the puzzle already existed — and they cover the gap that
+`nc-4given` does not: **`truecandidates` is the setting-UI operation**, it runs on every grid edit
+against an under-constrained board, and the only other non-consecutive case for it is a blank grid.
+
+Their scores (621 / 598 / 598 / 624) agree across five independent arms: default, `--multithread`,
+all three `SUDOKU_WEAK_LINK_DISCOVERY` values, and cell forcing on and off.
+
+**They are expensive and they earn it.** Together they add ~29 s to a corpus that otherwise runs in
+~14 s, which is well past the "keep a single case under a few seconds" guidance above. They are
+here anyway because they *discriminate*: enabling in-search cell forcing moves them
+**-42% to -50%**, the largest single-change effect any case in this corpus has recorded. An
+expensive case that moves under real changes is worth more than a cheap one that never does — but
+note the four are highly correlated (they move together, within 9 points of each other), so
+dropping to the two cheapest (`no-r3c4`, `no-r2c1`, ~10 s combined) keeps most of the signal if a
+full run gets too slow to live with.
+
+A three-given non-consecutive board costs about the same as a blank one (4.6-9.8 s against
+`tc-blank-nonconsecutive`'s ~9 s). Three givens barely help, which is a fact about how little the
+negative constraint propagates from givens alone.
+
 ### `quadruple-16`, a real puzzle rather than a blank grid
 
 `quadruple-16` covers `QuadrupleConstraint`, which — like X-Sum and Skyscraper before them — had no

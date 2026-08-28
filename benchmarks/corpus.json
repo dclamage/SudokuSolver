@@ -280,6 +280,50 @@
     "expected": 729
   },
   {
+    "name": "tc-nc-no-r1c2",
+    "category": "setting",
+    "givens": "000000000600000000000703000000000000000000000000000000000000000000000000000000000",
+    "constraints": [
+      "difference:neg1"
+    ],
+    "op": "truecandidates",
+    "numSolutionsCap": 1,
+    "expected": 621
+  },
+  {
+    "name": "tc-nc-no-r2c1",
+    "category": "setting",
+    "givens": "040000000000000000000703000000000000000000000000000000000000000000000000000000000",
+    "constraints": [
+      "difference:neg1"
+    ],
+    "op": "truecandidates",
+    "numSolutionsCap": 1,
+    "expected": 598
+  },
+  {
+    "name": "tc-nc-no-r3c4",
+    "category": "setting",
+    "givens": "040000000600000000000003000000000000000000000000000000000000000000000000000000000",
+    "constraints": [
+      "difference:neg1"
+    ],
+    "op": "truecandidates",
+    "numSolutionsCap": 1,
+    "expected": 598
+  },
+  {
+    "name": "tc-nc-no-r3c6",
+    "category": "setting",
+    "givens": "040000000600000000000700000000000000000000000000000000000000000000000000000000000",
+    "constraints": [
+      "difference:neg1"
+    ],
+    "op": "truecandidates",
+    "numSolutionsCap": 1,
+    "expected": 624
+  },
+  {
     "name": "est-blank6",
     "category": "estimate",
     "blank": 6,

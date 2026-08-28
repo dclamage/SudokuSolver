@@ -345,10 +345,14 @@ constants cannot capture. `BruteForcePropagationCost` is a virtual property prec
 can scale with its own cell count — but doing that now would be a guess, since the measurement is
 per-type. Attribute per-instance before adding a geometry term.
 
-## Step 3: the enqueue filter is built, exact, and not enough
+## Step 3: the enqueue filter is built and exact; cell forcing is regime-dependent
 
-Date: 2026-08-28, same branch. Both filters ship, gated off with cell forcing. **In-search cell
-forcing still does not pay: +21.5% on the static-order `iss-tune` corpus.**
+Date: 2026-08-28, same branch. Both filters ship, gated off with cell forcing.
+
+**Read § "Where it does pay" before concluding anything from the corpus average.** In-search cell
+forcing costs +21.5% on the static-order `iss-tune` corpus and is worth **-46%** on non-consecutive
+true candidates. The ISS corpus contains **zero** non-consecutive puzzles, so its average cannot
+see that at all.
 
 ### Where the gap went
 
@@ -415,6 +419,39 @@ comparison never crosses two separately-JITted binaries.
   the shipped configuration.
 - **Writes that set a value need not enqueue at all.** `CellForcingForCell` skips value-set cells
   outright, so queuing them could only ever cost a pop.
+
+### Where it does pay
+
+The +21.5% is `count` over the ISS corpus, which is constraint-sparse relative to what cell forcing
+needs — it is a weak-link deduction, and its table deliberately drops one-bit masks, so what remains
+is exactly the cross-constraint links. Non-consecutive is the opposite regime: enforced purely by
+weak links, with an adjacency link for every neighbouring pair.
+
+| workload | cell forcing |
+| --- | ---: |
+| `iss-tune` count, static order (280 puzzles, **no NC at all**) | +21.5% |
+| `nc-4given` count, static order | +8.5% |
+| `nc-4given` count, **production order** | **-33.1%** |
+| `tc-nc-no-*` true candidates (4 boards) | **-46.3%** |
+
+Two different things are happening, and they should not be conflated:
+
+- **The `count` production win is a branch-order effect, not a propagation win.** Under static order
+  cell forcing still *loses* on `nc-4given` (+8.5%), so it is not paying for itself as a propagator
+  there; the -33% comes from its eliminations changing candidate counts and reshuffling
+  `GetLeastCandidateCell` favourably. That is the lottery this repo has been burned by before. One
+  puzzle. Do not generalise it.
+- **The true-candidates win is large, consistent and on the UI path.** All four leave-one-out boards
+  move -42% to -50%, allocation drops with it (0.94 -> 0.72 MB), and every score is unchanged.
+  `truecandidates` runs on every grid edit in a setting UI, against exactly this shape of
+  under-constrained board.
+
+**So "cell forcing does not pay" was too broad a conclusion.** The measured claim is that it loses
+on constraint-sparse counting and wins substantially on weak-link-dense setting work. The obvious
+follow-up — unmeasured — is a targeted enable rather than a global one: `truecandidates` is a
+different entry point from `CountSolutions`, and weak-link density per cell is known at setup from
+the cell-forcing table itself (44% of cells having no rows at all is exactly the signal that a
+puzzle is a poor fit). Either would be a decision made from structure, not from a timing lottery.
 
 ### What break-even would take
 
@@ -533,9 +570,10 @@ row can never fire. That prune happens to remove every ordinary house link (`A=v
    data held: the plumbing was an afternoon, the measurement was the work.
 3. ~~**The enqueue filter**, then cell forcing as a tier on top~~ — **built and measured**, see
    § "Step 3". Both filters are exact and ship gated off. Cell forcing went from ~2x too costly to
-   1.22x and **still does not pay**, so it stays off. The filter's stated risk was real but not
-   decisive: the write-path lookup roughly cancelled its own savings because it caught the cheap
-   no-ops, not the expensive ones.
+   1.22x on ISS counting, but is **-46% on non-consecutive true candidates**, so the remaining work
+   is choosing *when* to enable it rather than making it universally cheaper. The filter's stated
+   risk was real but not decisive: the write-path lookup roughly cancelled its own savings because
+   it caught the cheap no-ops, not the expensive ones.
 
 Blast radius for step 1: `BruteForcePropagate` serves solve, count, truecandidates and estimate,
 single- and multi-threaded. It is the hottest loop in the solver.
