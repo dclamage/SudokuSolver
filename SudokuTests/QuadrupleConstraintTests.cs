@@ -120,4 +120,86 @@ public class QuadrupleConstraintTests
         Assert.IsTrue(!ok || solver.ConsolidateBoard() == LogicResult.Invalid,
             "A quadruple whose required 9 has no remaining home must be invalid");
     }
+
+    private static List<SudokuGroup> QuadrupleGroups(Solver solver) =>
+        solver.Groups.Where(group => group.FromConstraint is QuadrupleConstraint).ToList();
+
+    // A matched pair: four cells, four required digits, differing only in whether one repeats.
+    // Modelled on .Quad~R3C3~1~9~1~4 from iss-5nLEZK8Rlys.
+    private const string FourWithARepeat = "quad:1;9;1;4;r3c3r3c4r4c3r4c4";
+    private const string FourDistinct = "quad:1;9;7;4;r3c3r3c4r4c3r4c4";
+
+    /// <summary>
+    /// A <see cref="SudokuGroup"/> asserts that its cells hold *distinct* digits, which four cells
+    /// required to be 1/9/1/4 do not — there are only three distinct digits to go round. Asking for
+    /// as many digits as there are cells is what takes <c>InitCandidates</c> into the branch that
+    /// restricts the cells and offers them as a group, so the repeat is caught by the guard on that
+    /// offer, <c>ValueCount(requiredMask) == requiredValues.Count</c>, and nothing earlier.
+    /// </summary>
+    /// <remarks>
+    /// That guard is load-bearing beyond distinctness itself: it is the reason hidden single
+    /// detection only ever consults <see cref="QuadrupleConstraint.MustContainValue"/>'s direct
+    /// answer for a quadruple with no repeats. Mutation-checked — dropping the guard fails this
+    /// test, and fails <c>iss-5nLEZK8Rlys</c> in the ISS corpus outright, because four cells
+    /// declared distinct over a three-digit set have no solution.
+    /// <para>
+    /// The earlier <c>possibleCells.Count == requiredValues.Count</c> condition cannot stand in for
+    /// it. <c>FinalizeConstraints</c> runs <c>InitCandidates</c> before any given is placed, so
+    /// every cell still holds every digit and <c>possibleCells</c> is always the full cell list —
+    /// which is why a quadruple asking for *fewer* digits than it has cells never reaches the guard
+    /// at all, and would leave this mutation alive.
+    /// </para>
+    /// </remarks>
+    [TestMethod]
+    public void RepeatedValue_FormsNoConstraintGroup()
+    {
+        Solver solver;
+        try
+        {
+            solver = Blank(FourWithARepeat);
+        }
+        catch (ArgumentException ex)
+        {
+            // Offering the group does not merely mislabel the cells, it makes the board
+            // unsatisfiable on the spot, so this is how the mutation actually surfaces.
+            throw new AssertFailedException(
+                "1/9/1/4 over four cells was offered as a distinctness group, and four distinct "
+                + $"digits cannot come from a three-digit set: {ex.Message}");
+        }
+
+        Assert.AreEqual(0, QuadrupleGroups(solver).Count,
+            "1/9/1/4 over four cells is not a distinctness group");
+    }
+
+    /// <summary>
+    /// The contrast case for <see cref="RepeatedValue_FormsNoConstraintGroup"/>: identical cells and
+    /// digit count, no repeat. Without it that test could pass merely because quadruples stopped
+    /// forming groups at all.
+    /// </summary>
+    [TestMethod]
+    public void DistinctValues_FormAConstraintGroup()
+    {
+        List<SudokuGroup> groups = QuadrupleGroups(Blank(FourDistinct));
+
+        Assert.AreEqual(1, groups.Count, "Four distinct required digits should form a group");
+        Assert.AreEqual(4, groups[0].Cells.Count);
+    }
+
+    /// <summary>
+    /// <see cref="QuadrupleConstraint.MustContainValue"/> asks whether a digit must appear *at all*,
+    /// which is independent of how many copies are required — so unlike the outstanding-count
+    /// bookkeeping, answering it from the distinct-values <c>requiredMask</c> is correct. A digit
+    /// required twice must appear, exactly as one required once must.
+    /// </summary>
+    [TestMethod]
+    public void MustContainValue_HoldsForARepeatedDigitAndRejectsAnUnrequiredOne()
+    {
+        Solver solver = Blank(TwoOnes);
+        QuadrupleConstraint constraint = new(solver, "1;1;r3c3r3c4r4c3r4c4");
+
+        Assert.IsTrue(constraint.MustContainValue(solver, 1),
+            "1 is required twice, so it certainly must appear");
+        Assert.IsFalse(constraint.MustContainValue(solver, 5),
+            "5 is not required and nothing on a blank board forces it");
+    }
 }

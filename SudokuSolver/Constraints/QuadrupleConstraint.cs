@@ -199,6 +199,17 @@ public class QuadrupleConstraint : Constraint
     /// <c>requiredMask</c>, so hidden single detection inside brute force always takes the
     /// direct answer and never clones.
     /// </summary>
+    /// <remarks>
+    /// The distinct-values <c>requiredMask</c> is the right thing to read here even though a
+    /// quadruple may ask for the same digit twice — <c>.Quad~R3C3~1~9~1~4</c> is in the ISS corpus.
+    /// This asks whether a digit must appear *at all*, which one copy settles as firmly as two; it
+    /// is the outstanding-*count* bookkeeping in <see cref="FillOutstanding"/> that a mask would get
+    /// wrong. A repeat never reaches here from hidden single detection in any case, because
+    /// <c>InitCandidates</c> only offers <see cref="Group"/> when
+    /// <c>ValueCount(requiredMask) == requiredValues.Count</c> — a group asserts its cells are
+    /// distinct, which four cells required to be 1/9/1/4 are not. See
+    /// <c>QuadrupleConstraintTests.RepeatedValue_FormsNoConstraintGroup</c>.
+    /// </remarks>
     public override bool MustContainValue(Solver sudokuSolver, int value) =>
         cells != null && requiredMask != 0 && (HasValue(requiredMask, value) || base.MustContainValue(sudokuSolver, value));
 
