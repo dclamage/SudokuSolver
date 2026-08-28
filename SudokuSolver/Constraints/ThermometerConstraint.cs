@@ -121,10 +121,76 @@ public class ThermometerConstraint : Constraint
         return LogicResult.None;
     }
 
+    /// <summary>
+    /// Bounds consistency along the chain, in two linear sweeps.
+    /// </summary>
+    /// <remarks>
+    /// The weak links built by <see cref="InitLinks"/> only fire when a cell is <em>assigned</em>
+    /// (<c>SetValue</c> walks the links of the set candidate), so until this ran the chain's bounds
+    /// went stale the moment any other constraint shrank a thermometer cell's domain. A forward
+    /// minimum sweep followed by a backward maximum sweep is a fixed point for a chain of strict
+    /// inequalities, so one call is enough and re-running it changes nothing.
+    /// </remarks>
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
-        // Logic is now handled by weak links and general solver mechanisms (e.g., AICs).
-        return LogicResult.None;
+        if (cells.Count < 2)
+        {
+            return LogicResult.None;
+        }
+
+        bool changed = false;
+
+        // Forward: every cell must strictly exceed the minimum still available to its predecessor.
+        int prevMin = 0;
+        for (int idx = 0; idx < cells.Count; idx++)
+        {
+            (int i, int j) = cells[idx];
+            uint mask = sudokuSolver.Board[i, j] & ~valueSetMask;
+            if (idx > 0 && (mask & MaskValAndLower(prevMin)) != 0)
+            {
+                LogicResult clearResult = sudokuSolver.ClearMask(i, j, MaskValAndLower(prevMin));
+                if (clearResult == LogicResult.Invalid)
+                {
+                    return LogicResult.Invalid;
+                }
+                changed = true;
+                mask = sudokuSolver.Board[i, j] & ~valueSetMask;
+            }
+            if (mask == 0)
+            {
+                return LogicResult.Invalid;
+            }
+            prevMin = MinValue(mask);
+        }
+
+        // Backward: every cell must stay strictly below the maximum still available to its successor.
+        int nextMax = MAX_VALUE + 1;
+        for (int idx = cells.Count - 1; idx >= 0; idx--)
+        {
+            (int i, int j) = cells[idx];
+            uint mask = sudokuSolver.Board[i, j] & ~valueSetMask;
+            if (idx < cells.Count - 1)
+            {
+                uint tooHigh = ALL_VALUES_MASK & ~MaskStrictlyLower(nextMax);
+                if ((mask & tooHigh) != 0)
+                {
+                    LogicResult clearResult = sudokuSolver.ClearMask(i, j, tooHigh);
+                    if (clearResult == LogicResult.Invalid)
+                    {
+                        return LogicResult.Invalid;
+                    }
+                    changed = true;
+                    mask = sudokuSolver.Board[i, j] & ~valueSetMask;
+                }
+            }
+            if (mask == 0)
+            {
+                return LogicResult.Invalid;
+            }
+            nextMax = MaxValue(mask);
+        }
+
+        return changed ? LogicResult.Changed : LogicResult.None;
     }
 
     public override List<(int, int)> Group => cells;
