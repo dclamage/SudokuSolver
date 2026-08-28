@@ -171,6 +171,27 @@ where `xsum-search` uses 5,000, because **Skyscraper costs ~3.3 ms per solution 
 `SkyscraperConstraint`; see [`docs/pathological-outliers.md`](../docs/pathological-outliers.md) for
 the same shape diagnosed in `SandwichConstraint`.
 
+### `nc-4given`, four givens and a negative constraint
+
+Non-consecutive had **no `count` case in either corpus**. `tc-blank-nonconsecutive` is a
+`truecandidates` op with `numSolutionsCap: 1`, so it stops as soon as every candidate is covered and
+barely searches at all — it does not exercise the tree.
+
+`nc-4given` is a unique-solution 9x9 with four givens (`r1c2=4`, `r2c1=6`, `r3c4=7`, `r3c6=3`) and
+nothing but the non-consecutive negative constraint doing the work, so it is close to a pure test of
+propagation strength. Its count was cross-checked as 1 under both `--multithread` and single, all
+three `SUDOKU_WEAK_LINK_DISCOVERY` values (`deferred`/`always`/`never`) and `SUDOKU_BRANCH_ORDER=static`.
+
+Prefer this over counting a **blank** non-consecutive grid. That has an exact answer (5,287,048) but
+takes a very long time, and it is slow even capped — a 200,000-solution cap did not finish a single
+arm in ten minutes here, so it is not usable as a corpus case at any cap worth having.
+
+`OrthogonalValueConstraint` sets `WantsBruteForcePropagation => false`, so non-consecutive is
+excluded from the brute-force constraint queue entirely and is enforced purely by weak links. That
+makes this case a clean probe of the *board-write* path — every weak-link `ClearValue` fires the
+hidden-single group marking — with the constraint-queue machinery contributing nothing. It measured
+-19.6% on the propagation-worklist packing change while the ISS corpus median was -14.3%.
+
 ### `quadruple-16`, a real puzzle rather than a blank grid
 
 `quadruple-16` covers `QuadrupleConstraint`, which — like X-Sum and Skyscraper before them — had no

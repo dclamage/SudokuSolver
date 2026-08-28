@@ -197,6 +197,16 @@
     "expected": 1
   },
   {
+    "name": "nc-4given",
+    "category": "variant",
+    "givens": "040000000600000000000703000000000000000000000000000000000000000000000000000000000",
+    "constraints": [
+      "difference:neg1"
+    ],
+    "op": "count",
+    "expected": 1
+  },
+  {
     "name": "vanilla-u17-logical",
     "category": "logical",
     "givens": "000000010400000000020000000000050407008000300001090000300400200050100000000806000",

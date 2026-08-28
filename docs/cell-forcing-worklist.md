@@ -215,6 +215,26 @@ Five alternating base→new→base→new pairs, `--filter iss-tune`, static orde
 single arm drifts 5%+ across a session on this machine, so an unpaired number against a mean
 measured an hour earlier is not a result.
 
+### A case that isolates the write path
+
+Non-consecutive is the sharpest available probe of what step 1 actually fixed.
+`OrthogonalValueConstraint.WantsBruteForcePropagation` is `false`, so NC is excluded from the
+brute-force constraint queue entirely and is enforced purely by weak links — the constraint-queue
+half of step 1 contributes *nothing* on it. Every weak-link `ClearValue` fires the hidden-single
+group marking, so what remains is almost exactly the board-write path.
+
+It measured **−19.6%** (median of three alternating pairs), against −14.3% on the ISS corpus. The
+larger win on the case where only the write path is in play is direct evidence for the diagnosis
+above.
+
+The puzzle — four givens, unique, no positive constraints — is now `nc-4given` in `corpus.json`;
+neither corpus previously had *any* non-consecutive `count` case. Do not reach for a blank NC grid
+instead: its exact count (5,287,048) takes a very long time, and it is slow even capped — a
+200,000-solution cap did not finish one arm in ten minutes.
+
+This is the case to re-measure when cell forcing goes in (step 3). NC's weak-link density is
+exactly the regime where cell forcing should pay, and it now has a committed, validated baseline.
+
 ### A methodology correction
 
 **The static arm is much sharper than ±3–4%.** Back-to-back runs of one arm reproduce to <0.6%,
