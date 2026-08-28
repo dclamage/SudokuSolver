@@ -397,7 +397,7 @@ public partial class Solver
         }
 
         return CountSolutionsAttempt(maxSolutions, multiThread, progressEvent, solutionEvent, cancellationToken,
-            probeWeakLinks: WeakLinkDiscovery != WeakLinkDiscoveryMode.Never, nodeBudget: 0) ?? 0;
+            probeWeakLinks: WeakLinkDiscovery != WeakLinkDiscoveryMode.Never, nodeBudget: DefaultCountNodeCap) ?? -1;
     }
 
     /// <summary>

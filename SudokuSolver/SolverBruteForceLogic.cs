@@ -12,6 +12,18 @@ public partial class Solver
     /// </param>
     private (int, int) GetLeastCandidateCell(long bilocalWeightPercent = BILOCAL_WEIGHT_ISS)
     {
+        if (StaticBranchOrder)
+        {
+            for (int staticCell = 0; staticCell < NUM_CELLS; staticCell++)
+            {
+                if (!IsValueSet(board[staticCell]))
+                {
+                    return (staticCell, 0);
+                }
+            }
+            return (-1, 0);
+        }
+
         // Conflict-score path: rank cells by (score / candidateCount), highest first.
         // Only considers cells with score > 0 so a cold-start (all zeros) falls through to MRV.
         int csBestCell = -1;
@@ -510,6 +522,49 @@ public partial class Solver
     // worst 180x), even though it looks like a 0.83x win on the 28-case corpus. Don't re-derive
     // this from the small corpus; see docs/branch-ordering.md.
     private const long BILOCAL_SEARCH_WEIGHT_DEFAULT = 0;
+
+    /// <summary>
+    /// Branch on the lowest-index unset cell and its lowest value, ignoring conflict scores,
+    /// bilocals and MRV entirely. Off unless <c>SUDOKU_BRANCH_ORDER=static</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is a measurement arm, not a solving mode -- it explores far more nodes than the real
+    /// heuristic. Its purpose is to make a propagation change measurable on its own terms.
+    /// </para>
+    /// <para>
+    /// The normal heuristic ranks cells by <c>score / candidateCount</c>, so any change in
+    /// propagation strength changes candidate counts, changes the ranking, and reshuffles
+    /// branching. A node-count A/B against it therefore mixes "does this prune more" with a
+    /// branch-order draw that <c>docs/branch-ordering.md</c> shows can swing a puzzle by orders of
+    /// magnitude in either direction.
+    /// </para>
+    /// <para>
+    /// Under a fixed cell sequence and fixed value order, propagation can only <em>remove</em>
+    /// cells from the sequence, never reorder it, so a stronger propagator's search tree is a
+    /// subtree of a weaker one's and its node count can never rise. That makes the comparison
+    /// clean: any reduction is real pruning, and any increase means the change is unsound. Both
+    /// propagators measured this way so far came back with zero increases across the ISS corpus.
+    /// </para>
+    /// <para>
+    /// Pair it with <see cref="DefaultCountNodeCap"/>; without a cap the harder puzzles do not
+    /// finish under this ordering.
+    /// </para>
+    /// </remarks>
+    internal static readonly bool StaticBranchOrder =
+        Environment.GetEnvironmentVariable("SUDOKU_BRANCH_ORDER") == "static";
+
+    /// <summary>
+    /// Node cap for the final counting attempt; 0 (the default) is unlimited. A capped search
+    /// returns -1 rather than a partial count, so a truncated run cannot be mistaken for an answer.
+    /// </summary>
+    internal static readonly long DefaultCountNodeCap = ReadLongEnv("SUDOKU_NODE_CAP", 0);
+
+    private static long ReadLongEnv(string name, long fallback)
+    {
+        string value = Environment.GetEnvironmentVariable(name);
+        return value != null && long.TryParse(value, out long parsed) && parsed >= 0 ? parsed : fallback;
+    }
 
     private static long ReadDefaultBilocalSearchWeightPercent()
     {
