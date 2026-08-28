@@ -60,6 +60,13 @@ caffeinate -i dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -
 Timing on a laptop is noisy; prefer a quiet machine and `--iterations 7+`, and treat only
 consistent, repeatable deltas as real.
 
+**`total min ms` is a sum, and case times here span five orders of magnitude, so it is dominated by
+whichever few cases are slowest.** A change that helps only those looks like a corpus-wide win. The
+run prints a per-category share breakdown and flags any single case above a quarter of the total for
+exactly this reason — when one line is 40%+ of the sum, the total is measuring that case, not the
+solver. Read per-case deltas. The same applies when *adding* cases: N slow cases of one constraint
+family silently reweight every future comparison toward that family.
+
 **`alloc MB` is noisy too, and in the same way.** It comes from `GC.GetTotalAllocatedBytes`, which is
 **process-wide**, so a case picks up whatever else the runtime allocated during its measured
 iteration — enough to have reported **negative** totals (`-3.71`, `-758.75`) on cases that allocate a
@@ -192,28 +199,34 @@ makes this case a clean probe of the *board-write* path — every weak-link `Cle
 hidden-single group marking — with the constraint-queue machinery contributing nothing. It measured
 -19.6% on the propagation-worklist packing change while the ISS corpus median was -14.3%.
 
-### `tc-nc-no-*`, leave-one-out true candidates on the non-consecutive puzzle
+### `tc-nc-no-r3c4`, and why there is only one of it
 
-Four boards built by removing one given at a time from `nc-4given`, each run as `truecandidates`.
-They cost nothing to author — the puzzle already existed — and they cover the gap that
+Built by removing one given from `nc-4given` and running `truecandidates`. It covers the gap
 `nc-4given` does not: **`truecandidates` is the setting-UI operation**, it runs on every grid edit
-against an under-constrained board, and the only other non-consecutive case for it is a blank grid.
+against an under-constrained board, and the only other non-consecutive case for it is a blank grid
+that barely searches. Score 598, agreeing across five arms: default, `--multithread`, all three
+`SUDOKU_WEAK_LINK_DISCOVERY` values, and cell forcing on and off.
 
-Their scores (621 / 598 / 598 / 624) agree across five independent arms: default, `--multithread`,
-all three `SUDOKU_WEAK_LINK_DISCOVERY` values, and cell forcing on and off.
+It discriminates hard — enabling in-search cell forcing moves it **-42%**, and the same
+construction on the other three givens moves -44%, -46% and -50%. All four were measured; only the
+cheapest is committed. **The other three are redundant and would distort the total.** They move
+together within 9 points, so the fourth adds almost no signal over the first, and all four together
+cost ~29 s against a corpus that is otherwise ~9 s of everything-except-non-consecutive.
 
-**They are expensive and they earn it.** Together they add ~29 s to a corpus that otherwise runs in
-~14 s, which is well past the "keep a single case under a few seconds" guidance above. They are
-here anyway because they *discriminate*: enabling in-search cell forcing moves them
-**-42% to -50%**, the largest single-change effect any case in this corpus has recorded. An
-expensive case that moves under real changes is worth more than a cheap one that never does — but
-note the four are highly correlated (they move together, within 9 points of each other), so
-dropping to the two cheapest (`no-r3c4`, `no-r2c1`, ~10 s combined) keeps most of the signal if a
-full run gets too slow to live with.
+That is the general rule this case exists to illustrate:
 
-A three-given non-consecutive board costs about the same as a blank one (4.6-9.8 s against
-`tc-blank-nonconsecutive`'s ~9 s). Three givens barely help, which is a fact about how little the
-negative constraint propagates from givens alone.
+> **Do not let one constraint family dominate the total.** Adding N slow cases of one kind makes any
+> change that helps that kind look like a corpus-wide win. Non-consecutive was already **54%** of
+> `total min ms` before this case was added, on the strength of `tc-blank-nonconsecutive` alone;
+> all four leave-one-out boards would have taken it to **82%**.
+
+The run now prints a per-category share breakdown and flags any single case above a quarter of the
+total, so this is visible rather than something you have to suspect. `tc-blank-nonconsecutive` is
+currently 43% on its own — **read per-case deltas, not the total.**
+
+A three-given non-consecutive board costs about the same as a blank one (4.6 s against ~9 s). Three
+givens barely help, which is a fact about how little the negative constraint propagates from givens
+alone.
 
 ### `quadruple-16`, a real puzzle rather than a blank grid
 

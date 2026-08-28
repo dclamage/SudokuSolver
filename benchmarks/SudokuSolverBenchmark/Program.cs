@@ -152,7 +152,36 @@ internal static class Program
         }
 
         Console.WriteLine(new string('-', 96));
-        Console.WriteLine($"total min ms: {results.Sum(r => r.MinMs):0.0}");
+        double totalMs = results.Sum(r => r.MinMs);
+        Console.WriteLine($"total min ms: {totalMs:0.0}");
+
+        // Case times span five orders of magnitude here, so the grand total is a sum dominated by
+        // whichever few cases are slowest — a change that helps only those looks like a
+        // corpus-wide win. Print what is actually driving it so that cannot pass unnoticed.
+        if (totalMs > 0 && results.Count > 1)
+        {
+            var byCategory = cases
+                .Where(c => results.Any(r => r.Name == c.Name))
+                .GroupBy(c => string.IsNullOrEmpty(c.Category) ? "(none)" : c.Category)
+                .Select(g => (Category: g.Key,
+                              Ms: g.Sum(c => results.First(r => r.Name == c.Name).MinMs)))
+                .OrderByDescending(g => g.Ms)
+                .ToList();
+
+            Console.WriteLine("share of total:");
+            foreach (var (category, ms) in byCategory)
+            {
+                Console.WriteLine($"  {category,-22}{ms,10:0.0} ms{ms / totalMs * 100,8:0.0}%");
+            }
+
+            var top = results.OrderByDescending(r => r.MinMs).First();
+            double topShare = top.MinMs / totalMs * 100;
+            Console.WriteLine($"  slowest single case: {top.Name} at {topShare:0.0}% of total");
+            if (topShare > 25)
+            {
+                Console.WriteLine("  NOTE: one case exceeds a quarter of the total — read per-case deltas, not the total.");
+            }
+        }
 
         if (savePath is not null)
         {
