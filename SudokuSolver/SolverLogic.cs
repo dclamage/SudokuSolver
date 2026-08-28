@@ -245,7 +245,7 @@ public partial class Solver
                 continue;
             }
 
-            if (!_checkGroupForHiddens[group.Index])
+            if (!BitsetTest(_checkGroupForHiddens, group.Index))
             {
                 continue;
             }
@@ -387,97 +387,95 @@ public partial class Solver
 
     private LogicResult FindHiddenSingle(List<LogicalStepDesc> logicalStepDescs)
     {
-        if (_numGroupsNeedingHiddenCheck == 0)
+        // Walk the flagged groups in ascending index order — the same order the old end-to-end
+        // scan over Groups visited them in, so which hidden single is found first is unchanged.
+        for (int word = 0; word < _checkGroupForHiddens.Length; word++)
         {
-            return LogicResult.None;
-        }
-
-        foreach (var group in Groups)
-        {
-            int groupIndex = group.Index;
-            if (!_checkGroupForHiddens[groupIndex])
+            ulong remainingGroups = _checkGroupForHiddens[word];
+            while (remainingGroups != 0)
             {
-                continue;
-            }
+                int groupIndex = (word << 6) + BitOperations.TrailingZeroCount(remainingGroups);
+                remainingGroups &= remainingGroups - 1;
+                SudokuGroup group = Groups[groupIndex];
 
-            int numCells = group.Cells.Count;
-            if (numCells != MAX_VALUE && group.FromConstraint == null)
-            {
-                continue;
-            }
-
-            // Get a mask of set values for this group
-            uint setMask = 0;
-            foreach (int cellIndex in group.Cells)
-            {
-                uint cellMask = board[cellIndex];
-                if (IsValueSet(cellMask))
+                int numCells = group.Cells.Count;
+                if (numCells != MAX_VALUE && group.FromConstraint == null)
                 {
-                    setMask |= board[cellIndex];
-                }
-            }
-
-            int groupValueIndexBaseline = groupIndex * MAX_VALUE - 1;
-            for (int val = 1; val <= MAX_VALUE; val++)
-            {
-                uint valMask = ValueMask(val);
-                if ((valMask & setMask) != 0)
-                {
-                    // No need to check for this value if the group already has it set
                     continue;
                 }
 
-                int groupValueIndex = groupValueIndexBaseline + val;
-                int groupValueCount = _candidateCountsPerGroupValue[groupValueIndex];
-                if (groupValueCount <= 1)
+                // Get a mask of set values for this group
+                uint setMask = 0;
+                foreach (int cellIndex in group.Cells)
                 {
-                    if (numCells == MAX_VALUE)
+                    uint cellMask = board[cellIndex];
+                    if (IsValueSet(cellMask))
                     {
-                        if (groupValueCount == 0)
-                        {
-                            logicalStepDescs?.Add(new(
-                                $"{group} must contain the value {val} but has nowhere to place it.",
-                                group.Cells.Select(cellIndex => CellIndexToCoord(cellIndex))
-                            ));
-                            return LogicResult.Invalid;
-                        }
+                        setMask |= board[cellIndex];
                     }
-                    else if (groupValueCount != 1 || !group.FromConstraint.MustContainValue(this, val))
+                }
+
+                int groupValueIndexBaseline = groupIndex * MAX_VALUE - 1;
+                for (int val = 1; val <= MAX_VALUE; val++)
+                {
+                    uint valMask = ValueMask(val);
+                    if ((valMask & setMask) != 0)
                     {
-                        // A smaller group only forces a placement when its constraint says the
-                        // value has to appear in it at all.
+                        // No need to check for this value if the group already has it set
                         continue;
                     }
 
-                    // Exactly one cell in the group can still take the value, so find it.
-                    int valCellIndex = -1;
-                    foreach (int cellIndex in group.Cells)
+                    int groupValueIndex = groupValueIndexBaseline + val;
+                    int groupValueCount = _candidateCountsPerGroupValue[groupValueIndex];
+                    if (groupValueCount <= 1)
                     {
-                        if ((board[cellIndex] & valMask) != 0)
+                        if (numCells == MAX_VALUE)
                         {
-                            valCellIndex = cellIndex;
-                            break;
+                            if (groupValueCount == 0)
+                            {
+                                logicalStepDescs?.Add(new(
+                                    $"{group} must contain the value {val} but has nowhere to place it.",
+                                    group.Cells.Select(cellIndex => CellIndexToCoord(cellIndex))
+                                ));
+                                return LogicResult.Invalid;
+                            }
                         }
-                    }
+                        else if (groupValueCount != 1 || !group.FromConstraint.MustContainValue(this, val))
+                        {
+                            // A smaller group only forces a placement when its constraint says the
+                            // value has to appear in it at all.
+                            continue;
+                        }
 
-                    if (valCellIndex >= 0)
-                    {
-                        if (!SetValue(valCellIndex, val))
+                        // Exactly one cell in the group can still take the value, so find it.
+                        int valCellIndex = -1;
+                        foreach (int cellIndex in group.Cells)
                         {
-                            logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(CellIndexToCoord(valCellIndex))} cannot be set to {val}.", CellIndexToCoord(valCellIndex)));
-                            return LogicResult.Invalid;
+                            if ((board[cellIndex] & valMask) != 0)
+                            {
+                                valCellIndex = cellIndex;
+                                break;
+                            }
                         }
-                        logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(CellIndexToCoord(valCellIndex))}={val}", CandidateIndex(valCellIndex, val).ToEnumerable(), null, isSingle: true));
-                        return LogicResult.Changed;
+
+                        if (valCellIndex >= 0)
+                        {
+                            if (!SetValue(valCellIndex, val))
+                            {
+                                logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(CellIndexToCoord(valCellIndex))} cannot be set to {val}.", CellIndexToCoord(valCellIndex)));
+                                return LogicResult.Invalid;
+                            }
+                            logicalStepDescs?.Add(new($"Hidden Single in {group}: {CellName(CellIndexToCoord(valCellIndex))}={val}", CandidateIndex(valCellIndex, val).ToEnumerable(), null, isSingle: true));
+                            return LogicResult.Changed;
+                        }
                     }
                 }
-            }
 
-            // This only resets the group to false if no hiddens were found.
-            // This accounts for the case where there were multiple hiddens to find.
-            // It does mean we always check one extra time, but in the long run that's not a problem.
-            _checkGroupForHiddens[groupIndex] = false;
-            _numGroupsNeedingHiddenCheck--;
+                // This only clears the group's bit if no hiddens were found.
+                // This accounts for the case where there were multiple hiddens to find.
+                // It does mean we always check one extra time, but in the long run that's not a problem.
+                BitsetClear(_checkGroupForHiddens, groupIndex);
+            }
         }
         return LogicResult.None;
     }

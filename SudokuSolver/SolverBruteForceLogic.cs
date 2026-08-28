@@ -240,24 +240,27 @@ public partial class Solver
         if (isBruteForcing && _constraintQueued != null && _constraintQueued.Length > 0)
         {
             // Re-mark always-run constraints (those with no declared cells) on every step.
-            if (_alwaysRunConstraintIndices != null)
-                foreach (int ai in _alwaysRunConstraintIndices)
-                    if (!_constraintQueued[ai]) { _constraintQueued[ai] = true; _numConstraintsQueued++; }
+            if (_alwaysRunConstraintBits != null)
+                for (int word = 0; word < _constraintQueued.Length; word++)
+                    _constraintQueued[word] |= _alwaysRunConstraintBits[word];
 
-            if (_numConstraintsQueued == 0)
-                goto skipConstraints;
-
-            // Drain queued constraints in list order; stop on first change.
-            for (int ci = 0; ci < constraints.Count; ci++)
+            // Drain queued constraints in declaration order; stop on first change. The word is
+            // cached across the inner loop: a StepLogic that returns None wrote nothing, so it
+            // cannot have queued anything, and any other result returns out of the loop.
+            for (int word = 0; word < _constraintQueued.Length; word++)
             {
-                if (!_constraintQueued[ci]) continue;
-                _constraintQueued[ci] = false;
-                _numConstraintsQueued--;
-                cancellationToken.ThrowIfCancellationRequested();
-                curResult = constraints[ci].StepLogic(this, (List<LogicalStepDesc>)null, true);
-                if (curResult != LogicResult.None) return curResult;
+                ulong remainingConstraints = _constraintQueued[word];
+                while (remainingConstraints != 0)
+                {
+                    int constraintIndex = (word << 6) + BitOperations.TrailingZeroCount(remainingConstraints);
+                    remainingConstraints &= remainingConstraints - 1;
+                    _constraintQueued[word] &= ~(1UL << (constraintIndex & 63));
+
+                    cancellationToken.ThrowIfCancellationRequested();
+                    curResult = constraints[constraintIndex].StepLogic(this, (List<LogicalStepDesc>)null, true);
+                    if (curResult != LogicResult.None) return curResult;
+                }
             }
-            skipConstraints:;
         }
         else
         {

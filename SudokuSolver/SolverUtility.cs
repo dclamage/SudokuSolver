@@ -52,6 +52,35 @@ public static class SolverUtility
         }
         return false;
     }
+    /// <summary>
+    /// Number of 64-bit words needed to hold <paramref name="bitCount"/> bits.
+    /// </summary>
+    public static int BitsetWords(int bitCount) => (bitCount + 63) >> 6;
+
+    /// <summary>
+    /// Tests bit <paramref name="index"/> of a bitset.
+    /// </summary>
+    /// <remarks>
+    /// These four helpers back the propagation worklists, which replaced <c>bool[]</c> flag
+    /// arrays scanned end to end on every propagation step. The scan is the reason for the
+    /// packing: a word of 64 clear bits is skipped with one compare, where the flag array paid a
+    /// load and a branch per entry. See <c>docs/cell-forcing-worklist.md</c>.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool BitsetTest(ulong[] bitset, int index) => (bitset[index >> 6] & (1UL << (index & 63))) != 0;
+
+    /// <summary>
+    /// Sets bit <paramref name="index"/> of a bitset.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void BitsetSet(ulong[] bitset, int index) => bitset[index >> 6] |= 1UL << (index & 63);
+
+    /// <summary>
+    /// Clears bit <paramref name="index"/> of a bitset.
+    /// </summary>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static void BitsetClear(ulong[] bitset, int index) => bitset[index >> 6] &= ~(1UL << (index & 63));
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int ValueCount(uint mask)
     {

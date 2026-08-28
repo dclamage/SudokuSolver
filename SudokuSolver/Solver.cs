@@ -81,11 +81,11 @@ public partial class Solver
 
     // Hidden single tracking fields
     private int[] _candidateCountsPerGroupValue;
-    private bool[] _checkGroupForHiddens;
-    private int _numGroupsNeedingHiddenCheck;
-
-    // How many constraints currently have _constraintQueued[i] == true.
-    private int _numConstraintsQueued;
+    // Bit g set == group g may now hold a hidden single and still needs checking. Packed rather
+    // than a bool[] because FindHiddenSingle scans it from the start on every propagation step;
+    // testing the words for zero is also the scan's own early-out, so no separate pending count
+    // has to be maintained on the board-write path.
+    private ulong[] _checkGroupForHiddens;
 
     // Private state
     private bool isInSetValue = false;
@@ -122,14 +122,21 @@ public partial class Solver
 
     // Propagation queue: maps cell index → list of constraint indices that watch that cell.
     // Shared by reference across all clones (read-only after FinalizeConstraints).
-    internal int[][] cellToConstraintIndices;
+    // Per-cell propagation-queue map, packed: the constraint bits to OR into _constraintQueued
+    // when this cell changes, stored at [cellIndex * _constraintQueued.Length]. A bitmask rather
+    // than a per-cell index list so an enqueue costs one OR per word instead of a test-and-set per
+    // constraint — this sits on the board-write path, the hottest code in the solver. Shared by
+    // reference across clones (read-only after FinalizeConstraints); null until then.
+    internal ulong[] cellToConstraintMask;
 
-    // Per-instance: which constraints are pending re-run due to cell changes.
-    private bool[] _constraintQueued;
+    // Per-instance: bit i set == constraint i is pending re-run due to cell changes.
+    private ulong[] _constraintQueued;
 
-    // Constraint indices whose CellIndicesForPropagationQueue was null (run every propagation step).
-    // Shared by reference across clones (read-only after FinalizeConstraints).
-    private int[] _alwaysRunConstraintIndices;
+    // Bit i set == constraint i's CellIndicesForPropagationQueue was null, so it runs on every
+    // propagation step. OR'd into _constraintQueued at the top of the constraint stage, which is
+    // cheaper than walking an index list. Shared by reference across clones (read-only after
+    // FinalizeConstraints); null when no constraint wants it.
+    private ulong[] _alwaysRunConstraintBits;
 
     // Cell index that caused a contradiction in the most-recently-discarded child solver.
     // Set by FindSolutionInternal/CountSolutionsInternal when a branch fails.

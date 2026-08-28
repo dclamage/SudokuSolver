@@ -32,7 +32,7 @@ public partial class Solver
 
         // Hidden single tracking
         _candidateCountsPerGroupValue = null;
-        _checkGroupForHiddens = null;
+        _checkGroupForHiddens = Array.Empty<ulong>();
 
         Groups = [];
         CellToGroupsLookup = new List<SudokuGroup>[NUM_CELLS];
@@ -106,15 +106,13 @@ public partial class Solver
             _candidateCountsPerGroupValue = new int[other._candidateCountsPerGroupValue.Length];
             other._candidateCountsPerGroupValue.AsSpan().CopyTo(_candidateCountsPerGroupValue);
 
-            _checkGroupForHiddens = new bool[other._checkGroupForHiddens.Length];
+            _checkGroupForHiddens = new ulong[other._checkGroupForHiddens.Length];
             other._checkGroupForHiddens.AsSpan().CopyTo(_checkGroupForHiddens);
-            _numGroupsNeedingHiddenCheck = other._numGroupsNeedingHiddenCheck;
         }
         else
         {
             _candidateCountsPerGroupValue = null;
-            _checkGroupForHiddens = null;
-            _numGroupsNeedingHiddenCheck = 0;
+            _checkGroupForHiddens = Array.Empty<ulong>();
         }
 
         Groups = other.Groups;
@@ -150,10 +148,9 @@ public partial class Solver
         searchDepth = other.searchDepth;
 
         // Share the read-only propagation-queue maps; allocate a fresh queued-flags array.
-        cellToConstraintIndices = other.cellToConstraintIndices;
-        _alwaysRunConstraintIndices = other._alwaysRunConstraintIndices;
-        _constraintQueued = other.constraints.Count > 0 ? new bool[other.constraints.Count] : Array.Empty<bool>();
-        _numConstraintsQueued = 0;
+        cellToConstraintMask = other.cellToConstraintMask;
+        _alwaysRunConstraintBits = other._alwaysRunConstraintBits;
+        _constraintQueued = other.constraints.Count > 0 ? new ulong[BitsetWords(other.constraints.Count)] : Array.Empty<ulong>();
         _lastContradictionCellIndex = -1;
     }
 
@@ -715,13 +712,16 @@ public partial class Solver
             constraint.SeedConflictPriority(conflictScores);
         }
 
-        // Build propagation-queue reverse map: cellToConstraintIndices[cell] = constraint indices
-        // that declared that cell via CellIndicesForPropagationQueue.
-        // Constraints that return null go into _alwaysRunConstraintIndices (run every step).
+        // Build the propagation-queue reverse map: cellToConstraintMask[cell] = the constraint bits
+        // to queue when that cell changes, from the cells each constraint declared via
+        // CellIndicesForPropagationQueue. Constraints that declare none go into
+        // _alwaysRunConstraintBits (run every step).
         {
-            var cellLists = new List<int>[NUM_CELLS];
-            for (int i = 0; i < NUM_CELLS; i++) cellLists[i] = new List<int>();
-            var alwaysRun = new List<int>();
+            int numQueueWords = constraints.Count > 0 ? BitsetWords(constraints.Count) : 0;
+            _constraintQueued = numQueueWords > 0 ? new ulong[numQueueWords] : Array.Empty<ulong>();
+            cellToConstraintMask = new ulong[NUM_CELLS * numQueueWords];
+            ulong[] alwaysRunBits = null;
+
             for (int ci = 0; ci < constraints.Count; ci++)
             {
                 // Constraints whose StepLogic is a no-op during brute force never need to be queued.
@@ -732,25 +732,26 @@ public partial class Solver
                 var cells = constraints[ci].CellIndicesForPropagationQueue;
                 if (cells == null || cells.Count == 0)
                 {
-                    alwaysRun.Add(ci);
+                    alwaysRunBits ??= new ulong[numQueueWords];
+                    BitsetSet(alwaysRunBits, ci);
                 }
                 else
                 {
+                    ulong constraintBit = 1UL << (ci & 63);
+                    int wordOffset = ci >> 6;
                     foreach (int cell in cells)
                         if ((uint)cell < (uint)NUM_CELLS)
-                            cellLists[cell].Add(ci);
+                            cellToConstraintMask[cell * numQueueWords + wordOffset] |= constraintBit;
                 }
             }
-            cellToConstraintIndices = Array.ConvertAll(cellLists, l => l.ToArray());
-            _alwaysRunConstraintIndices = alwaysRun.Count > 0 ? alwaysRun.ToArray() : null;
-            _constraintQueued = constraints.Count > 0 ? new bool[constraints.Count] : Array.Empty<bool>();
+            _alwaysRunConstraintBits = alwaysRunBits;
         }
 
         // Initialize hidden single tracking array
         if (Groups.Count > 0)
         {
             _candidateCountsPerGroupValue = new int[Groups.Count * MAX_VALUE];
-            _checkGroupForHiddens = new bool[Groups.Count];
+            _checkGroupForHiddens = new ulong[BitsetWords(Groups.Count)];
             for (int groupIdx = 0; groupIdx < Groups.Count; groupIdx++)
             {
                 var group = Groups[groupIdx];
@@ -766,18 +767,21 @@ public partial class Solver
                         }
                     }
                     _candidateCountsPerGroupValue[groupIdx * MAX_VALUE + (v - 1)] = count;
-                    _checkGroupForHiddens[groupIdx] = count <= 1;
+                    if (count <= 1)
+                    {
+                        BitsetSet(_checkGroupForHiddens, groupIdx);
+                    }
+                    else
+                    {
+                        BitsetClear(_checkGroupForHiddens, groupIdx);
+                    }
                 }
             }
-            _numGroupsNeedingHiddenCheck = 0;
-            for (int i = 0; i < Groups.Count; i++)
-                if (_checkGroupForHiddens[i]) _numGroupsNeedingHiddenCheck++;
         }
         else
         {
             _candidateCountsPerGroupValue = null;
-            _checkGroupForHiddens = null;
-            _numGroupsNeedingHiddenCheck = 0;
+            _checkGroupForHiddens = Array.Empty<ulong>();
         }
 
         return true;

@@ -272,7 +272,7 @@ public partial class Solver
                     break;
                 }
 
-                if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintIndices != null)
+                if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintMask != null)
                 {
                     solver.EnqueueConstraintsForCell(solver._lastContradictionCellIndex);
                     solver._lastContradictionCellIndex = -1;
@@ -653,7 +653,7 @@ public partial class Solver
                     break;
                 }
 
-                if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintIndices != null)
+                if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintMask != null)
                 {
                     solver.EnqueueConstraintsForCell(solver._lastContradictionCellIndex);
                     solver._lastContradictionCellIndex = -1;
@@ -915,10 +915,8 @@ public partial class Solver
         {
             other._candidateCountsPerGroupValue.AsSpan().CopyTo(_candidateCountsPerGroupValue);
             other._checkGroupForHiddens.AsSpan().CopyTo(_checkGroupForHiddens);
-            _numGroupsNeedingHiddenCheck = other._numGroupsNeedingHiddenCheck;
         }
 
-        _numConstraintsQueued = 0;
         if (_constraintQueued != null && _constraintQueued.Length > 0)
         {
             Array.Clear(_constraintQueued);

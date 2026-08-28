@@ -5,14 +5,17 @@ public partial class Solver
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void EnqueueConstraintsForCell(int cellIndex)
     {
-        var indices = cellToConstraintIndices[cellIndex];
-        for (int k = 0; k < indices.Length; k++)
+        int numWords = _constraintQueued.Length;
+        if (numWords == 1)
         {
-            if (!_constraintQueued[indices[k]])
-            {
-                _constraintQueued[indices[k]] = true;
-                _numConstraintsQueued++;
-            }
+            _constraintQueued[0] |= cellToConstraintMask[cellIndex];
+            return;
+        }
+
+        int maskBase = cellIndex * numWords;
+        for (int word = 0; word < numWords; word++)
+        {
+            _constraintQueued[word] |= cellToConstraintMask[maskBase + word];
         }
     }
 
@@ -35,7 +38,7 @@ public partial class Solver
             return false;
         }
 
-        if (isBruteForcing && cellToConstraintIndices != null)
+        if (isBruteForcing && cellToConstraintMask != null)
             EnqueueConstraintsForCell(cellIndex);
 
         if (ValueCount(newCellMask) == 1)
@@ -83,7 +86,7 @@ public partial class Solver
             return false;
         }
 
-        if (isBruteForcing && cellToConstraintIndices != null)
+        if (isBruteForcing && cellToConstraintMask != null)
             EnqueueConstraintsForCell(cellIndex);
 
         if (ValueCount(newCellMask) == 1)
@@ -141,7 +144,7 @@ public partial class Solver
                 board[cellIndex] = valMask;
                 pendingNakedSingles.Add(cellIndex);
                 TrackHiddenSingles(cellIndex, prevMask, valMask);
-                if (isBruteForcing && cellToConstraintIndices != null)
+                if (isBruteForcing && cellToConstraintMask != null)
                     EnqueueConstraintsForCell(cellIndex);
             }
             return true;
@@ -157,7 +160,7 @@ public partial class Solver
         // Enqueue constraints watching this cell — setting a value changes the cell's
         // state just as much as clearing a candidate, but weak-link ClearValues below
         // only cover the targets, not cellIndex itself.
-        if (isBruteForcing && cellToConstraintIndices != null)
+        if (isBruteForcing && cellToConstraintMask != null)
             EnqueueConstraintsForCell(cellIndex);
 
         // Apply all weak links
@@ -301,7 +304,7 @@ public partial class Solver
 
         TrackHiddenSingles(cellIndex, prevMask, mask);
 
-        if (isBruteForcing && cellToConstraintIndices != null)
+        if (isBruteForcing && cellToConstraintMask != null)
             EnqueueConstraintsForCell(cellIndex);
 
         return true;
@@ -405,31 +408,33 @@ public partial class Solver
         foreach (SudokuGroup group in CellToGroupsLookup[cellIndex])
         {
             int groupIndex = group.Index;
+            bool needsHiddenCheck = false;
             uint curDiffMask = diffMask;
             while (curDiffMask != 0)
             {
                 int v = MinValue(curDiffMask);
                 curDiffMask &= ~ValueMask(v);
                 int newCount = --_candidateCountsPerGroupValue[groupIndex * MAX_VALUE + (v - 1)];
-                if (newCount <= 1 && !_checkGroupForHiddens[groupIndex])
-                {
-                    _checkGroupForHiddens[groupIndex] = true;
-                    _numGroupsNeedingHiddenCheck++;
-                }
+                needsHiddenCheck |= newCount <= 1;
             }
 
-            if (!_checkGroupForHiddens[groupIndex] && group.Cells.Count < MAX_VALUE && group.FromConstraint != null)
+            if (!needsHiddenCheck && group.Cells.Count < MAX_VALUE && group.FromConstraint != null
+                && !BitsetTest(_checkGroupForHiddens, groupIndex))
             {
                 // This group has changed, so its idea of whether it may need a value may also have changed
                 for (int v = 1; v <= MAX_VALUE; v++)
                 {
                     if (_candidateCountsPerGroupValue[groupIndex * MAX_VALUE + (v - 1)] <= 1)
                     {
-                        _checkGroupForHiddens[groupIndex] = true;
-                        _numGroupsNeedingHiddenCheck++;
+                        needsHiddenCheck = true;
                         break;
                     }
                 }
+            }
+
+            if (needsHiddenCheck)
+            {
+                BitsetSet(_checkGroupForHiddens, groupIndex);
             }
         }
     }
