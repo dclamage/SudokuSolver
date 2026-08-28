@@ -10,8 +10,9 @@ to `X` — currently runs **only during root setup**, and enabling it inside the
 costs about twice what it saves. The design agreed for closing that gap is a **priority worklist**
 that drains to fixpoint inside `BruteForcePropagate`, cheapest deductions first, plus a
 **precomputed filter** that refuses to enqueue work that provably cannot fire. The filter's value is
-now measured and it is large: **97.1% of cell-forcing work items do nothing**. Cell forcing itself
-is still uncommitted; five files carry the groundwork, in the `wasm-prototype` working tree.
+now measured and it is large: **97.1% of cell-forcing work items do nothing** — but see § "Step 3",
+where that figure turned out to be a poor guide to where the time was. The groundwork is now
+committed on `perf/propagation-worklist` along with both filters, all gated off.
 
 **Step 1 of the recommended order has since landed on its own** — see § "Step 1 is done" — worth
 **−14.3%** on the static-order ISS tune corpus with node counts untouched. It did not land as the
@@ -344,6 +345,90 @@ constants cannot capture. `BruteForcePropagationCost` is a virtual property prec
 can scale with its own cell count — but doing that now would be a guess, since the measurement is
 per-type. Attribute per-instance before adding a geometry term.
 
+## Step 3: the enqueue filter is built, exact, and not enough
+
+Date: 2026-08-28, same branch. Both filters ship, gated off with cell forcing. **In-search cell
+forcing still does not pay: +21.5% on the static-order `iss-tune` corpus.**
+
+### Where the gap went
+
+| arm | CF on vs off |
+| --- | ---: |
+| this doc's original measurement | ~+100% (the 2x it records) |
+| steps 1 + 2 + can-fire filter | +27.6% |
+| + newly-fires filter | **+21.5%** |
+
+Roughly 2x became 1.22x. It did not become 1.0x. Cell forcing stays off.
+
+### The filter's prediction was wrong, and the reason generalizes
+
+§ "The enqueue filter" says `cfCanFire` "catches the 55.7% bucket exactly" — the pops that scan
+every row and find nothing, the only bucket paying a full row scan. Measured, it does not:
+
+```
+enqueues offered 527,270,558   rejected 204,164,144  (38.7%)
+pops 127,454,936               fired 8,579,190       (6.7%)
+bitmap admits 19.3% of masks
+cells with no rows at all      44.2%
+cells admitting every mask      4.1%
+```
+
+**44% of cells have no cell-forcing rows at all**, and the bitmap rejects every mask for those. That
+is where most of the 38.7% rejection comes from — and a no-row cell's pop was already free
+(`cfOffsets[c] == cfOffsets[c+1]`, the loop body never runs). So the filter removed the *cheap* half
+of a correctly-counted no-op population while paying a load and bit test on all 527M board writes.
+Net **-1.3%**.
+
+This is the same shape as step 1, where a real 510M-iteration scan turned out not to be where the
+time was. **Count the no-ops by cost, not by frequency.** A no-op census is a starting point, not a
+target list; bucket it by what each bucket actually costs before building anything.
+
+### The sharper filter, and why it was the right next move
+
+The can-fire filter is *exact*: `canFire[m]` true means a row genuinely does fire. Yet only 6.7% of
+pops reported a change. Those two facts together pin the residue precisely — for 93.3% of pops a row
+fires but its target candidate was **already eliminated**. No "can anything fire" predicate can see
+that.
+
+`cfNewlyFires[cell][v][m]` is this doc's own § "Exact refinement", and the measurement above is the
+argument for it: a row whose S contains the removed value v already covered the wider pre-write
+mask, so it has been applied and its target is gone. Excluding those rows per removed value is
+exact, built by the same zeta transform. ~47 KB per 9x9 puzzle, shared by reference.
+
+It bought another **3.0%** off the CF-on arm (21,381 -> 20,742 ms). Real, and an order of magnitude
+short of closing the gap.
+
+### Both filters are exact — verified, not argued
+
+`SUDOKU_CF_FILTER` is a level: `0` none, `1` can-fire, `2` (default) newly-fires. All three produce
+**bit-identical results on all 281 static-order cases**. This matters more than it looks: an
+over-aggressive filter does not produce wrong answers, it silently drops deductions and shows up as
+*slower*. Validating against `expected` would have proved nothing. One build, three levels, so the
+comparison never crosses two separately-JITted binaries.
+
+### Two costs worth not repeating
+
+- **Do not build the filters when cell forcing is off.** They were being built during every solver
+  setup regardless — ~2^MAX_VALUE * MAX_VALUE per cell per level, ~3.4M operations per puzzle, paid
+  by the default configuration for a feature that is disabled. Now gated on
+  `CellForcingRunsInSearch`. Same family as this doc's note that the table itself is dead code in
+  the shipped configuration.
+- **Writes that set a value need not enqueue at all.** `CellForcingForCell` skips value-set cells
+  outright, so queuing them could only ever cost a pop.
+
+### What break-even would take
+
+CF-on carries ~3.7 s of overhead on a ~17.0 s baseline. Every remaining pop now has a row that
+fires *and* newly fires, so the cheap structural rejections are exhausted — what is left is the
+table scan itself plus the eliminations. Closing 21.5% from here means attacking the scan, not the
+trigger. Candidates, unmeasured:
+
+- Order rows within a cell by target cell so a run of eliminations shares one board read.
+- Stop at the first row whose target is still alive rather than scanning all rows every pop.
+- Accept that the worklist's no-dedup design (§ "A priority worklist") re-pops a cell written many
+  times in one step, and measure a per-step dedup guard — carefully, given this doc's own warning
+  about mixing a dedup guard with a scan.
+
 ## Methodology — read before measuring anything
 
 **Node counts are reproducible. The harness allocation column is not.** Same binary, same config,
@@ -446,10 +531,11 @@ row can never fire. That prune happens to remove every ordinary house link (`A=v
    renumbering; weights are cost/P(fire), not cost. Worth ~1-3% of runtime on mixed-constraint
    puzzles and nothing at all on single-constraint ones. The prediction that the blocker was cost
    data held: the plumbing was an afternoon, the measurement was the work.
-3. **The enqueue filter**, then cell forcing as a tier on top, measured separately against the bar
-   above. Note the filter's stated risk — "the lookup lands on the board-write path" — is exactly
-   what step 1 got wrong in its first attempt. Budget for it: on that path a redundant load or a
-   read-modify-write costs more than a 500M-iteration scan does.
+3. ~~**The enqueue filter**, then cell forcing as a tier on top~~ — **built and measured**, see
+   § "Step 3". Both filters are exact and ship gated off. Cell forcing went from ~2x too costly to
+   1.22x and **still does not pay**, so it stays off. The filter's stated risk was real but not
+   decisive: the write-path lookup roughly cancelled its own savings because it caught the cheap
+   no-ops, not the expensive ones.
 
 Blast radius for step 1: `BruteForcePropagate` serves solve, count, truecandidates and estimate,
 single- and multi-threaded. It is the hottest loop in the solver.

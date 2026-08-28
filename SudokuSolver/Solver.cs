@@ -86,6 +86,26 @@ public partial class Solver
     private int[] cfOffsets;
     private int[] cfTargets;
     private uint[] cfMasks;
+
+    // Enqueue filter for cell forcing: bit m of cell A's block is set iff some row of A has
+    // cand-mask m as a subset of its S, i.e. iff a cell whose candidates are exactly m could force
+    // anything at all. A board write consults it and skips pushing a cell that provably cannot
+    // fire, which is the 55.7% "scanned every row, found nothing" bucket -- the only bucket that
+    // pays a full row scan before finding nothing. cfCanFireWords ulongs per cell, indexed
+    // [cellIndex * cfCanFireWords + (m >> 6)]. Null when MAX_VALUE is too large to tabulate, in
+    // which case every write enqueues as before. Shared by reference across clones; invalidated
+    // alongside cfOffsets.
+    private ulong[] cfCanFire;
+    private int cfCanFireWords;
+
+    // Sharper enqueue filter, indexed by the value the write removed. Bit m of block
+    // (cell * MAX_VALUE + v - 1) is set iff some row of that cell has m as a subset of its S *and*
+    // does not contain v. Such a row fires now and did not fire before the write, because a row
+    // whose S contains v already covered the pre-write mask. cfCanFire alone cannot see this: it
+    // is exact about "does a row fire" but a firing row whose target is already eliminated
+    // produces no change, which measured as 93.3% of pops. MAX_VALUE times the size of cfCanFire
+    // (~47 KB per 9x9 puzzle), shared by reference across clones; null when cfCanFire is.
+    private ulong[] cfNewlyFires;
     private readonly List<Constraint> constraints;
     private readonly List<Constraint> enforceConstraints;
 

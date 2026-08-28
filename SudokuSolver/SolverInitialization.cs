@@ -149,6 +149,9 @@ public partial class Solver
         cfOffsets = other.cfOffsets;
         cfTargets = other.cfTargets;
         cfMasks = other.cfMasks;
+        cfCanFire = other.cfCanFire;
+        cfCanFireWords = other.cfCanFireWords;
+        cfNewlyFires = other.cfNewlyFires;
 
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
@@ -440,6 +443,128 @@ public partial class Solver
         cfTargets = [.. rowTargets];
         cfMasks = [.. rowMasks];
         cfOffsets = offsets;
+
+        BuildCellForcingFilter();
+    }
+
+    /// <summary>
+    /// Number of values above which the cell-forcing enqueue filter is not tabulated. The table is
+    /// 2^MAX_VALUE bits per cell, so it stays negligible at 9 (64 bytes per cell, ~5 KB per puzzle)
+    /// and becomes unreasonable well before MAX_VALUE's ceiling of 31.
+    /// </summary>
+    private const int CellForcingFilterMaxValue = 12;
+
+    /// <summary>
+    /// Builds <c>cfCanFire</c>: for each cell, the set of candidate masks that could fire at least
+    /// one of its cell-forcing rows.
+    /// </summary>
+    /// <remarks>
+    /// A row <c>(X, S)</c> fires for cell A exactly when <c>cand(A)</c> is a subset of S, so the
+    /// masks that can fire *something* are the union of the subset-closures of every row's S. That
+    /// is a downward zeta transform: mark each S, then for each value bit propagate a marked mask
+    /// to the mask with that bit cleared. It costs <c>2^MAX_VALUE * MAX_VALUE</c> per cell and is
+    /// independent of the row count — enumerating each row's subsets instead would be exponential
+    /// in the wrong thing, since a 9-bit S has 512 subsets and a cell can have hundreds of rows.
+    /// </remarks>
+    private void BuildCellForcingFilter()
+    {
+        // Nothing consults the filters unless cell forcing runs in-search, and building them is
+        // ~2^MAX_VALUE * MAX_VALUE per cell per level -- real setup cost to pay for a feature that
+        // is off by default.
+        if (!CellForcingRunsInSearch || !CellForcingFilterEnabled || MAX_VALUE > CellForcingFilterMaxValue)
+        {
+            cfCanFire = null;
+            cfNewlyFires = null;
+            cfCanFireWords = 0;
+            return;
+        }
+
+        int maskCount = 1 << MAX_VALUE;
+        cfCanFireWords = Math.Max(1, maskCount >> 6);
+        ulong[] canFire = new ulong[NUM_CELLS * cfCanFireWords];
+
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+        {
+            int block = cellIndex * cfCanFireWords;
+            for (int row = cfOffsets[cellIndex]; row < cfOffsets[cellIndex + 1]; row++)
+            {
+                uint s = cfMasks[row];
+                canFire[block + (int)(s >> 6)] |= 1UL << (int)(s & 63);
+            }
+
+            for (int bit = 0; bit < MAX_VALUE; bit++)
+            {
+                uint bitMask = 1u << bit;
+                for (uint m = 0; m < maskCount; m++)
+                {
+                    if ((m & bitMask) == 0)
+                    {
+                        continue;
+                    }
+                    if ((canFire[block + (int)(m >> 6)] & (1UL << (int)(m & 63))) != 0)
+                    {
+                        uint subset = m & ~bitMask;
+                        canFire[block + (int)(subset >> 6)] |= 1UL << (int)(subset & 63);
+                    }
+                }
+            }
+        }
+
+        cfCanFire = canFire;
+
+        if (CellForcingFilterLevel < 2)
+        {
+            cfNewlyFires = null;
+            return;
+        }
+
+        // Same transform, but per removed value and over only the rows that exclude that value.
+        ulong[] newlyFires = new ulong[NUM_CELLS * MAX_VALUE * cfCanFireWords];
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+        {
+            int rowStart = cfOffsets[cellIndex];
+            int rowEnd = cfOffsets[cellIndex + 1];
+            if (rowStart == rowEnd)
+            {
+                continue;
+            }
+
+            for (int v = 1; v <= MAX_VALUE; v++)
+            {
+                uint valueMask = ValueMask(v);
+                int block = (cellIndex * MAX_VALUE + v - 1) * cfCanFireWords;
+
+                for (int row = rowStart; row < rowEnd; row++)
+                {
+                    uint s = cfMasks[row];
+                    if ((s & valueMask) != 0)
+                    {
+                        // S contains v, so this row already fired against the pre-write mask.
+                        continue;
+                    }
+                    newlyFires[block + (int)(s >> 6)] |= 1UL << (int)(s & 63);
+                }
+
+                for (int bit = 0; bit < MAX_VALUE; bit++)
+                {
+                    uint bitMask = 1u << bit;
+                    for (uint m = 0; m < maskCount; m++)
+                    {
+                        if ((m & bitMask) == 0)
+                        {
+                            continue;
+                        }
+                        if ((newlyFires[block + (int)(m >> 6)] & (1UL << (int)(m & 63))) != 0)
+                        {
+                            uint subset = m & ~bitMask;
+                            newlyFires[block + (int)(subset >> 6)] |= 1UL << (int)(subset & 63);
+                        }
+                    }
+                }
+            }
+        }
+
+        cfNewlyFires = newlyFires;
     }
 
     public LogicResult AddWeakLink(int candIndex0, int candIndex1)
@@ -452,6 +577,8 @@ public partial class Solver
         // Any mutation invalidates the grouped table; it is rebuilt before the next search.
         wlGroupedOffsets = null;
         cfOffsets = null;
+        cfCanFire = null;
+        cfNewlyFires = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 

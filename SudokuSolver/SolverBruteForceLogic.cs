@@ -339,6 +339,8 @@ public partial class Solver
         // invalidation. The caller recompiles once discovery is done.
         wlGroupedOffsets = null;
         cfOffsets = null;
+        cfCanFire = null;
+        cfNewlyFires = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 
@@ -549,6 +551,22 @@ public partial class Solver
     internal static readonly long CellForcingMaxCandidates = ReadLongEnv("SUDOKU_CF_MAX", 0);
 
     /// <summary>
+    /// Which cell-forcing enqueue filter to build. <c>SUDOKU_CF_FILTER</c>: <c>0</c> none (every
+    /// board write queues its cell), <c>1</c> the can-fire bitmap, <c>2</c> (default) the
+    /// newly-fires bitmap indexed by the removed value.
+    /// </summary>
+    /// <remarks>
+    /// The filter is meant to be <em>exact</em> — it must skip only cells that provably cannot fire
+    /// any row — so the two arms should produce bit-identical results and node counts, with only
+    /// the time differing. This switch exists so that equivalence can be checked from one build
+    /// rather than two, which also sidesteps comparing across separately-JITted binaries.
+    /// </remarks>
+    internal static readonly long CellForcingFilterLevel = ReadLongEnv("SUDOKU_CF_FILTER", 2);
+
+    /// <summary>Whether any enqueue filter is built at all.</summary>
+    internal static bool CellForcingFilterEnabled => CellForcingFilterLevel > 0;
+
+    /// <summary>
     /// Runs cell forcing at every propagation step of the search, not just during root setup.
     /// </summary>
     /// <remarks>
@@ -574,6 +592,12 @@ public partial class Solver
     private enum CfTrigger { Off, Every, Queue, Depth, Step }
 
     private static readonly (CfTrigger mode, int param) CellForcingTrigger = ParseCellForcingTrigger();
+
+    /// <summary>
+    /// Whether cell forcing runs inside the search at all. When it does not, the cell-forcing
+    /// enqueue filters are never consulted, so building them would be pure setup cost.
+    /// </summary>
+    internal static bool CellForcingRunsInSearch => CellForcingTrigger.mode != CfTrigger.Off;
 
     private static (CfTrigger, int) ParseCellForcingTrigger()
     {

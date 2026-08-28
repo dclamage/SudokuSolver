@@ -2,6 +2,66 @@ namespace SudokuSolver;
 
 public partial class Solver
 {
+    /// <summary>
+    /// Queues a cell for cell forcing, unless the filter proves it cannot force anything.
+    /// </summary>
+    /// <remarks>
+    /// Sits on the board-write path, so it is one array load and a bit test against the cell's new
+    /// candidate mask. The trade it makes is paying that on <em>every</em> write to skip work on
+    /// the writes it filters — measured at 55.7% of pops scanning every row and finding nothing.
+    /// </remarks>
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    private void EnqueueCellForcing(int cellIndex, uint oldMask, uint newMask)
+    {
+        if (pendingCellForcing == null)
+        {
+            return;
+        }
+
+        // A cell whose value is now set is skipped by CellForcingForCell outright, so queuing it
+        // can only cost a pop.
+        if ((newMask & valueSetMask) != 0)
+        {
+            return;
+        }
+
+        ulong[] canFire = cfCanFire;
+        if (canFire != null)
+        {
+            uint candMask = newMask & ~valueSetMask;
+            int maskWord = (int)(candMask >> 6);
+            ulong maskBit = 1UL << (int)(candMask & 63);
+
+            ulong[] newlyFires = cfNewlyFires;
+            if (newlyFires != null)
+            {
+                // Only queue when some row fires now that did not fire before this write. A row
+                // whose S contains a removed value already covered the wider pre-write mask, so it
+                // has been applied and would find its target gone.
+                uint removedMask = oldMask & ~newMask & ~valueSetMask;
+                int valueBlock = cellIndex * MAX_VALUE * cfCanFireWords + maskWord;
+                while (removedMask != 0)
+                {
+                    int v = MinValue(removedMask);
+                    removedMask &= ~ValueMask(v);
+                    if ((newlyFires[valueBlock + (v - 1) * cfCanFireWords] & maskBit) != 0)
+                    {
+                        pendingCellForcing.Add(cellIndex);
+                        return;
+                    }
+                }
+                return;
+            }
+
+            if ((canFire[cellIndex * cfCanFireWords + maskWord] & maskBit) == 0)
+            {
+                return;
+            }
+        }
+
+        pendingCellForcing.Add(cellIndex);
+    }
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void EnqueueConstraintsForCell(int cellIndex)
     {
@@ -31,7 +91,7 @@ public partial class Solver
 
         uint newCellMask = cellMask & ~valueMask;
         board[cellIndex] = newCellMask;
-        pendingCellForcing?.Add(cellIndex);
+        EnqueueCellForcing(cellIndex, cellMask, newCellMask);
 
         if ((newCellMask & ~valueSetMask) == 0)
         {
@@ -80,7 +140,7 @@ public partial class Solver
 
         uint newCellMask = cellMask & ~clearMask;
         board[cellIndex] = newCellMask;
-        pendingCellForcing?.Add(cellIndex);
+        EnqueueCellForcing(cellIndex, cellMask, newCellMask);
 
         if ((newCellMask & ~valueSetMask) == 0)
         {
@@ -162,7 +222,7 @@ public partial class Solver
             if (prevMask != valMask)
             {
                 board[cellIndex] = valMask;
-                pendingCellForcing?.Add(cellIndex);
+                EnqueueCellForcing(cellIndex, prevMask, valMask);
                 pendingNakedSingles.Add(cellIndex);
                 TrackHiddenSingles(cellIndex, prevMask, valMask);
                 if (isBruteForcing && cellToConstraintMask != null)
@@ -174,7 +234,7 @@ public partial class Solver
         isInSetValue = true;
 
         board[cellIndex] = valueSetMask | valMask;
-        pendingCellForcing?.Add(cellIndex);
+        EnqueueCellForcing(cellIndex, prevMask, valueSetMask | valMask);
         unsetCellsCount--;
 
         TrackHiddenSingles(cellIndex, prevMask, valMask);
@@ -259,7 +319,7 @@ public partial class Solver
             if (prevMask != valMask)
             {
                 board[cellIndex] = valMask;
-                pendingCellForcing?.Add(cellIndex);
+                EnqueueCellForcing(cellIndex, prevMask, valMask);
                 pendingNakedSingles.Add(cellIndex);
                 TrackHiddenSingles(cellIndex, prevMask, valMask);
             }
@@ -269,7 +329,7 @@ public partial class Solver
         isInSetValue = true;
 
         board[cellIndex] = valueSetMask | valMask;
-        pendingCellForcing?.Add(cellIndex);
+        EnqueueCellForcing(cellIndex, prevMask, valueSetMask | valMask);
         unsetCellsCount--;
 
         TrackHiddenSingles(cellIndex, prevMask, valMask);
@@ -315,7 +375,7 @@ public partial class Solver
     {
         uint prevMask = board[cellIndex];
         board[cellIndex] = mask;
-        pendingCellForcing?.Add(cellIndex);
+        EnqueueCellForcing(cellIndex, prevMask, mask);
         if ((mask & ~valueSetMask) == 0)
         {
             isInvalid = true;
