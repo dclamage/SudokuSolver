@@ -31,7 +31,6 @@ public partial class Solver
 
         uint newCellMask = cellMask & ~valueMask;
         board[cellIndex] = newCellMask;
-        pendingCellForcing?.Add(cellIndex);
 
         if ((newCellMask & ~valueSetMask) == 0)
         {
@@ -80,7 +79,6 @@ public partial class Solver
 
         uint newCellMask = cellMask & ~clearMask;
         board[cellIndex] = newCellMask;
-        pendingCellForcing?.Add(cellIndex);
 
         if ((newCellMask & ~valueSetMask) == 0)
         {
@@ -107,24 +105,6 @@ public partial class Solver
         return ClearValue(cellIndex, v);
     }
 
-    /// <summary>
-    /// Clears a list of individual candidates, one at a time.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// <b>Never use this while brute forcing, or anywhere else speed matters.</b> It pays the full
-    /// per-cell bookkeeping — the constraint enqueue, the naked-single check and
-    /// <see cref="TrackHiddenSingles"/>'s walk over the cell's groups — once per <em>candidate</em>
-    /// rather than once per cell, and taking <see cref="IEnumerable{T}"/> boxes a
-    /// <see cref="List{T}"/>'s struct enumerator on every call.
-    /// </para>
-    /// <para>
-    /// It exists for logical solving, where a step has already reported a specific set of
-    /// eliminations and has to apply exactly those. Anything on the per-node path should group its
-    /// eliminations by cell and use <c>ClearMaskFromCell</c> instead, which is one masked write per
-    /// target cell and early-outs on candidates that are already gone.
-    /// </para>
-    /// </remarks>
     internal bool ClearCandidates(IEnumerable<int> candidates)
     {
         foreach (int c in candidates)
@@ -162,7 +142,6 @@ public partial class Solver
             if (prevMask != valMask)
             {
                 board[cellIndex] = valMask;
-                pendingCellForcing?.Add(cellIndex);
                 pendingNakedSingles.Add(cellIndex);
                 TrackHiddenSingles(cellIndex, prevMask, valMask);
                 if (isBruteForcing && cellToConstraintMask != null)
@@ -174,7 +153,6 @@ public partial class Solver
         isInSetValue = true;
 
         board[cellIndex] = valueSetMask | valMask;
-        pendingCellForcing?.Add(cellIndex);
         unsetCellsCount--;
 
         TrackHiddenSingles(cellIndex, prevMask, valMask);
@@ -259,7 +237,6 @@ public partial class Solver
             if (prevMask != valMask)
             {
                 board[cellIndex] = valMask;
-                pendingCellForcing?.Add(cellIndex);
                 pendingNakedSingles.Add(cellIndex);
                 TrackHiddenSingles(cellIndex, prevMask, valMask);
             }
@@ -269,7 +246,6 @@ public partial class Solver
         isInSetValue = true;
 
         board[cellIndex] = valueSetMask | valMask;
-        pendingCellForcing?.Add(cellIndex);
         unsetCellsCount--;
 
         TrackHiddenSingles(cellIndex, prevMask, valMask);
@@ -315,7 +291,6 @@ public partial class Solver
     {
         uint prevMask = board[cellIndex];
         board[cellIndex] = mask;
-        pendingCellForcing?.Add(cellIndex);
         if ((mask & ~valueSetMask) == 0)
         {
             isInvalid = true;

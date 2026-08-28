@@ -76,6 +76,16 @@ public partial class Solver
     private int[] wlGroupedOffsets;
     private int[] wlGroupedCells;
     private uint[] wlGroupedMasks;
+
+    // Cell-forcing table, CSR by source cell. Row (cfTargets[r], cfMasks[r]) means "value set
+    // cfMasks[r] of this cell are exactly the ones that weakly link to candidate cfTargets[r]".
+    // Cell forcing eliminates the target when cand(cell) is a subset of that mask, so rows whose
+    // mask has fewer than two bits can never fire and are not stored -- which drops every ordinary
+    // house link (A=v kills only peer=v) and keeps the cross-constraint deductions. Null until
+    // compiled; invalidated alongside wlGroupedOffsets.
+    private int[] cfOffsets;
+    private int[] cfTargets;
+    private uint[] cfMasks;
     private readonly List<Constraint> constraints;
     private readonly List<Constraint> enforceConstraints;
 
@@ -114,14 +124,18 @@ public partial class Solver
     internal long[] conflictDecayState;
     private const long CONFLICT_DECAY_INTERVAL = 1 << 14; // 16 384 increments per decay step
 
+    // Cells that lost a candidate and so may newly force. Same shape as pendingNakedSingles: a
+    // plain LIFO worklist fed from the board writes, no dedup guard. Re-processing a cell is
+    // idempotent, so a duplicate costs one table scan and saves the flag/queue desync that a
+    // membership guard invites.
+    internal readonly List<int> pendingCellForcing;
+
     // Index of the cell this solver instance was branched on (-1 = not a branch point).
     internal int branchCellIndex = -1;
 
     // How many committed branch-point assignments are in this solver's search path.
     internal int searchDepth = 0;
 
-    // Propagation queue: maps cell index → list of constraint indices that watch that cell.
-    // Shared by reference across all clones (read-only after FinalizeConstraints).
     // Per-cell propagation-queue map, packed: the constraint bits to OR into _constraintQueued
     // when this cell changes, stored at [cellIndex * _constraintQueued.Length]. A bitmask rather
     // than a per-cell index list so an enqueue costs one OR per word instead of a test-and-set per

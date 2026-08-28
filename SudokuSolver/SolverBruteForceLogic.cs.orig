@@ -1,4 +1,4 @@
-namespace SudokuSolver;
+﻿namespace SudokuSolver;
 
 public partial class Solver
 {
@@ -236,14 +236,6 @@ public partial class Solver
                 return curResult;
             }
         }
-        else if (ShouldRunCellForcing())
-        {
-            curResult = FastFindCellForcing(cancellationToken);
-            if (curResult != LogicResult.None)
-            {
-                return curResult;
-            }
-        }
 
         if (isBruteForcing && _constraintQueued != null && _constraintQueued.Length > 0)
         {
@@ -338,7 +330,6 @@ public partial class Solver
         // link lists, and a clone that inherited the table by reference would not see AddWeakLink's
         // invalidation. The caller recompiles once discovery is done.
         wlGroupedOffsets = null;
-        cfOffsets = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 
@@ -536,76 +527,6 @@ public partial class Solver
     // worst 180x), even though it looks like a 0.83x win on the 28-case corpus. Don't re-derive
     // this from the small corpus; see docs/branch-ordering.md.
     private const long BILOCAL_SEARCH_WEIGHT_DEFAULT = 0;
-
-    /// <summary>
-    /// Maximum candidate count for a cell to be considered by cell forcing; 0 means no cap.
-    /// </summary>
-    /// <remarks>
-    /// This was 3 because the list-intersection path's cost grew with the candidate count. The
-    /// table path costs one mask test per row regardless, so the cap only suppressed deductions.
-    /// Removing it is 0.996x nodes on iss-tune (42 better, 3 worse) and 0.998x on iss-holdout
-    /// (16 better, 0 worse), with several puzzles dropping to zero search nodes entirely.
-    /// </remarks>
-    internal static readonly long CellForcingMaxCandidates = ReadLongEnv("SUDOKU_CF_MAX", 0);
-
-    /// <summary>
-    /// Runs cell forcing at every propagation step of the search, not just during root setup.
-    /// </summary>
-    /// <remarks>
-    /// Off because it was measured, not because it was untried. Under the order-frozen control arm
-    /// it is a real propagator -- 0.475x nodes over 330 ISS puzzles, 77 better and <b>zero</b>
-    /// worse -- but in production it is about 1.9x slower (13.1-13.8 s against 25.7-26.0 s on the
-    /// ISS corpus). The loss is not its cost: gating it to the root solver alone reproduces almost
-    /// the whole regression, so it comes from its eliminations changing candidate counts, which
-    /// changes the score/candidateCount ranking in GetLeastCandidateCell and reshuffles branching.
-    /// That is the same mechanism docs/branch-ordering.md records for weak-link discovery.
-    /// </remarks>
-    /// <summary>
-    /// How cell forcing is triggered inside the search. <c>SUDOKU_CF_TRIGGER</c>:
-    /// <c>off</c> (default, root setup only), <c>every</c> (every propagation step),
-    /// <c>dirty</c> (every step, scanning only cells that lost a candidate),
-    /// <c>depth:N</c> (only while searchDepth &lt; N), <c>step:N</c> (every Nth propagation step).
-    /// </summary>
-    /// <remarks>
-    /// Under <see cref="StaticBranchOrder"/> these are ordered by construction: a trigger that
-    /// fires whenever another does, plus more, can only lower the node count. The useful reading is
-    /// therefore how much of the available pruning each one captures for how often it runs.
-    /// </remarks>
-    private enum CfTrigger { Off, Every, Queue, Depth, Step }
-
-    private static readonly (CfTrigger mode, int param) CellForcingTrigger = ParseCellForcingTrigger();
-
-    private static (CfTrigger, int) ParseCellForcingTrigger()
-    {
-        string raw = Environment.GetEnvironmentVariable("SUDOKU_CF_TRIGGER");
-        if (string.IsNullOrEmpty(raw) || raw == "off") return (CfTrigger.Off, 0);
-        if (raw == "every") return (CfTrigger.Every, 0);
-        if (raw == "dirty" || raw == "queue") return (CfTrigger.Queue, 0);
-        int colon = raw.IndexOf(':');
-        if (colon > 0 && int.TryParse(raw[(colon + 1)..], out int n) && n > 0)
-        {
-            string head = raw[..colon];
-            if (head == "depth") return (CfTrigger.Depth, n);
-            if (head == "step") return (CfTrigger.Step, n);
-        }
-        return (CfTrigger.Off, 0);
-    }
-
-    private long _cfStepCounter;
-
-    private bool ShouldRunCellForcing()
-    {
-        switch (CellForcingTrigger.mode)
-        {
-            case CfTrigger.Every:
-            case CfTrigger.Queue: return true;
-            case CfTrigger.Depth: return searchDepth < CellForcingTrigger.param;
-            case CfTrigger.Step: return (++_cfStepCounter % CellForcingTrigger.param) == 0;
-            default: return false;
-        }
-    }
-
-    internal static readonly bool CellForcingInSearch = ReadLongEnv("SUDOKU_CF_SEARCH", 0) != 0;
 
     /// <summary>
     /// Branch on the lowest-index unset cell and its lowest value, ignoring conflict scores,
@@ -916,148 +837,58 @@ public partial class Solver
         return LogicResult.None;
     }
 
-    // Reused across calls: cell forcing runs once per propagation step when enabled in-search, and
-    // a fresh list per call was allocating on every node.
-    private List<int> _cellForcingElims;
-
-    /// <summary>
-    /// Eliminates every candidate that all of a cell's remaining candidates are weakly linked to.
-    /// </summary>
-    /// <remarks>
-    /// The table path is allocation-free, which is what lets this run per node: rows are stored
-    /// grouped by target cell, so a run of firing rows is applied with one <c>ClearMaskFromCell</c>
-    /// rather than one <c>ClearCandidate</c> each. That matters because the per-cell bookkeeping —
-    /// the constraint enqueue, the naked-single check and <c>TrackHiddenSingles</c> — is paid once
-    /// per cell instead of once per candidate, and the masked clear early-outs on candidates that
-    /// are already gone, which is most of them.
-    /// </remarks>
     private LogicResult FastFindCellForcing(CancellationToken cancellationToken)
     {
-        if (CellForcingTrigger.mode == CfTrigger.Queue)
-        {
-            bool queueChanged = false;
-            while (pendingCellForcing.Count > 0)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int cellIndex = pendingCellForcing[^1];
-                pendingCellForcing.RemoveAt(pendingCellForcing.Count - 1);
-
-                LogicResult one = CellForcingForCell(cellIndex);
-                if (one == LogicResult.Invalid)
-                {
-                    return LogicResult.Invalid;
-                }
-                queueChanged |= one == LogicResult.Changed;
-            }
-            return queueChanged ? LogicResult.Changed : LogicResult.None;
-        }
-
-        bool anyChanged = false;
+        List<int> elims = [];
         for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            LogicResult one = CellForcingForCell(cellIndex);
-            if (one == LogicResult.Invalid)
+            uint mask = board[cellIndex];
+            if (IsValueSet(mask) || ValueCount(mask) > 3)
             {
-                return LogicResult.Invalid;
+                continue;
             }
-            anyChanged |= one == LogicResult.Changed;
-        }
 
-        return anyChanged ? LogicResult.Changed : LogicResult.None;
-    }
-
-    /// <summary>
-    /// Cell forcing for one cell: eliminates every candidate that all of this cell's remaining
-    /// candidates are weakly linked to. Returns Changed only when something was actually removed.
-    /// </summary>
-    private LogicResult CellForcingForCell(int cellIndex)
-    {
-        uint mask = board[cellIndex];
-        if (IsValueSet(mask) || (CellForcingMaxCandidates > 0 && ValueCount(mask) > CellForcingMaxCandidates))
-        {
-            return LogicResult.None;
-        }
-
-        if (cfOffsets == null)
-        {
-            // The table is compiled after DiscoverWeakLinks, because probing mutates the link
-            // lists. Root-setup cell forcing therefore runs before it exists and must fall back to
-            // intersecting the sorted candidate lists directly.
-            List<int> elims = _cellForcingElims ??= [];
             elims.Clear();
             int candBase = cellIndex * MAX_VALUE - 1;
             bool isFirst = true;
-            uint remaining = mask;
-            while (remaining != 0)
+
+            uint remainingMask = mask;
+            while (remainingMask != 0)
             {
-                int v = MinValue(remaining);
-                remaining &= ~ValueMask(v);
+                int v = MinValue(remainingMask);
+                remainingMask &= ~ValueMask(v);
+
+                int candIndex = candBase + v;
+
                 if (isFirst)
                 {
-                    InitIntersectWeakLinks(elims, candBase + v);
+                    InitIntersectWeakLinks(elims, candIndex);
                     isFirst = false;
                 }
                 else
                 {
-                    IntersectWeakLinks(elims, candBase + v);
+                    // Subsequent candidates: keep only common elements
+                    IntersectWeakLinks(elims, candIndex);
                 }
+
                 if (elims.Count == 0)
                 {
                     break;
                 }
             }
-            if (elims.Count == 0)
-            {
-                return LogicResult.None;
-            }
-            return ClearCandidates(elims) ? LogicResult.Changed : LogicResult.Invalid;
-        }
 
-        // cand(cell) is a subset of a row's mask exactly when every remaining candidate of this
-        // cell links to that target, which is the cell-forcing condition.
-        uint candMask = mask & ~valueSetMask;
-        int rowEnd = cfOffsets[cellIndex + 1];
-        int pendingCell = -1;
-        uint pendingMask = 0;
-        bool changed = false;
-
-        for (int row = cfOffsets[cellIndex]; row < rowEnd; row++)
-        {
-            if ((candMask & ~cfMasks[row]) != 0)
+            if (elims.Count > 0)
             {
-                continue;
-            }
-
-            int target = cfTargets[row];
-            int targetCell = target / MAX_VALUE;
-            if (targetCell != pendingCell)
-            {
-                if (pendingMask != 0 && (board[pendingCell] & pendingMask) != 0)
+                if (!ClearCandidates(elims))
                 {
-                    changed = true;
-                    if (!ClearMaskFromCell(pendingCell, pendingMask))
-                    {
-                        return LogicResult.Invalid;
-                    }
+                    return LogicResult.Invalid;
                 }
-                pendingCell = targetCell;
-                pendingMask = 0;
-            }
-            pendingMask |= ValueMask(target - targetCell * MAX_VALUE + 1);
-        }
-
-        if (pendingMask != 0 && (board[pendingCell] & pendingMask) != 0)
-        {
-            changed = true;
-            if (!ClearMaskFromCell(pendingCell, pendingMask))
-            {
-                return LogicResult.Invalid;
+                return LogicResult.Changed;
             }
         }
-
-        return changed ? LogicResult.Changed : LogicResult.None;
+        return LogicResult.None;
     }
 
     private LogicResult FastAdvancedStrategies(CancellationToken cancellationToken)

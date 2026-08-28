@@ -1,4 +1,4 @@
-using System.Threading;
+﻿using System.Threading;
 
 namespace SudokuSolver;
 
@@ -770,7 +770,6 @@ public partial class Solver
                 Solver clone = source.Clone(willRunNonSinglesLogic: false);
                 clone.isBruteForcing = true;
                 clone.pendingNakedSingles.Capacity = Math.Max(clone.pendingNakedSingles.Capacity, source.NUM_CELLS);
-                clone.pendingCellForcing.Capacity = Math.Max(clone.pendingCellForcing.Capacity, source.NUM_CELLS);
                 clone.pooledBruteForceSolverOwner = this;
                 clone.isPooledBruteForceSolverRented = true;
                 return clone;
@@ -912,12 +911,6 @@ public partial class Solver
             pendingNakedSingles.Add(other.pendingNakedSingles[i]);
         }
 
-        pendingCellForcing.Clear();
-        for (int i = 0; i < other.pendingCellForcing.Count; i++)
-        {
-            pendingCellForcing.Add(other.pendingCellForcing[i]);
-        }
-
         if (other._candidateCountsPerGroupValue != null)
         {
             other._candidateCountsPerGroupValue.AsSpan().CopyTo(_candidateCountsPerGroupValue);
@@ -928,7 +921,6 @@ public partial class Solver
         {
             Array.Clear(_constraintQueued);
         }
-
 
         branchCellIndex = -1;
         searchDepth = other.searchDepth;

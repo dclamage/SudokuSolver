@@ -29,7 +29,6 @@ public partial class Solver
         isInvalid = false;
         unsetCellsCount = NUM_CELLS;
         pendingNakedSingles = [];
-        pendingCellForcing = [];
 
         // Hidden single tracking
         _candidateCountsPerGroupValue = null;
@@ -104,7 +103,6 @@ public partial class Solver
         isInvalid = other.isInvalid;
         unsetCellsCount = other.unsetCellsCount;
         pendingNakedSingles = [.. other.pendingNakedSingles];
-        pendingCellForcing = [.. other.pendingCellForcing];
 
         // Hidden single tracking
         if (other._candidateCountsPerGroupValue != null)
@@ -146,9 +144,6 @@ public partial class Solver
         wlGroupedOffsets = other.wlGroupedOffsets;
         wlGroupedCells = other.wlGroupedCells;
         wlGroupedMasks = other.wlGroupedMasks;
-        cfOffsets = other.cfOffsets;
-        cfTargets = other.cfTargets;
-        cfMasks = other.cfMasks;
 
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
@@ -368,78 +363,6 @@ public partial class Solver
         wlGroupedMasks = masks;
         wlGroupedOffsets = offsets;
 
-        CompileCellForcingTable();
-    }
-
-    /// <summary>
-    /// Builds the cell-forcing table: per source cell, the targets that any two or more of its
-    /// values weakly link to, each with the mask of exactly which values do.
-    /// </summary>
-    /// <remarks>
-    /// Cell forcing eliminates target X from cell A when every remaining candidate of A is weakly
-    /// linked to X, i.e. when <c>cand(A)</c> is a subset of <c>S(A,X)</c>. Storing S per target
-    /// turns that from a k-way merge-join of sorted candidate lists into one mask test per row.
-    ///
-    /// Rows with fewer than two bits are dropped, and the prune is exact rather than heuristic: an
-    /// unset cell always has at least two candidates, so such a row could never fire. It happens to
-    /// remove every ordinary house link -- A=v is weakly linked to peer=v and nothing else, giving a
-    /// one-bit mask -- which is why the table is a small fraction of the full link set.
-    /// </remarks>
-    internal void CompileCellForcingTable()
-    {
-        if (weakLinks == null || cfOffsets != null)
-        {
-            return;
-        }
-
-        uint[] scratch = new uint[weakLinks.Length];
-        List<int> touched = [];
-        int[] offsets = new int[NUM_CELLS + 1];
-        List<int> rowTargets = [];
-        List<uint> rowMasks = [];
-
-        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
-        {
-            offsets[cellIndex] = rowTargets.Count;
-            touched.Clear();
-
-            for (int v = 1; v <= MAX_VALUE; v++)
-            {
-                uint valueMask = ValueMask(v);
-                List<int> links = weakLinks[cellIndex * MAX_VALUE + v - 1];
-                for (int i = 0; i < links.Count; i++)
-                {
-                    int target = links[i];
-                    if (scratch[target] == 0)
-                    {
-                        touched.Add(target);
-                    }
-                    scratch[target] |= valueMask;
-                }
-            }
-
-            // Sorted so rows sharing a target cell are adjacent: candIndex = cell * MAX_VALUE +
-            // (v - 1), so ordering by candidate index groups by cell. That lets the search apply a
-            // whole run of eliminations with one masked clear per target cell.
-            touched.Sort();
-
-            for (int i = 0; i < touched.Count; i++)
-            {
-                int target = touched[i];
-                uint valuesLinking = scratch[target];
-                scratch[target] = 0;
-                if (ValueCount(valuesLinking) >= 2)
-                {
-                    rowTargets.Add(target);
-                    rowMasks.Add(valuesLinking);
-                }
-            }
-        }
-
-        offsets[NUM_CELLS] = rowTargets.Count;
-        cfTargets = [.. rowTargets];
-        cfMasks = [.. rowMasks];
-        cfOffsets = offsets;
     }
 
     public LogicResult AddWeakLink(int candIndex0, int candIndex1)
@@ -451,7 +374,6 @@ public partial class Solver
 
         // Any mutation invalidates the grouped table; it is rebuilt before the next search.
         wlGroupedOffsets = null;
-        cfOffsets = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 
@@ -772,16 +694,6 @@ public partial class Solver
         // Allocate conflict scores seeded with structural priority.
         // Cells in smaller constraint groups are tried first during cold-start search.
         conflictScores = new int[NUM_CELLS];
-
-        // Seed every cell. The worklist's wake-up condition covers cells that *newly* force, which
-        // presumes a complete first pass has already established the fixpoint; a cell whose
-        // opportunity exists from the start and which never loses a candidate would otherwise never
-        // be examined.
-        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
-        {
-            pendingCellForcing.Add(cellIndex);
-        }
-
 
         // Uniform baseline so every cell participates in score/count ratio comparison.
         // Keep this close to the arrow benchmark's scoring scale so learned conflicts
