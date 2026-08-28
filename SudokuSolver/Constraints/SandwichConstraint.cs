@@ -244,7 +244,15 @@ public class SandwichConstraint : Constraint
         bool useHeuristic = isBruteForcing && DefaultBruteForceArm == BruteForceArm.Heuristic;
 
         var board = sudokuSolver.Board;
+        int numCells = cells.Count;
         (int crustIndex0, int crustIndex1) = GetCrustIndices(sudokuSolver);
+
+        // One scratch buffer per call for the whole method, both bounded by the line length. Every
+        // path below indexes keepMasks by position within `cells`, which is what lets the
+        // brute-force arm run without allocating. See docs/pathological-outliers.md.
+        Span<uint> keepMasks = stackalloc uint[numCells];
+        Span<int> unsetIndices = stackalloc int[numCells];
+
         if (crustIndex1 != -1)
         {
             // Both crust locations are known
@@ -261,7 +269,7 @@ public class SandwichConstraint : Constraint
             }
 
             int knownSum = 0;
-            List<(int, int)> unsetCells = new();
+            int numUnsetCells = 0;
             for (int cellIndex = crustIndex0 + 1; cellIndex < crustIndex1; cellIndex++)
             {
                 var (i, j) = cells[cellIndex];
@@ -272,11 +280,11 @@ public class SandwichConstraint : Constraint
                 }
                 else
                 {
-                    unsetCells.Add((i, j));
+                    unsetIndices[numUnsetCells++] = cellIndex;
                 }
             }
 
-            if (unsetCells.Count == 0)
+            if (numUnsetCells == 0)
             {
                 if (sum != knownSum)
                 {
@@ -292,16 +300,9 @@ public class SandwichConstraint : Constraint
                 return LogicResult.Invalid;
             }
 
-            int numUnsetCells = unsetCells.Count;
+            ReadOnlySpan<int> unsetIdx = unsetIndices[..numUnsetCells];
             int remainingSum = sum - knownSum;
-
-            uint possibleValuesMask = 0;
-            foreach (var (i, j) in unsetCells)
-            {
-                uint mask = board[i, j];
-                possibleValuesMask |= mask;
-            }
-            possibleValuesMask &= nonCrustsMask;
+            uint possibleValuesMask = PossibleValuesMask(board, unsetIdx) & nonCrustsMask;
 
             if (ValueCount(possibleValuesMask) < numUnsetCells)
             {
@@ -309,14 +310,19 @@ public class SandwichConstraint : Constraint
                 return LogicResult.Invalid;
             }
 
-            uint[] fillingKeepMasks = new uint[fillingSize];
-            ApplySumCombinations(sudokuSolver, possibleValuesMask, unsetCells, remainingSum, fillingKeepMasks, null, useHeuristic);
+            // This branch concludes something only about the unset filling cells, so every other
+            // cell keeps whatever it already had.
+            keepMasks.Fill(ALL_VALUES_MASK);
+            foreach (int cellIndex in unsetIdx)
+            {
+                keepMasks[cellIndex] = 0;
+            }
 
-            return ApplyKeepMask(sudokuSolver, fillingKeepMasks, unsetCells, logicalStepDescription);
+            ApplySumCombinations(sudokuSolver, possibleValuesMask, unsetIdx, remainingSum, keepMasks, useHeuristic);
+
+            return ApplyKeepMask(sudokuSolver, keepMasks, logicalStepDescription);
         }
 
-        int numCells = cells.Count;
-        uint[] keepMasks = new uint[numCells];
         if (crustIndex0 != -1)
         {
             // Only one crust location is known
@@ -348,8 +354,7 @@ public class SandwichConstraint : Constraint
                     else
                     {
                         int knownSum = 0;
-                        List<int> unsetCellIndices = new();
-                        List<(int, int)> unsetCells = new();
+                        int numUnsetCells = 0;
                         for (int cellIndex = curCrustIndex0 + 1; cellIndex < curCrustIndex1; cellIndex++)
                         {
                             var (i, j) = cells[cellIndex];
@@ -361,12 +366,11 @@ public class SandwichConstraint : Constraint
                             }
                             else
                             {
-                                unsetCellIndices.Add(cellIndex);
-                                unsetCells.Add((i, j));
+                                unsetIndices[numUnsetCells++] = cellIndex;
                             }
                         }
 
-                        if (unsetCells.Count == 0)
+                        if (numUnsetCells == 0)
                         {
                             if (sum == knownSum)
                             {
@@ -375,21 +379,14 @@ public class SandwichConstraint : Constraint
                         }
                         else if (knownSum < sum)
                         {
-                            int numUnsetCells = unsetCells.Count;
+                            ReadOnlySpan<int> unsetIdx = unsetIndices[..numUnsetCells];
                             int remainingSum = sum - knownSum;
-
-                            uint possibleValuesMask = 0;
-                            foreach (var (i, j) in unsetCells)
-                            {
-                                uint mask = board[i, j];
-                                possibleValuesMask |= mask;
-                            }
-                            possibleValuesMask &= nonCrustsMask;
+                            uint possibleValuesMask = PossibleValuesMask(board, unsetIdx) & nonCrustsMask;
 
                             if (ValueCount(possibleValuesMask) >= numUnsetCells)
                             {
                                 haveValidPlacement |= ApplySumCombinations(
-                                    sudokuSolver, possibleValuesMask, unsetCells, remainingSum, keepMasks, unsetCellIndices, useHeuristic);
+                                    sudokuSolver, possibleValuesMask, unsetIdx, remainingSum, keepMasks, useHeuristic);
                             }
                         }
                     }
@@ -447,8 +444,7 @@ public class SandwichConstraint : Constraint
                     else
                     {
                         int knownSum = 0;
-                        List<int> unsetCellIndices = new();
-                        List<(int, int)> unsetCells = new();
+                        int numUnsetCells = 0;
                         for (int cellIndex = curCrustIndex0 + 1; cellIndex < curCrustIndex1; cellIndex++)
                         {
                             var (i, j) = cells[cellIndex];
@@ -460,12 +456,11 @@ public class SandwichConstraint : Constraint
                             }
                             else
                             {
-                                unsetCellIndices.Add(cellIndex);
-                                unsetCells.Add((i, j));
+                                unsetIndices[numUnsetCells++] = cellIndex;
                             }
                         }
 
-                        if (unsetCells.Count == 0)
+                        if (numUnsetCells == 0)
                         {
                             if (sum == knownSum)
                             {
@@ -474,21 +469,14 @@ public class SandwichConstraint : Constraint
                         }
                         else if (knownSum < sum)
                         {
-                            int numUnsetCells = unsetCells.Count;
+                            ReadOnlySpan<int> unsetIdx = unsetIndices[..numUnsetCells];
                             int remainingSum = sum - knownSum;
-
-                            uint possibleValuesMask = 0;
-                            foreach (var (i, j) in unsetCells)
-                            {
-                                uint mask = board[i, j];
-                                possibleValuesMask |= mask;
-                            }
-                            possibleValuesMask &= nonCrustsMask;
+                            uint possibleValuesMask = PossibleValuesMask(board, unsetIdx) & nonCrustsMask;
 
                             if (ValueCount(possibleValuesMask) >= numUnsetCells)
                             {
                                 haveValidPlacement |= ApplySumCombinations(
-                                    sudokuSolver, possibleValuesMask, unsetCells, remainingSum, keepMasks, unsetCellIndices, useHeuristic);
+                                    sudokuSolver, possibleValuesMask, unsetIdx, remainingSum, keepMasks, useHeuristic);
                             }
                         }
                     }
@@ -511,29 +499,21 @@ public class SandwichConstraint : Constraint
             }
         }
 
-        return ApplyKeepMask(sudokuSolver, keepMasks, cells, logicalStepDescription);
+        return ApplyKeepMask(sudokuSolver, keepMasks, logicalStepDescription);
     }
 
-    /// <summary>
-    /// Sums a combination without LINQ. <c>Enumerable.Sum</c> on a <c>List&lt;int&gt;</c> boxes the
-    /// list's struct enumerator, and this runs once per enumerated combination — 4.2 million times
-    /// in a single count of the ISS puzzle blPgSzctUMg. See docs/sandwich-allocation.md.
-    /// </summary>
-    /// <summary>
-    /// For every set of <paramref name="unsetCells"/>.Count distinct values that sums to
-    /// <paramref name="remainingSum"/> and is available in <paramref name="possibleValuesMask"/>,
-    /// records which value can appear in which cell by OR-ing it into <paramref name="keepMasks"/>.
-    /// Returns whether any placement was possible at all.
-    /// </summary>
-    /// <param name="keepMaskIndices">
-    /// Maps position within <paramref name="unsetCells"/> to its index in
-    /// <paramref name="keepMasks"/>, or null when those are the same thing.
-    /// </param>
-    /// <remarks>
-    /// The candidate value sets come from <see cref="ValueCombinationTable"/> rather than being
-    /// enumerated and sum-filtered per call, which is what made this the most expensive constraint in
-    /// the corpus. The permutation step is unchanged and is now the remaining cost.
-    /// </remarks>
+    /// <summary>ORs together the candidate masks of the cells at <paramref name="cellIndices"/>.</summary>
+    private uint PossibleValuesMask(BoardView board, ReadOnlySpan<int> cellIndices)
+    {
+        uint mask = 0;
+        foreach (int cellIndex in cellIndices)
+        {
+            var (i, j) = cells[cellIndex];
+            mask |= board[i, j];
+        }
+        return mask;
+    }
+
     /// <summary>
     /// How much propagation the sandwich does <b>while brute forcing</b>. Logical solving always uses
     /// <see cref="BruteForceArm.Exact"/>. Overridable with
@@ -572,6 +552,12 @@ public class SandwichConstraint : Constraint
     /// than <c>Exact</c> on easy boards but explodes to 55M nodes on <c>blPgSzctUMg</c>. The sandwich
     /// needs propagation; it did not need exactness.
     /// </para>
+    /// <para>
+    /// The allocation column above predates the span rewrite and is kept because it is what motivated
+    /// the arms. <see cref="BruteForceArm.Heuristic"/> now allocates <b>nothing</b> while brute
+    /// forcing; <see cref="BruteForceArm.Exact"/> still pays for <c>Permutations</c>, and only
+    /// logical solving reaches it.
+    /// </para>
     /// </remarks>
     internal enum BruteForceArm
     {
@@ -593,120 +579,181 @@ public class SandwichConstraint : Constraint
             _ => BruteForceArm.Heuristic,
         };
 
+    /// <summary>
+    /// For every set of <paramref name="unsetIdx"/>.Length distinct values that sums to
+    /// <paramref name="remainingSum"/> and is available in <paramref name="possibleValuesMask"/>,
+    /// records which value can appear in which cell by OR-ing it into <paramref name="keepMasks"/>.
+    /// Returns whether any placement was possible at all.
+    /// </summary>
+    /// <param name="unsetIdx">Positions within <see cref="cells"/> of the cells being filled.</param>
+    /// <param name="keepMasks">Indexed by position within <see cref="cells"/>, as <paramref name="unsetIdx"/> is.</param>
+    /// <remarks>
+    /// The candidate value sets come from <see cref="ValueCombinationTable"/> rather than being
+    /// enumerated and sum-filtered per call, which is what made this the most expensive constraint in
+    /// the corpus. See docs/pathological-outliers.md.
+    /// </remarks>
     private bool ApplySumCombinations(
         Solver sudokuSolver,
         uint possibleValuesMask,
-        List<(int, int)> unsetCells,
+        ReadOnlySpan<int> unsetIdx,
         int remainingSum,
-        uint[] keepMasks,
-        List<int> keepMaskIndices,
+        Span<uint> keepMasks,
         bool useHeuristic)
     {
-        int numUnsetCells = unsetCells.Count;
+        // The exact arm needs List-shaped arguments for Permutations and CanPlaceDigits, so build
+        // them once per call rather than once per value set. The heuristic arm — the brute-force
+        // default — needs neither, and that is what keeps brute forcing free of allocation.
+        List<(int, int)> exactCells = null;
+        List<int> exactValues = null;
+        if (!useHeuristic)
+        {
+            exactCells = new(unsetIdx.Length);
+            foreach (int cellIndex in unsetIdx)
+            {
+                exactCells.Add(cells[cellIndex]);
+            }
+            exactValues = new(unsetIdx.Length);
+        }
+
+        uint[] tabulated = ValueCombinationTable.MasksFor(MAX_VALUE, unsetIdx.Length, remainingSum);
+        if (tabulated == null)
+        {
+            // Grids above ValueCombinationTable.MAX_TABULATED_VALUE are not tabulated, so walk the
+            // value sets directly.
+            return EnumerateValueSets(
+                sudokuSolver, possibleValuesMask, unsetIdx, keepMasks, exactCells, exactValues,
+                1, unsetIdx.Length, remainingSum, 0);
+        }
+
         bool foundAny = false;
-
-        uint[] tabulated = ValueCombinationTable.MasksFor(MAX_VALUE, numUnsetCells, remainingSum);
-        if (tabulated != null)
+        foreach (uint comboMask in tabulated)
         {
-            List<int> combination = new(numUnsetCells);
-            foreach (uint comboMask in tabulated)
-            {
-                // Needs a value that no remaining cell can take.
-                if ((comboMask & ~possibleValuesMask) != 0)
-                {
-                    continue;
-                }
-
-                combination.Clear();
-                for (int v = 1; v <= MAX_VALUE; v++)
-                {
-                    if ((comboMask & ValueMask(v)) != 0)
-                    {
-                        combination.Add(v);
-                    }
-                }
-
-                foundAny |= ApplyPermutations(sudokuSolver, combination, unsetCells, keepMasks, keepMaskIndices, useHeuristic);
-            }
-            return foundAny;
-        }
-
-        // Grids above ValueCombinationTable.MAX_TABULATED_VALUE are not tabulated, so fall back to
-        // enumerating combinations and filtering by sum.
-        List<int> possibleValues = new(ValueCount(possibleValuesMask));
-        for (int v = 1; v <= MAX_VALUE; v++)
-        {
-            if ((possibleValuesMask & ValueMask(v)) != 0)
-            {
-                possibleValues.Add(v);
-            }
-        }
-        foreach (var combination in possibleValues.CombinationsBuffered(numUnsetCells))
-        {
-            if (SumOf(combination) != remainingSum)
+            // Needs a value that no remaining cell can take.
+            if ((comboMask & ~possibleValuesMask) != 0)
             {
                 continue;
             }
-            foundAny |= ApplyPermutations(sudokuSolver, combination, unsetCells, keepMasks, keepMaskIndices, useHeuristic);
+
+            foundAny |= ApplyValueSet(sudokuSolver, comboMask, unsetIdx, keepMasks, exactCells, exactValues);
         }
         return foundAny;
     }
 
-    private static bool ApplyPermutations(
+    /// <summary>
+    /// Walks every set of <paramref name="remainingCount"/> distinct values, drawn from
+    /// <paramref name="firstValue"/> up and available in <paramref name="possibleValuesMask"/>, that
+    /// sums to <paramref name="remainingSum"/>, and applies each. Recursion depth is the number of
+    /// cells being filled, and it allocates nothing.
+    /// </summary>
+    /// <remarks>
+    /// Only reached for grids above <see cref="ValueCombinationTable.MAX_TABULATED_VALUE"/>, which no
+    /// real puzzle uses. It enumerates exactly the sets the table would have returned.
+    /// </remarks>
+    private bool EnumerateValueSets(
         Solver sudokuSolver,
-        List<int> combination,
-        List<(int, int)> unsetCells,
-        uint[] keepMasks,
-        List<int> keepMaskIndices,
-        bool useHeuristic)
+        uint possibleValuesMask,
+        ReadOnlySpan<int> unsetIdx,
+        Span<uint> keepMasks,
+        List<(int, int)> exactCells,
+        List<int> exactValues,
+        int firstValue,
+        int remainingCount,
+        int remainingSum,
+        uint comboMask)
     {
-        bool foundAny = false;
+        if (remainingCount == 0)
+        {
+            return remainingSum == 0
+                && ApplyValueSet(sudokuSolver, comboMask, unsetIdx, keepMasks, exactCells, exactValues);
+        }
 
-        if (useHeuristic)
+        bool foundAny = false;
+        for (int v = firstValue; v <= MAX_VALUE && v <= remainingSum; v++)
+        {
+            if ((possibleValuesMask & ValueMask(v)) == 0)
+            {
+                continue;
+            }
+
+            foundAny |= EnumerateValueSets(
+                sudokuSolver, possibleValuesMask, unsetIdx, keepMasks, exactCells, exactValues,
+                v + 1, remainingCount - 1, remainingSum - v, comboMask | ValueMask(v));
+        }
+        return foundAny;
+    }
+
+    /// <summary>
+    /// Records that the values in <paramref name="comboMask"/> could fill the cells at
+    /// <paramref name="unsetIdx"/>, OR-ing what each one may take into <paramref name="keepMasks"/>.
+    /// Returns whether the set is placeable at all.
+    /// </summary>
+    /// <param name="exactCells">
+    /// The cells at <paramref name="unsetIdx"/>, in the same order, or <see langword="null"/> to take
+    /// the heuristic arm. Only the exact arm needs them.
+    /// </param>
+    /// <param name="exactValues">Scratch for the exact arm's value list; unused when it is null.</param>
+    private bool ApplyValueSet(
+        Solver sudokuSolver,
+        uint comboMask,
+        ReadOnlySpan<int> unsetIdx,
+        Span<uint> keepMasks,
+        List<(int, int)> exactCells,
+        List<int> exactValues)
+    {
+        if (exactCells == null)
         {
             // Set-level union: if this value set is placeable at all, allow any of its values in any
             // of its cells, skipping the k! placement enumeration. Strictly a superset of what the
             // exact arm concludes, so it only ever propagates less.
-            uint comboMask = 0;
-            for (int i = 0; i < combination.Count; i++)
-            {
-                comboMask |= ValueMask(combination[i]);
-            }
+            var board = sudokuSolver.Board;
 
             // Necessary condition for any placement: every cell can take some value of the set.
-            for (int cellIndex = 0; cellIndex < unsetCells.Count; cellIndex++)
+            foreach (int cellIndex in unsetIdx)
             {
-                var (ci, cj) = unsetCells[cellIndex];
-                if ((sudokuSolver.Board[ci, cj] & comboMask) == 0)
+                var (i, j) = cells[cellIndex];
+                if ((board[i, j] & comboMask) == 0)
                 {
                     return false;
                 }
             }
 
-            for (int cellIndex = 0; cellIndex < unsetCells.Count; cellIndex++)
+            foreach (int cellIndex in unsetIdx)
             {
-                int target = keepMaskIndices == null ? cellIndex : keepMaskIndices[cellIndex];
-                keepMasks[target] |= comboMask;
+                keepMasks[cellIndex] |= comboMask;
             }
             return true;
         }
 
-        foreach (var permutation in combination.Permutations())
+        exactValues.Clear();
+        for (int v = 1; v <= MAX_VALUE; v++)
         {
-            if (!sudokuSolver.CanPlaceDigits(unsetCells, permutation))
+            if ((comboMask & ValueMask(v)) != 0)
+            {
+                exactValues.Add(v);
+            }
+        }
+
+        bool foundAny = false;
+        foreach (var permutation in exactValues.Permutations())
+        {
+            if (!sudokuSolver.CanPlaceDigits(exactCells, permutation))
             {
                 continue;
             }
-            for (int cellIndex = 0; cellIndex < unsetCells.Count; cellIndex++)
+            for (int cellIndex = 0; cellIndex < unsetIdx.Length; cellIndex++)
             {
-                int target = keepMaskIndices == null ? cellIndex : keepMaskIndices[cellIndex];
-                keepMasks[target] |= ValueMask(permutation[cellIndex]);
+                keepMasks[unsetIdx[cellIndex]] |= ValueMask(permutation[cellIndex]);
             }
             foundAny = true;
         }
         return foundAny;
     }
 
+    /// <summary>
+    /// Sums a combination without LINQ. <c>Enumerable.Sum</c> on a <c>List&lt;int&gt;</c> boxes the
+    /// list's struct enumerator, and <see cref="InitCandidates"/> runs this once per enumerated
+    /// combination. See docs/pathological-outliers.md.
+    /// </summary>
     private static int SumOf(List<int> values)
     {
         int sum = 0;
@@ -717,7 +764,12 @@ public class SandwichConstraint : Constraint
         return sum;
     }
 
-    private static LogicResult ApplyKeepMask(Solver sudokuSolver, uint[] keepMasks, List<(int, int)> cells, StringBuilder logicalStepDescription)
+    /// <summary>
+    /// Clears from every cell of the line whatever <paramref name="keepMasks"/> did not vouch for.
+    /// Indexed by position within <see cref="cells"/>; a cell the caller concluded nothing about must
+    /// be left at <c>ALL_VALUES_MASK</c> rather than zero.
+    /// </summary>
+    private LogicResult ApplyKeepMask(Solver sudokuSolver, ReadOnlySpan<uint> keepMasks, StringBuilder logicalStepDescription)
     {
         bool changed = false;
         var board = sudokuSolver.Board;
