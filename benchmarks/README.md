@@ -171,6 +171,20 @@ where `xsum-search` uses 5,000, because **Skyscraper costs ~3.3 ms per solution 
 `SkyscraperConstraint`; see [`docs/pathological-outliers.md`](../docs/pathological-outliers.md) for
 the same shape diagnosed in `SandwichConstraint`.
 
+### `quadruple-16`, a real puzzle rather than a blank grid
+
+`quadruple-16` covers `QuadrupleConstraint`, which — like X-Sum and Skyscraper before them — had no
+case here at all, so a change worth 14% of quadruple brute-force time was invisible to the default
+run. Unlike the three above it is a **real CTC puzzle**, lifted from `corpus-iss.json`
+(`iss-jk4n68pZLG8`, 16 quadruples, uncapped, unique solution), which makes it a legitimate tuning
+target and not merely a regression detector: it is a finished puzzle with a real search, so
+propagating *less* does not automatically look like a win on it. Prefer this shape when the
+constraint has real puzzles to import; reach for a capped blank grid only when it does not.
+
+Its expected count comes from ISS's own recorded count, and was re-checked here under
+`SUDOKU_WEAK_LINK_DISCOVERY=always` and under `--multithread`. Note `never` does **not** finish on
+it, which is the same caveat that applies to `corpus-iss.json` generally.
+
 Two things to know before adding `logical` cases:
 
 - **They are slow.** Logic to exhaustion costs far more than brute force on the same puzzle, and a
