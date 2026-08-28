@@ -37,6 +37,15 @@ internal static class IssImport
     /// Only puzzles that counted in under this go into the corpus, so a full corpus run stays
     /// usable. Slower agreeing puzzles are listed in the report for deliberate promotion later.
     /// </summary>
+    /// <remarks>
+    /// <b>This makes the corpus a sample of easy puzzles.</b> Together with
+    /// <see cref="DefaultBudgetMs"/> it truncates the distribution twice over, and the result is a
+    /// median puzzle of ~1 ms with 94% under 50 ms — puzzles nobody waits on. The corpus therefore
+    /// self-selects against exactly the searches that optimisation is for, and no choice of summary
+    /// statistic can recover what was filtered out at import. Use it for breadth across puzzle
+    /// styles; build a separate corpus with these ceilings raised to measure whether the solver got
+    /// faster where anyone notices. See benchmarks/README.md.
+    /// </remarks>
     private const int DefaultCorpusMaxMs = 2_000;
 
     internal sealed class Options

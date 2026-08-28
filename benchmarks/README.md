@@ -114,17 +114,61 @@ rescue a corpus that does not sample what you care about.
 
 The real answer is to use the right corpus for the question:
 
-| | `corpus.json` | `corpus-iss.json` |
-| --- | --- | --- |
-| what it is | ~36 hand-picked cases, roughly one per constraint type | 398 real CTC puzzles imported from an index |
-| what it is for | **coverage** — did a change break or move constraint X | **tuning** — does a heuristic pay across real puzzles |
-| aggregate meaning | none; read per-case deltas | a genuine sample statistic |
+| | `corpus.json` | `corpus-iss.json` | *(missing)* a hard corpus |
+| --- | --- | --- | --- |
+| what it is | ~36 hand-picked cases, roughly one per constraint type | 398 real CTC puzzles, **all under 2 s** | the long-running legitimate use cases |
+| what it is for | **coverage** — did a change break or move constraint X | **breadth** — does a change help across many styles | **optimisation** — is the solver faster where anyone waits |
+| right metric | per-case deltas; the aggregate means nothing | geomean of ratios | **wall time** — seconds saved is the user-facing quantity |
 
 `corpus.json` is a regression suite and was never a uniform sample of anything; treating its geomean
-as a population estimate is a category error. `corpus-iss.json` is the sampling instrument, and it
-has a tune/holdout split precisely so a heuristic fitted on one half can be checked on the other.
-Even it is biased — it holds only the ~30% of the index our parser supports — so a per-constraint
-result from it generalises only as far as that coverage does.
+as a population estimate is a category error.
+
+### `corpus-iss.json` excludes the puzzles optimisation is for
+
+This is the important caveat and it is easy to miss. The importer applies **two** filters:
+
+- `--budget-ms` (default **10 s**): a puzzle slower than this is a timeout and is never validated.
+- `--corpus-max-ms` (default **2 s**): a puzzle that agrees but is slower than this is validated,
+  recorded in the report, and **left out of the corpus**.
+
+The result is a corpus of easy puzzles:
+
+```
+398 puzzles   total 13.1 s   mean 32.9 ms
+median   1.1 ms      p90  24.9 ms
+94% run in under 50 ms;  only 5 exceed 1 s
+slowest 1951 ms  <-- against a 2000 ms cap: the distribution is truncated, not naturally ending
+```
+
+**The median ISS puzzle solves in 1.1 milliseconds.** Nobody waits on those. So the corpus
+self-selects for puzzles that do not need optimising and discards the ones that do, and that biases
+every conclusion drawn from it toward changes that help trivial searches.
+
+It also undercuts equal weighting *on this corpus specifically*. A geomean over per-case ratios
+gives all 376 sub-50 ms puzzles the same vote as the 5 that take over a second — so it answers "does
+this help a typical puzzle", where "typical" means "one that was already instant". The wall-clock
+sum, for all its faults, at least weights toward where the time actually goes. Neither is right,
+because the corpus is truncated: the puzzles that would settle the question were filtered out at
+import.
+
+Use it for what it is good at — breadth across many real puzzles and constraint types, with a
+tune/holdout split so a fitted heuristic can be checked — and do not read it as "the solver got
+faster".
+
+**Building the hard corpus.** Re-import with the ceilings raised and write to a separate file, so
+the fast corpus stays quick:
+
+```bash
+dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --import-iss     --iss-index /tmp/iss-index.json --iss-dir /tmp/iss-puzzles     --budget-ms 120000 --corpus-max-ms 120000     --out benchmarks/corpus-iss-hard.json --report /tmp/iss-hard-report.json
+```
+
+The existing report's "agreed but too slow" list is the candidate set, and it costs nothing but
+wall-clock to promote them. Expect a corpus that takes minutes rather than seconds, which is the
+point: on it, **total time is the metric**, because a change that removes 30 s from a 60 s puzzle
+matters more than the same ratio on a 1 ms one, and only a sum says so.
+
+Even then, coverage bias remains: the index holds only the ~30% our parser supports, so a
+per-constraint result generalises only as far as that.
 
 **`alloc MB` is noisy too, and in the same way.** It comes from `GC.GetTotalAllocatedBytes`, which is
 **process-wide**, so a case picks up whatever else the runtime allocated during its measured
