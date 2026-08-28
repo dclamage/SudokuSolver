@@ -299,17 +299,27 @@ internal sealed class SumTerm
     /// <param name="solver">The solver state to inspect.</param>
     /// <param name="value">The value to test.</param>
     /// <returns>The candidate cells when the value is required, otherwise <c>null</c>.</returns>
-    internal List<(int, int)> CellsMustContain(Solver solver, int value)
+    internal List<(int, int)> CellsMustContain(Solver solver, int value) =>
+        MustContainValue(solver, value) ? BuildCellsWithCandidate(solver, ValueMask(value), solver.BoardArray) : null;
+
+    /// <summary>
+    /// Determines whether a distinct-cell fixed sum term requires the given value, without
+    /// building the list of cells that would hold it.
+    /// </summary>
+    /// <param name="solver">The solver state to inspect.</param>
+    /// <param name="value">The value to test.</param>
+    /// <returns><c>true</c> when no valid sum combination omits the value.</returns>
+    internal bool MustContainValue(Solver solver, int value)
     {
         if (!HasFixedSums || value < 1 || value > solver.MAX_VALUE || cells.Length == 0 || cells.Length > solver.MAX_VALUE)
         {
-            return null;
+            return false;
         }
 
         SumData sumData = SumData.Get(solver.MAX_VALUE);
         if (sumData == null)
         {
-            return null;
+            return false;
         }
 
         uint valueMask = ValueMask(value);
@@ -329,7 +339,7 @@ internal sealed class SumTerm
             {
                 if ((valueBits & valueMask) != 0)
                 {
-                    return null;
+                    return false;
                 }
 
                 cellMasksWithoutValue[cellOffset] = valueBits;
@@ -341,7 +351,7 @@ internal sealed class SumTerm
             {
                 if ((valueBits & valueMask) != 0)
                 {
-                    return null;
+                    return false;
                 }
 
                 cellMasksWithoutValue[cellOffset] = valueBits;
@@ -357,7 +367,7 @@ internal sealed class SumTerm
             uint maskWithoutValue = valueBits & ~valueMask;
             if (maskWithoutValue == 0)
             {
-                return BuildCellsWithCandidate(solver, valueMask, board);
+                return true;
             }
 
             cellMasksWithoutValue[cellOffset] = maskWithoutValue;
@@ -366,7 +376,7 @@ internal sealed class SumTerm
 
         if (candidateCellCount == 0)
         {
-            return null;
+            return false;
         }
 
         foreach (int fixedSum in fixedSums)
@@ -391,12 +401,12 @@ internal sealed class SumTerm
 
                 if (CanAssignCombination(cellMasksWithoutValue, 0, combinationMask))
                 {
-                    return null;
+                    return false;
                 }
             }
         }
 
-        return BuildCellsWithCandidate(solver, valueMask, board);
+        return true;
     }
 
     /// <summary>

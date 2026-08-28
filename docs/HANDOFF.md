@@ -414,6 +414,27 @@ cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) �
 
 ### Priority 5 — Smaller, well-defined items
 
+- **`FindHiddenSingle` is allocation-free now, and the next brute-force allocation is named.** Its
+  only garbage was the `List<(int, int)>` returned by `Constraint.CellsMustContain` — **62.1 MB over
+  the ISS corpus, a flat 88 bytes on each of 702,836 hits**. The caller never wanted the list: it
+  already knows the single cell the value would go in, because it only asks when the group has
+  exactly one candidate cell left. `Constraint.MustContainValue` answers the same question as a
+  `bool`; the killer-cage, Renban and Quadruple paths override it allocation-free, and the default
+  delegates so unconverted constraints stay correct. Call and hit counts are **identical** before and
+  after (19,769,754 / 702,836), so the deductions did not change, and all 429 corpus cases return the
+  same results. Two things worth carrying forward:
+  - **A `bool`-returning twin is worth having wherever a hot path asks a yes/no question of a
+    collection-returning API.** Nothing here got cleverer; the list was pure garbage at the call site.
+  - **`Quadruple` reached `CellsMustContainByRunningLogic`, which *clones the whole solver*, from
+    inside brute force** (106 clones / 229 KB on the corpus). It never needed to: a required value
+    must appear among a quadruple's cells by definition, and `Group` is only non-null once those
+    cells have been restricted to `requiredMask`, so the direct answer always applies there. Worth
+    checking whether any other constraint reaches that clone from a hot path.
+- **The next brute-force allocation is `QuadrupleConstraint.EnforceConstraint`**, which does
+  `requiredValues.ToList()` on every set inside the quadruple. It is what the remaining 3.79 MB
+  under `FindHiddenSingle` on the ISS corpus is — all of it via `SetValue`, none of it
+  `FindHiddenSingle`'s own. A `uint` mask replaces the list. Note this fires on *every* `SetValue`,
+  not just this one, so it is not a hidden-single item.
 - **`renban-sky-logical` is still the allocation odd-one-out**, now 331 MB in only 4
   `ConsolidateBoard` passes and 220 `StepLogic` calls. Its dominant `Combinations` site is
   `IsBoardValid` (496,661 yields, >2× any other case) — a *contradiction check*, not a deduction

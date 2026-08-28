@@ -540,10 +540,30 @@ public class RenbanConstraint : Constraint
 
     public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int valueToTest)
     {
+        if (!MustContainValue(sudokuSolver, valueToTest))
+        {
+            return null;
+        }
+
+        BoardView board = sudokuSolver.Board;
+        List<(int, int)> resultCells = [];
+        for (int i = 0; i < cells.Count; ++i)
+        {
+            uint cellBoardMask = board[cellIndices[i]];
+            if (!IsValueSet(cellBoardMask) && HasValue(cellBoardMask, valueToTest))
+            {
+                resultCells.Add(cells[i]);
+            }
+        }
+        return resultCells.Count > 0 ? resultCells : null;
+    }
+
+    public override bool MustContainValue(Solver sudokuSolver, int valueToTest)
+    {
         int numCells = cellIndices.Count;
         if (numCells <= 2)
         {
-            return null;
+            return false;
         }
 
         BoardView board = sudokuSolver.Board;
@@ -551,7 +571,7 @@ public class RenbanConstraint : Constraint
 
         if ((allSetValuesUnion & ValueMask(valueToTest)) != 0)
         {
-            return null;
+            return false;
         }
 
         uint validStartValuesMask = 0;
@@ -565,31 +585,12 @@ public class RenbanConstraint : Constraint
 
         if (validStartValuesMask == 0)
         {
-            return null;
+            return false;
         }
 
-        int min_s_overall = MinValue(validStartValuesMask);
-        int max_s_overall = MaxValue(validStartValuesMask);
+        int mustContainLowerBound = MaxValue(validStartValuesMask);
+        int mustContainUpperBound = MinValue(validStartValuesMask) + numCells - 1;
 
-        int mustContainLowerBound = max_s_overall;
-        int mustContainUpperBound = min_s_overall + numCells - 1;
-
-        if (valueToTest >= mustContainLowerBound && valueToTest <= mustContainUpperBound)
-        {
-            List<(int, int)> resultCells = [];
-            for (int i = 0; i < cells.Count; ++i)
-            {
-                (int r, int c) cellCoord = cells[i];
-                int cellIndex = cellIndices[i];
-                uint cellBoardMask = board[cellIndex];
-
-                if (!IsValueSet(cellBoardMask) && HasValue(cellBoardMask, valueToTest))
-                {
-                    resultCells.Add(cellCoord);
-                }
-            }
-            return resultCells.Count > 0 ? resultCells : null;
-        }
-        return null;
+        return valueToTest >= mustContainLowerBound && valueToTest <= mustContainUpperBound;
     }
 }

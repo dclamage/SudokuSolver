@@ -431,7 +431,6 @@ public partial class Solver
                 int groupValueCount = _candidateCountsPerGroupValue[groupValueIndex];
                 if (groupValueCount <= 1)
                 {
-                    int valCellIndex = -1;
                     if (numCells == MAX_VALUE)
                     {
                         if (groupValueCount == 0)
@@ -442,26 +441,22 @@ public partial class Solver
                             ));
                             return LogicResult.Invalid;
                         }
-
-                        foreach (int cellIndex in group.Cells)
-                        {
-                            if ((board[cellIndex] & valMask) != 0)
-                            {
-                                valCellIndex = cellIndex;
-                                break;
-                            }
-                        }
                     }
-                    else if (groupValueCount == 1)
+                    else if (groupValueCount != 1 || !group.FromConstraint.MustContainValue(this, val))
                     {
-                        List<(int, int)> cellsMustContain = group.FromConstraint?.CellsMustContain(this, val);
-                        if (cellsMustContain != null && cellsMustContain.Count == 1)
+                        // A smaller group only forces a placement when its constraint says the
+                        // value has to appear in it at all.
+                        continue;
+                    }
+
+                    // Exactly one cell in the group can still take the value, so find it.
+                    int valCellIndex = -1;
+                    foreach (int cellIndex in group.Cells)
+                    {
+                        if ((board[cellIndex] & valMask) != 0)
                         {
-                            int cellIndex = CellIndex(cellsMustContain[0]);
-                            if ((board[cellIndex] & valMask) != 0)
-                            {
-                                valCellIndex = cellIndex;
-                            }
+                            valCellIndex = cellIndex;
+                            break;
                         }
                     }
 
