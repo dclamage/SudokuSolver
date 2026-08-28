@@ -184,6 +184,21 @@ public abstract class Constraint
     public virtual List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => null;
 
     /// <summary>
+    /// Returns whether the constraint requires the given value to appear among its cells.
+    /// </summary>
+    /// <remarks>
+    /// This answers the question <see cref="CellsMustContain"/> answers, without materializing the
+    /// list of cells. Hidden single detection asks it on every candidate elimination inside brute
+    /// force, where it already knows which cell the value would go in, so the list is pure garbage.
+    /// Override it whenever <see cref="CellsMustContain"/> can decide without allocating; the
+    /// default keeps the two in agreement for constraints which do not.
+    /// </remarks>
+    /// <param name="sudokuSolver">The solver.</param>
+    /// <param name="value">The value which must be contained.</param>
+    /// <returns>True if the value must appear among this constraint's cells.</returns>
+    public virtual bool MustContainValue(Solver sudokuSolver, int value) => CellsMustContain(sudokuSolver, value) is { Count: > 0 };
+
+    /// <summary>
     /// Automatically determines whether the constraint cells must contain the value
     /// by removing the value from all cells with it and seeing if there's a contradiction
     /// after stepping logic.

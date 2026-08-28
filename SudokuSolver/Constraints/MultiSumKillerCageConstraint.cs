@@ -54,6 +54,7 @@ public class MultiSumKillerCageConstraint : Constraint
 
     public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => sumTerm != null ? InitLinksByRunningLogic(sudokuSolver, cells, logicalStepDescription) : LogicResult.None;
     public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => sumTerm?.CellsMustContain(sudokuSolver, value);
+    public override bool MustContainValue(Solver sudokuSolver, int value) => sumTerm?.MustContainValue(sudokuSolver, value) ?? false;
 
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {

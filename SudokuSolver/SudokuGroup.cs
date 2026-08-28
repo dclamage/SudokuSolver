@@ -11,8 +11,7 @@ public sealed record SudokuGroup(GroupType GroupType, string Name, List<int> Cel
             return true;
         }
 
-        var mustContain = FromConstraint?.CellsMustContain(solver, val);
-        return mustContain != null && mustContain.Count > 0;
+        return FromConstraint?.MustContainValue(solver, val) ?? false;
     }
 
     public List<(int, int)> CellsMustContain(Solver solver, int val)

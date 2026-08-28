@@ -60,6 +60,14 @@ caffeinate -i dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -
 Timing on a laptop is noisy; prefer a quiet machine and `--iterations 7+`, and treat only
 consistent, repeatable deltas as real.
 
+**`alloc MB` is noisy too, and in the same way.** It comes from `GC.GetTotalAllocatedBytes`, which is
+**process-wide**, so a case picks up whatever else the runtime allocated during its measured
+iteration — enough to have reported **negative** totals (`-3.71`, `-758.75`) on cases that allocate a
+fraction of a MB. Corpus-wide alloc sums are therefore not a reliable A/B signal. Re-measure a
+suspicious case on its own with `--filter`, where the number is stable, and for attributing
+allocation to a *specific* method use `GC.GetAllocatedBytesForCurrentThread()` around it instead —
+it is per-thread and does not drift.
+
 ## BitOperations micro-benchmark
 
 `--bitops` times each `BitOperations` intrinsic against a hand-written software equivalent *in the

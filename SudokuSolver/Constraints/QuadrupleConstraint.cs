@@ -147,6 +147,17 @@ public class QuadrupleConstraint : Constraint
     public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => (cells != null && requiredMask != 0) ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
     public override List<(int, int)> CellsMustContain(Solver sudokuSolver, int value) => (cells != null && requiredMask != 0) ? CellsMustContainByRunningLogic(sudokuSolver, cells, value) : null;
 
+    /// <summary>
+    /// A required value must appear among the quadruple's cells by definition, so that case is
+    /// answered directly. Only a non-required value needs the clone-and-step fallback, which is
+    /// what <see cref="Constraint.MustContainValue"/> does. This matters because
+    /// <see cref="Group"/> is only non-null once the cells have been restricted to
+    /// <c>requiredMask</c>, so hidden single detection inside brute force always takes the
+    /// direct answer and never clones.
+    /// </summary>
+    public override bool MustContainValue(Solver sudokuSolver, int value) =>
+        cells != null && requiredMask != 0 && (HasValue(requiredMask, value) || base.MustContainValue(sudokuSolver, value));
+
     public override LogicResult StepLogic(Solver sudokuSolver, StringBuilder logicalStepDescription, bool isBruteForcing)
     {
         if (cells == null || requiredValues.Count == 0)
