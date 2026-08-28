@@ -116,6 +116,7 @@ internal static class Program
         Console.WriteLine(new string('-', 96));
 
         var results = new List<BenchResult>();
+        var ratios = new List<(string Name, string Category, double Ratio, double BaseMs)>();
         bool anyFail = false;
         bool anyRegress = false;
 
@@ -141,6 +142,7 @@ internal static class Program
             {
                 double deltaPercent = (r.MinMs - b.MinMs) / b.MinMs * 100.0;
                 cmp = $"{deltaPercent,+7:0.0}%";
+                ratios.Add((c.Name, string.IsNullOrEmpty(c.Category) ? "(none)" : c.Category, r.MinMs / b.MinMs, b.MinMs));
                 if (deltaPercent > RegressionThresholdPercent)
                 {
                     cmp += "  REGRESSION";
@@ -183,6 +185,8 @@ internal static class Program
             }
         }
 
+        ReportRatioSummary(ratios);
+
         if (savePath is not null)
         {
             File.WriteAllText(savePath, JsonSerializer.Serialize(results, new JsonSerializerOptions { WriteIndented = true }));
@@ -200,5 +204,120 @@ internal static class Program
             return 3;
         }
         return 0;
+    }
+
+    /// <summary>
+    /// Minimum baseline time for a case's ratio to be trusted. Below this, timer granularity and
+    /// scheduling jitter dominate, and a ratio built from two sub-millisecond numbers is noise
+    /// given equal weight.
+    /// </summary>
+    private const double RatioFloorMs = 1.0;
+
+    /// <summary>
+    /// Summarises the per-case new/baseline ratios.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the number to read, not <c>total min ms</c>. The total is a sum over case times
+    /// spanning five orders of magnitude, so it weights each case by its duration: a change that
+    /// helps only the two slowest cases reads as a corpus-wide win, and adding slow cases of one
+    /// constraint family silently reweights every later comparison toward that family.
+    /// </para>
+    /// <para>
+    /// The aggregate is a <b>geometric</b> mean because these are ratios. It is the only mean that
+    /// is symmetric under swapping the arms — rerun with the arms exchanged and every statistic
+    /// here inverts exactly — and it cannot be dragged around by one case that happened to be slow.
+    /// An arithmetic mean of ratios is biased upward and would call a wash an improvement.
+    /// </para>
+    /// <para>
+    /// The distribution matters as much as the centre. A change that is 0.95x across the board is a
+    /// different animal from one that is 0.5x on three cases and 1.1x on the rest, and only the
+    /// spread and the better/worse counts tell them apart.
+    /// </para>
+    /// </remarks>
+    private static void ReportRatioSummary(List<(string Name, string Category, double Ratio, double BaseMs)> ratios)
+    {
+        if (ratios.Count == 0)
+        {
+            return;
+        }
+
+        var usable = ratios.Where(x => x.BaseMs >= RatioFloorMs && x.Ratio > 0).ToList();
+        int excluded = ratios.Count - usable.Count;
+        if (usable.Count == 0)
+        {
+            Console.WriteLine($"vs baseline: all {excluded} cases below the {RatioFloorMs:0.#} ms floor; no reliable ratios.");
+            return;
+        }
+
+        double logSum = 0;
+        foreach (var u in usable)
+        {
+            logSum += Math.Log(u.Ratio);
+        }
+        double geoMean = Math.Exp(logSum / usable.Count);
+
+        var sorted = usable.OrderBy(u => u.Ratio).ToList();
+        double Quantile(double q)
+        {
+            double pos = q * (sorted.Count - 1);
+            int lo = (int)Math.Floor(pos);
+            int hi = (int)Math.Ceiling(pos);
+            return sorted[lo].Ratio + (sorted[hi].Ratio - sorted[lo].Ratio) * (pos - lo);
+        }
+
+        int better = usable.Count(u => u.Ratio < 0.99);
+        int worse = usable.Count(u => u.Ratio > 1.01);
+
+        Console.WriteLine();
+        Console.WriteLine($"vs baseline over {usable.Count} cases (per-case ratios, unweighted by duration):");
+        Console.WriteLine($"  geomean {geoMean,6:0.000}x ({(geoMean - 1) * 100,+5:0.0}%)   median {Quantile(0.5),6:0.000}x");
+        Console.WriteLine($"  p10 {Quantile(0.1),6:0.000}x   p90 {Quantile(0.9),6:0.000}x");
+        Console.WriteLine($"  best {sorted[0].Ratio,6:0.000}x {sorted[0].Name}   worst {sorted[^1].Ratio,6:0.000}x {sorted[^1].Name}");
+        Console.WriteLine($"  {better} better, {worse} worse, {usable.Count - better - worse} within 1%");
+        if (excluded > 0)
+        {
+            Console.WriteLine($"  ({excluded} case(s) excluded: baseline under {RatioFloorMs:0.#} ms, too short to time reliably)");
+        }
+
+        // Per-case ratios remove *duration* weighting but not *composition* weighting: N similar
+        // cases still cast N votes. Grouping by category and giving each group one vote caps that,
+        // and printing the per-category figures shows where a headline number came from.
+        var groups = usable
+            .GroupBy(u => u.Category)
+            .Select(g => (Category: g.Key, Count: g.Count(), GeoMean: GeoMean(g.Select(u => u.Ratio))))
+            .OrderBy(g => g.GeoMean)
+            .ToList();
+
+        if (groups.Count > 1)
+        {
+            Console.WriteLine($"  by category (each category weighted equally: {GeoMean(groups.Select(g => g.GeoMean)),6:0.000}x):");
+            foreach (var (category, count, mean) in groups)
+            {
+                Console.WriteLine($"    {category,-22}{mean,7:0.000}x  n={count}");
+            }
+
+            int biggest = groups.Max(g => g.Count);
+            if (biggest * 2 > usable.Count)
+            {
+                Console.WriteLine($"    NOTE: one category is {biggest} of {usable.Count} cases — the unweighted geomean is mostly measuring it.");
+            }
+        }
+    }
+
+    private static double GeoMean(IEnumerable<double> values)
+    {
+        double logSum = 0;
+        int n = 0;
+        foreach (double v in values)
+        {
+            if (v <= 0)
+            {
+                continue;
+            }
+            logSum += Math.Log(v);
+            n++;
+        }
+        return n == 0 ? double.NaN : Math.Exp(logSum / n);
     }
 }

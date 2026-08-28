@@ -60,12 +60,71 @@ caffeinate -i dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -
 Timing on a laptop is noisy; prefer a quiet machine and `--iterations 7+`, and treat only
 consistent, repeatable deltas as real.
 
+### Read the ratios, not the total
+
 **`total min ms` is a sum, and case times here span five orders of magnitude, so it is dominated by
 whichever few cases are slowest.** A change that helps only those looks like a corpus-wide win. The
 run prints a per-category share breakdown and flags any single case above a quarter of the total for
 exactly this reason — when one line is 40%+ of the sum, the total is measuring that case, not the
-solver. Read per-case deltas. The same applies when *adding* cases: N slow cases of one constraint
-family silently reweight every future comparison toward that family.
+solver.
+
+With `--baseline`, the run instead reports **per-case ratios** and aggregates them:
+
+```
+vs baseline over 30 cases (per-case ratios, unweighted by duration):
+  geomean  1.073x (  7.3%)   median  1.036x
+  p10  0.652x   p90  2.294x
+  best  0.062x kropki-search-cap50k   worst  4.169x quadruple-16
+  12 better, 18 worse, 0 within 1%
+  by category (each category weighted equally:  0.998x):
+    setting                 0.745x  n=4
+    variant                 0.748x  n=6
+    variant-hard            1.835x  n=7
+```
+
+Three things about that shape are deliberate:
+
+- **Geometric, not arithmetic.** These are ratios, and the geometric mean is the only mean that is
+  symmetric under swapping the arms: rerun with the arms exchanged and every figure inverts exactly.
+  An arithmetic mean would average 0.5x and 2.0x to 1.25x and call a perfect wash a 25% regression.
+- **The distribution is not decoration.** The example above is *flat on average and wildly bimodal* —
+  one case 16x faster, another 4x slower. A uniform 0.95x and a "0.5x on three cases, 1.1x elsewhere"
+  are completely different changes with nearly the same mean, and only p10/p90 and the
+  better/worse counts separate them.
+- **Sub-millisecond cases are excluded.** Under equal weighting, a ratio built from two 0.03 ms
+  timings is noise given the same vote as a ten-second case. Cases with a baseline under 1 ms are
+  dropped and counted.
+
+### What ratios still do not fix: corpus composition
+
+Per-case ratios remove *duration* weighting. They do nothing about *composition* weighting — **N
+similar cases still cast N votes.** Add twenty near-identical non-consecutive puzzles and any change
+that helps non-consecutive becomes a corpus-wide "win" under the plain geomean, exactly as it would
+under the time sum.
+
+The per-category geomean exists to bound that: each category gets one vote regardless of how many
+cases it holds, and the run warns when any single category is more than half the corpus. In the
+example above the unweighted number is +7.3% while the category-weighted one is flat, because
+`variant-hard` is 7 of 30 cases and the worst performer.
+
+**That is a guard rail, not a solution.** Category is an imperfect proxy for "similar" — four
+leave-one-out boards from the same puzzle would sit in one category and be correctly discounted,
+but two genuinely independent killer puzzles get discounted the same way. And no aggregate can
+rescue a corpus that does not sample what you care about.
+
+The real answer is to use the right corpus for the question:
+
+| | `corpus.json` | `corpus-iss.json` |
+| --- | --- | --- |
+| what it is | ~36 hand-picked cases, roughly one per constraint type | 398 real CTC puzzles imported from an index |
+| what it is for | **coverage** — did a change break or move constraint X | **tuning** — does a heuristic pay across real puzzles |
+| aggregate meaning | none; read per-case deltas | a genuine sample statistic |
+
+`corpus.json` is a regression suite and was never a uniform sample of anything; treating its geomean
+as a population estimate is a category error. `corpus-iss.json` is the sampling instrument, and it
+has a tune/holdout split precisely so a heuristic fitted on one half can be checked on the other.
+Even it is biased — it holds only the ~30% of the index our parser supports — so a per-constraint
+result from it generalises only as far as that coverage does.
 
 **`alloc MB` is noisy too, and in the same way.** It comes from `GC.GetTotalAllocatedBytes`, which is
 **process-wide**, so a case picks up whatever else the runtime allocated during its measured
