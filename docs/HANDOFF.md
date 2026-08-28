@@ -33,7 +33,7 @@ relevant distribution is the favourable one. Data and caveats:
 
 ### Infrastructure you now have
 
-- **30-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
+- **32-case corpus**, 5 ops: `count`, `solve`, `logical`, `truecandidates`, `estimate`.
   `benchmarks/README.md` documents each. `truecandidates` is the operation a setting UI actually
   runs on every edit; `logical` is the half the product leans on hardest.
 - **398-case ISS corpus** in `benchmarks/corpus-iss.json`, generated from sigh's CTC index with
@@ -297,11 +297,11 @@ cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) �
     must appear among a quadruple's cells by definition, and `Group` is only non-null once those
     cells have been restricted to `requiredMask`, so the direct answer always applies there. Worth
     checking whether any other constraint reaches that clone from a hot path.
-- **The next brute-force allocation is `QuadrupleConstraint.EnforceConstraint`**, which does
-  `requiredValues.ToList()` on every set inside the quadruple. It is what the remaining 3.79 MB
-  under `FindHiddenSingle` on the ISS corpus is — all of it via `SetValue`, none of it
-  `FindHiddenSingle`'s own. A `uint` mask replaces the list. Note this fires on *every* `SetValue`,
-  not just this one, so it is not a hidden-single item.
+- **That next allocation — `QuadrupleConstraint.EnforceConstraint`'s `requiredValues.ToList()` — is
+  now done**; see the `QuadrupleConstraint` item below. One correction worth keeping: a plain `uint`
+  mask does **not** replace the list, because a quadruple may require the same digit twice
+  (`.Quad~R3C3~1~9~1~4` is in the corpus) and a distinct-values mask silently accepts a board holding
+  only one copy. It takes a count per value, not a bit.
 - **`renban-sky-logical` is still the allocation odd-one-out**, now 331 MB in only 4
   `ConsolidateBoard` passes and 220 `StepLogic` calls. Its dominant `Combinations` site is
   `IsBoardValid` (496,661 yields, >2× any other case) — a *contradiction check*, not a deduction
@@ -339,6 +339,24 @@ cannot be inferred). Details in [`iss-corpus-import.md`](iss-corpus-import.md) �
   puzzle: heuristic 12.7 ms vs exact 103.9 ms, both 364), which is why it shipped.
   Still open with the same lens, but measure it properly: **`XSumConstraint`** allocates 53 MB for a
   51 ms count. Details: [`pathological-outliers.md`](pathological-outliers.md).
+- **`QuadrupleConstraint` brute force is now allocation-free**, and this one was *not* a propagation
+  question — it was pure per-call garbage. `EnforceConstraint` and `StepLogic` each rebuilt the
+  outstanding-values multiset with `requiredValues.ToList()`, collected `List<(int,int)>` of
+  candidate cells, and — the dominant cost — ran `remainingValues.Count(value => value == v)` inside
+  the hidden-single loop, allocating a closure, a delegate and a boxed `List<int>` enumerator **per
+  candidate digit per call**. Rewritten onto a `stackalloc` outstanding-count span plus cell indices:
+  measured over 27 quadruple puzzles from `corpus-iss.json`, `StepLogic` went from ~50 MB to **0 bytes**
+  across 124k calls and `EnforceConstraint` to **0 bytes** across 814k calls, worst-case allocation
+  **26.7 MB → 0.8 MB**, total time **−13.7%**. Semantics are unchanged, which is the point: the arms
+  did not move, so no re-tuning was needed.
+  Two things worth carrying forward. **The constraint instance is shared across cloned solvers and
+  threads** (`constraints = other.constraints` in the copy constructor), so scratch state has to be
+  `stackalloc`, never a reusable instance field. And **`CellsMustContain` was left alone
+  deliberately.** `MustContainValue` (above) already keeps brute force off its clone, and replacing
+  the clone in `CellsMustContain` itself measured **140.8 vs 141.2 ms — a wash** — because it is
+  called only 0–42 times per puzzle. It also *does* change what the constraint concludes: the direct
+  answer includes cells `CellsMustContainByRunningLogic` filters out, which is a propagation change
+  and wants its own measured commit, not a ride-along in an allocation one.
 - **Historical note on the same item, partly superseded.** `SandwichConstraint.cs:544` alone yielded
   **4.2M combinations in a single count** of `blPgSzctUMg` (1,469 per node). Buffered enumeration plus
   replacing `combination.Sum()` (which boxes a `List<int>` struct enumerator 4.2M times) took it

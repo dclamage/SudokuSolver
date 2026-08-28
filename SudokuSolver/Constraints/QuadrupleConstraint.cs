@@ -6,7 +6,6 @@ namespace SudokuSolver.Constraints;
 public class QuadrupleConstraint : Constraint
 {
     public readonly List<(int, int)> cells = null;
-    private readonly HashSet<(int, int)> cellsLookup;
     public readonly List<int> requiredValues = new();
     private readonly uint requiredMask;
     private List<(int, int)> groupCells = null;
@@ -39,8 +38,6 @@ public class QuadrupleConstraint : Constraint
         {
             throw new ArgumentException($"Quadruple constraint expects a cell group.");
         }
-
-        cellsLookup = new(cells);
     }
 
     public override LogicResult InitCandidates(Solver sudokuSolver)
@@ -96,6 +93,57 @@ public class QuadrupleConstraint : Constraint
         return changed ? LogicResult.Changed : LogicResult.None;
     }
 
+    /// <summary>
+    /// Fills <paramref name="outstanding"/> with how many further times each value must still be
+    /// placed in <see cref="cells"/>, and returns the mask of the values that are still outstanding.
+    /// </summary>
+    /// <remarks>
+    /// This is the multiset bookkeeping that <c>EnforceConstraint</c> and <c>StepLogic</c> both used
+    /// to do with a per-call <c>requiredValues.ToList()</c> plus <c>List.Remove</c>. A quadruple may
+    /// legitimately ask for the same digit twice -- <c>.Quad~R3C3~1~9~1~4</c> occurs in the ISS corpus
+    /// -- so a plain "distinct required values" mask is not enough and the counts have to be kept.
+    /// <paramref name="outstanding"/> is expected to be a <c>stackalloc</c> span of at least
+    /// <c>MAX_VALUE + 1</c> entries: the constraint instance is shared across cloned solvers and
+    /// across threads (see <c>Solver</c>'s copy constructor, <c>constraints = other.constraints</c>),
+    /// so a reusable instance-level scratch buffer would be a race.
+    /// </remarks>
+    private uint FillOutstanding(BoardView board, Span<int> outstanding, out int numOutstanding)
+    {
+        outstanding.Clear();
+        foreach (int value in requiredValues)
+        {
+            outstanding[value]++;
+        }
+
+        foreach (var (i, j) in cells)
+        {
+            uint cellMask = board[i, j];
+            if (IsValueSet(cellMask))
+            {
+                // A placed digit satisfies at most one required copy of itself, and a placed digit
+                // that was never required satisfies nothing. Both match List.Remove's behavior.
+                int value = GetValue(cellMask);
+                if (outstanding[value] > 0)
+                {
+                    outstanding[value]--;
+                }
+            }
+        }
+
+        uint outstandingMask = 0;
+        numOutstanding = 0;
+        for (int value = 1; value <= MAX_VALUE; value++)
+        {
+            int count = outstanding[value];
+            if (count > 0)
+            {
+                outstandingMask |= ValueMask(value);
+                numOutstanding += count;
+            }
+        }
+        return outstandingMask;
+    }
+
     public override bool EnforceConstraint(Solver sudokuSolver, int i, int j, int val)
     {
         if (cells == null || requiredValues.Count == 0)
@@ -103,45 +151,41 @@ public class QuadrupleConstraint : Constraint
             return true;
         }
 
-        var board = sudokuSolver.Board;
-        if (cellsLookup.Contains((i, j)))
+        // Only a placement inside the quadruple can break it. A linear scan beats the hash lookup
+        // this used to do: the group is four cells.
+        bool insideQuad = false;
+        foreach (var (ci, cj) in cells)
         {
-            List<int> remainingValues = requiredValues.ToList();
-            foreach (var cell in cells)
+            if (ci == i && cj == j)
             {
-                uint cellMask = board[cell.Item1, cell.Item2];
-                if (IsValueSet(cellMask))
-                {
-                    remainingValues.Remove(GetValue(cellMask));
-                }
+                insideQuad = true;
+                break;
             }
+        }
+        if (!insideQuad)
+        {
+            return true;
+        }
 
-            if (remainingValues.Count > 0)
+        var board = sudokuSolver.Board;
+        Span<int> outstanding = stackalloc int[MAX_VALUE + 1];
+        uint remainingMask = FillOutstanding(board, outstanding, out int numRemaining);
+        if (numRemaining == 0)
+        {
+            return true;
+        }
+
+        uint availableMask = 0;
+        foreach (var (ci, cj) in cells)
+        {
+            uint cellMask = board[ci, cj];
+            if (!IsValueSet(cellMask))
             {
-                uint availableMask = 0;
-                foreach (var cell in cells)
-                {
-                    uint cellMask = board[cell.Item1, cell.Item2];
-                    if (!IsValueSet(cellMask))
-                    {
-                        availableMask |= cellMask;
-                    }
-                }
-
-                uint remainingMask = 0;
-                foreach (var value in remainingValues)
-                {
-                    remainingMask |= ValueMask(value);
-                }
-
-                if ((availableMask & remainingMask) != remainingMask)
-                {
-                    return false;
-                }
+                availableMask |= cellMask;
             }
         }
 
-        return true;
+        return (availableMask & remainingMask) == remainingMask;
     }
 
     public override LogicResult InitLinks(Solver solver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => (cells != null && requiredMask != 0) ? InitLinksByRunningLogic(solver, cells, logicalStepDescription) : LogicResult.None;
@@ -167,33 +211,21 @@ public class QuadrupleConstraint : Constraint
 
         var board = sudokuSolver.Board;
 
-        List<int> remainingValues = requiredValues.ToList();
-        foreach (var cell in cells)
-        {
-            uint cellMask = board[cell.Item1, cell.Item2];
-            if (IsValueSet(cellMask))
-            {
-                remainingValues.Remove(GetValue(cellMask));
-            }
-        }
-
-        if (remainingValues.Count == 0)
+        Span<int> outstanding = stackalloc int[MAX_VALUE + 1];
+        uint remainingRequiredMask = FillOutstanding(board, outstanding, out int numRemainingRequired);
+        if (numRemainingRequired == 0)
         {
             return LogicResult.None;
         }
 
-        uint remainingRequiredMask = 0;
-        foreach (var value in remainingValues)
-        {
-            remainingRequiredMask |= ValueMask(value);
-        }
-        
-        int numRemainingRequired = remainingValues.Count;
+        // Indices into `cells`, not coordinates, so that they stay valid across a SetValue.
+        Span<int> possible = stackalloc int[cells.Count];
 
         uint availableMask = 0;
-        List<(int, int)> possibleCells = new();
-        foreach (var (i, j) in cells)
+        int numPossibleCells = 0;
+        for (int k = 0; k < cells.Count; k++)
         {
+            var (i, j) = cells[k];
             uint cellMask = board[i, j];
             if (IsValueSet(cellMask))
             {
@@ -202,7 +234,7 @@ public class QuadrupleConstraint : Constraint
 
             if ((cellMask & remainingRequiredMask) != 0)
             {
-                possibleCells.Add((i, j));
+                possible[numPossibleCells++] = k;
             }
             availableMask |= cellMask;
         }
@@ -213,18 +245,18 @@ public class QuadrupleConstraint : Constraint
             return LogicResult.Invalid;
         }
 
-        if (possibleCells.Count < numRemainingRequired)
+        if (numPossibleCells < numRemainingRequired)
         {
             logicalStepDescription?.Append($"Can no longer fulfill all required values.");
             return LogicResult.Invalid;
         }
 
-        if (possibleCells.Count == numRemainingRequired)
+        if (numPossibleCells == numRemainingRequired)
         {
             bool changed = false;
-            foreach (var (i, j) in possibleCells)
+            for (int p = 0; p < numPossibleCells; p++)
             {
-                uint cellMask = board[i, j];
+                var (i, j) = cells[possible[p]];
                 var result = sudokuSolver.ClearMask(i, j, ~remainingRequiredMask);
                 if (result == LogicResult.Invalid)
                 {
@@ -242,11 +274,11 @@ public class QuadrupleConstraint : Constraint
                     {
                         if (changed)
                         {
-                            logicalStepDescription.Append($"The remaining value{(numRemainingRequired != 1 ? "s" : "")} {MaskToString(remainingRequiredMask)} must be in {CellName(i, j)}");
+                            logicalStepDescription.Append($", {CellName(i, j)}");
                         }
                         else
                         {
-                            logicalStepDescription.Append($", {CellName(i, j)}");
+                            logicalStepDescription.Append($"The remaining value{(numRemainingRequired != 1 ? "s" : "")} {MaskToString(remainingRequiredMask)} must be in {CellName(i, j)}");
                         }
                     }
                     changed = true;
@@ -268,39 +300,51 @@ public class QuadrupleConstraint : Constraint
                 continue;
             }
 
-            int numCellsNeeded = remainingValues.Count(value => value == v);
+            int numCellsNeeded = outstanding[v];
 
-            List<(int, int)> possibleSetCells = new();
-            foreach (var (i, j) in cells)
+            int numPossibleSetCells = 0;
+            for (int k = 0; k < cells.Count; k++)
             {
+                var (i, j) = cells[k];
                 uint cellMask = board[i, j];
                 if (!IsValueSet(cellMask) && (cellMask & valueMask) != 0)
                 {
-                    possibleSetCells.Add((i, j));
+                    possible[numPossibleSetCells++] = k;
                 }
             }
 
-            if (possibleSetCells.Count == numCellsNeeded)
+            if (numPossibleSetCells != numCellsNeeded)
             {
-                foreach (var setCell in possibleSetCells)
-                {
-                    if (!sudokuSolver.SetValue(setCell.Item1, setCell.Item2, v))
-                    {
-                        logicalStepDescription?.Append($"{CellName(setCell)} is the only cell that can be the quadruple value {v} but it cannot be set to this value.");
-                        return LogicResult.Invalid;
-                    }
-                }
+                continue;
+            }
 
-                if (possibleSetCells.Count == 1)
+            for (int p = 0; p < numPossibleSetCells; p++)
+            {
+                var (i, j) = cells[possible[p]];
+                if (!sudokuSolver.SetValue(i, j, v))
                 {
-                    logicalStepDescription?.Append($"{CellName(possibleSetCells[0])} is the only cell that can be the quadruple value {v} and so it must be that value.");
+                    logicalStepDescription?.Append($"{CellName(i, j)} is the only cell that can be the quadruple value {v} but it cannot be set to this value.");
+                    return LogicResult.Invalid;
+                }
+            }
+
+            if (logicalStepDescription != null)
+            {
+                if (numPossibleSetCells == 1)
+                {
+                    logicalStepDescription.Append($"{CellName(cells[possible[0]])} is the only cell that can be the quadruple value {v} and so it must be that value.");
                 }
                 else
                 {
-                    logicalStepDescription?.Append($"{sudokuSolver.CompactName(possibleSetCells)} are the only cells that can be the quadruple value {v} so they must all be that value.");
+                    List<(int, int)> setCells = new(numPossibleSetCells);
+                    for (int p = 0; p < numPossibleSetCells; p++)
+                    {
+                        setCells.Add(cells[possible[p]]);
+                    }
+                    logicalStepDescription.Append($"{sudokuSolver.CompactName(setCells)} are the only cells that can be the quadruple value {v} so they must all be that value.");
                 }
-                return LogicResult.Changed;
             }
+            return LogicResult.Changed;
         }
 
         // TODO: Pointing / Hidden Tuples
