@@ -154,6 +154,8 @@ public partial class Solver
         cfNewlyFires = other.cfNewlyFires;
         cfPopEnd = other.cfPopEnd;
         cfStatsBlock = other.cfStatsBlock;
+        wlMatrix = other.wlMatrix;
+        wlMatrixWords = other.wlMatrixWords;
 
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
@@ -374,6 +376,7 @@ public partial class Solver
         wlGroupedOffsets = offsets;
 
         CompileCellForcingTable();
+        CompileWeakLinkMatrix();
     }
 
     /// <summary>
@@ -805,6 +808,7 @@ public partial class Solver
         cfNewlyFires = null;
         cfPopEnd = null;
         cfStatsBlock = null;
+        wlMatrix = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 
@@ -1110,6 +1114,10 @@ public partial class Solver
                 }
             }
         } while (haveChange);
+
+        // Links are at a fixpoint, so views derived from them can be compiled. The logical solver
+        // never reaches CompileGroupedWeakLinks, so without this it would always take the fallback.
+        CompileWeakLinkMatrix();
 
         smallGroupsBySize = Groups.Where(g => g.Cells.Count < MAX_VALUE).OrderBy(g => g.Cells.Count).ToList();
         if (smallGroupsBySize.Count == 0)

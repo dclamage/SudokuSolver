@@ -287,6 +287,19 @@ public abstract class Constraint
     public virtual LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing) => LogicResult.None;
 
     /// <summary>
+    /// Whether this constraint asks the solver to compile its dense weak-link bitmatrix, which
+    /// answers "is this candidate weakly linked to any member of this set" in one pass. Override to
+    /// <see langword="true"/> only if a hot path needs that question; it costs ~70 KB and ~0.1 ms
+    /// per compiled search at 9x9. See <see cref="Solver.IsWeakLinkToAny"/>.
+    /// </summary>
+    /// <remarks>
+    /// A declaration rather than storage, on purpose. The matrix is derived from one board's links,
+    /// so a constraint that held it would answer for the wrong board as soon as the same instance
+    /// were added to a second one — a constraint is handed a board, it does not remember one.
+    /// </remarks>
+    public virtual bool WantsWeakLinkMatrix => false;
+
+    /// <summary>
     /// Automatically determines weak links caused by this constraint.
     /// This is done by cloning the solver and setting each candidate one
     /// at a time, running StepLogic, and then seeing what other candidates

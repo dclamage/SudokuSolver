@@ -15,11 +15,12 @@ cell forcing as an AND of rows, set-level queries as row ops — plus a possible
 | --- | --- |
 | cell forcing as row-AND makes it cheap enough to switch on | **No.** 1.8-6.8% *slower* than the pruned CSR where cell forcing is hot, and the premise is wrong twice over |
 | `IsWeakLink` as load/shift/test is worth having | **Not where the brief expected**, and 99.8% of the traffic is one constraint |
-| that one constraint | **Yes, and it is large**: `skyscraper-search` 129.6 -> 69.3 ms, **0.535x** |
+| that one constraint | **Yes, and it is large**: `skyscraper-search` 131.5 -> 50.3 ms, **0.382x** as shipped |
 | group forcing falls out for free | The *primitive* does; the wake condition and the instrument to value it do not |
 
-Net recommendation: **do not add the bitmatrix as a general derived view.** Add a bitset to
-`SkyscraperConstraint`, which is the only measured consumer, and build it only when a consumer exists.
+Net recommendation: **do not add the bitmatrix as a general derived view.** Add it as a view the
+board owns and builds only when some constraint declares it needs it — today only
+`SkyscraperConstraint`. See § "What was built" for why the data must not live on the constraint.
 
 ## Order parity: the flagged risk is not a risk
 
@@ -153,14 +154,60 @@ Two things stop it being a cheap experiment, neither about the primitive:
 If group forcing is worth pursuing, the prerequisite is a node counter in the harness, not a
 bitmatrix.
 
-## What I would do instead
+## What was built, and why not what this document first recommended
 
-1. **Put a bitset in `SkyscraperConstraint`.** It needs one row per *candidate it might test*, not
+This section originally recommended a ~1 KB line-local bitset stored on `SkyscraperConstraint`, on
+the grounds that the support search only ever asks about candidates on its own line. **That was the
+wrong home for it,** as the repo owner pointed out: the adjacency is derived from *one board's* weak
+links, and a constraint instance is not board-scoped by contract — it is handed a solver, it does not
+remember one. A constraint carrying it would answer for the wrong board the moment the same instance
+were added to a second one (a campaign reusing constraints across puzzles), and the failure mode is
+silent: under-reported adjacency makes candidates look supported when they are not, so propagation
+quietly weakens instead of breaking. `needsLogic` is not a precedent for it — that is derived from
+`clue` and `MAX_VALUE`, which are fixed when the constraint is constructed.
+
+What shipped instead keeps the data on the board and leaves the constraint stateless:
+
+- **`Solver` owns the matrix** (`SolverWeakLinkMatrix.cs`), built, shared by reference and invalidated
+  in exactly the places its three sibling views are. Nothing new to reason about: `AddWeakLink` nulls
+  it, `DiscoverWeakLinks` nulls it, `CompileGroupedWeakLinks` rebuilds it, and null means "use the
+  lists".
+- **The constraint only declares a need**: `Constraint.WantsWeakLinkMatrix`, default false, overridden
+  to true by `SkyscraperConstraint`. No puzzle without a declaring constraint pays the ~70 KB or the
+  ~0.1 ms build.
+- **It is also compiled at the setup fixpoint**, not only from `CompileGroupedWeakLinks`, because the
+  logical solver never reaches the latter. That is why `variant-renban-sky` gains here and did not in
+  the prototype.
+- `SUDOKU_WL_MATRIX=0` forces the list path, so the two arms are checkable from one build.
+
+Measured in one build, paired, 9 iterations:
+
+| case | matrix off | matrix on | |
+| --- | ---: | ---: | --- |
+| `skyscraper-search` count | 131.5 ms | **50.3 ms** | **0.382x** |
+| `variant-renban-sky` solve | 52.1 ms | **22.2 ms** | **0.426x** |
+| `renban-sky-logical` | 463.1 ms | 439.4 ms | 0.949x |
+| `iss-blPgSzctUMg` (no skyscraper) | 4.16 ms | 4.08 ms | unchanged, matrix not built |
+
+Both corpora validate under both arms, and `SkyscraperConstraint` now has the tests it did not have
+when its inner loop was rewritten. One known and accepted gap: on the logical path, a mid-solve
+`AddWeakLink` nulls the matrix and nothing rebuilds it, so that solve finishes on the list path.
+Correct, just not accelerated.
+
+The cost of the 12-word rows over the 1 KB variant's 2-word rows is real but was not worth the
+architecture: the measured 0.382x already beats the prototype's 0.535x, because reaching the setup
+fixpoint mattered more than row width did.
+
+Superseded, kept for the reasoning:
+
+1. ~~**Put a bitset in `SkyscraperConstraint`.**~~ It needs one row per *candidate it might test*, not
    the full matrix — the support search only ever asks about candidates on its own line. That is 9
    cells x 9 values = 81 rows, ~1 KB, built when the constraint initializes. Same 0.535x, none of
-   the 70 KB or the per-compile cost, and no new solver-wide view.
-2. **Leave the three existing views alone.** The naming observation is correct and worth a comment in
-   `Solver.cs` — `wlGrouped*` and `cf*` are transposes of one relation — but no measurement here
-   argues for a fourth.
+   the 70 KB or the per-compile cost, and no new solver-wide view. **Rejected: wrong owner, see
+   above.**
+2. **Leave the three existing views alone** for their own sakes. A fourth now exists, but only
+   because one constraint asks a question none of the three can answer — "is this candidate adjacent
+   to any member of this set" — and only for boards where something asks it. The naming observation
+   stands on its own: `wlGrouped*` and `cf*` are transposes of one relation.
 3. **A node counter in the benchmark harness**, if group forcing or any other pruning change is next.
    It is the missing instrument behind three of these documents.

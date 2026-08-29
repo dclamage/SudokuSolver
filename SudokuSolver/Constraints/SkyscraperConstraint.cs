@@ -68,6 +68,13 @@ public class SkyscraperConstraint : Constraint
     // them changes, instead of on every step (it has no Group, so it would otherwise always run).
     public override IReadOnlyList<int> CellIndicesForPropagationQueue => cellIndices;
 
+    // The support search asks, for every candidate it considers, whether it is weakly linked to any
+    // candidate already assigned on the line -- up to MAX_VALUE - 1 of them, re-asked at every node
+    // of a backtracking search. Answering that with one binary search per assigned candidate made
+    // this constraint 99.8% of all IsWeakLink calls in the benchmark corpus and essentially the
+    // whole runtime of skyscraper-search. See docs/weak-link-bitmatrix-exploration.md.
+    public override bool WantsWeakLinkMatrix => true;
+
     public override LogicResult InitCandidates(Solver solver)
     {
         var board = solver.Board;
@@ -201,7 +208,11 @@ public class SkyscraperConstraint : Constraint
         // solver's existing weak links, and have exactly `clue` visible buildings, accumulating the
         // supported value at each position. This preserves the old permutation-filter semantics
         // (which called CanPlaceDigits) without allocating or enumerating every permutation.
-        SkyscraperSearch(solver, candidateMasks, supportMasks, assigned, 0, 0u, 0, 0);
+        // One bit per candidate assigned so far, when the solver has the matrix to test against.
+        Span<ulong> assignedCandidates = solver.HasWeakLinkMatrix
+            ? stackalloc ulong[solver.WeakLinkMatrixWords]
+            : default;
+        SkyscraperSearch(solver, candidateMasks, supportMasks, assigned, 0, 0u, 0, 0, assignedCandidates);
 
         bool changed = false;
         List<int> elims = null;
@@ -266,7 +277,7 @@ public class SkyscraperConstraint : Constraint
     /// Prunes on visibility bounds and existing weak links, and returns true once every candidate is
     /// supported (saturation) so the caller stops. Allocation-free.
     /// </summary>
-    private bool SkyscraperSearch(Solver solver, ReadOnlySpan<uint> candidateMasks, Span<uint> supportMasks, Span<int> assigned, int pos, uint usedMask, int runningMax, int visible)
+    private bool SkyscraperSearch(Solver solver, ReadOnlySpan<uint> candidateMasks, Span<uint> supportMasks, Span<int> assigned, int pos, uint usedMask, int runningMax, int visible, Span<ulong> assignedCandidates)
     {
         int n = candidateMasks.Length;
         if (pos == n)
@@ -318,13 +329,21 @@ public class SkyscraperConstraint : Constraint
             // Reject if this candidate is weak-linked to any already-assigned candidate (this is what
             // CanPlaceDigits checked, cross-constraint weak links included).
             int candIndex = CandidateIndex(cellIndex, v);
-            bool blocked = false;
-            for (int k = 0; k < pos; k++)
+            bool blocked;
+            if (!assignedCandidates.IsEmpty)
             {
-                if (solver.IsWeakLink(candIndex, CandidateIndex(cellIndices[k], assigned[k])))
+                blocked = solver.IsWeakLinkToAny(candIndex, assignedCandidates);
+            }
+            else
+            {
+                blocked = false;
+                for (int k = 0; k < pos; k++)
                 {
-                    blocked = true;
-                    break;
+                    if (solver.IsWeakLink(candIndex, CandidateIndex(cellIndices[k], assigned[k])))
+                    {
+                        blocked = true;
+                        break;
+                    }
                 }
             }
             if (blocked)
@@ -333,7 +352,16 @@ public class SkyscraperConstraint : Constraint
             }
 
             assigned[pos] = v;
-            if (SkyscraperSearch(solver, candidateMasks, supportMasks, assigned, pos + 1, usedMask | vMask, isVisible ? v : runningMax, newVisible))
+            if (!assignedCandidates.IsEmpty)
+            {
+                assignedCandidates[candIndex >> 6] |= 1UL << (candIndex & 63);
+            }
+            bool saturated = SkyscraperSearch(solver, candidateMasks, supportMasks, assigned, pos + 1, usedMask | vMask, isVisible ? v : runningMax, newVisible, assignedCandidates);
+            if (!assignedCandidates.IsEmpty)
+            {
+                assignedCandidates[candIndex >> 6] &= ~(1UL << (candIndex & 63));
+            }
+            if (saturated)
             {
                 return true; // saturated: every candidate is supported, no need to search further
             }

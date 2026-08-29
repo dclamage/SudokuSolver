@@ -343,6 +343,7 @@ public partial class Solver
         cfNewlyFires = null;
         cfPopEnd = null;
         cfStatsBlock = null;
+        wlMatrix = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 
