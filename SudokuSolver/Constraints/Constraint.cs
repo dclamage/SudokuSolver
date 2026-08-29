@@ -188,6 +188,23 @@ public abstract class Constraint
     /// Return null to run on every propagation step (always-run bucket).
     /// Default: converts Group cells to indices; override when Group is null but cells are known.
     /// </summary>
+    /// <summary>
+    /// Cells on which the solver should run <b>cell forcing</b> during brute force, on this
+    /// constraint's behalf. Null (the default) means none.
+    /// </summary>
+    /// <remarks>
+    /// An alternative to doing the deduction in <see cref="StepLogic"/>: rather than a constraint
+    /// reimplementing a rule the solver already has, it names the cells where that rule is worth
+    /// applying. Cell forcing over a cell's full weak-link set is strictly stronger than any
+    /// single constraint's view of it, since the links include the cell's houses and every other
+    /// constraint touching it.
+    ///
+    /// The general in-search scan is off by default because it costs about twice what it saves
+    /// (docs/cell-forcing-worklist.md); the point of this hook is that the cost is in scanning
+    /// every cell, so a constraint that can name a few earns the deduction at a fraction of it.
+    /// </remarks>
+    public virtual IReadOnlyList<int> CellIndicesForCellForcing => null;
+
     public virtual IReadOnlyList<int> CellIndicesForPropagationQueue
     {
         get

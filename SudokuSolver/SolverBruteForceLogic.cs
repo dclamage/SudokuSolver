@@ -244,6 +244,15 @@ public partial class Solver
                 return curResult;
             }
         }
+        else if (constraintCellForcingCells != null)
+        {
+            // The general scan is off, but some constraint named cells worth scanning anyway.
+            curResult = CellForcingForCells(constraintCellForcingCells, cancellationToken);
+            if (curResult != LogicResult.None)
+            {
+                return curResult;
+            }
+        }
 
         if (isBruteForcing && _constraintQueued != null && _constraintQueued.Length > 0)
         {
@@ -1051,6 +1060,28 @@ public partial class Solver
             cancellationToken.ThrowIfCancellationRequested();
 
             LogicResult one = CellForcingForCell(cellIndex);
+            if (one == LogicResult.Invalid)
+            {
+                return LogicResult.Invalid;
+            }
+            anyChanged |= one == LogicResult.Changed;
+        }
+
+        return anyChanged ? LogicResult.Changed : LogicResult.None;
+    }
+
+    /// <summary>
+    /// Cell forcing over a named set of cells, for constraints that asked for it via
+    /// <see cref="Constraint.CellIndicesForCellForcing"/>.
+    /// </summary>
+    private LogicResult CellForcingForCells(int[] cellIndices, CancellationToken cancellationToken)
+    {
+        bool anyChanged = false;
+        for (int i = 0; i < cellIndices.Length; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            LogicResult one = CellForcingForCell(cellIndices[i]);
             if (one == LogicResult.Invalid)
             {
                 return LogicResult.Invalid;

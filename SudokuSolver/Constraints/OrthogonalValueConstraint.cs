@@ -37,6 +37,25 @@ public abstract class OrthogonalValueConstraint : Constraint
     private int[] bfWatchedCells;       // cells with at least one constrained neighbor
 
     /// <summary>
+    /// <c>SUDOKU_OVC_MODE</c>: <c>steplogic</c> (default) runs this constraint's own arc-consistency
+    /// sweep during brute force; <c>cellforcing</c> instead hands the solver its watched cells and
+    /// lets the shared cell-forcing scan cover them. Temporary, to A/B the two designs in one build.
+    /// </summary>
+    private static readonly string OvcMode = Environment.GetEnvironmentVariable("SUDOKU_OVC_MODE");
+
+    /// <summary>
+    /// Whether to hand this constraint's cells to the shared cell-forcing scan instead of running
+    /// the constraint's own sweep. Default is by negative constraint: that is exactly what decides
+    /// whether the declared cells are a handful or the entire grid.
+    /// </summary>
+    private bool UseCellForcingMode => OvcMode switch
+    {
+        "cellforcing" => true,
+        "steplogic" => false,
+        _ => !negativeConstraint,
+    };
+
+    /// <summary>
     /// Determine if the pair of values are allowed to be across the constraint "marker" for a pair of cells.
     /// The opposite of this is used if the negative constraint is enabled.
     /// An example of a constraint "marker" is a black ratio dot, or an "X" for XV constraint.
@@ -292,7 +311,10 @@ public abstract class OrthogonalValueConstraint : Constraint
     /// the always-run bucket being called once per propagation step to return None. The table is
     /// built in <see cref="InitLinks"/>, which <c>FinalizeConstraints</c> runs before it reads this.
     /// </remarks>
-    public override bool WantsBruteForcePropagation => bfPairOffsets != null;
+    public override bool WantsBruteForcePropagation => bfPairOffsets != null && !UseCellForcingMode;
+
+    /// <inheritdoc/>
+    public override IReadOnlyList<int> CellIndicesForCellForcing => UseCellForcingMode ? bfWatchedCells : null;
 
     /// <summary>
     /// Every cell that has at least one constrained neighbor. With a negative constraint that is

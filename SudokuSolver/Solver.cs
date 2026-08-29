@@ -152,6 +152,10 @@ public partial class Solver
 
     // Conflict-score heuristic: shared across all clones in one search tree via reference assignment.
     // Cells that repeatedly cause contradictions get higher scores and are branched on first.
+    // Union of every constraint's CellIndicesForCellForcing, sorted and distinct, or null when no
+    // constraint asked for any. Read-only after FinalizeConstraints, so clones share it.
+    internal int[] constraintCellForcingCells;
+
     internal int[] conflictScores;
     // Shared decay counter: [0] = total increments since last decay, [1] = next decay threshold.
     // Halve all conflict scores every CONFLICT_DECAY_INTERVAL increments (VSIDS-style decay).

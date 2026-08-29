@@ -162,6 +162,7 @@ public partial class Solver
 
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
+        constraintCellForcingCells = other.constraintCellForcingCells;
         // Same reason, and the same reference-sharing: every clone in a search tree tallies its
         // nodes into one counter, so a nested search on a clone still shows up in the total.
         nodeCounter = other.nodeCounter;
@@ -1233,6 +1234,28 @@ public partial class Solver
                 }
             }
             _alwaysRunConstraintBits = alwaysRunBits;
+        }
+
+        // Cells any constraint asked to have cell forcing run on during brute force.
+        {
+            SortedSet<int> cellForcingCells = null;
+            foreach (Constraint constraint in constraints)
+            {
+                IReadOnlyList<int> cells = constraint.CellIndicesForCellForcing;
+                if (cells == null || cells.Count == 0)
+                {
+                    continue;
+                }
+                cellForcingCells ??= new SortedSet<int>();
+                foreach (int cell in cells)
+                {
+                    if ((uint)cell < (uint)NUM_CELLS)
+                    {
+                        cellForcingCells.Add(cell);
+                    }
+                }
+            }
+            constraintCellForcingCells = cellForcingCells is { Count: > 0 } ? [.. cellForcingCells] : null;
         }
 
         // Initialize hidden single tracking array
