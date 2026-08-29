@@ -152,6 +152,7 @@ public partial class Solver
         cfCanFire = other.cfCanFire;
         cfCanFireWords = other.cfCanFireWords;
         cfNewlyFires = other.cfNewlyFires;
+        cfPopEnd = other.cfPopEnd;
 
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
@@ -387,6 +388,15 @@ public partial class Solver
     /// unset cell always has at least two candidates, so such a row could never fire. It happens to
     /// remove every ordinary house link -- A=v is weakly linked to peer=v and nothing else, giving a
     /// one-bit mask -- which is why the table is a small fraction of the full link set.
+    ///
+    /// Two further prunes narrow the table to the board it is compiled on, which is the root of the
+    /// search that will use it: S is intersected with the source cell's live candidates before the
+    /// two-bit test, and rows whose target candidate is already eliminated are dropped. Both are
+    /// exact -- see <see cref="CellForcingTargetIsLive"/> and <c>SUDOKU_CF_PRUNE</c> -- and both
+    /// shorten the scan, which is where the remaining in-search cost of cell forcing sits.
+    ///
+    /// Rows are then ordered by mask size descending so the scan can stop as soon as the masks are
+    /// too small to contain the source cell's candidates; see <c>cfPopEnd</c>.
     /// </remarks>
     internal void CompileCellForcingTable()
     {
@@ -395,15 +405,23 @@ public partial class Solver
             return;
         }
 
+        bool prune = CellForcingPruneEnabled;
+        bool popcountOrder = CellForcingPopcountOrder;
         uint[] scratch = new uint[weakLinks.Length];
         List<int> touched = [];
         int[] offsets = new int[NUM_CELLS + 1];
         List<int> rowTargets = [];
         List<uint> rowMasks = [];
+        int[] popEnd = popcountOrder ? new int[NUM_CELLS * (MAX_VALUE + 1)] : null;
+        int[] popCounts = popcountOrder ? new int[MAX_VALUE + 1] : null;
+        int[] bucketAt = popcountOrder ? new int[MAX_VALUE + 1] : null;
+        int[] orderTargets = popcountOrder ? new int[NUM_CANDIDATES] : null;
+        uint[] orderMasks = popcountOrder ? new uint[NUM_CANDIDATES] : null;
 
         for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
-            offsets[cellIndex] = rowTargets.Count;
+            int rowStart = rowTargets.Count;
+            offsets[cellIndex] = rowStart;
             touched.Clear();
 
             for (int v = 1; v <= MAX_VALUE; v++)
@@ -426,15 +444,51 @@ public partial class Solver
             // whole run of eliminations with one masked clear per target cell.
             touched.Sort();
 
+            // cand(cell) can only shrink from what it is here, and cand(cell) subset of S is the
+            // same question as cand(cell) subset of (S & cand(cell) now), so the mask is narrowed
+            // to the live candidates. A cell whose value is already set drops to one bit and loses
+            // every row -- correct, since cell forcing skips set cells outright.
+            uint liveMask = prune ? board[cellIndex] & ~valueSetMask : ~valueSetMask;
+
+            if (popcountOrder)
+            {
+                Array.Clear(popCounts);
+            }
+
             for (int i = 0; i < touched.Count; i++)
             {
                 int target = touched[i];
-                uint valuesLinking = scratch[target];
+                uint valuesLinking = scratch[target] & liveMask;
                 scratch[target] = 0;
-                if (ValueCount(valuesLinking) >= 2)
+                int valueCount = ValueCount(valuesLinking);
+                if (valueCount < 2)
                 {
-                    rowTargets.Add(target);
-                    rowMasks.Add(valuesLinking);
+                    continue;
+                }
+                if (prune && !CellForcingTargetIsLive(target))
+                {
+                    continue;
+                }
+                rowTargets.Add(target);
+                rowMasks.Add(valuesLinking);
+                if (popcountOrder)
+                {
+                    popCounts[valueCount]++;
+                }
+            }
+
+            if (popcountOrder)
+            {
+                SortCellForcingRowsByPopcount(rowTargets, rowMasks, rowStart, popCounts, bucketAt, orderTargets, orderMasks);
+
+                // popEnd[p] counts the rows with at least p values, which is where the scan for a
+                // cell holding p candidates has to stop.
+                int block = cellIndex * (MAX_VALUE + 1);
+                int atLeast = 0;
+                for (int p = MAX_VALUE; p >= 0; p--)
+                {
+                    atLeast += popCounts[p];
+                    popEnd[block + p] = rowStart + atLeast;
                 }
             }
         }
@@ -443,8 +497,162 @@ public partial class Solver
         cfTargets = [.. rowTargets];
         cfMasks = [.. rowMasks];
         cfOffsets = offsets;
+        cfPopEnd = popEnd;
+
+        if (CellForcingVerify)
+        {
+            VerifyCellForcingTable();
+        }
 
         BuildCellForcingFilter();
+    }
+
+    /// <summary>
+    /// Checks the compiled table against the definition of cell forcing: for every unset cell and
+    /// every candidate set it could ever hold, the eliminations the table's scan produces must be
+    /// exactly the live candidates that every value of that set weakly links to. Throws on the
+    /// first disagreement. Gated by <c>SUDOKU_CF_VERIFY</c>.
+    /// </summary>
+    /// <remarks>
+    /// This walks all 2^|cand| subsets per cell, so it is a switch rather than a startup cost -- but
+    /// it is exhaustive over the masks the search can present, which a corpus of puzzles is not. It
+    /// covers the two board-relative prunes and the popcount row bound together, because it drives
+    /// the same bound the scan uses. Subsets of fewer than two values are skipped: the table has
+    /// never handled those, see the guard in CellForcingForCell.
+    /// </remarks>
+    private void VerifyCellForcingTable()
+    {
+        List<int> reference = [];
+        List<int> fromTable = [];
+
+        for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+        {
+            uint cellMask = board[cellIndex];
+            uint cand = cellMask & ~valueSetMask;
+            if (IsValueSet(cellMask) || ValueCount(cand) < 2)
+            {
+                continue;
+            }
+
+            for (uint subset = cand; subset != 0; subset = (subset - 1) & cand)
+            {
+                int subsetCount = ValueCount(subset);
+                if (subsetCount < 2)
+                {
+                    continue;
+                }
+
+                // The definition: live targets that every value of the subset links to.
+                reference.Clear();
+                bool first = true;
+                uint remaining = subset;
+                while (remaining != 0)
+                {
+                    int v = MinValue(remaining);
+                    remaining &= ~ValueMask(v);
+                    List<int> links = weakLinks[cellIndex * MAX_VALUE + v - 1];
+                    if (first)
+                    {
+                        foreach (int target in links)
+                        {
+                            if (CellForcingTargetIsLive(target))
+                            {
+                                reference.Add(target);
+                            }
+                        }
+                        first = false;
+                    }
+                    else
+                    {
+                        reference.RemoveAll(target => WeakLinkSearch(links, target) < 0);
+                    }
+                    if (reference.Count == 0)
+                    {
+                        break;
+                    }
+                }
+
+                // What the scan would apply for a cell holding exactly this subset.
+                fromTable.Clear();
+                int rowEnd = cfPopEnd != null
+                    ? cfPopEnd[cellIndex * (MAX_VALUE + 1) + subsetCount]
+                    : cfOffsets[cellIndex + 1];
+                for (int row = cfOffsets[cellIndex]; row < rowEnd; row++)
+                {
+                    if ((subset & ~cfMasks[row]) == 0)
+                    {
+                        fromTable.Add(cfTargets[row]);
+                    }
+                }
+
+                reference.Sort();
+                fromTable.Sort();
+                if (!reference.SequenceEqual(fromTable))
+                {
+                    throw new InvalidOperationException(
+                        $"Cell-forcing table disagrees with the definition at cell {cellIndex}, "
+                        + $"subset {subset:x}: definition gives [{string.Join(",", reference)}], "
+                        + $"table gives [{string.Join(",", fromTable)}].");
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether a cell-forcing row's target candidate is still live on the board the table is being
+    /// compiled from, i.e. whether firing the row could ever do anything.
+    /// </summary>
+    /// <remarks>
+    /// A candidate eliminated here is eliminated on every board reachable below, so a row whose
+    /// target is already gone can only ever fire as a no-op -- and it is scanned on every pop of
+    /// its source cell until it does. A target in a cell whose value is <em>set</em> is live, not
+    /// dead: such a row firing means every candidate of the source cell forbids a value the board
+    /// has committed to, which is a contradiction worth finding.
+    /// </remarks>
+    private bool CellForcingTargetIsLive(int candIndex)
+    {
+        var (cell, value) = CandIndexToCellAndValue(candIndex);
+        return (board[cell] & ~valueSetMask & ValueMask(value)) != 0;
+    }
+
+    /// <summary>
+    /// Reorders one source cell's rows by mask size, largest first, so that the rows able to fire
+    /// for a given candidate count form a prefix.
+    /// </summary>
+    /// <remarks>
+    /// A counting sort over <paramref name="popCounts"/>, which the caller has already filled while
+    /// emitting the rows. It is stable, so rows keep the target order <c>touched.Sort()</c> gave
+    /// them inside each size bucket and adjacent rows sharing a target cell still merge into one
+    /// masked clear.
+    /// </remarks>
+    private void SortCellForcingRowsByPopcount(List<int> rowTargets, List<uint> rowMasks, int rowStart, int[] popCounts, int[] bucketAt, int[] orderTargets, uint[] orderMasks)
+    {
+        int rowEnd = rowTargets.Count;
+        int count = rowEnd - rowStart;
+        if (count < 2)
+        {
+            return;
+        }
+
+        int at = 0;
+        for (int p = MAX_VALUE; p >= 2; p--)
+        {
+            bucketAt[p] = at;
+            at += popCounts[p];
+        }
+
+        for (int row = rowStart; row < rowEnd; row++)
+        {
+            int dst = bucketAt[ValueCount(rowMasks[row])]++;
+            orderTargets[dst] = rowTargets[row];
+            orderMasks[dst] = rowMasks[row];
+        }
+
+        for (int i = 0; i < count; i++)
+        {
+            rowTargets[rowStart + i] = orderTargets[i];
+            rowMasks[rowStart + i] = orderMasks[i];
+        }
     }
 
     /// <summary>
@@ -579,6 +787,7 @@ public partial class Solver
         cfOffsets = null;
         cfCanFire = null;
         cfNewlyFires = null;
+        cfPopEnd = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 

@@ -341,6 +341,7 @@ public partial class Solver
         cfOffsets = null;
         cfCanFire = null;
         cfNewlyFires = null;
+        cfPopEnd = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 
@@ -565,6 +566,58 @@ public partial class Solver
 
     /// <summary>Whether any enqueue filter is built at all.</summary>
     internal static bool CellForcingFilterEnabled => CellForcingFilterLevel > 0;
+
+    /// <summary>
+    /// Whether the cell-forcing table's board-relative prunes are applied. <c>SUDOKU_CF_PRUNE</c>:
+    /// <c>1</c> (default) on, <c>0</c> off.
+    /// </summary>
+    /// <remarks>
+    /// Both prunes are exact, for the same reason: every board reachable from the search descends
+    /// from the board the table is compiled on, so a candidate absent then is absent everywhere
+    /// below. Narrowing a row's mask to the source cell's live candidates cannot change whether it
+    /// fires, and a row whose target candidate is already gone can only ever fire as a no-op. The
+    /// two arms must therefore produce bit-identical results and node counts, with only the time
+    /// differing -- an inexact prune shows up as fewer deductions, i.e. as <em>slower</em>, which
+    /// is why the equivalence is checked rather than argued. <c>SUDOKU_CF_VERIFY</c> does the
+    /// checking; both prunes are clean over all 434 boards of corpus.json and corpus-iss.json.
+    ///
+    /// Worth -8.4% on nc-4given (39.5 -> 36.1 ms, allocation 1.18 -> 1.06 MB) and about -1% on the
+    /// heaviest ISS counts, and flat on the NC true-candidates boards -- as the mechanism predicts,
+    /// since a near-blank board has little to prune. The corpus-wide figure is not resolvable on
+    /// this machine; see docs/cell-forcing-worklist.md on the noise floor.
+    /// </remarks>
+    internal static readonly bool CellForcingPruneEnabled = ReadLongEnv("SUDOKU_CF_PRUNE", 1) != 0;
+
+    /// <summary>
+    /// Row order within a cell's block of the cell-forcing table. <c>SUDOKU_CF_ORDER</c>:
+    /// <c>target</c> (default) groups rows by target cell so a run of eliminations shares one masked
+    /// clear; <c>popcount</c> sorts by mask size descending so the scan can stop at the first row
+    /// too small to fire.
+    /// </summary>
+    /// <remarks>
+    /// The two cannot both hold, and <c>popcount</c> lost: +2.0% on nc-4given, +0.8% on both NC
+    /// true-candidates boards and +1% on the heaviest ISS counts, with the same result whether the
+    /// enqueue filter was on or off. The bound is exact and removes real iterations, so the reading
+    /// is that giving up target grouping costs more than the trimmed rows were worth -- the
+    /// argument for it (target grouping pays only on the 6.7% of pops that fire, the bound pays on
+    /// every pop) counted iterations rather than what they cost, which is the mistake
+    /// docs/cell-forcing-worklist.md records twice already. Kept switchable because it is the
+    /// obvious thing to try next and one build should be able to answer it.
+    /// </remarks>
+    internal static readonly bool CellForcingPopcountOrder =
+        (Environment.GetEnvironmentVariable("SUDOKU_CF_ORDER") ?? "target") == "popcount";
+
+    /// <summary>
+    /// Checks every compiled cell-forcing table against the definition of cell forcing.
+    /// <c>SUDOKU_CF_VERIFY=1</c>. Off by default; it is exponential in the candidate count.
+    /// </summary>
+    /// <remarks>
+    /// The prunes and the popcount bound claim to be exact, and an inexact one does not produce a
+    /// wrong answer: it silently drops deductions and shows up only as a slower search, which
+    /// validating counts against expected values cannot see. This switch turns the claim into
+    /// something a corpus run can falsify.
+    /// </remarks>
+    internal static readonly bool CellForcingVerify = ReadLongEnv("SUDOKU_CF_VERIFY", 0) != 0;
 
     /// <summary>
     /// Runs cell forcing at every propagation step of the search, not just during root setup.
@@ -1042,7 +1095,24 @@ public partial class Solver
         // cand(cell) is a subset of a row's mask exactly when every remaining candidate of this
         // cell links to that target, which is the cell-forcing condition.
         uint candMask = mask & ~valueSetMask;
-        int rowEnd = cfOffsets[cellIndex + 1];
+        int candCount = ValueCount(candMask);
+        if (candCount < 2)
+        {
+            // The table has always assumed at least two candidates -- that is the justification for
+            // dropping rows whose mask holds fewer than two values, which a one-candidate cell
+            // could otherwise still fire. Such a cell is a naked single, and the worklist resolves
+            // those before cell forcing pops, so no deduction is lost. Saying so here is what makes
+            // narrowing a row's mask to the cell's live candidates exactly equivalent.
+            return LogicResult.None;
+        }
+
+        // A row fires only if cand(cell) is a subset of its mask, which needs the mask to hold at
+        // least as many values. In popcount order those rows are a prefix, so the bound is a table
+        // lookup rather than a per-row test.
+        int[] popEnd = cfPopEnd;
+        int rowEnd = popEnd != null
+            ? popEnd[cellIndex * (MAX_VALUE + 1) + candCount]
+            : cfOffsets[cellIndex + 1];
         int pendingCell = -1;
         uint pendingMask = 0;
         bool changed = false;

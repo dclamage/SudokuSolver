@@ -87,6 +87,15 @@ public partial class Solver
     private int[] cfTargets;
     private uint[] cfMasks;
 
+    // Row limit per (source cell, candidate count), when the table is compiled in popcount order:
+    // cfPopEnd[cell * (MAX_VALUE + 1) + p] is one past the last row of that cell whose mask holds
+    // at least p values. Firing needs cand(cell) to be a subset of the row's mask, so a row with
+    // fewer bits than cand(cell) has cannot fire; with rows sorted by popcount descending the rows
+    // that can are a prefix, and this turns that bound into the loop limit at no per-row cost.
+    // Null under the default SUDOKU_CF_ORDER=target, in which case the scan runs to
+    // cfOffsets[cell + 1]; the popcount arm measured as a small loss everywhere.
+    private int[] cfPopEnd;
+
     // Enqueue filter for cell forcing: bit m of cell A's block is set iff some row of A has
     // cand-mask m as a subset of its S, i.e. iff a cell whose candidates are exactly m could force
     // anything at all. A board write consults it and skips pushing a cell that provably cannot

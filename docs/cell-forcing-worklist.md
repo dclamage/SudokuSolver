@@ -14,6 +14,9 @@ now measured and it is large: **97.1% of cell-forcing work items do nothing** �
 where that figure turned out to be a poor guide to where the time was. The groundwork is now
 committed on `perf/propagation-worklist` along with both filters, all gated off.
 
+**Steps 1-3 have landed; § "Step 4" adds board-relative table prunes and two negative results,
+including the finding that the enqueue filter's ~0.9 ms build cost is most of a median ISS solve.**
+
 **Step 1 of the recommended order has since landed on its own** — see § "Step 1 is done" — worth
 **−14.3%** on the static-order ISS tune corpus with node counts untouched. It did not land as the
 tiered bucket structure described below, and the reason it paid is not the reason predicted here.
@@ -465,6 +468,144 @@ trigger. Candidates, unmeasured:
 - Accept that the worklist's no-dedup design (§ "A priority worklist") re-pops a cell written many
   times in one step, and measure a per-step dedup guard — carefully, given this doc's own warning
   about mixing a dedup guard with a scan.
+
+## Step 4: board-relative table prunes, and two negative results
+
+Date: 2026-08-29, branch `cf/scan-prunes` off `perf/propagation-worklist`. This is the first piece of
+the "attack the scan, not the trigger" work § "What break-even would take" calls for. Filtering rows
+out of the LUT is that attack: rows are scanned on every pop of their source cell, so a row that
+cannot contribute is pure recurring cost.
+
+### What shipped
+
+Two prunes in `CompileCellForcingTable`, both **exact**, both on by default (`SUDOKU_CF_PRUNE=0` to
+disable):
+
+1. **Narrow each row's mask to the source cell's live candidates**, then apply the existing two-bit
+   test. `cand(A)` only shrinks below what it is at compile time, and `cand(A) ⊆ S` is the same
+   question as `cand(A) ⊆ S ∩ cand(A)`.
+2. **Drop rows whose target candidate is already eliminated.** A candidate gone at compile time is
+   gone on every board below, so such a row can only ever fire as a no-op — and it is scanned until
+   it does. A target in a cell whose value is *set* is live, not dead: that row firing is a
+   contradiction worth finding.
+
+Both are sound because of one invariant, worth stating since the prunes are the first thing to make
+the table board-dependent: **every solver in a search descends from the solver the table was compiled
+on.** All five `CompileGroupedWeakLinks` call sites compile on the search root immediately before
+`InitializeSolverPool`, the copy constructor does *not* inherit the table, and only
+`CopyBruteForceRuntimeStateFrom` shares it — parent to child.
+
+`CellForcingForCell` also now returns early for a cell with fewer than two candidates. The table has
+always assumed that (it is the justification for dropping one-bit masks), but saying it explicitly is
+what makes prune 1 exactly equivalent rather than nearly so.
+
+### The prunes are verified, not argued
+
+`SUDOKU_CF_VERIFY=1` checks every compiled table against the definition of cell forcing: for each
+unset cell and **every** candidate subset it could ever hold, the eliminations the production scan
+would apply must equal the live targets that every value of the subset links to. It throws on the
+first disagreement. Clean over all 434 boards of `corpus.json` and `corpus-iss.json`, in both row
+orders.
+
+This is the right shape of check for this family of change, and cheaper than the alternative. An
+over-aggressive prune does not produce a wrong answer — it silently drops deductions and shows up
+only as *slower* — so validating counts against `expected` proves nothing, and node-count equality
+across two arms proves it only on the boards sampled. Exhausting the masks proves it on the board.
+
+### Result: -8.4% where the board is given-dense, flat where it is not
+
+| case | prunes off | prunes on | |
+| --- | ---: | ---: | --- |
+| `nc-4given` count | 39.5 ms | **36.1 ms** | -8.4%, allocation 1.18 -> 1.06 MB |
+| `iss--Uj9xZPyzM4` count (heaviest ISS case) | 2055 ms | 2037 ms | -0.9% |
+| `iss-0cvA-XDiQNQ` count | 1634 ms | 1632 ms | flat |
+| `tc-blank-nonconsecutive` true candidates | 5201 ms | 5196 ms | flat |
+| `tc-nc-no-r3c4` true candidates | 2060 ms | 2061 ms | flat |
+
+That distribution is the mechanism, not noise: pruning needs candidates to be gone, and a
+`truecandidates` board is nearly blank, so there is almost nothing to remove. It cuts most where the
+root board is already narrow.
+
+### Negative result 1: the popcount row bound does not pay
+
+Firing needs `popcount(S) >= popcount(cand(A))`, so sorting a cell's rows by mask size descending
+makes the firable rows a prefix and turns the bound into the loop limit — `cfPopEnd[cell][p]`, no
+per-row test. It is exact and it does remove iterations. It also loses:
+
+| case | vs target order |
+| --- | ---: |
+| `nc-4given` | +2.0% |
+| `tc-blank-nonconsecutive` | +0.8% |
+| `tc-nc-no-r3c4` | +0.8% |
+| ISS corpus geomean | +1% to +2% |
+
+Identical with the enqueue filter on and off (0.593x vs 0.598x against a common baseline), so the
+filter is not what hides it. Giving up target grouping — which lets a run of eliminations share one
+masked clear — costs more than the trimmed rows were worth. Kept behind `SUDOKU_CF_ORDER=popcount`,
+default `target`, because it is the obvious next idea and one build should answer it.
+
+The prediction that this would be the *large* lever was wrong for the third time in this document's
+history, and for the third time the same reason: **it counted iterations rather than what they
+cost.** § "The filter's prediction was wrong" already says this. Predicted lever, measured wash.
+
+### Negative result 2 turned into the real finding: the filter's build cost
+
+Turning the enqueue filter off (`SUDOKU_CF_FILTER=0`) was supposed to isolate the bound. It produced
+a **0.60x per-case geomean on the ISS corpus with a 3.5% worse total** — the divergence the
+benchmark README warns about, and here it is diagnostic rather than a trap:
+
+| case | filter on | filter off | |
+| --- | ---: | ---: | --- |
+| `iss-blPgSzctUMg` count (5 ms puzzle) | 4.55 ms | **3.67 ms** | filter build is ~0.9 ms, ~19% of the solve |
+| `tc-nc-no-r3c4` true candidates | 2061 ms | 2360 ms | +14.5% without it |
+| `tc-blank-nonconsecutive` true candidates | 5196 ms | 5486 ms | +5.6% without it |
+| `nc-4given` count | 36.1 ms | 36.8 ms | +1.7% without it |
+
+`cfNewlyFires` is built by a zeta transform over `2^MAX_VALUE * MAX_VALUE` per cell — ~3.4M
+operations and ~47 KB per puzzle — and that is **fixed setup cost paid before the first node**. On a
+long search it earns itself back several times over. On the median ISS puzzle, which solves in 1.1
+ms, it is most of the solve.
+
+So the filter is not primarily a write-path-lookup trade, which is how § "The enqueue filter" framed
+its risk and how the -1.3% was read. It is a **setup-cost versus search-savings** trade, and nothing
+currently decides which side a given puzzle is on.
+
+**The follow-up this implies, unmeasured:** build the filter *lazily*, triggered by node count. Before
+the trigger, enqueue unconditionally; at node N, build and start consulting. Both filters are exact,
+so consulting them or not cannot change a deduction — node counts stay bit-identical and there is no
+branch-order lottery to fear. Easy puzzles would never pay the build; long searches would pay it once,
+N nodes late. `truecandidates` recompiles per grid edit, so it is the entry point that gains most.
+
+### Methodology: this machine's noise floor is +/-5% at 5 iterations
+
+The first version of the result above claimed the prunes were worth -8.0% on the ISS corpus geomean.
+They are not. Running the **same arm** against its own saved baseline gives 0.947x, and a second
+control gives 1.047x — a bidirectional +/-5% band that swamps anything this change does corpus-wide.
+The first run of a session is also systematically slow, so a baseline saved from it inflates every
+later arm.
+
+What works instead, and what every figure in this section uses: **a few long single cases, arms run
+interleaved, `--iterations 9`.** `tc-blank-nonconsecutive` repeated within 0.04% across runs
+(5200.6 / 5198.6 ms) and `iss--Uj9xZPyzM4` within 0.9%. A 2-second case measured twice beats 398
+one-millisecond cases measured five times, for this kind of change.
+
+Recorded because § "Methodology" already says three results had to be retracted for defining the bar
+after the measurement. This one was caught before it was written down, by the cheapest possible
+control: run the baseline arm twice.
+
+### Where this leaves the plan
+
+Still open, in the order they now look worth doing:
+
+1. **Lazy, node-triggered filter build.** The measured cost is real and the exactness argument makes
+   it free of behavioral risk. Biggest number on the table.
+2. **A usefulness filter over rows**, per the discussion these prunes came out of. The exact prunes
+   are now exhausted; what remains needs a value judgment. Before choosing any threshold, instrument
+   a histogram of rows scanned / fired / newly eliminated bucketed by `k = |cand(A)| - popcount(S)`
+   and by `popcount(S)` — **weighted by cost, not frequency**, which is the lesson this document has
+   now learned three times.
+3. **The entry-point gate stays orthogonal.** Prunes cut cost; they cannot predict the `nc-4given`
+   -33.1% production win, which § "Where it does pay" is explicit is a branch-order effect.
 
 ## Methodology — read before measuring anything
 
