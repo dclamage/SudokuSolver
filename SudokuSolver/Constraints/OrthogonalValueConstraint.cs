@@ -48,12 +48,7 @@ public abstract class OrthogonalValueConstraint : Constraint
     /// the constraint's own sweep. Default is by negative constraint: that is exactly what decides
     /// whether the declared cells are a handful or the entire grid.
     /// </summary>
-    private bool UseCellForcingMode => OvcMode switch
-    {
-        "cellforcing" => true,
-        "steplogic" => false,
-        _ => !negativeConstraint,
-    };
+    private bool UseCellForcingMode => OvcMode == "cellforcing";
 
     /// <summary>
     /// Determine if the pair of values are allowed to be across the constraint "marker" for a pair of cells.

@@ -1,7 +1,7 @@
 # Cell forcing in the search: what is measured, and the design that follows
 
-Date: 2026-08-28. Handoff for an unfinished piece of work. Everything below is measured on the
-398-puzzle ISS corpus unless stated. Branch `wasm-prototype`, last pushed commit `706e8cf`.
+Date: 2026-08-28, status refreshed 2026-08-29. Handoff for an unfinished piece of work. Everything
+below is measured on the 398-puzzle ISS corpus unless stated. Branch `wasm-prototype`.
 
 ## Status in one paragraph
 
@@ -11,8 +11,18 @@ costs about twice what it saves. The design agreed for closing that gap is a **p
 that drains to fixpoint inside `BruteForcePropagate`, cheapest deductions first, plus a
 **precomputed filter** that refuses to enqueue work that provably cannot fire. The filter's value is
 now measured and it is large: **97.1% of cell-forcing work items do nothing** — but see § "Step 3",
-where that figure turned out to be a poor guide to where the time was. The groundwork is now
-committed on `perf/propagation-worklist` along with both filters, all gated off.
+where that figure turned out to be a poor guide to where the time was.
+
+**Status correction (2026-08-29).** This paragraph used to say the groundwork was "committed on
+`perf/propagation-worklist` … all gated off", which is no longer true and contradicted § "Step 4"
+below. `cf/scan-prunes` (`d88a36c`) is **merged into `wasm-prototype`** and the table prunes are
+**on by default** (`SUDOKU_CF_PRUNE`, default 1). What remains off is the *trigger*:
+`SUDOKU_CF_TRIGGER=off` means root setup only.
+
+**And the gap is not closed.** With the prunes active, `SUDOKU_CF_TRIGGER=every` against `off` on
+`corpus.json` measures **geomean 1.364× — 36% slower** — for 9 cases with fewer nodes and 2 with
+more. So the prunes did not move the economics, consistent with § "Step 5" concluding the remaining
+candidate is the enqueue path rather than the table.
 
 **Steps 1-3 have landed. § "Step 4" adds exact board-relative table prunes. § "Step 5" measures the
 per-row usefulness question the prunes were groundwork for and closes it: a perfect oracle filter

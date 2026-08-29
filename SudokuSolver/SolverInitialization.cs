@@ -808,6 +808,26 @@ public partial class Solver
             return LogicResult.None;
         }
 
+        var (cell0, v0) = CandIndexToCellAndValue(candIndex0);
+        var (cell1, v1) = CandIndexToCellAndValue(candIndex1);
+
+        // Two candidates of the same cell are already mutually exclusive by representation -- a
+        // cell is one bitmask and setting a value clears the rest -- so a link between them states
+        // something the engine cannot violate. Storing it would be pure weight: another entry in
+        // every candidate's list to clone, walk and binary-search, and a row in the cell-forcing
+        // table that can never fire (its mask is every value but the target's, so "cand subset of
+        // mask" is exactly "target already gone").
+        //
+        // The invariant was previously a convention held separately by every caller, which is the
+        // kind that stops holding: AddCloneLink was producing these from a typo (below) and nothing
+        // noticed, because they are inert rather than wrong. Rejected here rather than asserted for
+        // the same reason -- a caller that builds one has a bug worth fixing, but the link itself
+        // cannot make an answer incorrect, so failing the run over it would be the wrong trade.
+        if (cell0 == cell1)
+        {
+            return LogicResult.None;
+        }
+
         // Any mutation invalidates the grouped table; it is rebuilt before the next search.
         wlGroupedOffsets = null;
         cfOffsets = null;
@@ -818,9 +838,6 @@ public partial class Solver
         wlMatrix = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
-
-        var (cell0, v0) = CandIndexToCellAndValue(candIndex0);
-        var (cell1, v1) = CandIndexToCellAndValue(candIndex1);
 
         uint cell0Mask = board[cell0];
         uint cell1Mask = board[cell1];
@@ -890,7 +907,7 @@ public partial class Solver
 
         LogicResult result = LogicResult.None;
 
-        var (cell0, value0) = CandIndexToCellAndValue(candIndex1);
+        var (cell0, value0) = CandIndexToCellAndValue(candIndex0);
         for (int v0 = 1; v0 <= MAX_VALUE; v0++)
         {
             if (v0 != value0)
