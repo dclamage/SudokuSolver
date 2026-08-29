@@ -241,6 +241,14 @@ machine has to run them before `--import-iss` will work.
 **1b, 1c and 3 are closed or done**, and Priority 1's two items were both investigated and answered.
 What is genuinely open, roughly by value:
 
+> Unvalidated ideas — no shape, no schedule — live in [`ideas.md`](ideas.md), not here. An idea
+> earns a row in this table once someone has scoped it. Note that `ideas.md` currently lists a
+> **committed node counter** as a prerequisite blocking four of its six entries.
+>
+> [`logical-solver-audit.md`](logical-solver-audit.md) covers the *logical* arm — seven tasks, and a
+> standing `AGENTS.md` instruction ("performance is secondary" for the non-brute-force arm) that its
+> task T2 deliberately reverses.
+
 | what | where | shape |
 | --- | --- | --- |
 | **Give `OrthogonalValueConstraint` brute-force propagation.** Kropki/difference/ratio/XV have the same defect renban and whisper had — `WantsBruteForcePropagation => false` plus an `isBruteForcing` short-circuit — and the deduction is *already written* in its `StepLogic`. Deleting both guards takes `1HuNjcLWlPE` from 18.9 s to **6.35 s**, but allocation from 1.0 to 7.8 GB. | [`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5 | Contained; the work is making the existing pass allocation-free and queue-driven |
@@ -671,6 +679,8 @@ is part of the same habit.
    propagates, and why "weak links enforce it" is not enough.
 4f. [`whisper-arc-consistency.md`](whisper-arc-consistency.md) — the same lesson applied to whispers,
    and the dots, which still have the defect.
+4g. [`weak-link-bitmatrix-exploration.md`](weak-link-bitmatrix-exploration.md) — why a general
+   bitmatrix view was rejected, the one place it wins, and the parity-census method.
 5. [`logical-solver-allocation.md`](logical-solver-allocation.md) — the browser memory problem.
 6. [`solver-pooling-audit.md`](solver-pooling-audit.md) + [`truecandidates-allocation.md`](truecandidates-allocation.md) — what's already pooled and why MT is deliberately off.
 7. [`wasm-prototype-findings.md`](wasm-prototype-findings.md) — the .NET-WASM constraints that dictate host architecture.
