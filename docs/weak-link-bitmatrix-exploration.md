@@ -189,8 +189,12 @@ Measured in one build, paired, 9 iterations:
 | `renban-sky-logical` | 463.1 ms | 439.4 ms | 0.949x |
 | `iss-blPgSzctUMg` (no skyscraper) | 4.16 ms | 4.08 ms | unchanged, matrix not built |
 
-Both corpora validate under both arms, and `SkyscraperConstraint` now has the tests it did not have
-when its inner loop was rewritten. One known and accepted gap: on the logical path, a mid-solve
+Both corpora validate under both arms. `SkyscraperConstraint` also gained tests of its own
+semantics; it was not previously untested — `Puzzles.uniqueVariantFPuzzles[31]` holds a skyscraper
+puzzle that `SolveUniqueVariantFPuzzles` already drove through count, solve and true-candidates in
+both threading modes, which is what covered this rewrite. Grepping the test sources for the
+constraint name finds nothing because fpuzzles strings are compressed, so a coverage claim about them
+has to come from loading the corpus, not from a text search. One known and accepted gap: on the logical path, a mid-solve
 `AddWeakLink` nulls the matrix and nothing rebuilds it, so that solve finishes on the list path.
 Correct, just not accelerated.
 

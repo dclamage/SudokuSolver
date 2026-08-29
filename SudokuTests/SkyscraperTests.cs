@@ -2,8 +2,17 @@ namespace SudokuTests;
 
 /// <summary>
 /// Tests for <c>SkyscraperConstraint</c>, whose support search is the solver's only consumer of
-/// <see cref="Solver.IsWeakLinkToAny"/>. The constraint had no tests when that path was added.
+/// <see cref="Solver.IsWeakLinkToAny"/>.
 /// </summary>
+/// <remarks>
+/// The constraint was not untested before these: <c>Puzzles.uniqueVariantFPuzzles[31]</c> contains a
+/// skyscraper, so <c>SolverTests.SolveUniqueVariantFPuzzles</c> already drove it through
+/// <c>TestUniqueSolution</c> — solution count, <c>FindSolution</c> and <c>TrueCandidates</c>, each
+/// single- and multi-threaded. That is what regression-tested the support search when its blocked
+/// test was rewritten. What was missing, and is here, is coverage of the constraint's own semantics
+/// rather than one puzzle that happens to contain it. Grepping the test sources for "skyscraper"
+/// finds nothing, because fpuzzles strings are compressed — check the corpus by loading it.
+/// </remarks>
 /// <remarks>
 /// <c>skyscraper:SrXcY</c> clues the line that enters the grid at r<c>X</c>c<c>Y</c>, so a column
 /// index of 0 means "row X, scanned left to right" — not a column.
