@@ -45,6 +45,36 @@ general can be cheap inside a constraint that already knows where to look. That 
 rather than a one-off, and it is worth trying against any other constraint whose weak links carry
 this much structure.
 
+### It overlaps cell forcing exactly, and it has eaten some of the remaining upside
+
+**Re-baseline before continuing this work.** Measured under `SUDOKU_BRANCH_ORDER=static`, so these
+are propagator effects with no ordering noise:
+
+| nodes | pre-OVC, CF off | pre-OVC, CF on | post-OVC, CF off | post-OVC, CF on |
+| --- | ---: | ---: | ---: | ---: |
+| `kropki-search-cap50k` | 2,580,190 | 643,663 | 1,004,219 | **643,663** |
+| `nc-4given` | 65,633 | 31,465 | 32,493 | **31,465** |
+| `variant-cloneways` | 2,001 | 54 | 625 | **54** |
+
+With cell forcing on, the last column is **byte-identical** to the pre-change CF-on column. That is
+proof rather than inference: the constraint's deduction is an exact *subset* of cell forcing, and
+with cell forcing enabled it contributes nothing new.
+
+Two consequences:
+
+- **In-search there was no overlap, which is exactly why it paid.** `SUDOKU_CF_TRIGGER` defaults to
+  `off`, which means *root setup only* (`FastFindCellForcing` is called unguarded from
+  `FastAdvancedStrategies`, and guarded by `ShouldRunCellForcing()` from `StepBruteForceLogic`).
+  Nothing re-derived these eliminations as the board changed. **At root the two do duplicate** —
+  one redundant pass, not worth gating out.
+- **The remaining prize on this puzzle class is now smaller.** The constraint already captures
+  **81% / 97% / 71%** of the available node reduction on the three cases above, so the marginal gain
+  from switching cell forcing on drops from 4.0x to 1.56x on `kropki-search-cap50k`. Cell forcing
+  was already 2x underwater on cost; on dots and nonconsecutive puzzles most of what it had left to
+  win is now free. The corpus is mostly puzzles with no such constraint, where nothing moved — but
+  any figure in this document measured before 2026-08-29 overstates cell forcing's remaining value
+  on the affected class.
+
 ## Why in-search cell forcing does not pay yet
 
 Measured with `SUDOKU_BRANCH_ORDER=static SUDOKU_NODE_CAP=200000`, on the puzzles that complete in

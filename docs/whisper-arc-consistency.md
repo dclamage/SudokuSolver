@@ -193,6 +193,19 @@ worklist or enqueue bookkeeping because it rides the constraint queue that alrea
 Worth carrying forward: **a deduction that is too expensive to find in general may be cheap inside a
 constraint that already knows where to look.**
 
+The overlap is exact, and it was measured rather than argued. Under `SUDOKU_BRANCH_ORDER=static`,
+turning cell forcing on (`SUDOKU_CF_TRIGGER=dirty`) reaches **byte-identical node counts with and
+without this change** on `kropki-search-cap50k` (643,663), `nc-4given` (31,465) and
+`variant-cloneways` (54). So this is a strict subset of cell forcing, and the reason it pays is
+purely that in-search cell forcing is off by default: `SUDOKU_CF_TRIGGER=off` means *root setup
+only*, so nothing re-derived these as the board changed. At root the two genuinely duplicate, which
+is one redundant pass and not worth gating out.
+
+It also takes **81% / 97% / 71%** of the pruning cell forcing would add on those three cases, which
+shrinks the prize for the in-progress work on making cell forcing pay. Recorded in
+[`cell-forcing-worklist.md`](cell-forcing-worklist.md) so that work re-baselines rather than trusting
+its pre-2026-08-29 figures.
+
 ### What it cost, honestly
 
 Stronger propagation changes candidate counts, which feed `GetLeastCandidateCell`, which changes
