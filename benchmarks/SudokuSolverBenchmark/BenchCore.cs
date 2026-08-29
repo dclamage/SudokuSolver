@@ -41,6 +41,12 @@ internal sealed class BenchResult
     public double MinMs { get; set; }
     public double MedianMs { get; set; }
     public double AllocMB { get; set; }
+    /// <summary>
+    /// Search nodes expanded, median over the timed iterations. Exact and machine-independent, so
+    /// it is the metric for a pruning change: see <see cref="Solver.NodesVisited"/>. Deterministic
+    /// ops give the same figure every iteration; the "estimate" op samples randomly and does not.
+    /// </summary>
+    public long Nodes { get; set; }
 }
 
 /// <summary>
@@ -56,6 +62,7 @@ internal static class BenchCore
         RunOp(Build(c), c, forceMultiThread);
 
         var times = new double[iterations];
+        var nodes = new long[iterations];
         long result = 0;
         long allocatedBytes = 0;
         var stopwatch = new Stopwatch();
@@ -75,9 +82,13 @@ internal static class BenchCore
             allocatedBytes = GC.GetTotalAllocatedBytes(precise: true) - before;
 
             times[i] = stopwatch.Elapsed.TotalMilliseconds;
+            // Read off the same solver the op ran on: the counter is shared with every clone in
+            // the search tree, so nested searches are already included.
+            nodes[i] = solver.NodesVisited;
         }
 
         Array.Sort(times);
+        Array.Sort(nodes);
         bool ok = c.Expected is null || result == c.Expected;
         return new BenchResult
         {
@@ -88,6 +99,7 @@ internal static class BenchCore
             MinMs = times[0],
             MedianMs = times[iterations / 2],
             AllocMB = allocatedBytes / 1_000_000.0,
+            Nodes = nodes[iterations / 2],
         };
     }
 

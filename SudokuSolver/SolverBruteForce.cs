@@ -52,6 +52,66 @@ public partial class Solver
     }
 
     /// <summary>
+    /// Counts the search nodes a brute-force search expanded, for measuring pruning changes.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately separate from <see cref="NodeBudget"/>, which only counts when a budget is set
+    /// and stops mattering once the budget is gone. This counts unconditionally, so it cannot ride
+    /// that field: making <see cref="NodeBudget.ChargeNode"/>'s <c>Interlocked.Increment</c>
+    /// unconditional would put a contended atomic on the hottest path in the default, unbudgeted
+    /// case.
+    ///
+    /// The contention is avoided instead by never incrementing this from the search loop. Each loop
+    /// keeps a plain <see langword="long"/> local and adds it here once, on the way out — one atomic
+    /// per search task rather than one per node.
+    ///
+    /// The instance is shared by reference across every clone in a search tree (see the copy
+    /// constructor), which is what makes nested searches count: true candidates resolves leftover
+    /// candidates by running <see cref="CountSolutions"/> on clones, and those nodes are real work
+    /// that would otherwise vanish from the total.
+    /// </remarks>
+    internal sealed class NodeCounter
+    {
+        private long count;
+
+        public long Count => Interlocked.Read(ref count);
+
+        /// <summary>Adds one search task's node tally. Called once per task, not once per node.</summary>
+        public void Add(long nodes)
+        {
+            if (nodes != 0)
+            {
+                Interlocked.Add(ref count, nodes);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Shared with every clone in this solver's search tree, so all of them tally into one place.
+    /// Never null: the copy constructor inherits the parent's instance rather than allocating, which
+    /// matters because brute force clones millions of times.
+    /// </summary>
+    internal NodeCounter nodeCounter;
+
+    /// <summary>
+    /// Search nodes expanded by brute-force searches run through this solver, cumulative over its
+    /// lifetime and including searches run on its clones.
+    /// </summary>
+    /// <remarks>
+    /// The metric for pruning work: a change that prunes better visits fewer nodes, and unlike a
+    /// timing that is exact and reproducible across machines. It is cumulative rather than
+    /// per-call, because a nested search would otherwise have to decide whose count to reset;
+    /// measure a single operation by reading this on a freshly built solver.
+    ///
+    /// Counts nodes popped from a search stack — the same events <see cref="NodeBudget"/> charges
+    /// against, plus the estimator's sampled frames. Root setup work, including weak-link
+    /// discovery's probes, is propagation rather than search and is not counted. When
+    /// <see cref="WeakLinkDiscoveryMode.Deferred"/> abandons an attempt and restarts, the abandoned
+    /// prefix stays in the total: it was really visited.
+    /// </remarks>
+    public long NodesVisited => nodeCounter.Count;
+
+    /// <summary>
     /// Finds a single solution to the board. This may not be the only solution.
     /// For the exact same board inputs, the solution will always be the same.
     /// The board itself is modified to have the solution as its board values.
@@ -255,6 +315,9 @@ public partial class Solver
         int stackCount = 0;
         PushSearchStack(ref stack, ref stackCount, root);
 
+        // Plain local, flushed to the shared counter once on the way out. See Solver.NodesVisited.
+        long nodesVisited = 0;
+
         try
         {
             while (state.result is null && TryPopSearchStack(stack, ref stackCount, out Solver solver))
@@ -271,6 +334,7 @@ public partial class Solver
                     state.ReleaseSolver(solver);
                     break;
                 }
+                nodesVisited++;
 
                 if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintMask != null)
                 {
@@ -340,6 +404,8 @@ public partial class Solver
         }
         finally
         {
+            root.nodeCounter.Add(nodesVisited);
+
             // A found result or a cancellation can leave entries on the stack.
             while (TryPopSearchStack(stack, ref stackCount, out Solver remaining))
             {
@@ -639,6 +705,10 @@ public partial class Solver
 
         Solver[] stack = isMultithreaded ? state.RentSearchStack() : state.searchStack;
         int stackCount = 0;
+
+        // Plain local, flushed to the shared counter once on the way out. See Solver.NodesVisited.
+        long nodesVisited = 0;
+
         try
         {
             PushSearchStack(ref stack, ref stackCount, root);
@@ -652,6 +722,7 @@ public partial class Solver
                     state.ReleaseSolver(solver);
                     break;
                 }
+                nodesVisited++;
 
                 if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintMask != null)
                 {
@@ -719,6 +790,8 @@ public partial class Solver
         }
         finally
         {
+            root.nodeCounter.Add(nodesVisited);
+
             while (TryPopSearchStack(stack, ref stackCount, out Solver remainingSolver))
             {
                 state.ReleaseSolver(remainingSolver);
@@ -1386,110 +1459,123 @@ public partial class Solver
         // per node dominated true-candidates allocation.
         List<int> bestCellIndices = [];
 
-        while (stack.TryPop(out Solver solver))
+        // Plain local, flushed to the shared counter once in the finally. See Solver.NodesVisited.
+        // The finally is why the loop is wrapped at all: this method exits by cancellation as a
+        // matter of course, and a tally dropped on that path would silently under-report.
+        long nodesVisited = 0;
+
+        try
         {
-            state.cancellationToken.ThrowIfCancellationRequested();
-
-            if (state.nodeBudget.ChargeNode() || state.Stalled)
+            while (stack.TryPop(out Solver solver))
             {
-                state.ReleaseSolver(solver);
-                break;
-            }
+                state.cancellationToken.ThrowIfCancellationRequested();
 
-            if (!solver.TrueCandidatesPropogate(state))
-            {
-                state.ReleaseSolver(solver);
-                continue;
-            }
-
-            // Search for the next cell to try
-            int cellIndex;
-            int val;
-            if (state.needCandidateMask != null)
-            {
-                bestCellIndices.Clear();
-                int bestCellIndicesCount = int.MaxValue;
-                int numCells = solver.NUM_CELLS;
-                for (int curCellIndex = 0; curCellIndex < numCells; curCellIndex++)
+                if (state.nodeBudget.ChargeNode() || state.Stalled)
                 {
-                    uint curCellMask = solver.board[curCellIndex];
-                    if ((curCellMask & valueSetMask) != 0)
+                    state.ReleaseSolver(solver);
+                    break;
+                }
+                nodesVisited++;
+
+                if (!solver.TrueCandidatesPropogate(state))
+                {
+                    state.ReleaseSolver(solver);
+                    continue;
+                }
+
+                // Search for the next cell to try
+                int cellIndex;
+                int val;
+                if (state.needCandidateMask != null)
+                {
+                    bestCellIndices.Clear();
+                    int bestCellIndicesCount = int.MaxValue;
+                    int numCells = solver.NUM_CELLS;
+                    for (int curCellIndex = 0; curCellIndex < numCells; curCellIndex++)
                     {
+                        uint curCellMask = solver.board[curCellIndex];
+                        if ((curCellMask & valueSetMask) != 0)
+                        {
+                            continue;
+                        }
+
+                        int candidateCount = ValueCount(curCellMask);
+                        if (candidateCount < bestCellIndicesCount)
+                        {
+                            bestCellIndices.Clear();
+                            bestCellIndicesCount = candidateCount;
+                        }
+
+                        if (candidateCount <= bestCellIndicesCount)
+                        {
+                            int neededCandidateCount = ValueCount(curCellMask & state.needCandidateMask[curCellIndex]);
+                            // Purposefully looping one extra time so even non-needed cells have a chance to be picked
+                            for (int i = 0; i <= neededCandidateCount; i++)
+                            {
+                                bestCellIndices.Add(curCellIndex);
+                            }
+                        }
+                    }
+
+                    if (bestCellIndices.Count == 0)
+                    {
+                        // This is actually a solution (this really shouldn't be happening, it will be caught earlier)
+                        state.IncrementSolutions(solver);
+                        state.ReleaseSolver(solver);
                         continue;
                     }
 
-                    int candidateCount = ValueCount(curCellMask);
-                    if (candidateCount < bestCellIndicesCount)
+                    cellIndex = bestCellIndices[state.searchRandom.NextIndex(bestCellIndices.Count)];
+
+                    // Try a possible value for this cell, preferring a value that is still needed, if possible
+                    uint cellMask = solver.board[cellIndex];
+                    uint neededMask = state.needCandidateMask[cellIndex] & cellMask;
+                    val = MinValue(neededMask != 0 ? neededMask : cellMask);
+                }
+                else
+                {
+                    // Start with the cell that has the least possible candidates
+                    (cellIndex, int v) = solver.GetLeastCandidateCell();
+                    if (cellIndex < 0)
                     {
-                        bestCellIndices.Clear();
-                        bestCellIndicesCount = candidateCount;
+                        state.IncrementSolutions(solver);
+                        state.ReleaseSolver(solver);
+                        continue;
                     }
 
-                    if (candidateCount <= bestCellIndicesCount)
+                    // Try a possible value for this cell
+                    val = v != 0 ? v : MinValue(solver.board[cellIndex]);
+                }
+
+                // Create a solver without this value and start a task for it
+                Solver newSolver = state.RentBranchSolver(solver);
+                newSolver.isBruteForcing = true;
+                if (newSolver.ClearValue(cellIndex, val))
+                {
+                    if (!isMultithreaded || !state.PushSolver(newSolver))
                     {
-                        int neededCandidateCount = ValueCount(curCellMask & state.needCandidateMask[curCellIndex]);
-                        // Purposefully looping one extra time so even non-needed cells have a chance to be picked
-                        for (int i = 0; i <= neededCandidateCount; i++)
-                        {
-                            bestCellIndices.Add(curCellIndex);
-                        }
+                        stack.Push(newSolver);
                     }
                 }
-
-                if (bestCellIndices.Count == 0)
+                else
                 {
-                    // This is actually a solution (this really shouldn't be happening, it will be caught earlier)
-                    state.IncrementSolutions(solver);
+                    state.ReleaseSolver(newSolver);
+                }
+
+                if (solver.SetValue(cellIndex, val))
+                {
+                    solver.branchCellIndex = cellIndex;
+                    stack.Push(solver);
+                }
+                else
+                {
                     state.ReleaseSolver(solver);
-                    continue;
-                }
-
-                cellIndex = bestCellIndices[state.searchRandom.NextIndex(bestCellIndices.Count)];
-
-                // Try a possible value for this cell, preferring a value that is still needed, if possible
-                uint cellMask = solver.board[cellIndex];
-                uint neededMask = state.needCandidateMask[cellIndex] & cellMask;
-                val = MinValue(neededMask != 0 ? neededMask : cellMask);
-            }
-            else
-            {
-                // Start with the cell that has the least possible candidates
-                (cellIndex, int v) = solver.GetLeastCandidateCell();
-                if (cellIndex < 0)
-                {
-                    state.IncrementSolutions(solver);
-                    state.ReleaseSolver(solver);
-                    continue;
-                }
-
-                // Try a possible value for this cell
-                val = v != 0 ? v : MinValue(solver.board[cellIndex]);
-            }
-
-            // Create a solver without this value and start a task for it
-            Solver newSolver = state.RentBranchSolver(solver);
-            newSolver.isBruteForcing = true;
-            if (newSolver.ClearValue(cellIndex, val))
-            {
-                if (!isMultithreaded || !state.PushSolver(newSolver))
-                {
-                    stack.Push(newSolver);
                 }
             }
-            else
-            {
-                state.ReleaseSolver(newSolver);
-            }
-
-            if (solver.SetValue(cellIndex, val))
-            {
-                solver.branchCellIndex = cellIndex;
-                stack.Push(solver);
-            }
-            else
-            {
-                state.ReleaseSolver(solver);
-            }
+        }
+        finally
+        {
+            root.nodeCounter.Add(nodesVisited);
         }
     }
 
@@ -1657,167 +1743,180 @@ public partial class Solver
         Stack<EstimationFrame> stack = new(capacity: 64);
         stack.Push(new EstimationFrame(root, PathProb: 1.0, ExactOffset: 0.0));
 
-        while (stack.Count > 0)
+        // Plain local, flushed to the shared counter once in the finally. See Solver.NodesVisited.
+        // One estimator sample is one call, and it returns from inside the loop, so the finally is
+        // what makes the tally survive every exit.
+        long nodesVisited = 0;
+
+        try
         {
-            state.cancellationToken.ThrowIfCancellationRequested();
-            EstimationFrame frame = stack.Pop();
-
-            Solver solver = frame.Board;
-            double pathProb = frame.PathProb;
-            double exactCarry = frame.ExactOffset;
-
-            //------------------------------------------------------------
-            // 1.  Propagate singles
-            //------------------------------------------------------------
-            LogicResult lr = solver.BruteForcePropagate(false, state.cancellationToken);
-            if (lr == LogicResult.Invalid)
+            while (stack.Count > 0)
             {
-                state.NewSample(exactCarry); // contributes 0
+                state.cancellationToken.ThrowIfCancellationRequested();
+                EstimationFrame frame = stack.Pop();
+                nodesVisited++;
+
+                Solver solver = frame.Board;
+                double pathProb = frame.PathProb;
+                double exactCarry = frame.ExactOffset;
+
+                //------------------------------------------------------------
+                // 1.  Propagate singles
+                //------------------------------------------------------------
+                LogicResult lr = solver.BruteForcePropagate(false, state.cancellationToken);
+                if (lr == LogicResult.Invalid)
+                {
+                    state.NewSample(exactCarry); // contributes 0
+                    state.ReleaseSolver(solver);
+                    return;
+                }
+                if (lr == LogicResult.PuzzleComplete)
+                {
+                    state.NewSample(exactCarry + 1.0 / pathProb);
+                    state.ReleaseSolver(solver);
+                    return;
+                }
+
+                //------------------------------------------------------------
+                // 2.  Choose MRV cell
+                //------------------------------------------------------------
+                (int cell, _) = solver.GetLeastCandidateCell(bilocalWeightPercent: 0);
+                if (cell < 0)
+                {
+                    // Defensive: treat as solved
+                    state.NewSample(exactCarry + 1.0 / pathProb);
+                    state.ReleaseSolver(solver);
+                    return;
+                }
+
+                //------------------------------------------------------------
+                // 3.  Build weights & exact subtotals
+                //------------------------------------------------------------
+                uint cellMask = solver.board[cell];
+                double H = 0.0;
+                int kOpen = 0;
+                double exactSum = 0.0;
+
+                Array.Clear(heuristic);
+                Array.Clear(childSolvers);
+
+                for (int val = 1; val <= solver.MAX_VALUE; val++)
+                {
+                    int idx = val - 1;
+
+                    if ((cellMask & ValueMask(val)) == 0)
+                    {
+                        // digit forbidden
+                        continue;
+                    }
+
+                    Solver childSolver = state.RentBranchSolver(solver);
+                    if (!childSolver.SetValue(cell, val))
+                    {
+                        state.ReleaseSolver(childSolver);
+                        // contradiction
+                        continue;
+                    }
+
+                    LogicResult childResult = childSolver.BruteForcePropagate(false, state.cancellationToken);
+                    if (childResult == LogicResult.Invalid)
+                    {
+                        state.ReleaseSolver(childSolver);
+                        // contradiction
+                        continue;
+                    }
+                    if (childResult == LogicResult.PuzzleComplete)
+                    {
+                        // solved instantly
+                        exactSum += 1.0;
+                        state.ReleaseSolver(childSolver);
+                        continue;
+                    }
+
+                    int remaining = childSolver.CountCandidatesForNonGivens();
+                    if (remaining <= tinyBranchThreshold)
+                    {
+                        // exact enumeration for tiny branch
+                        long exactCnt = childSolver.CountSolutions(cancellationToken: state.cancellationToken);
+                        exactSum += exactCnt;
+                        state.ReleaseSolver(childSolver);
+                        continue;
+                    }
+
+                    // --- Monte-Carlo child ---
+                    childSolvers[idx] = childSolver;
+                    heuristic[idx] = remaining; // h_i
+                    H += remaining;
+                    kOpen++;
+                }
+
+                // Every child has been cloned from it, so the frame's own board is now dead.
                 state.ReleaseSolver(solver);
-                return;
-            }
-            if (lr == LogicResult.PuzzleComplete)
-            {
-                state.NewSample(exactCarry + 1.0 / pathProb);
-                state.ReleaseSolver(solver);
-                return;
-            }
 
-            //------------------------------------------------------------
-            // 2.  Choose MRV cell
-            //------------------------------------------------------------
-            (int cell, _) = solver.GetLeastCandidateCell(bilocalWeightPercent: 0);
-            if (cell < 0)
-            {
-                // Defensive: treat as solved
-                state.NewSample(exactCarry + 1.0 / pathProb);
-                state.ReleaseSolver(solver);
-                return;
-            }
-
-            //------------------------------------------------------------
-            // 3.  Build weights & exact subtotals
-            //------------------------------------------------------------
-            uint cellMask = solver.board[cell];
-            double H = 0.0;
-            int kOpen = 0;
-            double exactSum = 0.0;
-
-            Array.Clear(heuristic);
-            Array.Clear(childSolvers);
-
-            for (int val = 1; val <= solver.MAX_VALUE; val++)
-            {
-                int idx = val - 1;
-
-                if ((cellMask & ValueMask(val)) == 0)
+                //------------------------------------------------------------
+                // 4.  If no MC children left, emit deterministic total
+                //------------------------------------------------------------
+                if (kOpen == 0)
                 {
-                    // digit forbidden
-                    continue;
+                    state.NewSample(exactCarry + exactSum / pathProb);
+                    return;
                 }
 
-                Solver childSolver = state.RentBranchSolver(solver);
-                if (!childSolver.SetValue(cell, val))
+                //------------------------------------------------------------
+                // 5.  Convert h_i to probabilities
+                //------------------------------------------------------------
+                for (int idx = 0; idx < maxVal; idx++)
                 {
-                    state.ReleaseSolver(childSolver);
-                    // contradiction
-                    continue;
+                    if (heuristic[idx] == 0) { probCache[idx] = 0; continue; }
+
+                    probCache[idx] = uniformMix / kOpen
+                                   + (1.0 - uniformMix) * (heuristic[idx] / H);
                 }
 
-                LogicResult childResult = childSolver.BruteForcePropagate(false, state.cancellationToken);
-                if (childResult == LogicResult.Invalid)
+                //------------------------------------------------------------
+                // 6.  Roulette-wheel selection
+                //------------------------------------------------------------
+                double r = rng.NextDouble();
+                double acc = 0.0;
+                int chosenIdx = -1;
+
+                for (int idx = 0; idx < maxVal; idx++)
                 {
-                    state.ReleaseSolver(childSolver);
-                    // contradiction
-                    continue;
-                }
-                if (childResult == LogicResult.PuzzleComplete)
-                {
-                    // solved instantly
-                    exactSum += 1.0;
-                    state.ReleaseSolver(childSolver);
-                    continue;
+                    if (probCache[idx] == 0)
+                    {
+                        continue;
+                    }
+
+                    acc += probCache[idx];
+
+                    if (r <= acc || idx == maxVal - 1) // fallback on last open child
+                    {
+                        chosenIdx = idx;
+                        break;
+                    }
                 }
 
-                int remaining = childSolver.CountCandidatesForNonGivens();
-                if (remaining <= tinyBranchThreshold)
+                int chosenVal = chosenIdx + 1;
+
+                //------------------------------------------------------------
+                // 7.  Recurse on chosen child
+                //------------------------------------------------------------
+                double newExactCarry = exactCarry + exactSum / pathProb;
+                double newPathProb = pathProb * probCache[chosenIdx];
+                for (int idx = 0; idx < maxVal; idx++)
                 {
-                    // exact enumeration for tiny branch
-                    long exactCnt = childSolver.CountSolutions(cancellationToken: state.cancellationToken);
-                    exactSum += exactCnt;
-                    state.ReleaseSolver(childSolver);
-                    continue;
+                    if (idx != chosenIdx && childSolvers[idx] != null)
+                    {
+                        state.ReleaseSolver(childSolvers[idx]);
+                    }
                 }
 
-                // --- Monte-Carlo child ---
-                childSolvers[idx] = childSolver;
-                heuristic[idx] = remaining; // h_i
-                H += remaining;
-                kOpen++;
+                stack.Push(new EstimationFrame(childSolvers[chosenIdx], newPathProb, newExactCarry));
             }
-
-            // Every child has been cloned from it, so the frame's own board is now dead.
-            state.ReleaseSolver(solver);
-
-            //------------------------------------------------------------
-            // 4.  If no MC children left, emit deterministic total
-            //------------------------------------------------------------
-            if (kOpen == 0)
-            {
-                state.NewSample(exactCarry + exactSum / pathProb);
-                return;
-            }
-
-            //------------------------------------------------------------
-            // 5.  Convert h_i to probabilities
-            //------------------------------------------------------------
-            for (int idx = 0; idx < maxVal; idx++)
-            {
-                if (heuristic[idx] == 0) { probCache[idx] = 0; continue; }
-
-                probCache[idx] = uniformMix / kOpen
-                               + (1.0 - uniformMix) * (heuristic[idx] / H);
-            }
-
-            //------------------------------------------------------------
-            // 6.  Roulette-wheel selection
-            //------------------------------------------------------------
-            double r = rng.NextDouble();
-            double acc = 0.0;
-            int chosenIdx = -1;
-
-            for (int idx = 0; idx < maxVal; idx++)
-            {
-                if (probCache[idx] == 0)
-                {
-                    continue;
-                }
-
-                acc += probCache[idx];
-
-                if (r <= acc || idx == maxVal - 1) // fallback on last open child
-                {
-                    chosenIdx = idx;
-                    break;
-                }
-            }
-
-            int chosenVal = chosenIdx + 1;
-
-            //------------------------------------------------------------
-            // 7.  Recurse on chosen child
-            //------------------------------------------------------------
-            double newExactCarry = exactCarry + exactSum / pathProb;
-            double newPathProb = pathProb * probCache[chosenIdx];
-            for (int idx = 0; idx < maxVal; idx++)
-            {
-                if (idx != chosenIdx && childSolvers[idx] != null)
-                {
-                    state.ReleaseSolver(childSolvers[idx]);
-                }
-            }
-
-            stack.Push(new EstimationFrame(childSolvers[chosenIdx], newPathProb, newExactCarry));
+        }
+        finally
+        {
+            root.nodeCounter.Add(nodesVisited);
         }
     }
 
@@ -1997,154 +2096,167 @@ public partial class Solver
         Stack<EstimationTCFrame> stack = new(capacity: 64);
         stack.Push(new EstimationTCFrame(root, PathProb: 1.0, ExactOffset: 0.0, VisitedCandidates: new List<int>()));
 
-        while (stack.Count > 0)
+        // Plain local, flushed to the shared counter once in the finally. See Solver.NodesVisited.
+        // One estimator sample is one call, and it returns from inside the loop, so the finally is
+        // what makes the tally survive every exit.
+        long nodesVisited = 0;
+
+        try
         {
-            state.cancellationToken.ThrowIfCancellationRequested();
-            EstimationTCFrame frame = stack.Pop();
-
-            Solver solver = frame.Board;
-            double pathProb = frame.PathProb;
-            double exactCarry = frame.ExactOffset;
-            List<int> visited = frame.VisitedCandidates;
-
-            //------------------------------------------------------------
-            // 1.  Propagate singles
-            //------------------------------------------------------------
-            LogicResult lr = solver.BruteForcePropagate(false, state.cancellationToken);
-            if (lr == LogicResult.Invalid)
+            while (stack.Count > 0)
             {
-                state.RecordPathSample(visited, exactCarry);
-                continue;
-            }
-            if (lr == LogicResult.PuzzleComplete)
-            {
-                state.RecordPathSample(visited, exactCarry + 1.0 / pathProb);
-                continue;
-            }
+                state.cancellationToken.ThrowIfCancellationRequested();
+                EstimationTCFrame frame = stack.Pop();
+                nodesVisited++;
 
-            //------------------------------------------------------------
-            // 2.  Choose MRV cell
-            //------------------------------------------------------------
-            (int cell, _) = solver.GetLeastCandidateCell(bilocalWeightPercent: 0);
-            if (cell < 0)
-            {
-                state.RecordPathSample(visited, exactCarry + 1.0 / pathProb);
-                continue;
-            }
+                Solver solver = frame.Board;
+                double pathProb = frame.PathProb;
+                double exactCarry = frame.ExactOffset;
+                List<int> visited = frame.VisitedCandidates;
 
-            //------------------------------------------------------------
-            // 3.  Build weights & exact subtotals
-            //------------------------------------------------------------
-            uint cellMask = solver.board[cell];
-            double H = 0.0;
-            int kOpen = 0;
-            double exactSum = 0.0;
-
-            Array.Clear(heuristic);
-            Array.Clear(childSolvers);
-
-            for (int val = 1; val <= solver.MAX_VALUE; val++)
-            {
-                int idx = val - 1;
-
-                if ((cellMask & ValueMask(val)) == 0)
+                //------------------------------------------------------------
+                // 1.  Propagate singles
+                //------------------------------------------------------------
+                LogicResult lr = solver.BruteForcePropagate(false, state.cancellationToken);
+                if (lr == LogicResult.Invalid)
                 {
-                    // digit forbidden
+                    state.RecordPathSample(visited, exactCarry);
+                    continue;
+                }
+                if (lr == LogicResult.PuzzleComplete)
+                {
+                    state.RecordPathSample(visited, exactCarry + 1.0 / pathProb);
                     continue;
                 }
 
-                Solver childSolver = solver.Clone(willRunNonSinglesLogic: false);
-                if (!childSolver.SetValue(cell, val))
+                //------------------------------------------------------------
+                // 2.  Choose MRV cell
+                //------------------------------------------------------------
+                (int cell, _) = solver.GetLeastCandidateCell(bilocalWeightPercent: 0);
+                if (cell < 0)
                 {
-                    // contradiction
+                    state.RecordPathSample(visited, exactCarry + 1.0 / pathProb);
                     continue;
                 }
 
-                LogicResult childResult = childSolver.BruteForcePropagate(false, state.cancellationToken);
-                if (childResult == LogicResult.Invalid)
+                //------------------------------------------------------------
+                // 3.  Build weights & exact subtotals
+                //------------------------------------------------------------
+                uint cellMask = solver.board[cell];
+                double H = 0.0;
+                int kOpen = 0;
+                double exactSum = 0.0;
+
+                Array.Clear(heuristic);
+                Array.Clear(childSolvers);
+
+                for (int val = 1; val <= solver.MAX_VALUE; val++)
                 {
-                    // contradiction
-                    continue;
+                    int idx = val - 1;
+
+                    if ((cellMask & ValueMask(val)) == 0)
+                    {
+                        // digit forbidden
+                        continue;
+                    }
+
+                    Solver childSolver = solver.Clone(willRunNonSinglesLogic: false);
+                    if (!childSolver.SetValue(cell, val))
+                    {
+                        // contradiction
+                        continue;
+                    }
+
+                    LogicResult childResult = childSolver.BruteForcePropagate(false, state.cancellationToken);
+                    if (childResult == LogicResult.Invalid)
+                    {
+                        // contradiction
+                        continue;
+                    }
+                    if (childResult == LogicResult.PuzzleComplete)
+                    {
+                        // solved instantly
+                        exactSum += 1.0;
+                        continue;
+                    }
+
+                    int remaining = childSolver.CountCandidatesForNonGivens();
+                    if (remaining <= tinyBranchThreshold)
+                    {
+                        // exact enumeration for tiny branch
+                        long exactCnt = childSolver.CountSolutions(cancellationToken: state.cancellationToken);
+                        exactSum += exactCnt;
+                        continue;
+                    }
+
+                    // --- Monte-Carlo child ---
+                    childSolvers[idx] = childSolver;
+                    heuristic[idx] = remaining; // h_i
+                    H += remaining;
+                    kOpen++;
                 }
-                if (childResult == LogicResult.PuzzleComplete)
+
+                //------------------------------------------------------------
+                // 4.  If no MC children left, emit deterministic total
+                //------------------------------------------------------------
+                if (kOpen == 0)
                 {
-                    // solved instantly
-                    exactSum += 1.0;
+                    state.RecordPathSample(visited, exactCarry + exactSum / pathProb);
                     continue;
                 }
 
-                int remaining = childSolver.CountCandidatesForNonGivens();
-                if (remaining <= tinyBranchThreshold)
+                //------------------------------------------------------------
+                // 5.  Convert h_i to probabilities
+                //------------------------------------------------------------
+                for (int idx = 0; idx < maxVal; idx++)
                 {
-                    // exact enumeration for tiny branch
-                    long exactCnt = childSolver.CountSolutions(cancellationToken: state.cancellationToken);
-                    exactSum += exactCnt;
-                    continue;
+                    if (heuristic[idx] == 0) { probCache[idx] = 0; continue; }
+
+                    probCache[idx] = uniformMix / kOpen
+                                   + (1.0 - uniformMix) * (heuristic[idx] / H);
                 }
 
-                // --- Monte-Carlo child ---
-                childSolvers[idx] = childSolver;
-                heuristic[idx] = remaining; // h_i
-                H += remaining;
-                kOpen++;
+                //------------------------------------------------------------
+                // 6.  Roulette-wheel selection
+                //------------------------------------------------------------
+                double r = rng.NextDouble();
+                double acc = 0.0;
+                int chosenIdx = -1;
+
+                for (int idx = 0; idx < maxVal; idx++)
+                {
+                    if (probCache[idx] == 0)
+                    {
+                        continue;
+                    }
+
+                    acc += probCache[idx];
+
+                    if (r <= acc || idx == maxVal - 1) // fallback on last open child
+                    {
+                        chosenIdx = idx;
+                        break;
+                    }
+                }
+
+                int chosenVal = chosenIdx + 1;
+
+                //------------------------------------------------------------
+                // 7.  Recurse on chosen child
+                //------------------------------------------------------------
+                // Record the chosen candidate index on the new visited list
+                int chosenCandidateIndex = cell * solver.MAX_VALUE + chosenVal - 1;
+                List<int> newVisited = new(visited);
+                newVisited.Add(chosenCandidateIndex);
+
+                double newExactCarry = exactCarry + exactSum / pathProb;
+                double newPathProb = pathProb * probCache[chosenIdx];
+                stack.Push(new EstimationTCFrame(childSolvers[chosenIdx], newPathProb, newExactCarry, newVisited));
             }
-
-            //------------------------------------------------------------
-            // 4.  If no MC children left, emit deterministic total
-            //------------------------------------------------------------
-            if (kOpen == 0)
-            {
-                state.RecordPathSample(visited, exactCarry + exactSum / pathProb);
-                continue;
-            }
-
-            //------------------------------------------------------------
-            // 5.  Convert h_i to probabilities
-            //------------------------------------------------------------
-            for (int idx = 0; idx < maxVal; idx++)
-            {
-                if (heuristic[idx] == 0) { probCache[idx] = 0; continue; }
-
-                probCache[idx] = uniformMix / kOpen
-                               + (1.0 - uniformMix) * (heuristic[idx] / H);
-            }
-
-            //------------------------------------------------------------
-            // 6.  Roulette-wheel selection
-            //------------------------------------------------------------
-            double r = rng.NextDouble();
-            double acc = 0.0;
-            int chosenIdx = -1;
-
-            for (int idx = 0; idx < maxVal; idx++)
-            {
-                if (probCache[idx] == 0)
-                {
-                    continue;
-                }
-
-                acc += probCache[idx];
-
-                if (r <= acc || idx == maxVal - 1) // fallback on last open child
-                {
-                    chosenIdx = idx;
-                    break;
-                }
-            }
-
-            int chosenVal = chosenIdx + 1;
-
-            //------------------------------------------------------------
-            // 7.  Recurse on chosen child
-            //------------------------------------------------------------
-            // Record the chosen candidate index on the new visited list
-            int chosenCandidateIndex = cell * solver.MAX_VALUE + chosenVal - 1;
-            List<int> newVisited = new(visited);
-            newVisited.Add(chosenCandidateIndex);
-
-            double newExactCarry = exactCarry + exactSum / pathProb;
-            double newPathProb = pathProb * probCache[chosenIdx];
-            stack.Push(new EstimationTCFrame(childSolvers[chosenIdx], newPathProb, newExactCarry, newVisited));
+        }
+        finally
+        {
+            root.nodeCounter.Add(nodesVisited);
         }
     }
 

@@ -20,7 +20,8 @@ this file — it stops being skimmable, which is the only thing it is for.
 
 **An entry needs four things.** Pitch, why it might work, what would kill it, prerequisites. The
 fourth is the one people skip and the one that saves the session — see the cross-cutting
-prerequisites below, which currently block four of the six entries.
+prerequisites below. The node counter that used to block four of the six entries is now **done**,
+so those four are unblocked; the rest of that section is method, and still applies.
 
 _Note: `docs/optimization-roadmap.md` predates this file (2026-08-01), is scoped to constraint
 allocation work, and has stale macOS paths and a stale `dev` branch name. Treat it as historical._
@@ -29,20 +30,37 @@ allocation work, and has stale macOS paths and a stale `dev` branch name. Treat 
 
 ## Cross-cutting prerequisites
 
-### A committed node counter — blocks ideas 1, 2, 4 and 5
+### A committed node counter — **DONE**; ideas 1, 2, 4 and 5 are unblocked
 
 Most of the ideas below are **pruning** changes, and pruning is measured in nodes, not
 milliseconds. (Idea 5 is the partial exception: if it substitutes for probing it also has a
-straight wall-clock payoff, so it can be read on either axis.) Today `nodesVisited` lives in `NodeBudget` (`SolverBruteForce.cs:23`), only counts
-when a budget is set, and is never surfaced. Every node figure in `weak-link-representation.md`,
-`cell-forcing-worklist.md` and `branch-ordering.md` came from throwaway instrumentation that no
-longer exists — so those claims are not currently auditable either.
+straight wall-clock payoff, so it can be read on either axis.) The old `nodesVisited` in
+`NodeBudget` could not serve: it only counts when a budget is set, and is never surfaced. Every node
+figure in `weak-link-representation.md`, `cell-forcing-worklist.md` and `branch-ordering.md` came
+from throwaway instrumentation that no longer exists, so those claims were not auditable either.
 
-Shape: a plain `long` per solver instance, summed at join. Do **not** make the existing
-`Interlocked.Increment` unconditional — that puts a contended atomic on the hottest path in the
-default, unbudgeted case.
+**What shipped.** `Solver.NodesVisited`, backed by a `NodeCounter` next to `NodeBudget`. Three
+details are load-bearing:
 
-Small work, outsized leverage. It is the first thing to do if any pruning idea is next.
+- **No atomic on the hot path.** Each search loop keeps a plain `long` local and adds it to the
+  shared counter once, in a `finally` — one interlocked op per search *task*, not per node. Making
+  `ChargeNode`'s existing `Interlocked.Increment` unconditional was the obvious shortcut and is the
+  thing the shape exists to avoid.
+- **Shared by reference across clones**, the same way `conflictScores` is. That is what makes
+  nested searches count: true candidates resolves leftovers by running `CountSolutions` on clones
+  (`ResolveRemainingCandidatesDirectly`), and the estimator does the same for tiny branches. Those
+  nodes are real work and would otherwise vanish.
+- **Cumulative, not per-call.** A nested search would otherwise have to decide whose count to reset.
+  Measure one operation by reading it on a freshly built solver, which is what the harness does.
+
+Surfaced as a `nodes` column, a `total nodes:` line, and a `vs baseline nodes` block in the
+benchmark harness. **The parity use is the bigger half of the payoff** — see the census note below;
+an output-preserving change must leave every count bit-identical, and the run now says so on its own
+when a count moves.
+
+Known reading traps, all documented in `benchmarks/README.md`: `count` cases legitimately report 0
+when root setup finishes the puzzle before the search starts, `estimate` cases sample randomly and
+so vary run to run, and a `Deferred` restart keeps the abandoned prefix in the total.
 
 ### The parity census — cheap, and it stops you chasing ghosts
 
@@ -64,7 +82,7 @@ anything to the write path, measure the query-to-maintenance ratio.
 
 ## 1. Conflict scores per candidate, not per cell
 
-**Status:** open · **Prereq:** node counter
+**Status:** open · **Prereq:** node counter — **met**
 
 Today `conflictScores` is `int[NUM_CELLS]`, bumped through `IncrementConflictScore(int cellIndex)`,
 VSIDS-style with halving every 16,384 increments (`CONFLICT_DECAY_INTERVAL`). Failure attribution
@@ -97,7 +115,7 @@ here. `SUDOKU_BRANCH_ORDER=static` is — use it to separate propagator effects 
 
 ## 2. Make pointing (locked candidates) cheap enough for in-search use
 
-**Status:** open · **Prereq:** node counter
+**Status:** open · **Prereq:** node counter — **met**
 
 Today `FastFindPointing` (`SolverBruteForceLogic.cs:943`) runs only inside `FastAdvancedStrategies`,
 i.e. at root setup. It iterates every group in `maxValueGroups` and, per group, rescans every cell to
@@ -168,7 +186,7 @@ change which deduction fires first. Run the parity census before trusting any ti
 
 ## 4. Ramp up machinery only when a puzzle proves it needs it
 
-**Status:** open · **Prereq:** node counter
+**Status:** open · **Prereq:** node counter — **met**
 
 There is already one instance of this: `WeakLinkDiscoveryMode.Deferred` skips weak-link probing and
 retries with it when the cheap attempt doesn't pan out. Its design has a property worth reusing —
@@ -208,7 +226,7 @@ for different reasons.
 
 ## 5. The missing binary implication: `a → b`
 
-**Status:** open · **Prereq:** node counter (partly — see below)
+**Status:** open · **Prereq:** node counter — **met** (only partly needed; see below)
 
 Over literals there are three binary forms. Only one is genuinely missing:
 
@@ -352,7 +370,7 @@ a better form will keep attracting callers no matter how well it is optimized.
   signature to grep for.
 - **Enforcement beats documentation.** A remark saying "never use this while brute forcing" has
   already failed to prevent four such uses. Consider a `Debug.Assert(!isBruteForcing)` inside
-  `ClearCandidates`, which turns the convention into a failing test across the existing 121-test
+  `ClearCandidates`, which turns the convention into a failing test across the existing 148-test
   suite, or split the logical-only entry point under a name that makes the misuse obvious.
 - **Couples to idea 2.** If pointing moves in-search, `FastFindPointing`'s two per-invocation
   allocations (`:946-947`) become two per propagation step.

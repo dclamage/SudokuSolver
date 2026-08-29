@@ -95,6 +95,61 @@ Three things about that shape are deliberate:
   timings is noise given the same vote as a ten-second case. Cases with a baseline under 1 ms are
   dropped and counted.
 
+### `nodes` is the metric for a pruning change, and the cheapest parity check you have
+
+Every run now prints a `nodes` column and a `total nodes:` line, and with `--baseline` a
+`vs baseline nodes` block. This is `Solver.NodesVisited` — search nodes expanded, counted
+unconditionally and read off the same solver the op ran on.
+
+**Use it, not milliseconds, to judge pruning.** Branch ordering, a new propagator, conflict
+scoring: these change how much of the tree gets explored, and that is what nodes measure. The count
+is exact, reproducible run to run, and identical on any machine — none of which a timing is. A
+timing change on a laptop needs seven iterations and a squint; a node change is either there or it
+is not.
+
+**And it is a free parity check.** A change that is meant to be output-preserving must leave every
+count *bit-identical*. One node of drift means the two arms searched different trees, so the timing
+comparison is not like-for-like — the run says so explicitly when it sees movement. This is the same
+discipline [`docs/weak-link-bitmatrix-exploration.md`](../docs/weak-link-bitmatrix-exploration.md)
+arrived at the expensive way (census the outcome buckets before reading any timing); the column just
+makes the cheap half of it automatic.
+
+Three things to know before reading the column:
+
+- **`0` is a real answer, not a broken counter.** `CountSolutions` returns early when root setup
+  already finished the puzzle, so an easy `count` case never enters the search — `vanilla-u17`
+  legitimately reports 0. `FindSolution` has no such early-out and reports 1 for the same board.
+  The `logical` op does not brute force at all and is always 0.
+- **`estimate` cases are excluded from the comparison**, not merely flagged, and the run says how
+  many it dropped. They sample randomly, so their counts differ from themselves run to run; leaving
+  them in turns a perfect parity result into "27 identical, 2 fewer, 1 more" and buries the signal.
+  They still contribute to `total nodes:`, which is why that line wobbles slightly between runs.
+- **Deferral counts the abandoned prefix.** When `WeakLinkDiscoveryMode.Deferred` gives up and
+  restarts with discovery, the nodes from the abandoned attempt stay in the total. They were really
+  visited, and the point of the deferral trade-off is exactly that they might be wasted.
+
+A baseline saved before this column existed has no node counts in it. They deserialize to zero, so
+the run recognizes an all-zero baseline side and says so, rather than reporting every case as
+`0 -> N` and flagging the whole corpus as drifted — a fabricated regression on the one signal that
+exists to be trusted absolutely.
+
+What a clean run looks like when nothing moved:
+
+```
+total nodes: 26,841,719
+vs baseline nodes over 33 cases: 33 identical, 0 fewer, 0 more
+  (3 "estimate" case(s) excluded: they sample randomly and differ from themselves)
+  total 26,830,146 -> 26,830,146 (   0.0%)
+```
+
+The two totals differ because `total nodes:` is the whole run and the second line is the compared
+subset, i.e. without the `estimate` cases.
+
+A case that expands zero nodes in **both** arms counts as identical rather than being dropped — a
+search that never runs in either arm is genuine agreement. That is also why the stale-baseline check
+asks whether the baseline is empty *while this run found nodes*: a corpus filtered down to `logical`
+cases is legitimately zero on both sides, and that is a real parity result, not a missing baseline.
+
 ### What ratios still do not fix: corpus composition
 
 Per-case ratios remove *duration* weighting. They do nothing about *composition* weighting — **N

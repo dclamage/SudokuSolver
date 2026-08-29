@@ -68,6 +68,9 @@ public partial class Solver
         }
 
         customInfo = [];
+
+        // A fresh search tree: clones inherit this instance rather than allocating their own.
+        nodeCounter = new NodeCounter();
     }
 
     public Solver(Solver other, bool willRunNonSinglesLogic)
@@ -159,6 +162,9 @@ public partial class Solver
 
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
+        // Same reason, and the same reference-sharing: every clone in a search tree tallies its
+        // nodes into one counter, so a nested search on a clone still shows up in the total.
+        nodeCounter = other.nodeCounter;
         conflictDecayState = other.conflictDecayState;
         branchCellIndex = -1;
         searchDepth = other.searchDepth;

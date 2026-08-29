@@ -45,6 +45,14 @@ relevant distribution is the favourable one. Data and caveats:
   1,671 puzzles, so you can compare tree sizes against ISS without running it. Use this before
   diagnosing any slow puzzle: it tells you immediately whether you are losing on nodes or on cost
   per node.
+- **Our node counts, at last.** `Solver.NodesVisited` counts search nodes unconditionally, and the
+  harness prints a `nodes` column, a `total nodes:` line, and a `vs baseline nodes` block. This is
+  the other half of the bullet above — the ISS figures were only half a comparison while our side
+  came from throwaway instrumentation that no longer existed. Two uses, and the second is the bigger
+  one: it is the metric for any **pruning** change (exact, machine-independent, no iteration count
+  needed), and it is a **free parity check** — an output-preserving change must leave every count
+  bit-identical, and the run flags it when one moves. Shape notes and reading traps (`count` cases
+  that legitimately show 0, `estimate` cases that vary) are in `benchmarks/README.md`.
 - **ISS itself is checked out** at `/Users/d.clamage/git/Interactive-Sudoku-Solver`, and reading its
   handler for whichever constraint you are chasing is the highest-leverage first move on any
   propagation gap. `js/solver/handlers.js` holds them. Doing exactly this for sandwich (its
@@ -242,8 +250,9 @@ machine has to run them before `--import-iss` will work.
 What is genuinely open, roughly by value:
 
 > Unvalidated ideas — no shape, no schedule — live in [`ideas.md`](ideas.md), not here. An idea
-> earns a row in this table once someone has scoped it. Note that `ideas.md` currently lists a
-> **committed node counter** as a prerequisite blocking four of its six entries.
+> earns a row in this table once someone has scoped it. The **committed node counter** that used to
+> block four of its six entries is now done (see *Infrastructure you now have*), so ideas 1, 2, 4
+> and 5 are unblocked.
 >
 > [`logical-solver-audit.md`](logical-solver-audit.md) covers the *logical* arm — seven tasks, and a
 > standing `AGENTS.md` instruction ("performance is secondary" for the non-brute-force arm) that its
@@ -639,7 +648,7 @@ types in minutes and contradicted the intuition on two of them.
 ### Validation checklist before committing and pushing
 
 ```bash
-dotnet test -c Release SudokuTests/SudokuTests.csproj                                    # 121 tests
+dotnet test -c Release SudokuTests/SudokuTests.csproj                                    # 148 tests
 dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --iterations 3        # 0 FAIL
 dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -- --iterations 3 --multithread
 dotnet build -c Release SudokuSolver.sln                                                 # sln excludes the WASM project

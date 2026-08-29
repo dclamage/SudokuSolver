@@ -112,8 +112,8 @@ internal static class Program
         }
 
         Console.WriteLine($"iterations={iterations}  multithread={forceMultiThread}  cases={cases.Count}");
-        Console.WriteLine($"{"name",-24}{"op",-7}{"result",13}  {"ok",-4}{"min ms",10}{"med ms",10}{"alloc MB",10}   {(baseline.Count > 0 ? "vs base" : "")}");
-        Console.WriteLine(new string('-', 96));
+        Console.WriteLine($"{"name",-24}{"op",-7}{"result",13}  {"ok",-4}{"min ms",10}{"med ms",10}{"alloc MB",10}{"nodes",14}   {(baseline.Count > 0 ? "vs base" : "")}");
+        Console.WriteLine(new string('-', 110));
 
         var results = new List<BenchResult>();
         var ratios = new List<(string Name, string Category, double Ratio, double BaseMs)>();
@@ -150,10 +150,10 @@ internal static class Program
                 }
             }
 
-            Console.WriteLine($"{c.Name,-24}{c.Op,-7}{r.Result,13}  {(r.Ok ? "ok" : "FAIL"),-4}{r.MinMs,10:0.00}{r.MedianMs,10:0.00}{r.AllocMB,10:0.00}   {cmp}");
+            Console.WriteLine($"{c.Name,-24}{c.Op,-7}{r.Result,13}  {(r.Ok ? "ok" : "FAIL"),-4}{r.MinMs,10:0.00}{r.MedianMs,10:0.00}{r.AllocMB,10:0.00}{r.Nodes,14:n0}   {cmp}");
         }
 
-        Console.WriteLine(new string('-', 96));
+        Console.WriteLine(new string('-', 110));
         double totalMs = results.Sum(r => r.MinMs);
         Console.WriteLine($"total min ms: {totalMs:0.0}");
 
@@ -186,6 +186,7 @@ internal static class Program
         }
 
         ReportRatioSummary(ratios);
+        ReportNodeSummary(results, baseline);
 
         if (savePath is not null)
         {
@@ -235,6 +236,97 @@ internal static class Program
     /// spread and the better/worse counts tell them apart.
     /// </para>
     /// </remarks>
+    /// <summary>
+    /// Reports search-node counts, and how they moved against a baseline.
+    /// </summary>
+    /// <remarks>
+    /// Deliberately separate from the timing summary, because it answers a different question.
+    /// Pruning changes — branch ordering, a new propagator, conflict scoring — are measured in
+    /// nodes: the count is exact, reproducible, and identical across machines, where a timing is
+    /// none of those. It also doubles as the cheapest available parity check. A change that is
+    /// meant to be output-preserving must leave every count *bit-identical*; one node of drift
+    /// means the search took a different path and any timing read off it is comparing two
+    /// different searches.
+    ///
+    /// The "estimate" op is the standing exception — it samples randomly, so it differs from
+    /// itself run to run and its counts are never evidence of anything.
+    /// </remarks>
+    private static void ReportNodeSummary(List<BenchResult> results, Dictionary<string, BenchResult> baseline)
+    {
+        if (results.Count == 0)
+        {
+            return;
+        }
+
+        long totalNodes = results.Sum(r => r.Nodes);
+        Console.WriteLine();
+        Console.WriteLine($"total nodes: {totalNodes:n0}");
+
+        // "estimate" is excluded outright rather than merely flagged. It samples random paths, so
+        // its counts differ from themselves run to run; leaving it in turns a perfect parity result
+        // into "27 identical, 2 fewer, 1 more" and buries the signal the block exists to give.
+        // Cases that expand zero nodes in both arms are kept, not filtered: a case whose search
+        // never runs in either arm is genuine agreement, and dropping it understates the check.
+        var comparable = results.Where(r => baseline.ContainsKey(r.Name)).ToList();
+        int sampled = comparable.Count(r => r.Op == "estimate");
+        var paired = comparable
+            .Where(r => r.Op != "estimate")
+            .Select(r => (r.Name, Now: r.Nodes, Was: baseline[r.Name].Nodes))
+            .ToList();
+
+        // A baseline saved before node counting has no counts in it, and they deserialize to 0.
+        // Comparing against that reports every case as "0 -> N" and flags the whole corpus as
+        // drifted, which is worse than saying nothing: it is a fabricated regression on the one
+        // signal that exists to be trusted absolutely. Recognize it by the baseline side being
+        // empty everywhere *while this run found nodes* — the second half matters, because a
+        // corpus filtered down to "logical" cases legitimately has zero nodes on both sides and
+        // that is a real parity result, not a missing baseline.
+        if (paired.Count == 0 || (paired.All(x => x.Was == 0) && paired.Any(x => x.Now > 0)))
+        {
+            if (baseline.Count > 0)
+            {
+                Console.WriteLine("  (baseline has no node counts — it predates them; re-save it to compare)");
+            }
+            return;
+        }
+
+        int same = paired.Count(x => x.Now == x.Was);
+        int fewer = paired.Count(x => x.Now < x.Was);
+        int more = paired.Count(x => x.Now > x.Was);
+        long baseTotal = paired.Sum(x => x.Was);
+        long nowTotal = paired.Sum(x => x.Now);
+
+        Console.WriteLine($"vs baseline nodes over {paired.Count} cases: {same} identical, {fewer} fewer, {more} more");
+        if (sampled > 0)
+        {
+            Console.WriteLine($"  ({sampled} \"estimate\" case(s) excluded: they sample randomly and differ from themselves)");
+        }
+        if (baseTotal > 0)
+        {
+            Console.WriteLine($"  total {baseTotal:n0} -> {nowTotal:n0} ({(nowTotal - baseTotal) / (double)baseTotal * 100,+6:0.0}%)");
+        }
+
+        var moved = paired.Where(x => x.Now != x.Was && x.Was > 0)
+            .OrderBy(x => x.Now / (double)x.Was)
+            .ToList();
+        if (moved.Count > 0)
+        {
+            var best = moved[0];
+            var worst = moved[^1];
+            Console.WriteLine($"  best {best.Now / (double)best.Was,6:0.000}x {best.Name}   worst {worst.Now / (double)worst.Was,6:0.000}x {worst.Name}");
+        }
+
+        // A change advertised as output-preserving has to leave every count untouched. Name the
+        // cases that moved, so the claim is checked rather than assumed.
+        var drifted = paired.Where(x => x.Now != x.Was).ToList();
+        if (drifted.Count > 0)
+        {
+            Console.WriteLine($"  moved: {string.Join(", ", drifted.Take(6).Select(x => $"{x.Name} {x.Was:n0}->{x.Now:n0}"))}"
+                + (drifted.Count > 6 ? ", ..." : ""));
+            Console.WriteLine("  NOTE: node counts moved — the search took a different path, so this is not a like-for-like timing comparison unless that was the intent.");
+        }
+    }
+
     private static void ReportRatioSummary(List<(string Name, string Category, double Ratio, double BaseMs)> ratios)
     {
         if (ratios.Count == 0)
