@@ -45,6 +45,48 @@ general can be cheap inside a constraint that already knows where to look. That 
 rather than a one-off, and it is worth trying against any other constraint whose weak links carry
 this much structure.
 
+### The worklist was being fed for nothing, and that was worth −17%
+
+Independent of everything else here, and found while A/B-ing the hook below. `EnqueueCellForcing`'s
+filter (`cfCanFire`) is built only when `CellForcingRunsInSearch`. At the default trigger it is
+null, so the method falls through to `pendingCellForcing.Add(cellIndex)` on **every board write** —
+into a list `FastFindCellForcing` drains only under the Queue trigger. At the default it is never
+emptied; it grows, and the copy constructor and `CopyBruteForceRuntimeStateFrom` deep-copy it into
+every branch clone.
+
+Feeding it only when something reads it: **ISS corpus 17,571 → 12,412 ms (−29.4% total, −17.0%
+geomean, 193 better / 1 worse)** and **`corpus.json` 19,918 → 15,633 ms (−21.5%, −12.6% geomean)**,
+with node counts **identical on all 398 ISS puzzles and all 33 corpus cases**. Cell forcing behaves
+exactly as before when switched on.
+
+Nothing here was a slow algorithm and no profile pointed at it. **A feature that ships disabled left
+its bookkeeping enabled on the hottest path in the solver** — the cost of the drift `ideas.md`
+describes, rather than only the confusion of it.
+
+### Naming cells for cell forcing: measured, and parked
+
+The repo owner's alternative to a constraint reimplementing this rule: let it *name* the cells where
+the rule is worth applying (`Constraint.CellIndicesForCellForcing`, `SUDOKU_OVC_MODE=cellforcing`).
+Cell forcing at a named cell reads that cell's whole weak-link set, so it is strictly stronger than
+any one constraint's view:
+
+| case | own sweep | hook |
+| --- | ---: | ---: |
+| `1HuNjcLWlPE` | 92.9 ms / 30,288 | **74.9 ms / 15,611** |
+| `kropki-search-cap50k` | 264.7 ms / 305,138 | **232.9 ms / 172,844** |
+| `iss-ite7WigjGGI` | **53.7 ms / 2,935** | 119.1 ms / 2,755 |
+
+ISS corpus geomean **1.049×** (83 better, 98 worse) — and swapping which arm is the baseline
+inverts it to 0.955×, so that is a real cost and not drift. It wins where declared cells are many
+and dot-dense, and loses where a couple of dots get a full weak-link intersection every step for
+nothing. **This is the same cost curve as the table below**, which is the point: the hook narrows
+*which* cells are scanned but does nothing about the per-cell price, so it inherits the problem this
+document exists to solve. Solve that and the hook is how constraints buy in for free.
+
+A dirty-worklist variant was built and deleted: `pendingCellForcing` has no dedup guard, so a cell
+is rescanned once per write touching it — best of the three on `kropki-search-cap50k` (182.9 ms),
+worst on `iss-ite7WigjGGI` (175.3 ms).
+
 ### It overlaps cell forcing exactly, and it has eaten some of the remaining upside
 
 **Re-baseline before continuing this work.** Measured under `SUDOKU_BRANCH_ORDER=static`, so these

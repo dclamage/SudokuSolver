@@ -426,12 +426,33 @@ row-AND result.
 
 ---
 
-## Observation worth keeping: the default-off tiers
+## The default-off inventory
 
-Cell forcing and the bilocal tier are both fully built, measured, and disabled by default. Reading
-the code overstates what actually runs, which is a standing source of drift between the codebase and
-anyone's mental model of it.
+A third tier joined on 2026-08-29, so this is now the promised real inventory rather than an
+observation. Reading the code overstates what actually runs, and that drift has now cost real time,
+not just confusion — see the warning below the table.
 
-If a third tier joins them, this should become a real inventory — knob, default, and the one-line
-reason it is parked. A known footgun for that list already: `SUDOKU_CF_ORDER=popcount` silently
-breaks the CSR/row-AND order parity documented in `weak-link-bitmatrix-exploration.md`.
+| knob | default | parked because |
+| --- | --- | --- |
+| `SUDOKU_CF_TRIGGER` | `off` (root setup only) | In-search cell forcing prunes to 0.582× nodes but costs ~2× what it saves — 6.6 µs per node removed against a 3.35 µs node. [`cell-forcing-worklist.md`](cell-forcing-worklist.md) |
+| `BILOCAL_SEARCH_WEIGHT_DEFAULT` | `0` | The bilocal branch-ordering tier was measured and answered "no". `HANDOFF.md` § 2 Priority 1b |
+| `SUDOKU_OVC_MODE` | own sweep | `OrthogonalValueConstraint` can hand its cells to the shared cell-forcing scan instead. Prunes ~2× better on dot-heavy boards, costs +4.9% across the ISS corpus. [`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5 |
+| `SUDOKU_SANDWICH_BF_ARM` | `heuristic` | Not parked — a shipped choice, listed so the table is the whole switch surface |
+
+**Known footgun:** `SUDOKU_CF_ORDER=popcount` silently breaks the CSR/row-AND order parity
+documented in `weak-link-bitmatrix-exploration.md`.
+
+### A disabled feature can still cost you, and this one did
+
+**Ask of every parked tier: does it leave bookkeeping running on the hot path?**
+
+`EnqueueCellForcing` sits on the board-write path. Its filter is only built when cell forcing runs
+in the search — so at the default `off` the filter is null, the method falls through to
+`pendingCellForcing.Add(cellIndex)`, and **every board write appended to a list nothing ever
+drained**, which was then deep-copied into every branch clone. Removing the push was worth **−17.0%
+geomean on the ISS corpus and −12.6% on `corpus.json`, with node counts identical on all 398 ISS
+puzzles and all 33 corpus cases.**
+
+No profile pointed at it and no algorithm was slow. It was found only because a node counter showed
+two arms walking identical trees at very different speeds. The bilocal tier deserves the same
+question asked of it.

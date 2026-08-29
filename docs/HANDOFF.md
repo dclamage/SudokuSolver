@@ -45,6 +45,15 @@ relevant distribution is the favourable one. Data and caveats:
   1,671 puzzles, so you can compare tree sizes against ISS without running it. Use this before
   diagnosing any slow puzzle: it tells you immediately whether you are losing on nodes or on cost
   per node.
+- **The biggest single win of the session came from a feature that ships disabled.**
+  `EnqueueCellForcing` pushed every board write onto `pendingCellForcing`, which nothing drains at
+  the default `SUDOKU_CF_TRIGGER=off`, and which is deep-copied into every branch clone. Feeding it
+  only when something reads it: **ISS corpus −17.0% geomean (17,571 → 12,412 ms), `corpus.json`
+  −12.6% (19,918 → 15,633 ms), node counts identical on all 398 ISS puzzles and all 33 corpus
+  cases.** No profile pointed at it; it surfaced only because the node counter showed two arms
+  walking identical trees at very different speeds. **The standing question this raises — does a
+  parked tier leave bookkeeping on the hot path? — is now at the top of the default-off inventory
+  in [`ideas.md`](ideas.md), and the bilocal tier has not been asked it.**
 - **Our node counts, at last.** `Solver.NodesVisited` counts search nodes unconditionally, and the
   harness prints a `nodes` column, a `total nodes:` line, and a `vs baseline nodes` block. This is
   the other half of the bullet above — the ISS figures were only half a comparison while our side

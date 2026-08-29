@@ -42,6 +42,10 @@ build — which also sidesteps the stale-`--baseline` problem below:
 | `SUDOKU_WEAK_LINK_DISCOVERY` | `always` / `never` / `deferred` (default). See [`docs/weak-link-discovery-tradeoff.md`](../docs/weak-link-discovery-tradeoff.md) |
 | `SUDOKU_WEAK_LINK_DEFER_NODES` | Node budget before `deferred` gives up and restarts with discovery. Default 2000 |
 | `SUDOKU_SANDWICH_BF_ARM` | `heuristic` (default) / `exact` / `none` — how much `SandwichConstraint` propagates while brute forcing. Logical solving always uses `exact`. See [`docs/pathological-outliers.md`](../docs/pathological-outliers.md) |
+| `SUDOKU_OVC_MODE` | `steplogic` (default) / `cellforcing` — whether kropki/difference/ratio/XV run their own arc-consistency sweep during brute force, or hand their cells to the shared cell-forcing scan. See [`docs/whisper-arc-consistency.md`](../docs/whisper-arc-consistency.md) §5 |
+
+The full inventory of default-off tiers, with the one-line reason each is parked, is in
+[`docs/ideas.md`](../docs/ideas.md) § "The default-off inventory".
 
 Beware `never` on `corpus-iss.json`: some puzzles there do not finish without weak-link discovery.
 
