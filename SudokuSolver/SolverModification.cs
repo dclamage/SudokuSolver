@@ -13,7 +13,10 @@ public partial class Solver
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     private void EnqueueCellForcing(int cellIndex, uint oldMask, uint newMask)
     {
-        if (pendingCellForcing == null)
+        // Nothing drains this worklist unless cell forcing runs inside the search, and it is off by
+        // default. Feeding it anyway cost a list append on every board write plus a deep copy of the
+        // accumulated list into every branch clone -- for a list no one ever read.
+        if (pendingCellForcing == null || !CellForcingRunsInSearch)
         {
             return;
         }
