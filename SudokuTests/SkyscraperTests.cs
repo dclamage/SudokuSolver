@@ -73,4 +73,56 @@ public class SkyscraperTests
             () => SolverFactory.CreateBlank(9, ["skyscraper:1r1c0", "skyscraper:9r1c0"]),
             "Clues of 1 and 9 entering the same line from the same side cannot both be satisfied.");
     }
+
+    /// <summary>
+    /// The support search's blocked test exists for <em>cross-constraint</em> weak links: same-value
+    /// links inside the line are already covered by its all-different bookkeeping, so non-house
+    /// links are the only ones that can change its answer. This pairs a mid-range clue, which forces
+    /// the search to actually run, with nonconsecutive, which links different values across
+    /// neighbouring cells.
+    /// </summary>
+    /// <remarks>
+    /// Asserted as properties of the solution rather than as a solution count, so it stays
+    /// determinate without hard-coding a number nobody can check by inspection. The corpus covers
+    /// this combination once — <c>uniqueVariantFPuzzles[31]</c>, renban plus skyscraper — and one
+    /// geometry is not the general case.
+    /// </remarks>
+    [TestMethod]
+    public void CrossConstraintLinksAreRespectedBySupportSearch()
+    {
+        Solver solver = SolverFactory.CreateBlank(9, ["skyscraper:4r1c0", "difference:neg1"]);
+        Assert.IsTrue(solver.FindSolution(multiThread: false),
+            "A clue of 4 on one line of a nonconsecutive grid should still be solvable.");
+
+        int visible = 0;
+        int runningMax = 0;
+        for (int j = 0; j < 9; j++)
+        {
+            int v = solver.GetValue((0, j));
+            if (v > runningMax)
+            {
+                visible++;
+                runningMax = v;
+            }
+        }
+        Assert.AreEqual(4, visible, "The solution must show exactly the clued number of buildings.");
+
+        for (int i = 0; i < 9; i++)
+        {
+            for (int j = 0; j < 9; j++)
+            {
+                int v = solver.GetValue((i, j));
+                if (i + 1 < 9)
+                {
+                    Assert.AreNotEqual(1, Math.Abs(v - solver.GetValue((i + 1, j))),
+                        $"r{i + 1}c{j + 1} and r{i + 2}c{j + 1} are consecutive.");
+                }
+                if (j + 1 < 9)
+                {
+                    Assert.AreNotEqual(1, Math.Abs(v - solver.GetValue((i, j + 1))),
+                        $"r{i + 1}c{j + 1} and r{i + 1}c{j + 2} are consecutive.");
+                }
+            }
+        }
+    }
 }
