@@ -14,8 +14,11 @@ now measured and it is large: **97.1% of cell-forcing work items do nothing** �
 where that figure turned out to be a poor guide to where the time was. The groundwork is now
 committed on `perf/propagation-worklist` along with both filters, all gated off.
 
-**Steps 1-3 have landed; § "Step 4" adds board-relative table prunes and two negative results,
-including the finding that the enqueue filter's ~0.9 ms build cost is most of a median ISS solve.**
+**Steps 1-3 have landed. § "Step 4" adds exact board-relative table prunes. § "Step 5" measures the
+per-row usefulness question the prunes were groundwork for and closes it: a perfect oracle filter
+recovers 12.9% of the scan cost in the regime where cell forcing wins, the scan is single-digit
+percent of runtime, and cost and value sit in the same (size, distance) bucket. The remaining
+candidate is the enqueue path, not the table.**
 
 **Step 1 of the recommended order has since landed on its own** — see § "Step 1 is done" — worth
 **−14.3%** on the static-order ISS tune corpus with node counts untouched. It did not land as the
@@ -606,6 +609,138 @@ Still open, in the order they now look worth doing:
    now learned three times.
 3. **The entry-point gate stays orthogonal.** Prunes cut cost; they cannot predict the `nc-4given`
    -33.1% production win, which § "Where it does pay" is explicit is a branch-order effect.
+
+## Step 5: the usefulness histogram, and why per-row filtering cannot close the gap
+
+Date: 2026-08-29, branch `cf/scan-prunes`. `SUDOKU_CF_STATS=1` collects a pop census, an enqueue
+census, and per-row scan/fire/novel-elimination counts folded at process exit into a histogram over
+the two static properties a build-time filter could threshold on:
+
+- **size** = `popcount(S)`. A row cannot fire for a candidate set larger than its mask.
+- **distance** = `popcount(cand(A) & ~S)` on the board the table was compiled on: how many
+  candidates the source cell must still lose before the row can fire at all.
+
+Both are computed after any row reordering, so they index the way the scan sees them. Counters are
+plain adds behind a `static readonly bool`; a stats run must be single-threaded (both corpora are).
+
+This was built before any filter, on purpose. It says do not build the filter.
+
+### The ceiling for a per-row filter is small, and smaller where cell forcing wins
+
+The number that matters is not how many rows are useless but **what share of the scan cost they
+carry**. A perfect oracle — drop every row that never once produced a novel elimination in the whole
+run — would remove:
+
+| corpus | useless rows | their share of scan cost |
+| --- | ---: | ---: |
+| `corpus-iss.json` (398 puzzles, CF loses here) | 73.8% of rows | **38.3% of scan cost** |
+| the three NC cases (CF wins here) | 52.3% of rows | **12.9% of scan cost** |
+
+Rows that never even *fired* are 47.4% / 27.0% of rows and carry 5.7% / 3.6% of the cost. So the
+useless rows are overwhelmingly the cheap ones — the same shape as `cfCanFire`, one level down. In
+the regime the whole exercise is for, an oracle gets 12.9%.
+
+### And there is no separating signal, because cost and value live in the same bucket
+
+The NC scan-cost and novel-elimination distributions over (size, distance) are nearly the same
+distribution:
+
+```
+                scan share    novel elims
+size 3          66.3%         85.8%
+distance 6      72.2%         82.6%
+size 3, dist 6  59.6%         78.5%
+```
+
+One bucket is 60% of the cost and 79% of the value. On the ISS corpus it is less extreme but points
+the same way: size 3 / distance 6 is 34.4% of scan cost and 14.3% of eliminations, and the cheapest
+buckets by `scans/elim` (distance 2 at 28.6) are also small in absolute cost. There is no threshold
+in either property that keeps the eliminations and drops the cost, because the productive rows *are*
+the expensive rows — they are expensive **because** they keep firing.
+
+A filter is still constructible, and the histogram prices it in advance: dropping distance >= 6 on
+the ISS corpus removes 55.3% of scan cost and 21.6% of novel eliminations. On the NC cases it removes
+91.2% of the cost and 91.3% of the eliminations. That is not a filter, it is a switch to turn cell
+forcing off, spelled at greater length.
+
+### The scan is not where the money goes anyway
+
+The popcount-order arm from § "Step 4" turns out to be a measuring instrument. It removes **223.4M of
+875.7M row scans (-25.5%)** on the ISS corpus and still measures 1-2% *slower*, because it gives up
+target grouping. So 223M row scans are worth less than that ordering loss — under ~0.25 s on a ~15.6 s
+run — which puts the **entire** scan at single-digit percent of runtime, and a perfect per-row filter
+at ~2% of it.
+
+Where the pops actually go, and it is not into scanning:
+
+| | ISS corpus | NC cases |
+| --- | ---: | ---: |
+| pops | 22.3M | 33.9M |
+| value already set | **30.8%** | **41.5%** |
+| under two candidates | 2.1% | 9.9% |
+| scanned, nothing fired | **0.0%** | 0.0% |
+| fired, target already gone | 48.1% | 16.7% |
+| eliminated something | 19.0% | 31.9% |
+
+Two things to read here. First, **the 55.7% "scanned, nothing fired" bucket this document was written
+around is gone** — 0.0%, both corpora. The enqueue filter did exactly what § "The enqueue filter"
+promised; it just did not make cell forcing pay, because that bucket was not the cost.
+
+Second, **a third to a half of all pops are stale**: the cell was solved or reduced to one candidate
+between enqueue and pop. § "A priority worklist" predicted cost-ordered draining would fix this
+("those cells get resolved by a naked single first and their stale item is rejected instantly"). It
+did not — 41.5% on the NC cases. The no-dedup design is the likely reason (§ "Open questions"), and a
+stale pop is cheap, so this is a large count attached to a small cost. Do not build against it
+without pricing it first. That is the mistake this document has now recorded four times.
+
+The remaining candidate, by elimination, is the **enqueue path itself**: 330M offers on ISS and 433M
+on the NC cases, each a table lookup on the hottest path in the solver, of which 67.5% / 58.1% are
+rejected. That is one lookup per board write to prevent a pop that measurement says is cheap.
+
+### What did come out of it: level 2 is not worth its size
+
+Re-measuring the two filter levels case by case, with the § "Step 4" protocol rather than a corpus
+total:
+
+| case | level 1 (can-fire, ~5 KB) | level 2 (newly-fires, ~47 KB) | |
+| --- | ---: | ---: | --- |
+| `nc-4given` | **34.4 ms** | 36.1 ms | level 2 is 4.7% slower |
+| `iss-0cvA-XDiQNQ` | **1611 ms** | 1632 ms | 1.3% slower |
+| `iss--Uj9xZPyzM4` | 2036 ms | 2037 ms | identical |
+| `tc-blank-nonconsecutive` | 5177 ms | 5196 ms | within 0.4% |
+| `tc-nc-no-r3c4` | 2076 ms | 2061 ms | within 0.7% |
+
+Level 2 also allocates more on every case (0.97 / 0.63 / 0.66 MB against 1.06 / 0.72 / 0.77 MB). Its
+credited 3.0% in § "The sharper filter" came from a corpus total under the protocol § "Step 4" shows
+is worth +/-5%. **Default is now level 1.** Being sharper about which pops to skip does not pay when
+the skipped pops are cheap — and the sharper table costs nine times the memory and nine times the
+zeta transform, ~0.9 ms per puzzle against a median ISS solve of 1.1 ms.
+
+Level 2 stays available, because it is exact and the switch is what made this comparison possible
+from one build.
+
+### Where this leaves cell forcing
+
+The per-row filtering line of attack is **closed**, with numbers rather than opinion: a perfect
+oracle recovers 12.9% of the scan cost in the winning regime, the scan is single-digit percent of
+runtime, and no static property separates productive rows from expensive ones because they are the
+same rows.
+
+What the census leaves standing, in order:
+
+1. **The enqueue path.** It is the only remaining line item proportional to something huge (board
+   writes), and it is now the least-measured. Worth trying: replace the bitmap with a per-cell byte
+   holding `max(popcount(S))` over that cell's rows and reject when `candCount` exceeds it — 81 bytes
+   permanently in L1, no zeta transform, no per-puzzle build. It is a weaker filter than can-fire, so
+   the question is whether the pops it lets through cost less than the lookups it saves. The census
+   says pops are cheap, which is the argument for trying it.
+2. **The entry-point gate**, still orthogonal and still unbuilt: `truecandidates` is -46% with cell
+   forcing on, `count` on the ISS corpus is not. That is a decision about *when to run it at all*,
+   which is where the leverage actually was all along — see § "Where it does pay".
+3. **Not** an easy-puzzle cutoff on the filter build. It would recover most of that ~0.9 ms and it
+   would also change the measurement surface under everything above, which is why it is last: a
+   cutoff makes the cheap cases cheap for a reason unrelated to cell forcing, and every later
+   comparison then has to be read through it.
 
 ## Methodology — read before measuring anything
 

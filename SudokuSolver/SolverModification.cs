@@ -18,10 +18,20 @@ public partial class Solver
             return;
         }
 
+        bool stats = CellForcingStatsEnabled;
+        if (stats)
+        {
+            CellForcingStats.EnqueueOffered++;
+        }
+
         // A cell whose value is now set is skipped by CellForcingForCell outright, so queuing it
         // can only cost a pop.
         if ((newMask & valueSetMask) != 0)
         {
+            if (stats)
+            {
+                CellForcingStats.EnqueueValueSet++;
+            }
             return;
         }
 
@@ -46,19 +56,35 @@ public partial class Solver
                     removedMask &= ~ValueMask(v);
                     if ((newlyFires[valueBlock + (v - 1) * cfCanFireWords] & maskBit) != 0)
                     {
+                        if (stats)
+                        {
+                            CellForcingStats.EnqueuePushed++;
+                        }
                         pendingCellForcing.Add(cellIndex);
                         return;
                     }
+                }
+                if (stats)
+                {
+                    CellForcingStats.EnqueueFiltered++;
                 }
                 return;
             }
 
             if ((canFire[cellIndex * cfCanFireWords + maskWord] & maskBit) == 0)
             {
+                if (stats)
+                {
+                    CellForcingStats.EnqueueFiltered++;
+                }
                 return;
             }
         }
 
+        if (stats)
+        {
+            CellForcingStats.EnqueuePushed++;
+        }
         pendingCellForcing.Add(cellIndex);
     }
 

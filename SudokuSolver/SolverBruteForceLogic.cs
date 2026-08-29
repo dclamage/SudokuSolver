@@ -342,6 +342,7 @@ public partial class Solver
         cfCanFire = null;
         cfNewlyFires = null;
         cfPopEnd = null;
+        cfStatsBlock = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 
@@ -553,16 +554,24 @@ public partial class Solver
 
     /// <summary>
     /// Which cell-forcing enqueue filter to build. <c>SUDOKU_CF_FILTER</c>: <c>0</c> none (every
-    /// board write queues its cell), <c>1</c> the can-fire bitmap, <c>2</c> (default) the
+    /// board write queues its cell), <c>1</c> (default) the can-fire bitmap, <c>2</c> the
     /// newly-fires bitmap indexed by the removed value.
     /// </summary>
     /// <remarks>
     /// The filter is meant to be <em>exact</em> — it must skip only cells that provably cannot fire
-    /// any row — so the two arms should produce bit-identical results and node counts, with only
-    /// the time differing. This switch exists so that equivalence can be checked from one build
-    /// rather than two, which also sidesteps comparing across separately-JITted binaries.
+    /// any row — so the arms should produce bit-identical results and node counts, with only the
+    /// time differing. This switch exists so that equivalence can be checked from one build rather
+    /// than two, which also sidesteps comparing across separately-JITted binaries.
+    ///
+    /// Level 2 was the default until its 3.0% credit was re-measured case by case: it is 4.7%
+    /// <em>slower</em> on nc-4given, 1.3% slower on iss-0cvA-XDiQNQ, and within 0.7% on the two
+    /// long NC true-candidates boards and the heaviest ISS count. It is nine times the memory
+    /// (~47 KB against ~5 KB) and roughly nine times the build — the zeta transform is
+    /// 2^MAX_VALUE * MAX_VALUE per cell per level, and that build measured at ~0.9 ms per puzzle,
+    /// against a median ISS solve of 1.1 ms. Being sharper about which pops to skip does not pay
+    /// when the pops it skips are cheap; see docs/cell-forcing-worklist.md § "Step 5".
     /// </remarks>
-    internal static readonly long CellForcingFilterLevel = ReadLongEnv("SUDOKU_CF_FILTER", 2);
+    internal static readonly long CellForcingFilterLevel = ReadLongEnv("SUDOKU_CF_FILTER", 1);
 
     /// <summary>Whether any enqueue filter is built at all.</summary>
     internal static bool CellForcingFilterEnabled => CellForcingFilterLevel > 0;
@@ -618,6 +627,12 @@ public partial class Solver
     /// something a corpus run can falsify.
     /// </remarks>
     internal static readonly bool CellForcingVerify = ReadLongEnv("SUDOKU_CF_VERIFY", 0) != 0;
+
+    /// <summary>
+    /// Collects the cell-forcing pop census and per-row scan/fire/elimination histogram.
+    /// <c>SUDOKU_CF_STATS=1</c>. See <see cref="CellForcingStats"/>; run single-threaded.
+    /// </summary>
+    internal static readonly bool CellForcingStatsEnabled = ReadLongEnv("SUDOKU_CF_STATS", 0) != 0;
 
     /// <summary>
     /// Runs cell forcing at every propagation step of the search, not just during root setup.
@@ -1051,9 +1066,23 @@ public partial class Solver
     /// </summary>
     private LogicResult CellForcingForCell(int cellIndex)
     {
+        bool stats = CellForcingStatsEnabled;
         uint mask = board[cellIndex];
-        if (IsValueSet(mask) || (CellForcingMaxCandidates > 0 && ValueCount(mask) > CellForcingMaxCandidates))
+        if (IsValueSet(mask))
         {
+            if (stats)
+            {
+                CellForcingStats.PopsValueSet++;
+            }
+            return LogicResult.None;
+        }
+
+        if (CellForcingMaxCandidates > 0 && ValueCount(mask) > CellForcingMaxCandidates)
+        {
+            if (stats)
+            {
+                CellForcingStats.PopsOverCap++;
+            }
             return LogicResult.None;
         }
 
@@ -1103,6 +1132,10 @@ public partial class Solver
             // could otherwise still fire. Such a cell is a naked single, and the worklist resolves
             // those before cell forcing pops, so no deduction is lost. Saying so here is what makes
             // narrowing a row's mask to the cell's live candidates exactly equivalent.
+            if (stats)
+            {
+                CellForcingStats.PopsTooFewCandidates++;
+            }
             return LogicResult.None;
         }
 
@@ -1116,9 +1149,16 @@ public partial class Solver
         int pendingCell = -1;
         uint pendingMask = 0;
         bool changed = false;
+        CellForcingStats.Block statsBlock = stats ? cfStatsBlock : null;
+        bool anyFired = false;
 
         for (int row = cfOffsets[cellIndex]; row < rowEnd; row++)
         {
+            if (statsBlock != null)
+            {
+                statsBlock.Scans[row]++;
+            }
+
             if ((candMask & ~cfMasks[row]) != 0)
             {
                 continue;
@@ -1126,6 +1166,21 @@ public partial class Solver
 
             int target = cfTargets[row];
             int targetCell = target / MAX_VALUE;
+            if (stats)
+            {
+                anyFired = true;
+                if (statsBlock != null)
+                {
+                    statsBlock.Fires[row]++;
+                    // Novel exactly when the target is still live at this instant: clears from
+                    // earlier rows of this same pop have already been applied, later ones have not.
+                    if ((board[targetCell] & ValueMask(target - targetCell * MAX_VALUE + 1)) != 0)
+                    {
+                        statsBlock.Elims[row]++;
+                    }
+                }
+            }
+
             if (targetCell != pendingCell)
             {
                 if (pendingMask != 0 && (board[pendingCell] & pendingMask) != 0)
@@ -1133,6 +1188,10 @@ public partial class Solver
                     changed = true;
                     if (!ClearMaskFromCell(pendingCell, pendingMask))
                     {
+                        if (stats)
+                        {
+                            CellForcingStats.PopsChanged++;
+                        }
                         return LogicResult.Invalid;
                     }
                 }
@@ -1147,7 +1206,27 @@ public partial class Solver
             changed = true;
             if (!ClearMaskFromCell(pendingCell, pendingMask))
             {
+                if (stats)
+                {
+                    CellForcingStats.PopsChanged++;
+                }
                 return LogicResult.Invalid;
+            }
+        }
+
+        if (stats)
+        {
+            if (changed)
+            {
+                CellForcingStats.PopsChanged++;
+            }
+            else if (anyFired)
+            {
+                CellForcingStats.PopsFiredNoChange++;
+            }
+            else
+            {
+                CellForcingStats.PopsNothingFired++;
             }
         }
 

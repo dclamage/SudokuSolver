@@ -153,6 +153,7 @@ public partial class Solver
         cfCanFireWords = other.cfCanFireWords;
         cfNewlyFires = other.cfNewlyFires;
         cfPopEnd = other.cfPopEnd;
+        cfStatsBlock = other.cfStatsBlock;
 
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
@@ -499,6 +500,21 @@ public partial class Solver
         cfOffsets = offsets;
         cfPopEnd = popEnd;
 
+        if (CellForcingStatsEnabled)
+        {
+            // After any reordering, so distance is indexed the way the scan will see it.
+            int[] distance = new int[cfTargets.Length];
+            for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
+            {
+                uint cand = board[cellIndex] & ~valueSetMask;
+                for (int row = cfOffsets[cellIndex]; row < cfOffsets[cellIndex + 1]; row++)
+                {
+                    distance[row] = ValueCount(cand & ~cfMasks[row]);
+                }
+            }
+            cfStatsBlock = CellForcingStats.Register(cfMasks, distance, MAX_VALUE);
+        }
+
         if (CellForcingVerify)
         {
             VerifyCellForcingTable();
@@ -788,6 +804,7 @@ public partial class Solver
         cfCanFire = null;
         cfNewlyFires = null;
         cfPopEnd = null;
+        cfStatsBlock = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 

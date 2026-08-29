@@ -96,6 +96,10 @@ public partial class Solver
     // cfOffsets[cell + 1]; the popcount arm measured as a small loss everywhere.
     private int[] cfPopEnd;
 
+    // Per-row scan/fire/elimination counters under SUDOKU_CF_STATS, shared by reference with the
+    // table they belong to and folded into a histogram at process exit. Null otherwise.
+    private CellForcingStats.Block cfStatsBlock;
+
     // Enqueue filter for cell forcing: bit m of cell A's block is set iff some row of A has
     // cand-mask m as a subset of its S, i.e. iff a cell whose candidates are exactly m could force
     // anything at all. A board write consults it and skips pushing a cell that provably cannot
@@ -107,7 +111,8 @@ public partial class Solver
     private ulong[] cfCanFire;
     private int cfCanFireWords;
 
-    // Sharper enqueue filter, indexed by the value the write removed. Bit m of block
+    // Sharper enqueue filter, indexed by the value the write removed, off by default since it
+    // measured as no faster than the plain can-fire bitmap at nine times the size. Bit m of block
     // (cell * MAX_VALUE + v - 1) is set iff some row of that cell has m as a subset of its S *and*
     // does not contain v. Such a row fires now and did not fire before the write, because a row
     // whose S contains v already covered the pre-write mask. cfCanFire alone cannot see this: it
