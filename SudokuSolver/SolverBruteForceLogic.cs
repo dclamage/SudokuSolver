@@ -186,6 +186,7 @@ public partial class Solver
                     }
                 }
                 if (c0 < 0 || c1 < 0) continue;
+                if (WlProbe.Enabled) { WlProbe.Bilocal++; }
                 if (!IsWeakLink(CandidateIndex(c0, val), CandidateIndex(c1, val))) continue;
 
                 // Score by max conflict score of the two cells (ISS CandidateFinders.House)
@@ -343,6 +344,7 @@ public partial class Solver
         cfNewlyFires = null;
         cfPopEnd = null;
         cfStatsBlock = null;
+        wlMatrix = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 
@@ -788,6 +790,7 @@ public partial class Solver
 
                 int candidate1a = CandidateIndex(cellIndex1, valueA);
                 int candidate1b = CandidateIndex(cellIndex1, valueB);
+                if (WlProbe.Enabled) { WlProbe.Pairs++; }
                 if (!IsWeakLink(candidate0a, candidate1a) || !IsWeakLink(candidate0b, candidate1b))
                 {
                     continue;
@@ -884,6 +887,7 @@ public partial class Solver
 
                 // Check non-repeat property between p_i and p_j for all three values
                 bool p_i_j_nonrepeat =
+                    (WlProbe.Enabled ? WlProbe.Bump(ref WlProbe.Triples) : true) &&
                     (!HasValue(p_i.ActualCellMask, vA) || !HasValue(p_j.ActualCellMask, vA) || IsWeakLink(CandidateIndex(c0, vA), CandidateIndex(c1, vA))) &&
                     (!HasValue(p_i.ActualCellMask, vB) || !HasValue(p_j.ActualCellMask, vB) || IsWeakLink(CandidateIndex(c0, vB), CandidateIndex(c1, vB))) &&
                     (!HasValue(p_i.ActualCellMask, vC) || !HasValue(p_j.ActualCellMask, vC) || IsWeakLink(CandidateIndex(c0, vC), CandidateIndex(c1, vC)));
@@ -1137,6 +1141,11 @@ public partial class Solver
                 CellForcingStats.PopsTooFewCandidates++;
             }
             return LogicResult.None;
+        }
+
+        if (CellForcingMatrixPath && wlMatrix != null)
+        {
+            return CellForcingForCellMatrix(cellIndex, candMask);
         }
 
         // A row fires only if cand(cell) is a subset of its mask, which needs the mask to hold at

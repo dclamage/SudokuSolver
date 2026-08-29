@@ -154,6 +154,8 @@ public partial class Solver
         cfNewlyFires = other.cfNewlyFires;
         cfPopEnd = other.cfPopEnd;
         cfStatsBlock = other.cfStatsBlock;
+        wlMatrix = other.wlMatrix;
+        wlMatrixWords = other.wlMatrixWords;
 
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
@@ -374,6 +376,7 @@ public partial class Solver
         wlGroupedOffsets = offsets;
 
         CompileCellForcingTable();
+        CompileWlBitmatrix();
     }
 
     /// <summary>
@@ -401,6 +404,7 @@ public partial class Solver
     /// </remarks>
     internal void CompileCellForcingTable()
     {
+        WlProbe.Hook();
         if (weakLinks == null || cfOffsets != null)
         {
             return;
@@ -805,6 +809,7 @@ public partial class Solver
         cfNewlyFires = null;
         cfPopEnd = null;
         cfStatsBlock = null;
+        wlMatrix = null;
         wlGroupedCells = null;
         wlGroupedMasks = null;
 

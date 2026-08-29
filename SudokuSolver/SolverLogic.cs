@@ -1292,6 +1292,7 @@ public partial class Solver
                         int cand02_2 = CandidateIndex((i2, j2), value02);
                         int cand12_1 = CandidateIndex((i1, j1), value12);
                         int cand12_2 = CandidateIndex((i2, j2), value12);
+                        if (WlProbe.Enabled) { WlProbe.LogicTriples++; }
                         bool weak01 = IsWeakLink(cand01_0, cand01_1);
                         bool weak02 = IsWeakLink(cand02_0, cand02_2);
                         bool weak12 = IsWeakLink(cand12_1, cand12_2);

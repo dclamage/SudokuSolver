@@ -143,6 +143,7 @@ public class SlowThermometerConstraint : Constraint
                         {
                             int candK_val = solver.CandidateIndex(cellK_coords, currentPathMinVal);
                             int candK_plus_1_val = solver.CandidateIndex(cellK_plus_1_coords, currentPathMinVal);
+                            if (WlProbe.Enabled) { WlProbe.Thermo++; }
                             if (solver.IsWeakLink(candK_val, candK_plus_1_val))
                             {
                                 mustIncrement = true;

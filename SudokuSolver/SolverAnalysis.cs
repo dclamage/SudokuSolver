@@ -346,8 +346,18 @@ public partial class Solver
     /// WASM AOT, which emits a <c>call_indirect</c> per comparison step. See
     /// <c>docs/wasm-perf-investigation-findings.md</c>.
     /// </remarks>
-    internal bool IsWeakLink(int candIndex0, int candIndex1) =>
-        WeakLinkSearch(weakLinks[candIndex0], candIndex1) >= 0;
+    internal bool IsWeakLink(int candIndex0, int candIndex1)
+    {
+        if (WlProbe.Enabled)
+        {
+            List<int> list = weakLinks[candIndex0];
+            WlProbe.Calls++;
+            WlProbe.Elements += list.Count;
+            WlProbe.Steps += 32 - System.Numerics.BitOperations.LeadingZeroCount((uint)list.Count + 1);
+            return WeakLinkSearch(list, candIndex1) >= 0;
+        }
+        return WeakLinkSearch(weakLinks[candIndex0], candIndex1) >= 0;
+    }
 
     /// <summary>
     /// Binary search of a sorted weak-link list, with the same contract as

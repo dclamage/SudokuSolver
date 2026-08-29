@@ -201,7 +201,9 @@ public class SkyscraperConstraint : Constraint
         // solver's existing weak links, and have exactly `clue` visible buildings, accumulating the
         // supported value at each position. This preserves the old permutation-filter semantics
         // (which called CanPlaceDigits) without allocating or enumerating every permutation.
-        SkyscraperSearch(solver, candidateMasks, supportMasks, assigned, 0, 0u, 0, 0);
+        Span<ulong> assignedBits = solver.HasWlMatrix && !Solver.SkyscraperCountsPath ? stackalloc ulong[solver.WlMatrixWords] : default;
+        Span<byte> blockCounts = Solver.SkyscraperCountsPath ? stackalloc byte[solver.CandidateCount] : default;
+        SkyscraperSearch(solver, candidateMasks, supportMasks, assigned, 0, 0u, 0, 0, assignedBits, blockCounts);
 
         bool changed = false;
         List<int> elims = null;
@@ -266,7 +268,7 @@ public class SkyscraperConstraint : Constraint
     /// Prunes on visibility bounds and existing weak links, and returns true once every candidate is
     /// supported (saturation) so the caller stops. Allocation-free.
     /// </summary>
-    private bool SkyscraperSearch(Solver solver, ReadOnlySpan<uint> candidateMasks, Span<uint> supportMasks, Span<int> assigned, int pos, uint usedMask, int runningMax, int visible)
+    private bool SkyscraperSearch(Solver solver, ReadOnlySpan<uint> candidateMasks, Span<uint> supportMasks, Span<int> assigned, int pos, uint usedMask, int runningMax, int visible, Span<ulong> assignedBits, Span<byte> blockCounts)
     {
         int n = candidateMasks.Length;
         if (pos == n)
@@ -318,13 +320,26 @@ public class SkyscraperConstraint : Constraint
             // Reject if this candidate is weak-linked to any already-assigned candidate (this is what
             // CanPlaceDigits checked, cross-constraint weak links included).
             int candIndex = CandidateIndex(cellIndex, v);
-            bool blocked = false;
-            for (int k = 0; k < pos; k++)
+            bool blocked;
+            if (!blockCounts.IsEmpty)
             {
-                if (solver.IsWeakLink(candIndex, CandidateIndex(cellIndices[k], assigned[k])))
+                blocked = blockCounts[candIndex] != 0;
+            }
+            else if (!assignedBits.IsEmpty)
+            {
+                blocked = solver.IsWeakLinkToAny(candIndex, assignedBits);
+            }
+            else
+            {
+                blocked = false;
+                for (int k = 0; k < pos; k++)
                 {
-                    blocked = true;
-                    break;
+                    if (WlProbe.Enabled) { WlProbe.Skyscraper++; }
+                    if (solver.IsWeakLink(candIndex, CandidateIndex(cellIndices[k], assigned[k])))
+                    {
+                        blocked = true;
+                        break;
+                    }
                 }
             }
             if (blocked)
@@ -333,7 +348,30 @@ public class SkyscraperConstraint : Constraint
             }
 
             assigned[pos] = v;
-            if (SkyscraperSearch(solver, candidateMasks, supportMasks, assigned, pos + 1, usedMask | vMask, isVisible ? v : runningMax, newVisible))
+            if (!assignedBits.IsEmpty)
+            {
+                assignedBits[candIndex >> 6] |= 1UL << (candIndex & 63);
+            }
+            if (!blockCounts.IsEmpty)
+            {
+                foreach (int target in solver.WeakLinksFor(candIndex))
+                {
+                    blockCounts[target]++;
+                }
+            }
+            bool saturatedBelow = SkyscraperSearch(solver, candidateMasks, supportMasks, assigned, pos + 1, usedMask | vMask, isVisible ? v : runningMax, newVisible, assignedBits, blockCounts);
+            if (!blockCounts.IsEmpty)
+            {
+                foreach (int target in solver.WeakLinksFor(candIndex))
+                {
+                    blockCounts[target]--;
+                }
+            }
+            if (!assignedBits.IsEmpty)
+            {
+                assignedBits[candIndex >> 6] &= ~(1UL << (candIndex & 63));
+            }
+            if (saturatedBelow)
             {
                 return true; // saturated: every candidate is supported, no need to search further
             }
