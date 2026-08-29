@@ -119,38 +119,109 @@ at the given. The branch stays as a safety net, and the test that replaced it as
 behaviour — a given of 4 on a difference-5 whisper leaves only 9 next door, before any `StepLogic`
 runs. That is what the old "weak links enforce it" comment got right.
 
-## 5. Still open: the dots
+## 5. The dots: done
 
 `1HuNjcLWlPE` also carries three white and three black kropki dots, and
-`OrthogonalValueConstraint` — the base class for kropki, difference, ratio and XV — has the same
-defect whispers had, deliberately:
+`OrthogonalValueConstraint` — the base class for kropki, difference, ratio and XV — had the same
+defect whispers had, deliberately: `WantsBruteForcePropagation => false` plus an `isBruteForcing`
+short-circuit, with a comment explaining that weak links enforce it.
 
-```csharp
-public override bool WantsBruteForcePropagation => false;
-...
-if (isBruteForcing) { return LogicResult.None; }
-```
+Fixed, and it was worth more than the 3x the probe suggested.
 
-with a comment explaining that weak links enforce it. Its `StepLogic` already contains the arc
-consistency ("remove candidates which would remove all values from any orthogonal cells") plus a
-multi-candidate cell-forcing pass.
+| | before | after | |
+| --- | ---: | ---: | --- |
+| `1HuNjcLWlPE` time | 25,143 ms | **91.8 ms** | **274x** |
+| `1HuNjcLWlPE` nodes | 15,206,082 | **30,288** | 502x |
+| `1HuNjcLWlPE` allocation | 1,022 MB | **4.6 MB** | 223x |
+| ISS corpus, geomean of per-case ratios | — | **0.773x (-22.7%)** | 189 better, 14 worse |
+| ISS corpus, total | 13,969 ms | 12,974 ms | -7.1% |
+| `corpus.json` nodes | 26,830,146 | 17,186,712 | -35.9% |
 
-A probe that simply deletes both guards takes **`1HuNjcLWlPE` from 18,914 to 6,350 ms — 3× — and
-allocation from 1.0 GB to 7.8 GB.** So the deduction is worth having and the current implementation
-cannot be the one that ships. What it needs, in order:
+`1HuNjcLWlPE` is now **1.28x off ISS** (71.8 ms), down from 263x. It is no longer an outlier.
 
-1. Hoist the `GetRelatedConstraints(solver).SelectMany(x => x.Markers.Keys).ToHashSet()` at the top
-   of `StepLogic` into a readonly field. It is constant after construction and is currently rebuilt
-   on every call.
-2. Give it a queue-driven, allocation-free arc-consistency path for brute force, keeping the
-   full-grid group scan (the third phase, over `sudokuSolver.Groups`) for the logical arm only.
-3. `CellIndicesForPropagationQueue` needs care here in a way it did not for whispers: with a negative
-   constraint every orthogonal adjacency is constrained, so the constraint watches the whole grid.
+### Why the probe under-predicted by 90x
 
-Expect roughly 3× on `1HuNjcLWlPE` and, since kropki dots are common, a visible corpus effect.
+The earlier probe just deleted the two guards and measured 3x for 7.8 GB of garbage. Three things
+separate that from the shipped version, and the allocation was the smallest of them:
 
-After that, the remaining lever on `1HuNjcLWlPE` is ISS's **required-value exclusion for a binary
-pair** — the `_exclusionsCellsForRequiredValues` branch of the same `BinaryConstraint`, which is the
-pairwise analogue of what the renban change shipped: if every legal assignment of a pair uses value
-`v`, then no cell seeing both can be `v`. That was deliberately *not* built here, because the
-measured prize was arc consistency alone and mixing the two would have made neither attributable.
+1. **The arms are different code.** The logical arm must stop at the first deduction and describe
+   it. The brute-force arm has nobody to explain itself to, so it sweeps the whole grid and applies
+   everything it finds in one call. The probe inherited the first-match-and-return shape, which is
+   the wrong shape for a propagator.
+2. **A compiled adjacency table.** `InitLinks` already walks every constrained ordered pair, so it
+   now also emits a CSR of (neighbor, clear-values) alongside the weak links. The hot loop never
+   touches the `markers` dictionary, never allocates an `AdjacentCells` enumerator, and never
+   re-derives which pairs are live. The `overrideMarkers` `HashSet` the probe rebuilt on *every*
+   `StepLogic` call is now built once, there.
+3. **An exact popcount guard**, below.
+
+### The guard, and why it is exact rather than a heuristic
+
+The deduction fires only when every candidate of the neighbor falls inside one `clearValues` mask.
+So a neighbor holding more candidates than the widest such mask cannot yield one, and the pair can
+be dismissed on a `popcount` instead of a loop over the cell's candidates. For a negative
+constraint — the case that watches the whole grid and therefore dominates cost — those masks are
+three values wide, so nearly every pair is dismissed in one instruction.
+
+This took `tc-nc-no-r3c4` from **+21.4% to +2.6%** with **every node count byte-identical**, which is
+what makes it a guard rather than a weakening. Same for the other two cost cuts (iterating only
+watched cells, hoisting a popcount out of the inner loop): node counts unchanged throughout.
+
+### The pass that was deleted: this is cell forcing, and half of it was redundant
+
+Worth stating plainly, because it reframes an earlier result. `InitLinks` adds a weak link
+`(cell0,v0) -> (cell1,v1)` for exactly the bits of `clearValues[v0-1]`, so the table the sweep reads
+**is** this constraint's weak-link set — and the deduction is precisely cell forcing over it:
+*every candidate of cell1 is weakly linked to `(cell0,v)`, so `(cell0,v)` dies.*
+
+The first implementation also carried the mirror-image pass (fold a mask across cell0's candidates,
+clear it from cell1), capped at three candidates. **It was deleted as provably redundant.** Every
+marker relation here is symmetric in its two values — difference `v0+k==v1 || v1+k==v0`, ratio
+likewise, XV `v0+v1==k` — so `clearValues` is a symmetric relation and the two passes test the same
+condition, one from each end. The sweep visits every cell, so it already sees both ends.
+
+Removing it left **all 33 `corpus.json` cases and all 398 ISS puzzles bit-identical on node count**.
+
+**The reframing:** [`cell-forcing-worklist.md`](cell-forcing-worklist.md) measured cell forcing at
+0.582x nodes but **2x too costly** — 6.6 us paid per node removed against a 3.35 us node. That
+verdict is about the **general scan**, not about the deduction. Here the same rule pays about
+**0.02 us per node removed** on `kropki-search-cap50k`, roughly two orders of magnitude cheaper,
+because the forcing cell and the target are not searched for: they are four orthogonal neighbors
+known at compile time, the intersection is an AND of precomputed 9-bit masks, and there is no
+worklist or enqueue bookkeeping because it rides the constraint queue that already exists.
+
+Worth carrying forward: **a deduction that is too expensive to find in general may be cheap inside a
+constraint that already knows where to look.**
+
+### What it cost, honestly
+
+Stronger propagation changes candidate counts, which feed `GetLeastCandidateCell`, which changes
+branch order — the same two-sided trade-off [`branch-ordering.md`](branch-ordering.md) records for
+weak-link discovery. On the ISS corpus **93 puzzles explore fewer nodes and 13 explore more**. The
+worst is **`iss-g2PUwXrKogU`: 47,252 -> 124,426 nodes and 2.6x the time.** That is a real regression
+and it is not a bug; it is the known cost of reordering. 189 cases better against 14 worse is the
+trade being accepted.
+
+Two things that look like regressions and are not. Roughly a dozen `corpus.json` cases showed
+10-40% worse timings with **identical node counts** — and a check of the corpus shows only **5 of 36
+cases contain an `OrthogonalValueConstraint` at all** (`kropki-search-cap50k`, `nc-4given`,
+`tc-blank-nonconsecutive`, `tc-nc-no-r3c4`, `variant-cloneways`). With no such constraint the class
+is never instantiated and `StepLogic` is never called, so those numbers are machine noise; two runs
+of the *same* baseline build differed by 2.6% on the corpus total. Gating the propagator on
+"kropki/difference/ratio/XV present" would be a no-op for the same reason.
+
+The corpus-wide timings above were measured with the redundant second pass still present, so they
+are a floor rather than the final figure.
+
+### Still open
+
+`CellIndicesForPropagationQueue` returns every watched cell, which under a negative constraint is
+the whole grid. That is honest — the constraint really does watch everything — and it costs nothing
+extra per write, since the enqueue is one OR against a per-cell mask. But it does mean the sweep
+runs on nearly every propagation step. A dirty-cell hint would let it re-check only pairs touching a
+changed cell; `StepLogic` currently receives no such information.
+
+`BruteForcePropagationCost` is still the unmeasured default of 2000. Changing it reorders the
+constraint stage and therefore changes node counts, so it wants its own measured commit rather than
+a ride-along here.
+

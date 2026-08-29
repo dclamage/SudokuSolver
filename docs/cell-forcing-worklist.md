@@ -25,6 +25,26 @@ candidate is the enqueue path, not the table.**
 tiered bucket structure described below, and the reason it paid is not the reason predicted here.
 Read that section before building steps 2 or 3.
 
+## Addendum (2026-08-29): the verdict is about the scan, not the deduction
+
+`OrthogonalValueConstraint`'s new brute-force arm
+([`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5) **is** cell forcing — its
+`InitLinks` adds a weak link for exactly the bits of `clearValues[v0-1]`, so its sweep is the rule
+below applied to that constraint's own weak links. It measures **0.10× nodes on
+`kropki-search-cap50k` for roughly 0.02 µs paid per node removed**, against the 6.6 µs that makes
+the general version 2× underwater.
+
+Nothing about the deduction changed; the cost of *finding* it did. The general scan searches the
+weak-link lists to discover which targets are forced. There, the forcing cell and the target are
+four orthogonal neighbours known at compile time, the intersection is an AND of precomputed 9-bit
+masks, and there is no worklist or enqueue path because it rides the constraint queue that already
+exists — which is also why the 97.1% do-nothing rate below does not apply to it.
+
+**So read the table below as a verdict on the general scan.** A deduction too expensive to find in
+general can be cheap inside a constraint that already knows where to look. That is a reusable shape
+rather than a one-off, and it is worth trying against any other constraint whose weak links carry
+this much structure.
+
 ## Why in-search cell forcing does not pay yet
 
 Measured with `SUDOKU_BRANCH_ORDER=static SUDOKU_NODE_CAP=200000`, on the puzzles that complete in

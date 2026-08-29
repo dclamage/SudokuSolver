@@ -11,6 +11,32 @@ public abstract class OrthogonalValueConstraint : Constraint
     public readonly HashSet<int> negativeConstraintValues = new();
 
     /// <summary>
+    /// Pairs whose negative constraint another constraint overrides, e.g. a white kropki dot
+    /// suppressing the black dot's negative constraint on the same edge.
+    /// </summary>
+    /// <remarks>
+    /// Built once in <see cref="InitLinks"/>, which already computes exactly this. It used to be
+    /// rebuilt — a LINQ <c>SelectMany().ToHashSet()</c> — at the top of every <see cref="StepLogic"/>
+    /// call, which is pure garbage: the set is a function of the finalized constraint list and
+    /// cannot change after that.
+    /// </remarks>
+    private HashSet<(int, int, int, int)> overrideMarkersCache;
+
+    // Compiled adjacency for the brute-force arm: a CSR over the ordered (cell, neighbor) pairs
+    // that are actually constrained, so the hot loop never touches the markers dictionary, never
+    // allocates an AdjacentCells enumerator, and never re-derives which pairs are live.
+    //
+    // Built once in InitLinks and read-only afterwards, which is what makes it safe to share: the
+    // constraint instance itself is shared by reference across cloned solvers and across threads
+    // (Solver's copy constructor does `constraints = other.constraints`), so anything mutable here
+    // would be a data race. Nothing below is written after initialization.
+    private int[] bfPairOffsets;        // length NUM_CELLS + 1
+    private int[] bfPairNeighbor;       // neighbor cell index for each pair slot
+    private uint[][] bfPairClearValues; // clear-values table for that pair, indexed by value - 1
+    private int[] bfPairMaxClearCount;  // widest clear-values mask for that pair; see StepLogicBruteForce
+    private int[] bfWatchedCells;       // cells with at least one constrained neighbor
+
+    /// <summary>
     /// Determine if the pair of values are allowed to be across the constraint "marker" for a pair of cells.
     /// The opposite of this is used if the negative constraint is enabled.
     /// An example of a constraint "marker" is a black ratio dot, or an "X" for XV constraint.
@@ -252,20 +278,42 @@ public abstract class OrthogonalValueConstraint : Constraint
         return true;
     }
 
-    // StepLogic short-circuits to None during brute force (see the top of StepLogic) — this
-    // constraint is enforced entirely by the weak links added in InitLinks there, so it never
-    // deduces anything inside the brute-force propagation loop. Exclude it from that loop entirely
-    // rather than paying a per-step no-op (always-run) or per-marker-cell-change enqueue cost.
-    public override bool WantsBruteForcePropagation => false;
+    /// <summary>
+    /// Now true. This used to be false, on the grounds that the weak links from
+    /// <see cref="InitLinks"/> enforce the constraint — the same reasoning whispers and renban were
+    /// written under, and wrong for the same reason: <b>weak links only fire on
+    /// <c>SetValue</c></b>, so they deduce nothing at candidate level, and the brute-force
+    /// propagation loop is singles plus each constraint's <see cref="StepLogic"/>. A kropki dot
+    /// therefore contributed no propagation at all while brute forcing.
+    /// </summary>
+    /// <remarks>
+    /// Keyed off the compiled table rather than hardcoded true: a constraint every one of whose
+    /// pairs is overridden by another constraint has nothing to deduce, and would otherwise sit in
+    /// the always-run bucket being called once per propagation step to return None. The table is
+    /// built in <see cref="InitLinks"/>, which <c>FinalizeConstraints</c> runs before it reads this.
+    /// </remarks>
+    public override bool WantsBruteForcePropagation => bfPairOffsets != null;
+
+    /// <summary>
+    /// Every cell that has at least one constrained neighbor. With a negative constraint that is
+    /// the whole grid, which is the honest answer rather than a problem: the alternative is the
+    /// always-run bucket, and listing the cells costs nothing extra per write (the enqueue is one
+    /// OR against a per-cell constraint mask, regardless of how many constraints watch the cell)
+    /// while still allowing the step to be skipped when nothing this constraint cares about moved.
+    /// </summary>
+    public override IReadOnlyList<int> CellIndicesForPropagationQueue => bfWatchedCells;
 
     public override LogicResult StepLogic(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isBruteForcing)
     {
         if (isBruteForcing)
         {
-            return LogicResult.None;
+            return StepLogicBruteForce(sudokuSolver);
         }
 
-        var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
+        // Set in InitLinks during FinalizeConstraints; the fallback is for the theoretical caller
+        // that reaches StepLogic without it.
+        var overrideMarkers = overrideMarkersCache
+            ?? GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
 
         var board = sudokuSolver.Board;
 
@@ -605,6 +653,126 @@ public abstract class OrthogonalValueConstraint : Constraint
         return LogicResult.None;
     }
 
+    /// <summary>
+    /// The brute-force arm: pairwise arc consistency over every constrained adjacency, applied as
+    /// masked per-cell writes with no allocation at all.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Deliberately not the same code as the logical arm, and that is the point rather than a
+    /// shortcut. The logical arm must stop at the first deduction and describe it; this one has no
+    /// one to explain itself to, so it sweeps the whole grid and applies everything it finds, which
+    /// is worth far more per call. It also drops the third phase (the locked-digit scan over
+    /// <c>Solver.Groups</c>) entirely — that is a search over every group and value for a deduction
+    /// the search reaches by branching anyway.
+    /// </para>
+    /// <para>
+    /// Weaker is safe here: <c>EnforceConstraint</c> and the weak links own correctness, so this
+    /// method is pure propagation and cannot change a solution count. Set cells are skipped for the
+    /// same reason — <c>SetValue</c> applies the pair's weak links, so a solved neighbor has already
+    /// removed everything this pass would.
+    /// </para>
+    /// <para>
+    /// One pass, not a fixpoint loop. Every elimination goes through the board write path, which
+    /// re-enqueues this constraint, so the propagation queue drives it to a fixpoint without this
+    /// method guessing how many sweeps are worth paying for.
+    /// </para>
+    /// </remarks>
+    private LogicResult StepLogicBruteForce(Solver sudokuSolver)
+    {
+        int[] pairOffsets = bfPairOffsets;
+        if (pairOffsets == null)
+        {
+            return LogicResult.None;
+        }
+
+        int[] pairNeighbor = bfPairNeighbor;
+        uint[][] pairClearValues = bfPairClearValues;
+        int[] pairMaxClearCount = bfPairMaxClearCount;
+        BoardView board = sudokuSolver.Board;
+        bool changed = false;
+
+        // Iterate the cells that actually have a constrained neighbor rather than the whole grid.
+        // Identical work under a negative constraint, where that is every cell; for a puzzle
+        // carrying nothing but a handful of dots it is the difference between visiting six cells
+        // and visiting eighty-one.
+        int[] watchedCells = bfWatchedCells;
+        for (int watchedIndex = 0; watchedIndex < watchedCells.Length; watchedIndex++)
+        {
+            int cellIndex0 = watchedCells[watchedIndex];
+            int pairEnd = pairOffsets[cellIndex0 + 1];
+            int pairStart = pairOffsets[cellIndex0];
+
+            uint mask0 = board[cellIndex0];
+            if (IsValueSet(mask0))
+            {
+                continue;
+            }
+            uint cand0 = mask0 & ~valueSetMask;
+
+            for (int pair = pairStart; pair < pairEnd; pair++)
+            {
+                int cellIndex1 = pairNeighbor[pair];
+                uint mask1 = board[cellIndex1];
+                if (IsValueSet(mask1))
+                {
+                    continue;
+                }
+
+                uint[] clearValues = pairClearValues[pair];
+                uint cand1 = mask1 & ~valueSetMask;
+
+                // Keep a value in cell0 only if some candidate of cell1 survives it. This is the
+                // deduction ISS gets from BinaryConstraint.enforceConsistency. The reverse
+                // direction needs no separate pass: the outer loop reaches cell1 in its own turn
+                // and sees this pair from the other side.
+                //
+                // The guard is what makes the sweep affordable, and it is exact rather than a
+                // heuristic: the deduction fires only when cell1's candidates all fall inside some
+                // clearValues mask, so a cell1 holding more candidates than the widest such mask
+                // cannot possibly yield one. For a negative constraint — the case that watches the
+                // whole grid and therefore dominates the cost — those masks are three values wide,
+                // so almost every pair is dismissed on a popcount instead of a loop over cell0's
+                // candidates. Positive markers have wide masks and are not helped, but there are
+                // only ever a handful of them.
+                if (ValueCount(cand1) <= pairMaxClearCount[pair])
+                {
+                    uint keep0 = 0;
+                    for (uint remaining = cand0; remaining != 0; remaining &= remaining - 1)
+                    {
+                        int v = BitOperations.TrailingZeroCount(remaining) + 1;
+                        if ((cand1 & ~clearValues[v - 1]) != 0)
+                        {
+                            keep0 |= ValueMask(v);
+                        }
+                    }
+
+                    if (keep0 != cand0)
+                    {
+                        LogicResult keepResult = sudokuSolver.KeepMask(cellIndex0, keep0);
+                        if (keepResult == LogicResult.Invalid)
+                        {
+                            return LogicResult.Invalid;
+                        }
+                        changed = true;
+
+                        // The write may have solved the cell, in which case it is no longer a
+                        // source of candidate-level deductions and its weak links have fired.
+                        mask0 = board[cellIndex0];
+                        if (IsValueSet(mask0))
+                        {
+                            break;
+                        }
+                        cand0 = mask0 & ~valueSetMask;
+                    }
+                }
+
+            }
+        }
+
+        return changed ? LogicResult.Changed : LogicResult.None;
+    }
+
     public override LogicResult InitLinks(Solver sudokuSolver, List<LogicalStepDesc> logicalStepDescription, bool isInitializing)
     {
         if (!isInitializing)
@@ -613,6 +781,19 @@ public abstract class OrthogonalValueConstraint : Constraint
         }
 
         var overrideMarkers = GetRelatedConstraints(sudokuSolver).SelectMany(x => x.Markers.Keys).ToHashSet();
+        overrideMarkersCache = overrideMarkers;
+
+        // Same walk builds the brute-force adjacency table: every ordered pair visited below that
+        // has a clear-values array is a pair StepLogicBruteForce has to check, and this loop
+        // already knows which those are. Doing it here rather than lazily also settles the
+        // thread-safety question — FinalizeConstraints is single-threaded, and nothing writes these
+        // afterwards.
+        int numCells = HEIGHT * WIDTH;
+        int[] pairOffsets = new int[numCells + 1];
+        List<int> pairNeighbor = new();
+        List<uint[]> pairClearValues = new();
+        List<int> pairMaxClearCount = new();
+        List<int> watchedCells = new();
 
         for (int i0 = 0; i0 < HEIGHT; i0++)
         {
@@ -620,10 +801,31 @@ public abstract class OrthogonalValueConstraint : Constraint
             {
                 var cell0 = (i0, j0);
                 int cellIndex0 = FlatIndex(cell0);
+                pairOffsets[cellIndex0] = pairNeighbor.Count;
                 foreach (var cell1 in AdjacentCells(i0, j0))
                 {
                     int cellIndex1 = FlatIndex(cell1);
                     var pair = CellPair(cell0, cell1);
+                    uint[] pairClearValuesForCells = markers.TryGetValue(pair, out int markerValueForPair)
+                        ? clearValuesPositiveByMarker[markerValueForPair]
+                        : negativeConstraint && !overrideMarkers.Contains(pair) ? clearValuesNegative : null;
+                    if (pairClearValuesForCells != null)
+                    {
+                        pairNeighbor.Add(cellIndex1);
+                        pairClearValues.Add(pairClearValuesForCells);
+
+                        int maxClearCount = 0;
+                        foreach (uint clearMaskForValue in pairClearValuesForCells)
+                        {
+                            int clearCount = ValueCount(clearMaskForValue);
+                            if (clearCount > maxClearCount)
+                            {
+                                maxClearCount = clearCount;
+                            }
+                        }
+                        pairMaxClearCount.Add(maxClearCount);
+                    }
+
                     if (markers.TryGetValue(pair, out int markerValue))
                     {
                         for (int v0 = 1; v0 <= MAX_VALUE; v0++)
@@ -663,8 +865,26 @@ public abstract class OrthogonalValueConstraint : Constraint
                         }
                     }
                 }
+
+                if (pairNeighbor.Count > pairOffsets[cellIndex0])
+                {
+                    watchedCells.Add(cellIndex0);
+                }
             }
         }
+        pairOffsets[numCells] = pairNeighbor.Count;
+
+        // A constraint with no live adjacency at all leaves these null, and StepLogicBruteForce
+        // early-outs on that rather than sweeping a grid it can never deduce anything about.
+        if (pairNeighbor.Count > 0)
+        {
+            bfPairOffsets = pairOffsets;
+            bfPairNeighbor = pairNeighbor.ToArray();
+            bfPairClearValues = pairClearValues.ToArray();
+            bfPairMaxClearCount = pairMaxClearCount.ToArray();
+            bfWatchedCells = watchedCells.ToArray();
+        }
+
         return LogicResult.None;
     }
 

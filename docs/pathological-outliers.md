@@ -257,10 +257,13 @@ links enforce them, and weak links only fire on `SetValue`.
 
 ## Suggested next steps
 
-1. ~~**The whisper half.**~~ **Done** — `OqyXKDOhfDA` 19,566 → **116 ms** (169×, and 3.6× faster
-   than ISS), and `1HuNjcLWlPE` **finishes for the first time** at 18.9 s. That leaves the *dots*:
-   `OrthogonalValueConstraint` has the identical defect and a probe gives 3× on `1HuNjcLWlPE`.
-   [`whisper-arc-consistency.md`](whisper-arc-consistency.md).
+1. ~~**The whisper half.**~~ ~~**The dots.**~~ **Both done.** The whisper change took
+   `OqyXKDOhfDA` 19,566 → **116 ms** and made `1HuNjcLWlPE` finite for the first time. Giving
+   `OrthogonalValueConstraint` the identical treatment then took `1HuNjcLWlPE` to **91.8 ms** —
+   274× on top, 502× fewer nodes, and **1.28× off ISS** rather than 263×. The probe's 3× prediction
+   was 90× low, for reasons worth reading:
+   [`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5. **No pathological outliers
+   remain on this list.**
 2. **Sandwich's `Permutations()`** — now the *only* thing group B allocates, since the brute-force
    arm was made allocation-free (above). It costs `Exact` 1.2 GB on `blPgSzctUMg`, and only logical
    solving pays it now. Still a self-contained fix.
