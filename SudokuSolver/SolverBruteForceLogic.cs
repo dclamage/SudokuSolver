@@ -1171,6 +1171,26 @@ public partial class Solver
             return LogicResult.None;
         }
 
+        // Exact O(1) dismissal before touching a single row. cfCanFire marks every candidate mask
+        // m for which some row (X, S) has m subset of S -- the scan's firing condition exactly, by
+        // construction (BuildCellForcingFilter takes the downward zeta transform of the row masks).
+        // So an unmarked cell provably fires nothing and the row walk is pure loss.
+        //
+        // The bitmap already existed and was consulted only on the enqueue path, which meant the
+        // every-step scan -- where nothing is enqueued at all -- built it and never used it. The
+        // field's own comment names the symptom it was meant to prevent: "pays a full row scan
+        // before finding nothing".
+        ulong[] canFire = cfCanFire;
+        if (canFire != null
+            && (canFire[cellIndex * cfCanFireWords + (int)(candMask >> 6)] & (1UL << (int)(candMask & 63))) == 0)
+        {
+            if (stats)
+            {
+                CellForcingStats.PopsOverCap++;
+            }
+            return LogicResult.None;
+        }
+
         // A row fires only if cand(cell) is a subset of its mask, which needs the mask to hold at
         // least as many values. In popcount order those rows are a prefix, so the bound is a table
         // lookup rather than a per-row test.

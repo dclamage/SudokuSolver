@@ -19,10 +19,36 @@ below. `cf/scan-prunes` (`d88a36c`) is **merged into `wasm-prototype`** and the 
 **on by default** (`SUDOKU_CF_PRUNE`, default 1). What remains off is the *trigger*:
 `SUDOKU_CF_TRIGGER=off` means root setup only.
 
-**And the gap is not closed.** With the prunes active, `SUDOKU_CF_TRIGGER=every` against `off` on
-`corpus.json` measures **geomean 1.364× — 36% slower** — for 9 cases with fewer nodes and 2 with
-more. So the prunes did not move the economics, consistent with § "Step 5" concluding the remaining
-candidate is the enqueue path rather than the table.
+**Step 6 (2026-08-29) closes the scan question and repoints the work at fixed cost.** The filter was
+wired to the wrong call site: `cfCanFire` answers "can this cell fire, given its candidate mask" in
+O(1), and was consulted only from `EnqueueCellForcing`. The every-step scan — where nothing is
+enqueued at all — built it and never used it, so every cell paid a full row walk. The field's own
+comment named the symptom it was meant to prevent: *"pays a full row scan before finding nothing"*.
+
+Consulting it at the top of `CellForcingForCell` is exact by construction (`BuildCellForcingFilter`
+is the downward zeta transform of the row masks, so a marked mask is exactly one where some row's
+`S` contains `cand`). **`SUDOKU_CF_TRIGGER=every`: 22,928 → 18,030 ms, −21.4%, node counts identical
+on all 33 cases.**
+
+**The gap is still not closed, and it is now clearly fixed cost rather than scan cost:**
+
+| `SUDOKU_CF_TRIGGER=dirty` vs `off`, after the precheck | total | geomean |
+| --- | ---: | ---: |
+| `corpus.json` | 15,798 vs 15,755 — **+0.3%** | 1.184× |
+| `corpus-iss.json` | 17,251 vs 14,242 — **+21%** | 1.438× |
+
+Same build, same trigger, same machine; the only variable is how long the puzzles take. `corpus.json`
+holds multi-second cases and reaches wall-clock parity for 9 cases with fewer nodes; `corpus-iss.json`
+has a 1.1 ms median and loses 21%. **That spread is the whole remaining problem.** `BuildCellForcingFilter`
+alone is `2^MAX_VALUE * MAX_VALUE` per cell — ~373k operations per search at 9x9 — which is invisible
+on a slow solve and can exceed the entire solve on a fast one.
+
+So the order of attack has changed. The table is not the cost (§ Step 4), the scan is no longer the
+cost (above, and § Step 5 already bounded it), and the enqueue path's *unconditional* half is fixed
+(see the −17% item above). What remains is **per-search fixed cost paid before anything is known
+about the puzzle** — which is the exact problem `WeakLinkDiscoveryMode.Deferred` exists to solve, and
+which `ideas.md` idea 4 generalizes into a ladder. Cell forcing would be its second instance rather
+than a new mechanism, and the node counter now lets the threshold be set in nodes.
 
 **Steps 1-3 have landed. § "Step 4" adds exact board-relative table prunes. § "Step 5" measures the
 per-row usefulness question the prunes were groundwork for and closes it: a perfect oracle filter
