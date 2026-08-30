@@ -1,6 +1,6 @@
 # Handoff: solver performance & the browser port
 
-Last updated 2026-08-19. Branch `wasm-prototype`, working tree clean, pushed. Read this first, then
+Last updated 2026-08-30. Branch `wasm-prototype`, working tree clean, pushed. Read this first, then
 the linked docs as needed.
 
 ---
@@ -76,6 +76,62 @@ relevant distribution is the favourable one. Data and caveats:
 
 ### What landed in this session
 
+**The cell-forcing threshold is tuned, and the answer is that the threshold was never the variable.**
+Tuned on `--filter iss-tune` (280) and confirmed on `--filter iss-holdout` (118), the discipline this
+file records. Full write-up: [`cell-forcing-worklist.md`](cell-forcing-worklist.md) § Step 8.
+
+- **A threshold nothing reaches costs 6.5% geomean and is slower on 123 of 128 puzzles** — with node
+  counts **bit-identical to `off` on all 280**, so it is a proof that the machinery did nothing at
+  all. Every real threshold then lands at median 1.042–1.061, *within 2% of that do-nothing arm*. The
+  entire median regression was fixed cost; `N` only ever moved the tail.
+- **`nodes:100`'s headline −20.8% on the total is a five-puzzle lottery.** The top 5 `iss-tune` cases
+  are **65.3% of the total** and their node counts swing chaotically with the trigger
+  (`iss-0cvA-XDiQNQ`: 556k → 612k → 221k → 1,016k → 1,048k → 500k). The holdout settles it — the same
+  arm and build read **−20.8% on `iss-tune` and +10.3% on `iss-holdout`**. A metric that flips sign
+  between two halves of one corpus is measuring which puzzles landed where.
+- **Cell forcing stays default-off, now for a measured reason rather than an assumed one.**
+
+**Four of those 6.5 points are gone, and the mechanism generalizes.** The charge is flat across search
+length (1.058 / 1.094 / 1.060 / 1.049 / 1.043 by node band), which rules out the table build and names
+the board-write path. Under `off`, `EnqueueCellForcing` folds away entirely at JIT time on a
+`static readonly bool` — so **every check that survives in a live mode is a cost `off` does not pay**.
+Gating the worklist until the threshold arms (`cfArmedScanDone`, which pays the gap back with one full
+scan) and hoisting that test above every other field load took `never` from **1.065 → 1.050 → 1.028**,
+with node counts bit-identical across all three builds on every arm. The lesson for `ideas.md` idea 4:
+**a dormant tier still pays for being compiled in**, so a ladder must budget ~2% per live-but-dormant
+tier, or make dormant tiers unreachable rather than merely un-triggered.
+
+Also removed: an **unconditional `solver.searchNodesSoFar = nodesVisited`** in the true-candidates
+search loop, sitting immediately after the `if (CellForcingNeedsNodeCount)` guard whose whole purpose
+is to elide it — a per-node store on the hottest path for a default-off feature.
+
+**A benchmarking trap that invalidated the first pass, and the protocol that fixes it.** Arm position
+inside a back-to-back sweep is worth ~7%: `nodes:3000` scored **1.061×** as the 7th arm of a sweep and
+**0.990×** as a fresh isolated process, same build, same config, **identical node counts**. The first
+sweep was thrown away on that basis. What replaced it — interleaved arms (one round = every arm once,
+rotating start index, own process each), min across rounds per case, and a **duplicate baseline arm as
+the noise floor** — moves the `off`-vs-`off` control from p10 0.915× / p90 1.145× to **p10 0.986× /
+p90 1.015×, geomean 1.000×**. Without it nothing under ~15% per case is readable. Now in
+`benchmarks/README.md`.
+
+**The harness no longer accepts a baseline that does not describe the run.** A `--baseline` from a
+different corpus, or the same corpus under a different `--filter`, matched no case names, so every
+ratio silently dropped out and the run printed a bare total that read as a clean result. It now warns,
+and names how many of the run's cases the baseline actually covers. `--save` also records `Iterations`
+now, so a baseline saved at a different iteration count is flagged too — the "minimum of 5 is
+systematically below minimum of 3" trap this file already documents. Baselines saved before that field
+existed report 0 and are not flagged; re-save rather than trusting an old one.
+
+**Best next steps from here.** `ideas.md`'s node-counter prerequisite is met, so ideas 1, 2, 4 and 5
+are unblocked — and idea 4 now has a hard constraint to design against rather than an open question.
+The `nodes:N` machinery is cheaper but still default-off; **do not spend more on it without a new
+mechanism**, since the remaining ~2% is one field load per board write and the pruning it buys does not
+pay at the median on either corpus half. The named unstarted items are unchanged: the dots family's
+binary-pair required-value exclusion, pooling the grouped weak-link arrays, and `XSumConstraint`'s
+53 MB.
+
+### What landed in the session before that
+
 **A node counter, and then most of the value came from using it.** `Solver.NodesVisited` counts
 search nodes unconditionally, surfaced as a `nodes` column plus a `vs baseline nodes` block. Its
 larger use turned out to be as a **parity check**: an output-preserving change must leave every
@@ -107,12 +163,12 @@ and `SUDOKU_CF_TRIGGER=nodes:N` (default-off) defers it until a search proves ex
 baseline's iteration count is part of its identity. `MinMs` over 5 samples is systematically below
 `MinMs` over 3.
 
-**Best next steps from here.** The cell-forcing threshold is unvalidated — tune on `--filter iss-tune`,
-confirm on `iss-holdout`, the discipline the weak-link deferral already follows. `ideas.md`'s node-counter
-prerequisite is met, so ideas 1, 2, 4 and 5 are unblocked. And the benchmark harness silently accepts a
-baseline saved from a *different corpus*, printing a bare total with no ratios and no warning.
+**Best next steps from here** — *both of these were done in the following session; see above.* The
+cell-forcing threshold was unvalidated, and the benchmark harness silently accepted a baseline saved
+from a *different corpus*, printing a bare total with no ratios and no warning. `ideas.md`'s
+node-counter prerequisite is met, so ideas 1, 2, 4 and 5 are unblocked.
 
-### What landed in the session before that
+### And the session before that
 
 **The Renban propagation gap is closed.** `h-ymyScJa2s` went **8,293 ms → 26 ms (321×)** and from
 14.0 M search nodes to essentially none — we now beat ISS on it by 4×. `blPgSzctUMg` 26 → 4 ms.
@@ -176,7 +232,7 @@ Also added `whisper-zoomout` to `corpus.json` (there was no whisper case of *any
 value" branch is unreachable in normal play, because `SetValue` applies the pair's weak links first —
 which is the half of the old "weak links enforce it" comment that was correct.
 
-### And the session before that
+### Three sessions before that
 
 Eight commits. **ISS corpus 13,618 → 11,585 ms (−15%)**. Green at the end: 121 tests, 31-case corpus
 0 FAIL, 398/398 ISS puzzles 0 FAIL.
@@ -219,7 +275,7 @@ Also added `xsum-search`, `skyscraper-search` and `sandwich-search` to `corpus.j
 Skyscraper appear in **zero** of the 398 ISS puzzles and had no case anywhere, so changes to them
 were unmeasurable. They are regression detectors, **not** tuning targets — see the rule above.
 
-### Three sessions before that
+### Four sessions before that
 
 **Deferred weak-link discovery** — the Priority 1 item — is built, tuned and **on by default**.
 `WeakLinkDiscoveryMode` (`Always`/`Never`/`Deferred`) is now a real solver option with

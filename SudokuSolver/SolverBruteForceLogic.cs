@@ -1074,10 +1074,22 @@ public partial class Solver
 
         if (CellForcingTrigger.mode == CfTrigger.Nodes)
         {
-            return FastFindCellForcingQueue(cancellationToken);
-        }
+            if (cfArmedScanDone)
+            {
+                return FastFindCellForcingQueue(cancellationToken);
+            }
 
-        if (CellForcingTrigger.mode == CfTrigger.Queue)
+            // Not armed yet, so the worklist has not been fed and says nothing about the board.
+            // Fall through to the full scan, which is exactly what `off` does here -- root setup
+            // and the logical arm reach this method unconditionally, and they have to keep
+            // behaving identically to `off` or deferral would silently weaken them. Charge the
+            // arming scan to whichever call first crosses the threshold.
+            if (searchNodesSoFar >= CellForcingTrigger.param)
+            {
+                cfArmedScanDone = true;
+            }
+        }
+        else if (CellForcingTrigger.mode == CfTrigger.Queue)
         {
             return FastFindCellForcingQueue(cancellationToken);
         }

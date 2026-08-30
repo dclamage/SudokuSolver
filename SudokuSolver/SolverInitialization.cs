@@ -164,6 +164,7 @@ public partial class Solver
         conflictScores = other.conflictScores;
         hasDifferentValueWeakLink = other.hasDifferentValueWeakLink;
         cfTableHasRows = other.cfTableHasRows;
+        cfArmedScanDone = other.cfArmedScanDone;
         constraintCellForcingCells = other.constraintCellForcingCells;
         // Same reason, and the same reference-sharing: every clone in a search tree tallies its
         // nodes into one counter, so a nested search on a clone still shows up in the total.

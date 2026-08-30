@@ -73,6 +73,14 @@ or hide one. At 25 it settles to ~1% (measured: 99.3 / 97.4 / 98.1 / 98.0 ms, sa
 config). If a corpus is fast, a delta smaller than the spread of four repeated runs is not a
 finding, so measure that spread before trusting the delta.
 
+**The run now warns when a baseline does not describe it.** Both mismatches used to be silent and
+both have produced fictional numbers here. A baseline saved from a different corpus — or the same
+corpus under a different `--filter` — matches no case names at all, so every ratio drops out and the
+run prints a bare total that reads as a clean result; it now says so, and names how many of the run's
+cases the baseline actually covers. A baseline saved at a different `--iterations` is flagged too,
+using the `Iterations` field `--save` records. Baselines written before that field existed report 0
+and are not flagged, so re-save rather than trusting an old file.
+
 **And a baseline's iteration count is part of its identity.** `--save` records `MinMs`, and the
 minimum of 5 samples is systematically lower than the minimum of 3. Comparing across different
 counts produces a confident, entirely fictional number — in one direction or the other depending on
@@ -112,6 +120,34 @@ Three things about that shape are deliberate:
 - **Sub-millisecond cases are excluded.** Under equal weighting, a ratio built from two 0.03 ms
   timings is noise given the same vote as a ten-second case. Cases with a baseline under 1 ms are
   dropped and counted.
+
+### Arm position inside a sweep is worth ~7%, so interleave arms and take the min of rounds
+
+**Running arms back to back in one script biases the later ones, and by more than most findings are
+made of.** Measured 2026-08-30 on `--filter iss-tune`: `SUDOKU_CF_TRIGGER=nodes:3000` scored geomean
+**1.061x** as the 7th and last arm of a sweep and **0.990x** as a fresh isolated process — same build,
+same config, same iteration count, and **identical node counts (2,326,271 both times)**, so the whole
+7% was measurement. A sweep that walks thresholds in order will therefore manufacture a clean-looking
+monotone trend out of nothing.
+
+The protocol that fixes it, and the control that proves it did:
+
+1. **Interleave.** Run every arm once per round, rotating the starting index each round, each in its
+   own process. Position drift then lands on every arm equally instead of on the last one.
+2. **Take the min across rounds, per case.** `MinMs` is already a min over iterations; min over
+   rounds extends the same estimator across process boundaries. Do this yourself from `--save` files
+   rather than with `--baseline`, so both arms are treated symmetrically.
+3. **Carry a duplicate control arm.** Run the baseline configuration *twice* under different names.
+   The second one is your noise floor, and it is the only thing that licenses reading anything else.
+
+What that buys, on the same corpus and machine: a single back-to-back comparison put the `off`-vs-`off`
+control at p10 0.915x / p90 1.145x, while three interleaved rounds put it at **p10 0.986x / p90 1.015x,
+geomean 1.000x, 22 better / 23 worse**. The same protocol then resolved a 2.3% effect cleanly. Without
+it, nothing under about 15% per case is readable.
+
+This composes with, and does not replace, the iteration-count rule above. Three rounds of 5 iterations
+is not the same as one round of 15: the rounds are what average out process-level state, and the
+iterations are what average out within-process jitter.
 
 ### `nodes` is the metric for a pruning change, and the cheapest parity check you have
 

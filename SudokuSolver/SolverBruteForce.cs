@@ -998,6 +998,7 @@ public partial class Solver
         {
             pendingCellForcing.Add(other.pendingCellForcing[i]);
         }
+        cfArmedScanDone = other.cfArmedScanDone;
 
         if (other._candidateCountsPerGroupValue != null)
         {
@@ -1488,7 +1489,6 @@ public partial class Solver
                 {
                     solver.searchNodesSoFar = nodesVisited;
                 }
-                solver.searchNodesSoFar = nodesVisited;
 
                 if (!solver.TrueCandidatesPropogate(state))
                 {

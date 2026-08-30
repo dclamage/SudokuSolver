@@ -16,6 +16,24 @@ public partial class Solver
         // Nothing drains this worklist unless cell forcing runs inside the search, and it is off by
         // default. Feeding it anyway cost a list append on every board write plus a deep copy of the
         // accumulated list into every branch clone -- for a list no one ever read.
+        // Under nodes:N nothing drains this worklist until the search has proven expensive, so
+        // feeding it before then is the same waste in miniature: filter work on every board write
+        // plus a deep copy into every branch clone, for a list no one reads. Measured on iss-tune,
+        // a threshold nothing reaches cost 1.065x geomean against off with bit-identical node counts
+        // on all 280 puzzles -- pure overhead, and flat across search length, which named the write
+        // path rather than the table build. Arming pays for the gap with one full scan; see
+        // cfArmedScanDone.
+        //
+        // First, and before any other field load. Under `off` this whole method folds away at JIT
+        // time on a static readonly bool, so every check that survives here is a real per-write
+        // cost that `off` does not pay -- which is the entire measured gap. Ordering the one test
+        // that is false for most of most searches ahead of the rest is the cheapest this can be
+        // without giving up the feature.
+        if (CellForcingNeedsNodeCount && !cfArmedScanDone)
+        {
+            return;
+        }
+
         if (pendingCellForcing == null || !CellForcingRunsInSearch || !cfTableHasRows)
         {
             return;

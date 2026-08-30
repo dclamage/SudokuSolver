@@ -186,17 +186,25 @@ change which deduction fires first. Run the parity census before trusting any ti
 
 ## 4. Ramp up machinery only when a puzzle proves it needs it
 
-**Status:** open · **Prereq:** node counter — **met** · **one more instance built, 2026-08-30**
+**Status:** open · **Prereq:** node counter — **met** · **one instance built and then tuned, 2026-08-30**
 
-> **A second instance now exists and it measured well.** `SUDOKU_CF_TRIGGER=nodes:N` defers cell
-> forcing until a search has visited N nodes, and took it from geomean **1.403× against `off` to
-> ~1.0** on the ISS corpus while keeping 107 of 127 node reductions. See
-> [`cell-forcing-worklist.md`](cell-forcing-worklist.md) § Step 7. That is evidence for the ladder
-> below, not the ladder itself — it is a second one-off flag, which is exactly the shape this entry
-> proposes generalizing. Two caveats carried from it: the threshold is **unvalidated** (tune on
-> `iss-tune`, confirm on `iss-holdout`), and deferral is worth reaching for only *after* the cheap
-> wins are mined — the same session found four fixed costs that were deletable outright, and
-> deferring them would have hidden the problem instead of removing it.
+> **That second instance has now been tuned, and the result is a warning rather than support.**
+> `SUDOKU_CF_TRIGGER=nodes:N` defers cell forcing until a search has visited N nodes. Tuned on
+> `iss-tune` and confirmed on `iss-holdout` (2026-08-30, § Step 8 of
+> [`cell-forcing-worklist.md`](cell-forcing-worklist.md)), **no threshold is a median win**, and the
+> § Step 7 figures it used to cite were an artefact of running arms back to back.
+>
+> The finding this entry has to absorb: **a dormant tier still pays for being compiled in.** A
+> threshold nothing ever reaches left node counts bit-identical to `off` on all 280 `iss-tune`
+> puzzles — provably zero benefit — and was still slower on **123 of 128** of them, because `off`
+> folds the write-path hook away at JIT time on a `static readonly bool` and a runtime-selected
+> tier cannot be folded. Gating and hoisting that hook took the charge from 6.5% to ~2%, and ~2%
+> per live-but-dormant tier is the floor a ladder has to budget for. The design consequence is
+> sharp: **dormant tiers want to be unreachable, not merely un-triggered.**
+>
+> Also carried forward: deferral is worth reaching for only *after* the cheap wins are mined — the
+> same work found five fixed costs that were deletable outright, and deferring them would have
+> hidden the problem instead of removing it.
 
 There is already one instance of this: `WeakLinkDiscoveryMode.Deferred` skips weak-link probing and
 retries with it when the cheap attempt doesn't pan out. Its design has a property worth reusing —
@@ -484,7 +492,7 @@ not just confusion — see the warning below the table.
 
 | knob | default | parked because |
 | --- | --- | --- |
-| `SUDOKU_CF_TRIGGER` | `off` (root setup only) | In-search cell forcing prunes to 0.582× nodes but costs ~2× what it saves — 6.6 µs per node removed against a 3.35 µs node. [`cell-forcing-worklist.md`](cell-forcing-worklist.md) |
+| `SUDOKU_CF_TRIGGER` | `off` (root setup only) | In-search cell forcing prunes to 0.582× nodes but costs ~2× what it saves — 6.6 µs per node removed against a 3.35 µs node. Deferring it (`nodes:N`) does **not** rescue it: tuned on `iss-tune` and confirmed on `iss-holdout`, no threshold is a median win. [`cell-forcing-worklist.md`](cell-forcing-worklist.md) § Step 8 |
 | `BILOCAL_SEARCH_WEIGHT_DEFAULT` | `0` | The bilocal branch-ordering tier was measured and answered "no". `HANDOFF.md` § 2 Priority 1b |
 | `SUDOKU_OVC_MODE` | own sweep | `OrthogonalValueConstraint` can hand its cells to the shared cell-forcing scan instead. Prunes ~2× better on dot-heavy boards, costs +4.9% across the ISS corpus. [`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5 |
 | `SUDOKU_SANDWICH_BF_ARM` | `heuristic` | Not parked — a shipped choice, listed so the table is the whole switch surface |

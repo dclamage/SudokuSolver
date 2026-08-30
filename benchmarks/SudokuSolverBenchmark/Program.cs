@@ -111,6 +111,8 @@ internal static class Program
             }
         }
 
+        WarnIfBaselineDoesNotMatchRun(baseline, cases, iterations);
+
         Console.WriteLine($"iterations={iterations}  multithread={forceMultiThread}  cases={cases.Count}");
         Console.WriteLine($"{"name",-24}{"op",-7}{"result",13}  {"ok",-4}{"min ms",10}{"med ms",10}{"alloc MB",10}{"nodes",14}   {(baseline.Count > 0 ? "vs base" : "")}");
         Console.WriteLine(new string('-', 110));
@@ -205,6 +207,45 @@ internal static class Program
             return 3;
         }
         return 0;
+    }
+
+    /// <summary>
+    /// Says out loud when a <c>--baseline</c> file does not describe the run it is being diffed
+    /// against. Both mismatches are silent otherwise, and both have produced fictional numbers
+    /// here: a baseline saved from a different corpus (or a different <c>--filter</c>) simply
+    /// matches no case names, so every ratio drops out and the run prints a bare total that looks
+    /// like a clean result; and a baseline saved at a different iteration count is comparing a
+    /// minimum over N samples against a minimum over M, which is biased by construction.
+    /// </summary>
+    private static void WarnIfBaselineDoesNotMatchRun(
+        Dictionary<string, BenchResult> baseline, List<BenchCase> cases, int iterations)
+    {
+        if (baseline.Count == 0 || cases.Count == 0) return;
+
+        int matched = cases.Count(c => baseline.ContainsKey(c.Name));
+        if (matched == 0)
+        {
+            Console.WriteLine("WARNING: the baseline shares no case names with this run - wrong corpus, or wrong --filter?");
+            Console.WriteLine($"         baseline has {baseline.Count} cases and matches none of this run's {cases.Count}. No ratios will be printed.");
+        }
+        else if (matched < cases.Count)
+        {
+            Console.WriteLine($"WARNING: the baseline covers only {matched} of this run's {cases.Count} cases; {cases.Count - matched} will show no delta.");
+        }
+
+        // Only the cases actually compared can bias a ratio, so judge the iteration count on those.
+        var baseIterations = cases
+            .Where(c => baseline.ContainsKey(c.Name))
+            .Select(c => baseline[c.Name].Iterations)
+            .Where(n => n > 0)
+            .Distinct()
+            .ToList();
+        if (baseIterations.Count > 0 && baseIterations.Any(n => n != iterations))
+        {
+            string saved = string.Join("/", baseIterations.OrderBy(n => n));
+            Console.WriteLine($"WARNING: the baseline was saved at --iterations {saved}, this run is at {iterations}.");
+            Console.WriteLine("         MinMs over more samples is systematically lower, so the deltas below are biased. Re-run to match.");
+        }
     }
 
     /// <summary>

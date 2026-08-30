@@ -47,6 +47,13 @@ internal sealed class BenchResult
     /// ops give the same figure every iteration; the "estimate" op samples randomly and does not.
     /// </summary>
     public long Nodes { get; set; }
+    /// <summary>
+    /// Timed iterations behind <see cref="MinMs"/>. A baseline's iteration count is part of its
+    /// identity — the minimum of 5 samples is systematically below the minimum of 3 — so a diff
+    /// across two different counts is fiction. Recorded here so the harness can say so. Reads 0
+    /// from a baseline saved before this field existed.
+    /// </summary>
+    public int Iterations { get; set; }
 }
 
 /// <summary>
@@ -100,6 +107,7 @@ internal static class BenchCore
             MedianMs = times[iterations / 2],
             AllocMB = allocatedBytes / 1_000_000.0,
             Nodes = nodes[iterations / 2],
+            Iterations = iterations,
         };
     }
 

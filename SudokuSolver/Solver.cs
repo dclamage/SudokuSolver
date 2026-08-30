@@ -194,6 +194,16 @@ public partial class Solver
     /// </summary>
     internal long searchNodesSoFar;
 
+    /// <summary>
+    /// Under <c>SUDOKU_CF_TRIGGER=nodes:N</c>, whether this solver has already done the one full
+    /// cell-forcing scan that arming owes. The worklist is not fed before the threshold is reached,
+    /// so at the moment it is reached the queue does not describe the board -- every candidate lost
+    /// on the way here is missing from it. One full scan re-establishes the invariant the queue
+    /// relies on; after that the incremental feed is exact again. Copied on clone because arming is
+    /// monotone: a clone of an armed solver inherits a queue that is already trustworthy.
+    /// </summary>
+    internal bool cfArmedScanDone;
+
     internal int[] constraintCellForcingCells;
 
     internal int[] conflictScores;
