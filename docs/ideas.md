@@ -188,13 +188,22 @@ change which deduction fires first. Run the parity census before trusting any ti
 
 **Status:** open · **Prereq:** node counter — **met** · **one instance built and then tuned, 2026-08-30**
 
-> **That second instance has now been tuned, and the result is a warning rather than support.**
-> `SUDOKU_CF_TRIGGER=nodes:N` defers cell forcing until a search has visited N nodes. Tuned on
-> `iss-tune` and confirmed on `iss-holdout` (2026-08-30, § Step 8 of
-> [`cell-forcing-worklist.md`](cell-forcing-worklist.md)), **no threshold is a median win**, and the
-> § Step 7 figures it used to cite were an artefact of running arms back to back.
+> **That second instance has now been tuned, and it supports the ladder — but only after the first
+> attempt to tune it failed in the exact way this entry warns about.** `SUDOKU_CF_TRIGGER=nodes:N`
+> defers cell forcing until a search has visited N nodes. Tuned on `iss-tune` and `iss-holdout`
+> first, which produced a confident **"no threshold can win"** — an artefact, because those
+> puzzles never reach any threshold. On `corpus.json`, which holds the multi-million-node searches,
+> the same arms are a **−4.3% total win**, **−7.6% to −9.1% on `truecandidates`**, and −6.0% on
+> searches over 1M nodes (2026-08-30, § Step 8 of
+> [`cell-forcing-worklist.md`](cell-forcing-worklist.md)).
 >
-> The finding this entry has to absorb: **a dormant tier still pays for being compiled in.** A
+> **The tuning hazard below is not a footnote; it was load-bearing and it was skipped.** Worse than
+> stated there: a **tune/holdout split gives no protection**, because both halves are drawn from the
+> same truncated distribution and are wrong in the same direction. Stratifying `iss-tune` by search
+> size shows the effect the aggregate hid — top 10 puzzles by nodes, `nodes:100` is **0.653×
+> geomean, 7 better / 3 worse**, against 1.018 over all 128.
+>
+> The second finding this entry has to absorb: **a dormant tier still pays for being compiled in.** A
 > threshold nothing ever reaches left node counts bit-identical to `off` on all 280 `iss-tune`
 > puzzles — provably zero benefit — and was still slower on **123 of 128** of them, because `off`
 > folds the write-path hook away at JIT time on a `static readonly bool` and a runtime-selected
@@ -234,9 +243,13 @@ is the question those tiers can actually win.
 **What would kill it.** Thresholds that can't be tuned without overfitting; or a prefix cost that
 isn't actually bounded in the escalate-in-place variant.
 
-**Tuning hazard specific to this repo.** `corpus-iss.json` samples only easy puzzles (commit
-`6cac28d`). That is exactly the population that should never leave tier 0, so it *cannot* validate a
-ramp — it can only confirm that the cheap tier is cheap. Tuning needs the hard cases from the
+**Tuning hazard specific to this repo — this one has now cost a session, so treat it as a gate, not
+a note.** `corpus-iss.json` samples only easy puzzles (commit `6cac28d`). That is exactly the
+population that should never leave tier 0, so it *cannot* validate a ramp — it can only confirm that
+the cheap tier is cheap. **A tune/holdout split does not protect you here**: both halves are drawn
+from the same truncated distribution, so they agree with each other and are both wrong. Before
+measuring any ramp, check how many corpus cases actually reach the threshold; if the answer is single
+digits, the run cannot answer the question no matter how clean its statistics are. Tuning needs the hard cases from the
 28-case corpus (`tc-blank-nonconsecutive`, `kropki-search-cap50k`), and ideally puzzles that are hard
 for different reasons.
 
@@ -492,7 +505,7 @@ not just confusion — see the warning below the table.
 
 | knob | default | parked because |
 | --- | --- | --- |
-| `SUDOKU_CF_TRIGGER` | `off` (root setup only) | In-search cell forcing prunes to 0.582× nodes but costs ~2× what it saves — 6.6 µs per node removed against a 3.35 µs node. Deferring it (`nodes:N`) does **not** rescue it: tuned on `iss-tune` and confirmed on `iss-holdout`, no threshold is a median win. [`cell-forcing-worklist.md`](cell-forcing-worklist.md) § Step 8 |
+| `SUDOKU_CF_TRIGGER` | `off` (root setup only) | Costs ~2× what it saves **on fast puzzles**. Deferring it (`nodes:N`) is a −4.3% total win on `corpus.json` and −7.6% on `truecandidates`; off only because `iss-tune` prefers `nodes:100000` and `iss-holdout` prefers `nodes:10000`. Needs the hard corpus to settle. [`cell-forcing-worklist.md`](cell-forcing-worklist.md) § Step 8 |
 | `BILOCAL_SEARCH_WEIGHT_DEFAULT` | `0` | The bilocal branch-ordering tier was measured and answered "no". `HANDOFF.md` § 2 Priority 1b |
 | `SUDOKU_OVC_MODE` | own sweep | `OrthogonalValueConstraint` can hand its cells to the shared cell-forcing scan instead. Prunes ~2× better on dot-heavy boards, costs +4.9% across the ISS corpus. [`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5 |
 | `SUDOKU_SANDWICH_BF_ARM` | `heuristic` | Not parked — a shipped choice, listed so the table is the whole switch surface |

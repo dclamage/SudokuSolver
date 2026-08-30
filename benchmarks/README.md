@@ -232,6 +232,15 @@ The real answer is to use the right corpus for the question:
 `corpus.json` is a regression suite and was never a uniform sample of anything; treating its geomean
 as a population estimate is a category error.
 
+**The missing column is not hypothetical, and it has now produced a wrong answer.** Tuning the
+cell-forcing deferral threshold entirely on `corpus-iss.json` concluded that no threshold could win;
+on `corpus.json`, whose long searches actually reach a threshold, the same arms are a 4.3% total win
+and 7.6–9.1% on `truecandidates` ([`docs/cell-forcing-worklist.md`](../docs/cell-forcing-worklist.md)
+§ Step 8). **Before measuring anything that only activates past a threshold, count how many cases
+reach it.** If that count is in single digits, the run cannot answer the question however clean its
+statistics look — and a tune/holdout split will not warn you, because both halves omit the same
+puzzles and therefore agree.
+
 ### `corpus-iss.json` excludes the puzzles optimisation is for
 
 This is the important caveat and it is easy to miss. The importer applies **two** filters:

@@ -76,30 +76,87 @@ relevant distribution is the favourable one. Data and caveats:
 
 ### What landed in this session
 
-**The cell-forcing threshold is tuned, and the answer is that the threshold was never the variable.**
-Tuned on `--filter iss-tune` (280) and confirmed on `--filter iss-holdout` (118), the discipline this
-file records. Full write-up: [`cell-forcing-worklist.md`](cell-forcing-worklist.md) § Step 8.
+**The cell-forcing threshold is tuned, and deferral works — but the first answer was wrong, and how
+it was wrong is the more useful half.** Full write-up:
+[`cell-forcing-worklist.md`](cell-forcing-worklist.md) § Step 8.
 
-- **A threshold nothing reaches costs 6.5% geomean and is slower on 123 of 128 puzzles** — with node
-  counts **bit-identical to `off` on all 280**, so it is a proof that the machinery did nothing at
-  all. Every real threshold then lands at median 1.042–1.061, *within 2% of that do-nothing arm*. The
-  entire median regression was fixed cost; `N` only ever moved the tail.
-- **`nodes:100`'s headline −20.8% on the total is a five-puzzle lottery.** The top 5 `iss-tune` cases
-  are **65.3% of the total** and their node counts swing chaotically with the trigger
-  (`iss-0cvA-XDiQNQ`: 556k → 612k → 221k → 1,016k → 1,048k → 500k). The holdout settles it — the same
-  arm and build read **−20.8% on `iss-tune` and +10.3% on `iss-holdout`**. A metric that flips sign
-  between two halves of one corpus is measuring which puzzles landed where.
-- **Cell forcing stays default-off, now for a measured reason rather than an assumed one.**
+**The mistake: the whole sweep ran on `corpus-iss.json`, whose median puzzle solves in 1.1 ms.** A
+deferral threshold has nothing to do on a puzzle that never reaches it, so the only thing left to
+measure there is overhead — and that is what it measured, producing a confident *"no threshold is a
+median win, and no choice of N could be"*. Both `benchmarks/README.md` and `ideas.md` idea 4 already
+said that corpus cannot validate a ramp. **A tune/holdout split gave no protection**, because both
+halves are drawn from the same truncated distribution and so agree with each other. The signal was in
+the data all along: stratify the same `iss-tune` run by search size and `nodes:100` is **0.653×
+geomean, 7 better / 3 worse on the top 10 by node count**, against 1.018 over all 128 (control 0.993
+on the same 10).
 
-**Four of those 6.5 points are gone, and the mechanism generalizes.** The charge is flat across search
-length (1.058 / 1.094 / 1.060 / 1.049 / 1.043 by node band), which rules out the table build and names
-the board-write path. Under `off`, `EnqueueCellForcing` folds away entirely at JIT time on a
-`static readonly bool` — so **every check that survives in a live mode is a cost `off` does not pay**.
-Gating the worklist until the threshold arms (`cfArmedScanDone`, which pays the gap back with one full
-scan) and hoisting that test above every other field load took `never` from **1.065 → 1.050 → 1.028**,
-with node counts bit-identical across all three builds on every arm. The lesson for `ideas.md` idea 4:
-**a dormant tier still pays for being compiled in**, so a ladder must budget ~2% per live-but-dormant
-tier, or make dormant tiers unreachable rather than merely un-triggered.
+**On `corpus.json`, which holds the multi-million-node searches, deferral is a clear win** (36 cases,
+min of 3 interleaved rounds; `blank6-cap5M` 10.0M nodes, `tc-blank-nonconsecutive` 4.46M, `tc-nc-no-r3c4`
+1.85M — the largest `iss-tune` case is 590k):
+
+| grouping (off total) | `dirty` | `nodes:1000` | `nodes:10000` | `never` | control |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| **truecandidates** (10,538 ms) | −9.3% | −9.1% | −7.8% | +0.8% | −1.1% |
+| **searches >1M nodes** (12,601 ms) | −8.0% | −7.4% | −6.0% | +1.2% | −0.7% |
+| searches 10k–1M (956 ms) | −7.6% | **+28.7%** | +10.6% | +0.6% | +1.5% |
+| searches <10k (253 ms) | **+68.9%** | −0.2% | +0.8% | +1.0% | −0.3% |
+| **whole corpus** (15,153 ms) | −6.2% | −4.3% | **−4.3%** | +1.3% | −0.6% |
+
+That is deferral doing its job: `dirty` wins most on the total and is **+68.9% on short searches with a
+4.34× worst case**, while `nodes:10000` keeps ~70% of the win with a **1.16× worst case**. And **the op
+the setting UI runs on every edit is 7.6–9.1% faster at every threshold.**
+
+**Part of the win is not pruning.** `tc-blank-nonconsecutive` — 48% of the corpus total — runs at
+**0.90× with a bit-identical search tree** (4,455,021 nodes, result 729, every round of every
+cell-forcing arm beating every round of `off`/`off2`/`never`). Cell forcing reaches the same fixpoint
+more cheaply than the propagators that would otherwise get there. A nodes-only reading of a pruning
+change would have missed it.
+
+**Still default-off, for a narrow reason: `iss-tune` prefers `nodes:100000` (−8.5% total) and
+`iss-holdout` prefers `nodes:10000` (−9.5%)**, each roughly neutral at the other's choice, because each
+corpus has only 5–15 puzzles that reach either threshold. `corpus.json` does not break the tie
+(−4.3% vs −3.9%). **The blocker is the missing hard corpus** — `benchmarks/README.md` already carries
+the row and the recipe for `corpus-iss-hard.json` (`--budget-ms 120000 --corpus-max-ms 120000`,
+promoting the "agreed but too slow" puzzles the import discards). Build it, pick the threshold on it,
+ship. On present evidence the recommendation is **on, at a high threshold**: the median tax lands on
+puzzles measured in milliseconds, the win lands on the seconds.
+
+**Separately, 4 of the machinery's 6.5 fixed-cost points are gone.** A threshold nothing reaches left
+node counts **bit-identical to `off` on all 280 `iss-tune` puzzles** — provably zero benefit — and still
+cost 6.5% geomean, slower on 123 of 128. Flat across search length, which rules out the table build and
+names the board-write path: under `off`, `EnqueueCellForcing` folds away entirely at JIT time on a
+`static readonly bool`, so every check surviving in a live mode is a cost `off` does not pay. Gating the
+worklist until the threshold arms (`cfArmedScanDone`, which pays the gap back with one full scan) and
+hoisting that test above every other field load took `never` **1.065 → 1.050 → 1.028**, node counts
+bit-identical across all three builds on every arm. It amortizes on long searches (`never` is only
++1.3% on `corpus.json`), so this is a tax on the easy half — which makes the default-on case stronger,
+not weaker. Also removed: an **unconditional `solver.searchNodesSoFar = nodesVisited`** in the
+true-candidates search loop, sitting immediately after the guard whose purpose is to elide it.
+
+**Two method findings, both now in `benchmarks/README.md`.**
+
+- **Arm position inside a back-to-back sweep is worth ~7%.** `nodes:3000` scored 1.061× as the 7th arm
+  of a sweep and 0.990× as a fresh isolated process, same build, **identical node counts**. That sweep
+  was discarded. The replacement — interleaved arms, min across rounds, and a **duplicate baseline arm
+  as the noise floor** — moves the `off`-vs-`off` control from p10 0.915×/p90 1.145× to
+  **p10 0.986×/p90 1.015×**.
+- **`total min ms` on `corpus-iss.json` is a five-puzzle lottery.** Top 5 `iss-tune` cases are **65.3%
+  of the total** and their node counts swing chaotically with the trigger. `nodes:100` reads −20.8% on
+  `iss-tune` and +10.3% on `iss-holdout`. On `corpus.json` the total *is* the right metric, because the
+  corpus is made of long searches.
+
+**The harness no longer accepts a baseline that does not describe the run.** A `--baseline` from a
+different corpus, or the same corpus under a different `--filter`, matched no case names, so every
+ratio silently dropped out and the run printed a bare total that read as a clean result. It now warns,
+and `--save` records `Iterations` so a count mismatch is flagged too.
+
+**Best next steps from here.** **Build `corpus-iss-hard.json`** — it is now the blocker on a shipping
+decision worth 4–9%, and it is the instrument this file has been missing for every optimisation
+question, not just this one. It needs sigh's CTC index and the `.iss` puzzle directory, which are not
+on the Windows box. After that: pick the cell-forcing threshold on it and flip the default. `ideas.md`
+ideas 1, 2, 4 and 5 remain unblocked, and idea 4 now has two hard constraints to design against — a
+dormant tier costs ~2% on the write path, and a ladder cannot be validated on a corpus whose puzzles
+never leave tier 0.
 
 Also removed: an **unconditional `solver.searchNodesSoFar = nodesVisited`** in the true-candidates
 search loop, sitting immediately after the `if (CellForcingNeedsNodeCount)` guard whose whole purpose
@@ -163,10 +220,11 @@ and `SUDOKU_CF_TRIGGER=nodes:N` (default-off) defers it until a search proves ex
 baseline's iteration count is part of its identity. `MinMs` over 5 samples is systematically below
 `MinMs` over 3.
 
-**Best next steps from here** — *both of these were done in the following session; see above.* The
-cell-forcing threshold was unvalidated, and the benchmark harness silently accepted a baseline saved
-from a *different corpus*, printing a bare total with no ratios and no warning. `ideas.md`'s
-node-counter prerequisite is met, so ideas 1, 2, 4 and 5 are unblocked.
+**Best next steps from here** — *both of these were done in the following session; see above, and note
+that the threshold answer needed a second pass on a harder corpus.* The cell-forcing threshold was
+unvalidated, and the benchmark harness silently accepted a baseline saved from a *different corpus*,
+printing a bare total with no ratios and no warning. `ideas.md`'s node-counter prerequisite is met, so
+ideas 1, 2, 4 and 5 are unblocked.
 
 ### And the session before that
 
