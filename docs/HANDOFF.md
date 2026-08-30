@@ -76,6 +76,44 @@ relevant distribution is the favourable one. Data and caveats:
 
 ### What landed in this session
 
+**A node counter, and then most of the value came from using it.** `Solver.NodesVisited` counts
+search nodes unconditionally, surfaced as a `nodes` column plus a `vs baseline nodes` block. Its
+larger use turned out to be as a **parity check**: an output-preserving change must leave every
+count bit-identical, and several changes below were confirmed exact that way rather than argued.
+
+**Kropki/difference/ratio/XV got brute-force propagation** — the defect whispers and renban had.
+`1HuNjcLWlPE` **25,143 → 59 ms**, now *faster* than ISS's 71.8 ms, from 263× off. `pathological-outliers.md`
+has no outliers left. Its sweep is cell forcing restricted to a constraint's own compiled adjacency,
+which reframes `cell-forcing-worklist.md`'s verdict: that was about the general *scan*, not the
+deduction.
+
+**Cell forcing shipped a lot of cost for a feature that is off by default**, and four separate
+instances of it are now fixed:
+
+- A worklist fed on every board write that nothing ever drained, then deep-copied into every branch
+  clone. **ISS −17.0% geomean.**
+- The `cfCanFire` filter consulted only on the enqueue path, so the every-step scan built it and
+  never used it. **−21.4%** on that scan.
+- The table built for puzzles that provably cannot use it, plus per-cell filter work on cells with
+  no rows. **classic −14.0%, ISS −10.9%**, both at the *default* configuration.
+- The enqueue path still running against an empty table. **−3.6%** on classics with it enabled.
+
+**Cell forcing is no longer a loss.** Against `off` it went from ~2× underwater to roughly neutral,
+and `SUDOKU_CF_TRIGGER=nodes:N` (default-off) defers it until a search proves expensive: geomean
+**1.403× → ~1.0** on ISS while keeping 107 of 127 node reductions.
+
+**The methodology lesson that caused three bad numbers before it was caught**, now in
+`benchmarks/README.md`: iteration count must scale with a corpus's *total duration*, and a saved
+baseline's iteration count is part of its identity. `MinMs` over 5 samples is systematically below
+`MinMs` over 3.
+
+**Best next steps from here.** The cell-forcing threshold is unvalidated — tune on `--filter iss-tune`,
+confirm on `iss-holdout`, the discipline the weak-link deferral already follows. `ideas.md`'s node-counter
+prerequisite is met, so ideas 1, 2, 4 and 5 are unblocked. And the benchmark harness silently accepts a
+baseline saved from a *different corpus*, printing a bare total with no ratios and no warning.
+
+### What landed in the session before that
+
 **The Renban propagation gap is closed.** `h-ymyScJa2s` went **8,293 ms → 26 ms (321×)** and from
 14.0 M search nodes to essentially none — we now beat ISS on it by 4×. `blPgSzctUMg` 26 → 4 ms.
 Full 398-puzzle ISS corpus: **p50 1.00, geomean 0.967, 0 result mismatches**; 32-case corpus −2.8%.
@@ -138,7 +176,7 @@ Also added `whisper-zoomout` to `corpus.json` (there was no whisper case of *any
 value" branch is unreachable in normal play, because `SetValue` applies the pair's weak links first —
 which is the half of the old "weak links enforce it" comment that was correct.
 
-### What landed in the session before that
+### And the session before that
 
 Eight commits. **ISS corpus 13,618 → 11,585 ms (−15%)**. Green at the end: 121 tests, 31-case corpus
 0 FAIL, 398/398 ISS puzzles 0 FAIL.
@@ -181,7 +219,7 @@ Also added `xsum-search`, `skyscraper-search` and `sandwich-search` to `corpus.j
 Skyscraper appear in **zero** of the 398 ISS puzzles and had no case anywhere, so changes to them
 were unmeasurable. They are regression detectors, **not** tuning targets — see the rule above.
 
-### And the session before that
+### Three sessions before that
 
 **Deferred weak-link discovery** — the Priority 1 item — is built, tuned and **on by default**.
 `WeakLinkDiscoveryMode` (`Always`/`Never`/`Deferred`) is now a real solver option with
