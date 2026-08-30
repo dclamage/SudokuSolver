@@ -163,6 +163,7 @@ public partial class Solver
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
         hasDifferentValueWeakLink = other.hasDifferentValueWeakLink;
+        cfTableHasRows = other.cfTableHasRows;
         constraintCellForcingCells = other.constraintCellForcingCells;
         // Same reason, and the same reference-sharing: every clone in a search tree tallies its
         // nodes into one counter, so a nested search on a clone still shows up in the total.
@@ -430,6 +431,7 @@ public partial class Solver
             cfTargets = [];
             cfMasks = [];
             cfPopEnd = null;
+            cfTableHasRows = false;
             return;
         }
 
@@ -522,6 +524,7 @@ public partial class Solver
         }
 
         offsets[NUM_CELLS] = rowTargets.Count;
+        cfTableHasRows = rowTargets.Count > 0;
         cfTargets = [.. rowTargets];
         cfMasks = [.. rowMasks];
         cfOffsets = offsets;
@@ -867,6 +870,7 @@ public partial class Solver
         // Any mutation invalidates the grouped table; it is rebuilt before the next search.
         wlGroupedOffsets = null;
         cfOffsets = null;
+        cfTableHasRows = true;
         cfCanFire = null;
         cfNewlyFires = null;
         cfPopEnd = null;

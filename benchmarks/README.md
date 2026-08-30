@@ -64,6 +64,19 @@ caffeinate -i dotnet run -c Release --project benchmarks/SudokuSolverBenchmark -
 Timing on a laptop is noisy; prefer a quiet machine and `--iterations 7+`, and treat only
 consistent, repeatable deltas as real.
 
+**Scale the iteration count to the corpus's total duration, not by habit.** The number that matters
+is how long a whole run takes, because that is what fixed per-process noise is measured against.
+`corpus.json` totals ~16 s and is stable at 5 iterations. A 144-case classic corpus totals ~100 ms
+and at 5 iterations drifts **±10%** between identical runs — enough to invent a double-digit result
+or hide one. At 25 it settles to ~1% (measured: 99.3 / 97.4 / 98.1 / 98.0 ms, same build, same
+config). If a corpus is fast, a delta smaller than the spread of four repeated runs is not a
+finding, so measure that spread before trusting the delta.
+
+**And a baseline's iteration count is part of its identity.** `--save` records `MinMs`, and the
+minimum of 5 samples is systematically lower than the minimum of 3. Comparing across different
+counts produces a confident, entirely fictional number — in one direction or the other depending on
+which arm had more samples.
+
 ### Read the ratios, not the total
 
 **`total min ms` is a sum, and case times here span five orders of magnitude, so it is dominated by

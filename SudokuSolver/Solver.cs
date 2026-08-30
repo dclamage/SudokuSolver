@@ -175,6 +175,18 @@ public partial class Solver
     /// </remarks>
     internal bool hasDifferentValueWeakLink;
 
+    /// <summary>
+    /// Whether the compiled cell-forcing table holds any rows at all. True until proven otherwise,
+    /// so a solver whose table has not been compiled yet behaves as it always did.
+    /// </summary>
+    /// <remarks>
+    /// Cached rather than re-derived because the one caller that matters is on the board-write
+    /// path. The enqueue filter would reject every cell anyway once the table is empty -- its
+    /// bitmap is all zeroes -- but only after loading it and computing a word and bit index per
+    /// write. This answers the same question with one bool test.
+    /// </remarks>
+    internal bool cfTableHasRows = true;
+
     internal int[] constraintCellForcingCells;
 
     internal int[] conflictScores;
