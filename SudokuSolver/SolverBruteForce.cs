@@ -335,6 +335,10 @@ public partial class Solver
                     break;
                 }
                 nodesVisited++;
+                if (CellForcingNeedsNodeCount)
+                {
+                    solver.searchNodesSoFar = nodesVisited;
+                }
 
                 if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintMask != null)
                 {
@@ -723,6 +727,10 @@ public partial class Solver
                     break;
                 }
                 nodesVisited++;
+                if (CellForcingNeedsNodeCount)
+                {
+                    solver.searchNodesSoFar = nodesVisited;
+                }
 
                 if (solver._lastContradictionCellIndex >= 0 && solver.cellToConstraintMask != null)
                 {
@@ -1476,6 +1484,11 @@ public partial class Solver
                     break;
                 }
                 nodesVisited++;
+                if (CellForcingNeedsNodeCount)
+                {
+                    solver.searchNodesSoFar = nodesVisited;
+                }
+                solver.searchNodesSoFar = nodesVisited;
 
                 if (!solver.TrueCandidatesPropogate(state))
                 {

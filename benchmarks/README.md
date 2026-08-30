@@ -42,6 +42,7 @@ build — which also sidesteps the stale-`--baseline` problem below:
 | `SUDOKU_WEAK_LINK_DISCOVERY` | `always` / `never` / `deferred` (default). See [`docs/weak-link-discovery-tradeoff.md`](../docs/weak-link-discovery-tradeoff.md) |
 | `SUDOKU_WEAK_LINK_DEFER_NODES` | Node budget before `deferred` gives up and restarts with discovery. Default 2000 |
 | `SUDOKU_SANDWICH_BF_ARM` | `heuristic` (default) / `exact` / `none` — how much `SandwichConstraint` propagates while brute forcing. Logical solving always uses `exact`. See [`docs/pathological-outliers.md`](../docs/pathological-outliers.md) |
+| `SUDOKU_CF_TRIGGER=nodes:N` | Defers cell forcing until a search has visited N nodes. Takes it from geomean 1.403x against `off` to ~1.0 on the ISS corpus while keeping most of the pruning. See [`docs/cell-forcing-worklist.md`](../docs/cell-forcing-worklist.md) § Step 7 |
 | `SUDOKU_OVC_MODE` | `steplogic` (default) / `cellforcing` — whether kropki/difference/ratio/XV run their own arc-consistency sweep during brute force, or hand their cells to the shared cell-forcing scan. See [`docs/whisper-arc-consistency.md`](../docs/whisper-arc-consistency.md) §5 |
 
 The full inventory of default-off tiers, with the one-line reason each is parked, is in

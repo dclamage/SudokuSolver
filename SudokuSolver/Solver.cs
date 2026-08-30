@@ -187,6 +187,13 @@ public partial class Solver
     /// </remarks>
     internal bool cfTableHasRows = true;
 
+    /// <summary>
+    /// Nodes this search task had visited when it reached this solver. A plain store per node, no
+    /// atomic: it feeds a threshold heuristic, so a lost update under multi-threading costs at most
+    /// a slightly late escalation and never a wrong answer.
+    /// </summary>
+    internal long searchNodesSoFar;
+
     internal int[] constraintCellForcingCells;
 
     internal int[] conflictScores;

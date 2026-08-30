@@ -681,7 +681,7 @@ public partial class Solver
     /// fires whenever another does, plus more, can only lower the node count. The useful reading is
     /// therefore how much of the available pruning each one captures for how often it runs.
     /// </remarks>
-    private enum CfTrigger { Off, Every, Queue, Depth, Step }
+    private enum CfTrigger { Off, Every, Queue, Depth, Step, Nodes }
 
     private static readonly (CfTrigger mode, int param) CellForcingTrigger = ParseCellForcingTrigger();
 
@@ -690,6 +690,14 @@ public partial class Solver
     /// enqueue filters are never consulted, so building them would be pure setup cost.
     /// </summary>
     internal static bool CellForcingRunsInSearch => CellForcingTrigger.mode != CfTrigger.Off;
+
+    /// <summary>
+    /// Whether any trigger needs a live node count. Static readonly so the JIT folds the guard away
+    /// entirely when it is false, which is the default -- the alternative is a store per node on the
+    /// hottest path in the solver for a feature that ships disabled, which is the exact shape this
+    /// branch has spent today deleting.
+    /// </summary>
+    internal static readonly bool CellForcingNeedsNodeCount = CellForcingTrigger.mode == CfTrigger.Nodes;
 
     private static (CfTrigger, int) ParseCellForcingTrigger()
     {
@@ -703,6 +711,10 @@ public partial class Solver
             string head = raw[..colon];
             if (head == "depth") return (CfTrigger.Depth, n);
             if (head == "step") return (CfTrigger.Step, n);
+            // Deferral: drain the worklist only once the search has proven expensive. The queue is
+            // still fed from the first node, so this isolates the cost of *scanning* rather than of
+            // the whole machinery.
+            if (head == "nodes") return (CfTrigger.Nodes, n);
         }
         return (CfTrigger.Off, 0);
     }
@@ -715,6 +727,7 @@ public partial class Solver
         {
             case CfTrigger.Every:
             case CfTrigger.Queue: return true;
+            case CfTrigger.Nodes: return searchNodesSoFar >= CellForcingTrigger.param;
             case CfTrigger.Depth: return searchDepth < CellForcingTrigger.param;
             case CfTrigger.Step: return (++_cfStepCounter % CellForcingTrigger.param) == 0;
             default: return false;
@@ -1059,23 +1072,14 @@ public partial class Solver
             return LogicResult.None;
         }
 
+        if (CellForcingTrigger.mode == CfTrigger.Nodes)
+        {
+            return FastFindCellForcingQueue(cancellationToken);
+        }
+
         if (CellForcingTrigger.mode == CfTrigger.Queue)
         {
-            bool queueChanged = false;
-            while (pendingCellForcing.Count > 0)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                int cellIndex = pendingCellForcing[^1];
-                pendingCellForcing.RemoveAt(pendingCellForcing.Count - 1);
-
-                LogicResult one = CellForcingForCell(cellIndex);
-                if (one == LogicResult.Invalid)
-                {
-                    return LogicResult.Invalid;
-                }
-                queueChanged |= one == LogicResult.Changed;
-            }
-            return queueChanged ? LogicResult.Changed : LogicResult.None;
+            return FastFindCellForcingQueue(cancellationToken);
         }
 
         bool anyChanged = false;
@@ -1092,6 +1096,33 @@ public partial class Solver
         }
 
         return anyChanged ? LogicResult.Changed : LogicResult.None;
+    }
+
+    /// <summary>
+    /// Drains the dirty worklist, scanning only cells that lost a candidate since the last pass.
+    /// </summary>
+    /// <remarks>
+    /// Exact rather than a heuristic: a cell can only <i>newly</i> force after it loses a candidate,
+    /// because dropping a term from an intersection can only enlarge it.
+    /// </remarks>
+    private LogicResult FastFindCellForcingQueue(CancellationToken cancellationToken)
+    {
+        bool queueChanged = false;
+        while (pendingCellForcing.Count > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            int cellIndex = pendingCellForcing[^1];
+            pendingCellForcing.RemoveAt(pendingCellForcing.Count - 1);
+
+            LogicResult one = CellForcingForCell(cellIndex);
+            if (one == LogicResult.Invalid)
+            {
+                return LogicResult.Invalid;
+            }
+            queueChanged |= one == LogicResult.Changed;
+        }
+
+        return queueChanged ? LogicResult.Changed : LogicResult.None;
     }
 
     /// <summary>

@@ -43,7 +43,38 @@ has a 1.1 ms median and loses 21%. **That spread is the whole remaining problem.
 alone is `2^MAX_VALUE * MAX_VALUE` per cell — ~373k operations per search at 9x9 — which is invisible
 on a slow solve and can exceed the entire solve on a fast one.
 
-So the order of attack has changed. The table is not the cost (§ Step 4), the scan is no longer the
+## Step 7 (2026-08-30): deferral, measured
+
+The cost that survived Step 6 is not deletable -- it buys real deductions, on 127 of the 398 ISS
+puzzles -- it is simply mispriced for puzzles that finish in a millisecond. `SUDOKU_CF_TRIGGER=nodes:N`
+defers the scan until a search has visited N nodes, using the committed node counter so the threshold
+is reproducible across machines rather than expressed in wall clock.
+
+ISS corpus, against `SUDOKU_CF_TRIGGER=off`, no validation failures in any arm:
+
+| trigger | total | geomean | nodes vs `off` |
+| --- | ---: | ---: | --- |
+| `dirty` (no deferral) | +23.9% | **1.403x** | 127 fewer, 40 more |
+| `nodes:100` | **-9.0%** | 1.014x | 107 fewer, 32 more |
+| `nodes:300` | -3.7% | **0.982x** | 90 fewer, 20 more |
+
+`corpus.json`, `nodes:100`: 15,846 -> 14,887 ms (**-6.1%**), geomean 1.028x, median 1.000x.
+
+**Deferring at all is what matters; the specific threshold is within noise.** A 3-iteration sweep put
+`nodes:100` / `nodes:1000` / `nodes:10000` at 1.000x / 1.030x / 1.020x -- non-monotone, which is the
+tell. Two runs of `nodes:300` gave 0.982x and 1.015x, so read ~3% of run-to-run drift into any single
+figure here.
+
+**It is not yet a clear per-case win.** The ISS split is 59 better against 115 worse: many small
+regressions against fewer larger gains, with the total improving because the gains land where the
+time actually is. That is the opposite of this document's usual warning, and it means the honest
+summary is "no longer a loss", not "a win".
+
+**Left default-off deliberately.** Choosing a threshold wants tuning on `--filter iss-tune` confirmed
+on `iss-holdout`, not one sweep over the whole corpus -- the discipline `HANDOFF.md` records for the
+deferral threshold that already ships.
+
+The order of attack has changed. The table is not the cost (§ Step 4), the scan is no longer the
 cost (above, and § Step 5 already bounded it), and the enqueue path's *unconditional* half is fixed
 (see the −17% item above). What remains is **per-search fixed cost paid before anything is known
 about the puzzle** — which is the exact problem `WeakLinkDiscoveryMode.Deferred` exists to solve, and
