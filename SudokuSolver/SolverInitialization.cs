@@ -162,6 +162,7 @@ public partial class Solver
 
         // Share conflict scores and decay state by reference so all clones update the same arrays.
         conflictScores = other.conflictScores;
+        hasDifferentValueWeakLink = other.hasDifferentValueWeakLink;
         constraintCellForcingCells = other.constraintCellForcingCells;
         // Same reason, and the same reference-sharing: every clone in a search tree tallies its
         // nodes into one counter, so a nested search on a clone still shows up in the total.
@@ -413,6 +414,22 @@ public partial class Solver
     {
         if (weakLinks == null || cfOffsets != null)
         {
+            return;
+        }
+
+        // No different-value link means no cell can hold two values pointing at one target, so the
+        // table is provably empty and building it would walk and sort every cell's links to emit
+        // nothing. A classic puzzle is always in this state.
+        //
+        // Published as an *empty* table rather than left null, because null means "not compiled
+        // yet" and sends CellForcingForCell down its slow pre-table fallback. An empty table is the
+        // truth and every gate downstream already reads it correctly.
+        if (!hasDifferentValueWeakLink)
+        {
+            cfOffsets = new int[NUM_CELLS + 1];
+            cfTargets = [];
+            cfMasks = [];
+            cfPopEnd = null;
             return;
         }
 
@@ -719,8 +736,22 @@ public partial class Solver
 
         for (int cellIndex = 0; cellIndex < NUM_CELLS; cellIndex++)
         {
+            int rowStart = cfOffsets[cellIndex];
+            int rowEnd = cfOffsets[cellIndex + 1];
+
+            // A cell with no rows can never fire, and an all-zero block already says exactly that,
+            // so the transform below has nothing to compute. Skipping is not an approximation: the
+            // array starts zeroed and zero is the correct answer. The level-2 build a few lines
+            // down has always done this; level 1 did not, and level 1 is the default -- so on a
+            // classic, where no cell has any rows, this loop did its full 2^MAX_VALUE * MAX_VALUE
+            // per cell to produce nothing.
+            if (rowStart == rowEnd)
+            {
+                continue;
+            }
+
             int block = cellIndex * cfCanFireWords;
-            for (int row = cfOffsets[cellIndex]; row < cfOffsets[cellIndex + 1]; row++)
+            for (int row = rowStart; row < rowEnd; row++)
             {
                 uint s = cfMasks[row];
                 canFire[block + (int)(s >> 6)] |= 1UL << (int)(s & 63);
@@ -826,6 +857,11 @@ public partial class Solver
         if (cell0 == cell1)
         {
             return LogicResult.None;
+        }
+
+        if (v0 != v1)
+        {
+            hasDifferentValueWeakLink = true;
         }
 
         // Any mutation invalidates the grouped table; it is rebuilt before the next search.

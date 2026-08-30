@@ -331,6 +331,20 @@ public partial class Solver
     /// </param>
     private LogicResult DiscoverWeakLinks(CancellationToken cancellationToken, bool probeWeakLinks)
     {
+        // Compile the cell-forcing table before the setup pass rather than after it. Constraints
+        // have already contributed their weak links by now -- that happens in FinalizeConstraints,
+        // and those are the links cell forcing actually runs on -- so the table is fully determined
+        // at this point for everything except the probing below.
+        //
+        // Two things follow. The root-setup pass now takes the table path instead of the pre-table
+        // fallback, which intersects candidate lists and clears them one at a time. And it inherits
+        // the emptiness gate, so a puzzle whose table has no rows skips the pass entirely instead of
+        // discovering that the slow way.
+        //
+        // Probing can still add links, and AddWeakLink invalidates the table when it does, so the
+        // search gets a rebuild exactly when the link set actually changed.
+        CompileCellForcingTable();
+
         // Run logic on the base solver first
         LogicResult result = BruteForcePropagate(true, cancellationToken);
         if (result == LogicResult.PuzzleComplete || result == LogicResult.Invalid)
@@ -1035,6 +1049,16 @@ public partial class Solver
     /// </remarks>
     private LogicResult FastFindCellForcing(CancellationToken cancellationToken)
     {
+        // No rows anywhere means no cell can ever force, for this puzzle, for the whole search.
+        // Vanilla sudoku is always in this state: cell forcing needs two of a cell's values to rule
+        // out one target, and house links give exactly one, so nothing survives the table build.
+        // cfOffsets is null during root setup, which runs before the table is compiled and has its
+        // own fallback path -- so this only short-circuits the in-search scans.
+        if (cfOffsets != null && cfOffsets[NUM_CELLS] == 0)
+        {
+            return LogicResult.None;
+        }
+
         if (CellForcingTrigger.mode == CfTrigger.Queue)
         {
             bool queueChanged = false;

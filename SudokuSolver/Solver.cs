@@ -154,6 +154,27 @@ public partial class Solver
     // Cells that repeatedly cause contradictions get higher scores and are branched on first.
     // Union of every constraint's CellIndicesForCellForcing, sorted and distinct, or null when no
     // constraint asked for any. Read-only after FinalizeConstraints, so clones share it.
+    /// <summary>
+    /// Whether any weak link has ever been added between two <i>different</i> values. Sticky, and
+    /// monotone because links are only ever added.
+    /// </summary>
+    /// <remarks>
+    /// This is the exact precondition for cell forcing to be able to deduce anything at all. The
+    /// rule needs two distinct values of one cell to rule out a single target, and for that at
+    /// least one of the two contributing links must join different values: same-value links have
+    /// the form (A,x) -> (B,x), so two of them reaching one target (B,w) would both need x = w.
+    ///
+    /// Vanilla sudoku only ever produces same-value links -- a house says two cells cannot share a
+    /// value -- so a classic puzzle can never fire cell forcing, and this stays false for it. The
+    /// useful links come from constraints, which add theirs during FinalizeConstraints, and from
+    /// weak-link discovery.
+    ///
+    /// Necessary but not sufficient: a lone different-value link sets it without creating any row.
+    /// That is deliberate. It is an O(1) test on a hot path, and the exact answer is the compiled
+    /// table's row count, which costs nothing extra once the table is built.
+    /// </remarks>
+    internal bool hasDifferentValueWeakLink;
+
     internal int[] constraintCellForcingCells;
 
     internal int[] conflictScores;
