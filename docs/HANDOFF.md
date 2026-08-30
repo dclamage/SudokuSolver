@@ -82,7 +82,7 @@ larger use turned out to be as a **parity check**: an output-preserving change m
 count bit-identical, and several changes below were confirmed exact that way rather than argued.
 
 **Kropki/difference/ratio/XV got brute-force propagation** — the defect whispers and renban had.
-`1HuNjcLWlPE` **25,143 → 59 ms**, now *faster* than ISS's 71.8 ms, from 263× off. `pathological-outliers.md`
+`1HuNjcLWlPE` **25,143 → 62.2 ms** (30,288 nodes), now *faster* than ISS's 71.8 ms, from 263× off. `pathological-outliers.md`
 has no outliers left. Its sweep is cell forcing restricted to a constraint's own compiled adjacency,
 which reframes `cell-forcing-worklist.md`'s verdict: that was about the general *scan*, not the
 deduction.
@@ -307,7 +307,7 @@ What is genuinely open, roughly by value:
 
 | what | where | shape |
 | --- | --- | --- |
-| ~~**Give `OrthogonalValueConstraint` brute-force propagation.**~~ **DONE** — `1HuNjcLWlPE` 25,143 → **91.8 ms** (274×), nodes 15.2M → 30K, allocation 1,022 → 4.6 MB; ISS corpus geomean **0.773× (−22.7%)**, 189 better / 14 worse. Now **1.28× off ISS** and no longer an outlier. Cost: `iss-g2PUwXrKogU` is 2.6× worse from branch reordering. | [`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5 | Closed |
+| ~~**Give `OrthogonalValueConstraint` brute-force propagation.**~~ **DONE** — `1HuNjcLWlPE` 25,143 → **62.2 ms** (404×, re-measured at the end of the session; it was 91.8 ms on landing, and the later cell-forcing fixes took the rest), nodes 15.2M → 30K, allocation 1,022 → 4.6 MB; ISS corpus geomean **0.773× (−22.7%)**, 189 better / 14 worse. Now **1.28× off ISS** and no longer an outlier. Cost: `iss-g2PUwXrKogU` is 2.6× worse from branch reordering. | [`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5 | Closed |
 | **The next lever on the dots family** is ISS's required-value exclusion for a *binary pair* — the `_exclusionsCellsForRequiredValues` branch of `BinaryConstraint`, the pairwise analogue of the renban change. Deliberately not built alongside arc consistency so the two stayed attributable. | [`whisper-arc-consistency.md`](whisper-arc-consistency.md) §5 | Named, not scoped |
 | **Sandwich's `Permutations` in the *logical* arm.** Still enumerates k! to justify eliminations. | [`pathological-outliers.md`](pathological-outliers.md) | A product call about step explainability, not perf |
 | **`XSumConstraint` allocates 53 MB for a 51 ms count.** | Priority 5 | Contained, but build a many-clue *uncapped* case first |

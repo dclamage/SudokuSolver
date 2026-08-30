@@ -20,8 +20,8 @@ this file — it stops being skimmable, which is the only thing it is for.
 
 **An entry needs four things.** Pitch, why it might work, what would kill it, prerequisites. The
 fourth is the one people skip and the one that saves the session — see the cross-cutting
-prerequisites below. The node counter that used to block four of the six entries is now **done**,
-so those four are unblocked; the rest of that section is method, and still applies.
+prerequisites below. The node counter that used to block four of the entries is now **done**, so
+those four are unblocked; the rest of that section is method, and still applies.
 
 _Note: `docs/optimization-roadmap.md` predates this file (2026-08-01), is scoped to constraint
 allocation work, and has stale macOS paths and a stale `dev` branch name. Treat it as historical._
@@ -186,7 +186,17 @@ change which deduction fires first. Run the parity census before trusting any ti
 
 ## 4. Ramp up machinery only when a puzzle proves it needs it
 
-**Status:** open · **Prereq:** node counter — **met**
+**Status:** open · **Prereq:** node counter — **met** · **one more instance built, 2026-08-30**
+
+> **A second instance now exists and it measured well.** `SUDOKU_CF_TRIGGER=nodes:N` defers cell
+> forcing until a search has visited N nodes, and took it from geomean **1.403× against `off` to
+> ~1.0** on the ISS corpus while keeping 107 of 127 node reductions. See
+> [`cell-forcing-worklist.md`](cell-forcing-worklist.md) § Step 7. That is evidence for the ladder
+> below, not the ladder itself — it is a second one-off flag, which is exactly the shape this entry
+> proposes generalizing. Two caveats carried from it: the threshold is **unvalidated** (tune on
+> `iss-tune`, confirm on `iss-holdout`), and deferral is worth reaching for only *after* the cheap
+> wins are mined — the same session found four fixed costs that were deletable outright, and
+> deferring them would have hidden the problem instead of removing it.
 
 There is already one instance of this: `WeakLinkDiscoveryMode.Deferred` skips weak-link probing and
 retries with it when the cheap attempt doesn't pan out. Its design has a property worth reusing —
@@ -423,6 +433,46 @@ fails *cheaply* — the hypothesis doesn't pan out and you delete a prototype. T
 gain. So: one item per commit, each with its own paired A/B at 15 iterations, and revert anything
 that doesn't move the benchmark. "It's obviously faster" is exactly the reasoning that produced the
 row-AND result.
+
+---
+
+## 7. Weak links may be *built* badly, not just stored badly
+
+**Status:** open · **Prereq:** none, but see the measurement note
+
+The storage and query sides are covered. [`weak-link-representation.md`](weak-link-representation.md)
+replaced per-target list walking with a compiled CSR for the write path (−5.6% ISS);
+[`weak-link-bitmatrix-exploration.md`](weak-link-bitmatrix-exploration.md) tried a dense matrix and
+answered mostly no; pooling the grouped arrays is a scheduled item in `HANDOFF.md` § 2. **Nothing
+measures what it costs to construct the structure in the first place.**
+
+**Pitch.** `AddWeakLink` inserts into a sorted `List<int>` per candidate — two binary searches and
+two `List.Insert`s per link, each shifting an array tail. `InitMapForGroup` alone adds roughly
+**8,748 links for a classic 9×9**, before any constraint contributes, and it happens per search.
+
+**Why it might work.** This has the exact signature of the four costs removed on 2026-08-30: a fixed
+per-search cost sized by the *grid* rather than by the puzzle, invisible on `corpus.json` because
+that corpus is dominated by multi-second cases. Every one of those was found only by measuring on a
+corpus where solves are fast. And the house-link portion is fully determined by grid geometry — the
+same 8,748 links for every standard 9×9 — so it is a candidate for being built directly in sorted
+order, or built once and shared, rather than discovered by binary search one link at a time.
+
+**What would kill it.**
+
+- Construction turns out to be a negligible slice even on the classic corpus. Measure before
+  touching anything: this is the entry most likely to be a ghost, and `ideas.md` entry 6's
+  cautionary tale is that intuition about where weak-link cost sits **has already been wrong once**.
+- The sorted-list form cannot simply be replaced. `weak-link-representation.md` is explicit that the
+  sorted lists are *the authoritative representation* — AIC, the fish and wing searches and
+  `IsWeakLink` all need candidate-to-candidate adjacency with binary search and set intersection.
+  So the realizable win is probably faster *construction* of the same shape, not a different shape.
+- Sharing house links across solvers collides with `AddWeakLink` mutating the lists in place;
+  anything shared would need copy-on-write or a separate immutable tier.
+
+**Measurement note, and it is the whole risk.** The population where this shows is fast puzzles, so
+it must be measured on the 144-case classic corpus generated from `SudokuTests.Puzzles.uniqueClassics`
+— and that corpus totals ~100 ms, where **5 iterations drift ±10% and 25 settle to ~1%**. A result
+read at the default iteration count here is worthless. See `benchmarks/README.md`.
 
 ---
 
