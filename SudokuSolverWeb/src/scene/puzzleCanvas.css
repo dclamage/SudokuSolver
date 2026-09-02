@@ -1,0 +1,74 @@
+.puzzle-canvas {
+  display: block;
+  inline-size: calc(var(--puzzle-scene-width) * 44px);
+  block-size: calc(var(--puzzle-scene-height) * 44px);
+  max-inline-size: none;
+  overflow: visible;
+  touch-action: manipulation;
+  background: #fff;
+}
+
+.puzzle-cell {
+  cursor: pointer;
+  outline: none;
+}
+
+.puzzle-cell__surface {
+  fill: #fff;
+  stroke: #aeb6bd;
+  stroke-width: 0.02;
+  vector-effect: non-scaling-stroke;
+}
+
+.puzzle-cell:focus-visible .puzzle-cell__surface {
+  fill: #e3f6ff;
+  stroke: #00aeef;
+  stroke-width: 2;
+}
+
+.puzzle-cell__candidate {
+  dominant-baseline: central;
+  fill: #12191f;
+  font-size: 0.2px;
+  pointer-events: none;
+  text-anchor: middle;
+  user-select: none;
+}
+
+.puzzle-cell__value {
+  dominant-baseline: central;
+  fill: #12191f;
+  font-size: 0.65px;
+  pointer-events: none;
+  text-anchor: middle;
+  user-select: none;
+}
+
+.puzzle-cell__value--given {
+  font-weight: 700;
+}
+
+.puzzle-scene-path {
+  fill: none;
+  pointer-events: none;
+  vector-effect: non-scaling-stroke;
+}
+
+.puzzle-scene-path--grid {
+  stroke: #12191f;
+  stroke-linecap: square;
+  stroke-width: 2;
+}
+
+.puzzle-scene-path--selection {
+  fill: rgb(0 174 239 / 12%);
+  stroke: #00aeef;
+  stroke-width: 2;
+}
+
+.puzzle-scene-path--annotation {
+  stroke: #00aeef;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
