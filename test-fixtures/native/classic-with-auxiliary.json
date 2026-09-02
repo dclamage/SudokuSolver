@@ -1,0 +1,2034 @@
+{
+  "schemaVersion": 1,
+  "id": "puzzle-classic-aux",
+  "revision": 1,
+  "semanticRevision": 1,
+  "metadata": {
+    "title": "Classic with auxiliary cell",
+    "author": "",
+    "rules": ""
+  },
+  "domains": {
+    "digits-1-9": {
+      "id": "digits-1-9",
+      "values": [
+        {
+          "id": "1",
+          "label": "1",
+          "numericValue": 1
+        },
+        {
+          "id": "2",
+          "label": "2",
+          "numericValue": 2
+        },
+        {
+          "id": "3",
+          "label": "3",
+          "numericValue": 3
+        },
+        {
+          "id": "4",
+          "label": "4",
+          "numericValue": 4
+        },
+        {
+          "id": "5",
+          "label": "5",
+          "numericValue": 5
+        },
+        {
+          "id": "6",
+          "label": "6",
+          "numericValue": 6
+        },
+        {
+          "id": "7",
+          "label": "7",
+          "numericValue": 7
+        },
+        {
+          "id": "8",
+          "label": "8",
+          "numericValue": 8
+        },
+        {
+          "id": "9",
+          "label": "9",
+          "numericValue": 9
+        }
+      ]
+    }
+  },
+  "cells": {
+    "r1c1": {
+      "id": "r1c1",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c2": {
+      "id": "r1c2",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c3": {
+      "id": "r1c3",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c4": {
+      "id": "r1c4",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c5": {
+      "id": "r1c5",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 4,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c6": {
+      "id": "r1c6",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 5,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c7": {
+      "id": "r1c7",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 6,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c8": {
+      "id": "r1c8",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 7,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c9": {
+      "id": "r1c9",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 8,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c1": {
+      "id": "r2c1",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c2": {
+      "id": "r2c2",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c3": {
+      "id": "r2c3",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c4": {
+      "id": "r2c4",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c5": {
+      "id": "r2c5",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 4,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c6": {
+      "id": "r2c6",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 5,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c7": {
+      "id": "r2c7",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 6,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c8": {
+      "id": "r2c8",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 7,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c9": {
+      "id": "r2c9",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 8,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c1": {
+      "id": "r3c1",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c2": {
+      "id": "r3c2",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c3": {
+      "id": "r3c3",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c4": {
+      "id": "r3c4",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c5": {
+      "id": "r3c5",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 4,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c6": {
+      "id": "r3c6",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 5,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c7": {
+      "id": "r3c7",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 6,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c8": {
+      "id": "r3c8",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 7,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c9": {
+      "id": "r3c9",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 8,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c1": {
+      "id": "r4c1",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c2": {
+      "id": "r4c2",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c3": {
+      "id": "r4c3",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c4": {
+      "id": "r4c4",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c5": {
+      "id": "r4c5",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 4,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c6": {
+      "id": "r4c6",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 5,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c7": {
+      "id": "r4c7",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 6,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c8": {
+      "id": "r4c8",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 7,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c9": {
+      "id": "r4c9",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 8,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r5c1": {
+      "id": "r5c1",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 4,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r5c2": {
+      "id": "r5c2",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 4,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r5c3": {
+      "id": "r5c3",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 4,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r5c4": {
+      "id": "r5c4",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 4,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r5c5": {
+      "id": "r5c5",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 4,
+        "y": 4,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r5c6": {
+      "id": "r5c6",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 5,
+        "y": 4,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r5c7": {
+      "id": "r5c7",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 6,
+        "y": 4,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r5c8": {
+      "id": "r5c8",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 7,
+        "y": 4,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r5c9": {
+      "id": "r5c9",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 8,
+        "y": 4,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r6c1": {
+      "id": "r6c1",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 5,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r6c2": {
+      "id": "r6c2",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 5,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r6c3": {
+      "id": "r6c3",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 5,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r6c4": {
+      "id": "r6c4",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 5,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r6c5": {
+      "id": "r6c5",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 4,
+        "y": 5,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r6c6": {
+      "id": "r6c6",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 5,
+        "y": 5,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r6c7": {
+      "id": "r6c7",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 6,
+        "y": 5,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r6c8": {
+      "id": "r6c8",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 7,
+        "y": 5,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r6c9": {
+      "id": "r6c9",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 8,
+        "y": 5,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r7c1": {
+      "id": "r7c1",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 6,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r7c2": {
+      "id": "r7c2",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 6,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r7c3": {
+      "id": "r7c3",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 6,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r7c4": {
+      "id": "r7c4",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 6,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r7c5": {
+      "id": "r7c5",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 4,
+        "y": 6,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r7c6": {
+      "id": "r7c6",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 5,
+        "y": 6,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r7c7": {
+      "id": "r7c7",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 6,
+        "y": 6,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r7c8": {
+      "id": "r7c8",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 7,
+        "y": 6,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r7c9": {
+      "id": "r7c9",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 8,
+        "y": 6,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r8c1": {
+      "id": "r8c1",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 7,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r8c2": {
+      "id": "r8c2",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 7,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r8c3": {
+      "id": "r8c3",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 7,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r8c4": {
+      "id": "r8c4",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 7,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r8c5": {
+      "id": "r8c5",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 4,
+        "y": 7,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r8c6": {
+      "id": "r8c6",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 5,
+        "y": 7,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r8c7": {
+      "id": "r8c7",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 6,
+        "y": 7,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r8c8": {
+      "id": "r8c8",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 7,
+        "y": 7,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r8c9": {
+      "id": "r8c9",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 8,
+        "y": 7,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r9c1": {
+      "id": "r9c1",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 8,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r9c2": {
+      "id": "r9c2",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 8,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r9c3": {
+      "id": "r9c3",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 8,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r9c4": {
+      "id": "r9c4",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 8,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r9c5": {
+      "id": "r9c5",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 4,
+        "y": 8,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r9c6": {
+      "id": "r9c6",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 5,
+        "y": 8,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r9c7": {
+      "id": "r9c7",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 6,
+        "y": 8,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r9c8": {
+      "id": "r9c8",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 7,
+        "y": 8,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r9c9": {
+      "id": "r9c9",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 8,
+        "y": 8,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "aux-1": {
+      "id": "aux-1",
+      "domainId": "digits-1-9",
+      "shape": {
+        "kind": "rect",
+        "x": 10,
+        "y": 4,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    }
+  },
+  "boards": {
+    "main": {
+      "id": "main",
+      "name": "Main board",
+      "cellIds": [
+        "r1c1",
+        "r1c2",
+        "r1c3",
+        "r1c4",
+        "r1c5",
+        "r1c6",
+        "r1c7",
+        "r1c8",
+        "r1c9",
+        "r2c1",
+        "r2c2",
+        "r2c3",
+        "r2c4",
+        "r2c5",
+        "r2c6",
+        "r2c7",
+        "r2c8",
+        "r2c9",
+        "r3c1",
+        "r3c2",
+        "r3c3",
+        "r3c4",
+        "r3c5",
+        "r3c6",
+        "r3c7",
+        "r3c8",
+        "r3c9",
+        "r4c1",
+        "r4c2",
+        "r4c3",
+        "r4c4",
+        "r4c5",
+        "r4c6",
+        "r4c7",
+        "r4c8",
+        "r4c9",
+        "r5c1",
+        "r5c2",
+        "r5c3",
+        "r5c4",
+        "r5c5",
+        "r5c6",
+        "r5c7",
+        "r5c8",
+        "r5c9",
+        "r6c1",
+        "r6c2",
+        "r6c3",
+        "r6c4",
+        "r6c5",
+        "r6c6",
+        "r6c7",
+        "r6c8",
+        "r6c9",
+        "r7c1",
+        "r7c2",
+        "r7c3",
+        "r7c4",
+        "r7c5",
+        "r7c6",
+        "r7c7",
+        "r7c8",
+        "r7c9",
+        "r8c1",
+        "r8c2",
+        "r8c3",
+        "r8c4",
+        "r8c5",
+        "r8c6",
+        "r8c7",
+        "r8c8",
+        "r8c9",
+        "r9c1",
+        "r9c2",
+        "r9c3",
+        "r9c4",
+        "r9c5",
+        "r9c6",
+        "r9c7",
+        "r9c8",
+        "r9c9"
+      ],
+      "groupIds": [
+        "row-1",
+        "row-2",
+        "row-3",
+        "row-4",
+        "row-5",
+        "row-6",
+        "row-7",
+        "row-8",
+        "row-9",
+        "column-1",
+        "column-2",
+        "column-3",
+        "column-4",
+        "column-5",
+        "column-6",
+        "column-7",
+        "column-8",
+        "column-9",
+        "region-1",
+        "region-2",
+        "region-3",
+        "region-4",
+        "region-5",
+        "region-6",
+        "region-7",
+        "region-8",
+        "region-9"
+      ]
+    }
+  },
+  "groups": {
+    "row-1": {
+      "id": "row-1",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r1c1",
+        "r1c2",
+        "r1c3",
+        "r1c4",
+        "r1c5",
+        "r1c6",
+        "r1c7",
+        "r1c8",
+        "r1c9"
+      ]
+    },
+    "row-2": {
+      "id": "row-2",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r2c1",
+        "r2c2",
+        "r2c3",
+        "r2c4",
+        "r2c5",
+        "r2c6",
+        "r2c7",
+        "r2c8",
+        "r2c9"
+      ]
+    },
+    "row-3": {
+      "id": "row-3",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r3c1",
+        "r3c2",
+        "r3c3",
+        "r3c4",
+        "r3c5",
+        "r3c6",
+        "r3c7",
+        "r3c8",
+        "r3c9"
+      ]
+    },
+    "row-4": {
+      "id": "row-4",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r4c1",
+        "r4c2",
+        "r4c3",
+        "r4c4",
+        "r4c5",
+        "r4c6",
+        "r4c7",
+        "r4c8",
+        "r4c9"
+      ]
+    },
+    "row-5": {
+      "id": "row-5",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r5c1",
+        "r5c2",
+        "r5c3",
+        "r5c4",
+        "r5c5",
+        "r5c6",
+        "r5c7",
+        "r5c8",
+        "r5c9"
+      ]
+    },
+    "row-6": {
+      "id": "row-6",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r6c1",
+        "r6c2",
+        "r6c3",
+        "r6c4",
+        "r6c5",
+        "r6c6",
+        "r6c7",
+        "r6c8",
+        "r6c9"
+      ]
+    },
+    "row-7": {
+      "id": "row-7",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r7c1",
+        "r7c2",
+        "r7c3",
+        "r7c4",
+        "r7c5",
+        "r7c6",
+        "r7c7",
+        "r7c8",
+        "r7c9"
+      ]
+    },
+    "row-8": {
+      "id": "row-8",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r8c1",
+        "r8c2",
+        "r8c3",
+        "r8c4",
+        "r8c5",
+        "r8c6",
+        "r8c7",
+        "r8c8",
+        "r8c9"
+      ]
+    },
+    "row-9": {
+      "id": "row-9",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r9c1",
+        "r9c2",
+        "r9c3",
+        "r9c4",
+        "r9c5",
+        "r9c6",
+        "r9c7",
+        "r9c8",
+        "r9c9"
+      ]
+    },
+    "column-1": {
+      "id": "column-1",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c1",
+        "r2c1",
+        "r3c1",
+        "r4c1",
+        "r5c1",
+        "r6c1",
+        "r7c1",
+        "r8c1",
+        "r9c1"
+      ]
+    },
+    "column-2": {
+      "id": "column-2",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c2",
+        "r2c2",
+        "r3c2",
+        "r4c2",
+        "r5c2",
+        "r6c2",
+        "r7c2",
+        "r8c2",
+        "r9c2"
+      ]
+    },
+    "column-3": {
+      "id": "column-3",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c3",
+        "r2c3",
+        "r3c3",
+        "r4c3",
+        "r5c3",
+        "r6c3",
+        "r7c3",
+        "r8c3",
+        "r9c3"
+      ]
+    },
+    "column-4": {
+      "id": "column-4",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c4",
+        "r2c4",
+        "r3c4",
+        "r4c4",
+        "r5c4",
+        "r6c4",
+        "r7c4",
+        "r8c4",
+        "r9c4"
+      ]
+    },
+    "column-5": {
+      "id": "column-5",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c5",
+        "r2c5",
+        "r3c5",
+        "r4c5",
+        "r5c5",
+        "r6c5",
+        "r7c5",
+        "r8c5",
+        "r9c5"
+      ]
+    },
+    "column-6": {
+      "id": "column-6",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c6",
+        "r2c6",
+        "r3c6",
+        "r4c6",
+        "r5c6",
+        "r6c6",
+        "r7c6",
+        "r8c6",
+        "r9c6"
+      ]
+    },
+    "column-7": {
+      "id": "column-7",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c7",
+        "r2c7",
+        "r3c7",
+        "r4c7",
+        "r5c7",
+        "r6c7",
+        "r7c7",
+        "r8c7",
+        "r9c7"
+      ]
+    },
+    "column-8": {
+      "id": "column-8",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c8",
+        "r2c8",
+        "r3c8",
+        "r4c8",
+        "r5c8",
+        "r6c8",
+        "r7c8",
+        "r8c8",
+        "r9c8"
+      ]
+    },
+    "column-9": {
+      "id": "column-9",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c9",
+        "r2c9",
+        "r3c9",
+        "r4c9",
+        "r5c9",
+        "r6c9",
+        "r7c9",
+        "r8c9",
+        "r9c9"
+      ]
+    },
+    "region-1": {
+      "id": "region-1",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r1c1",
+        "r1c2",
+        "r1c3",
+        "r2c1",
+        "r2c2",
+        "r2c3",
+        "r3c1",
+        "r3c2",
+        "r3c3"
+      ]
+    },
+    "region-2": {
+      "id": "region-2",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r1c4",
+        "r1c5",
+        "r1c6",
+        "r2c4",
+        "r2c5",
+        "r2c6",
+        "r3c4",
+        "r3c5",
+        "r3c6"
+      ]
+    },
+    "region-3": {
+      "id": "region-3",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r1c7",
+        "r1c8",
+        "r1c9",
+        "r2c7",
+        "r2c8",
+        "r2c9",
+        "r3c7",
+        "r3c8",
+        "r3c9"
+      ]
+    },
+    "region-4": {
+      "id": "region-4",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r4c1",
+        "r4c2",
+        "r4c3",
+        "r5c1",
+        "r5c2",
+        "r5c3",
+        "r6c1",
+        "r6c2",
+        "r6c3"
+      ]
+    },
+    "region-5": {
+      "id": "region-5",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r4c4",
+        "r4c5",
+        "r4c6",
+        "r5c4",
+        "r5c5",
+        "r5c6",
+        "r6c4",
+        "r6c5",
+        "r6c6"
+      ]
+    },
+    "region-6": {
+      "id": "region-6",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r4c7",
+        "r4c8",
+        "r4c9",
+        "r5c7",
+        "r5c8",
+        "r5c9",
+        "r6c7",
+        "r6c8",
+        "r6c9"
+      ]
+    },
+    "region-7": {
+      "id": "region-7",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r7c1",
+        "r7c2",
+        "r7c3",
+        "r8c1",
+        "r8c2",
+        "r8c3",
+        "r9c1",
+        "r9c2",
+        "r9c3"
+      ]
+    },
+    "region-8": {
+      "id": "region-8",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r7c4",
+        "r7c5",
+        "r7c6",
+        "r8c4",
+        "r8c5",
+        "r8c6",
+        "r9c4",
+        "r9c5",
+        "r9c6"
+      ]
+    },
+    "region-9": {
+      "id": "region-9",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r7c7",
+        "r7c8",
+        "r7c9",
+        "r8c7",
+        "r8c8",
+        "r8c9",
+        "r9c7",
+        "r9c8",
+        "r9c9"
+      ]
+    }
+  },
+  "adjacency": {},
+  "points": {},
+  "edges": {},
+  "paths": {},
+  "givens": {},
+  "constraints": [],
+  "solverProjections": [
+    {
+      "id": "main-latin-square",
+      "kind": "latin-square",
+      "boardId": "main",
+      "domainId": "digits-1-9",
+      "valueIdsBySolverValue": [
+        "1",
+        "2",
+        "3",
+        "4",
+        "5",
+        "6",
+        "7",
+        "8",
+        "9"
+      ],
+      "cellIdsByRow": [
+        [
+          "r1c1",
+          "r1c2",
+          "r1c3",
+          "r1c4",
+          "r1c5",
+          "r1c6",
+          "r1c7",
+          "r1c8",
+          "r1c9"
+        ],
+        [
+          "r2c1",
+          "r2c2",
+          "r2c3",
+          "r2c4",
+          "r2c5",
+          "r2c6",
+          "r2c7",
+          "r2c8",
+          "r2c9"
+        ],
+        [
+          "r3c1",
+          "r3c2",
+          "r3c3",
+          "r3c4",
+          "r3c5",
+          "r3c6",
+          "r3c7",
+          "r3c8",
+          "r3c9"
+        ],
+        [
+          "r4c1",
+          "r4c2",
+          "r4c3",
+          "r4c4",
+          "r4c5",
+          "r4c6",
+          "r4c7",
+          "r4c8",
+          "r4c9"
+        ],
+        [
+          "r5c1",
+          "r5c2",
+          "r5c3",
+          "r5c4",
+          "r5c5",
+          "r5c6",
+          "r5c7",
+          "r5c8",
+          "r5c9"
+        ],
+        [
+          "r6c1",
+          "r6c2",
+          "r6c3",
+          "r6c4",
+          "r6c5",
+          "r6c6",
+          "r6c7",
+          "r6c8",
+          "r6c9"
+        ],
+        [
+          "r7c1",
+          "r7c2",
+          "r7c3",
+          "r7c4",
+          "r7c5",
+          "r7c6",
+          "r7c7",
+          "r7c8",
+          "r7c9"
+        ],
+        [
+          "r8c1",
+          "r8c2",
+          "r8c3",
+          "r8c4",
+          "r8c5",
+          "r8c6",
+          "r8c7",
+          "r8c8",
+          "r8c9"
+        ],
+        [
+          "r9c1",
+          "r9c2",
+          "r9c3",
+          "r9c4",
+          "r9c5",
+          "r9c6",
+          "r9c7",
+          "r9c8",
+          "r9c9"
+        ]
+      ]
+    }
+  ],
+  "presentation": {
+    "styles": {},
+    "sceneElements": []
+  },
+  "authoring": {
+    "candidateContexts": [
+      {
+        "id": "setter-notes",
+        "name": "Setter notes",
+        "kind": "manual"
+      },
+      {
+        "id": "true-candidates",
+        "name": "True candidates",
+        "kind": "trueCandidates",
+        "refresh": "automatic",
+        "display": "possibility",
+        "solutionCountCap": 1000
+      },
+      {
+        "id": "logical-solver",
+        "name": "Logical solver",
+        "kind": "logicalSolver",
+        "followPuzzleRevision": true,
+        "enabledTechniqueIds": []
+      }
+    ],
+    "manualMarks": {
+      "setter-notes": {},
+      "true-candidates": {},
+      "logical-solver": {}
+    }
+  },
+  "extensions": {}
+}

@@ -1,0 +1,564 @@
+{
+  "schemaVersion": 1,
+  "id": "puzzle-four-by-four-killer",
+  "revision": 1,
+  "semanticRevision": 1,
+  "metadata": {
+    "title": "Four-by-four killer",
+    "author": "",
+    "rules": ""
+  },
+  "domains": {
+    "digits-1-4": {
+      "id": "digits-1-4",
+      "values": [
+        {
+          "id": "1",
+          "label": "1",
+          "numericValue": 1
+        },
+        {
+          "id": "2",
+          "label": "2",
+          "numericValue": 2
+        },
+        {
+          "id": "3",
+          "label": "3",
+          "numericValue": 3
+        },
+        {
+          "id": "4",
+          "label": "4",
+          "numericValue": 4
+        }
+      ]
+    }
+  },
+  "cells": {
+    "r1c1": {
+      "id": "r1c1",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c2": {
+      "id": "r1c2",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c3": {
+      "id": "r1c3",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r1c4": {
+      "id": "r1c4",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c1": {
+      "id": "r2c1",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c2": {
+      "id": "r2c2",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c3": {
+      "id": "r2c3",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r2c4": {
+      "id": "r2c4",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 1,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c1": {
+      "id": "r3c1",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c2": {
+      "id": "r3c2",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c3": {
+      "id": "r3c3",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r3c4": {
+      "id": "r3c4",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 2,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c1": {
+      "id": "r4c1",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 0,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c2": {
+      "id": "r4c2",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 1,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c3": {
+      "id": "r4c3",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 2,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    },
+    "r4c4": {
+      "id": "r4c4",
+      "domainId": "digits-1-4",
+      "shape": {
+        "kind": "rect",
+        "x": 3,
+        "y": 3,
+        "width": 1,
+        "height": 1
+      },
+      "input": {
+        "acceptsValue": true,
+        "acceptsCandidates": true
+      }
+    }
+  },
+  "boards": {
+    "main": {
+      "id": "main",
+      "name": "Main board",
+      "cellIds": [
+        "r1c1",
+        "r1c2",
+        "r1c3",
+        "r1c4",
+        "r2c1",
+        "r2c2",
+        "r2c3",
+        "r2c4",
+        "r3c1",
+        "r3c2",
+        "r3c3",
+        "r3c4",
+        "r4c1",
+        "r4c2",
+        "r4c3",
+        "r4c4"
+      ],
+      "groupIds": [
+        "row-1",
+        "row-2",
+        "row-3",
+        "row-4",
+        "column-1",
+        "column-2",
+        "column-3",
+        "column-4",
+        "region-1",
+        "region-2",
+        "region-3",
+        "region-4"
+      ]
+    }
+  },
+  "groups": {
+    "row-1": {
+      "id": "row-1",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r1c1",
+        "r1c2",
+        "r1c3",
+        "r1c4"
+      ]
+    },
+    "row-2": {
+      "id": "row-2",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r2c1",
+        "r2c2",
+        "r2c3",
+        "r2c4"
+      ]
+    },
+    "row-3": {
+      "id": "row-3",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r3c1",
+        "r3c2",
+        "r3c3",
+        "r3c4"
+      ]
+    },
+    "row-4": {
+      "id": "row-4",
+      "roles": [
+        "row"
+      ],
+      "cellIds": [
+        "r4c1",
+        "r4c2",
+        "r4c3",
+        "r4c4"
+      ]
+    },
+    "column-1": {
+      "id": "column-1",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c1",
+        "r2c1",
+        "r3c1",
+        "r4c1"
+      ]
+    },
+    "column-2": {
+      "id": "column-2",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c2",
+        "r2c2",
+        "r3c2",
+        "r4c2"
+      ]
+    },
+    "column-3": {
+      "id": "column-3",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c3",
+        "r2c3",
+        "r3c3",
+        "r4c3"
+      ]
+    },
+    "column-4": {
+      "id": "column-4",
+      "roles": [
+        "column"
+      ],
+      "cellIds": [
+        "r1c4",
+        "r2c4",
+        "r3c4",
+        "r4c4"
+      ]
+    },
+    "region-1": {
+      "id": "region-1",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r1c1",
+        "r1c2",
+        "r2c1",
+        "r2c2"
+      ]
+    },
+    "region-2": {
+      "id": "region-2",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r1c3",
+        "r1c4",
+        "r2c3",
+        "r2c4"
+      ]
+    },
+    "region-3": {
+      "id": "region-3",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r3c1",
+        "r3c2",
+        "r4c1",
+        "r4c2"
+      ]
+    },
+    "region-4": {
+      "id": "region-4",
+      "roles": [
+        "region"
+      ],
+      "cellIds": [
+        "r3c3",
+        "r3c4",
+        "r4c3",
+        "r4c4"
+      ]
+    }
+  },
+  "adjacency": {},
+  "points": {},
+  "edges": {},
+  "paths": {},
+  "givens": {},
+  "constraints": [
+    {
+      "id": "killer-1",
+      "typeId": "builtin.killer",
+      "bindings": {
+        "cells": [
+          {
+            "kind": "cell",
+            "id": "r1c1"
+          },
+          {
+            "kind": "cell",
+            "id": "r1c2"
+          }
+        ]
+      },
+      "parameters": {
+        "sum": 3
+      }
+    }
+  ],
+  "solverProjections": [
+    {
+      "id": "main-latin-square",
+      "kind": "latin-square",
+      "boardId": "main",
+      "domainId": "digits-1-4",
+      "valueIdsBySolverValue": [
+        "1",
+        "2",
+        "3",
+        "4"
+      ],
+      "cellIdsByRow": [
+        [
+          "r1c1",
+          "r1c2",
+          "r1c3",
+          "r1c4"
+        ],
+        [
+          "r2c1",
+          "r2c2",
+          "r2c3",
+          "r2c4"
+        ],
+        [
+          "r3c1",
+          "r3c2",
+          "r3c3",
+          "r3c4"
+        ],
+        [
+          "r4c1",
+          "r4c2",
+          "r4c3",
+          "r4c4"
+        ]
+      ]
+    }
+  ],
+  "presentation": {
+    "styles": {},
+    "sceneElements": []
+  },
+  "authoring": {
+    "candidateContexts": [
+      {
+        "id": "setter-notes",
+        "name": "Setter notes",
+        "kind": "manual"
+      },
+      {
+        "id": "true-candidates",
+        "name": "True candidates",
+        "kind": "trueCandidates",
+        "refresh": "automatic",
+        "display": "possibility",
+        "solutionCountCap": 1000
+      },
+      {
+        "id": "logical-solver",
+        "name": "Logical solver",
+        "kind": "logicalSolver",
+        "followPuzzleRevision": true,
+        "enabledTechniqueIds": []
+      }
+    ],
+    "manualMarks": {
+      "setter-notes": {},
+      "true-candidates": {},
+      "logical-solver": {}
+    }
+  },
+  "extensions": {}
+}
