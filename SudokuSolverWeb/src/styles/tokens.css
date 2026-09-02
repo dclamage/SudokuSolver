@@ -1,0 +1,23 @@
+:root {
+  --color-canvas: #ffffff;
+  --color-surface: #1f2933;
+  --color-surface-raised: #323f4b;
+  --color-accent: #00c2d7;
+  --color-text: #111827;
+  --color-text-inverse: #ffffff;
+  --color-border: #d1d5db;
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--color-accent), transparent 55%);
+  --control-min-size: 44px;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --page-padding: var(--space-4);
+}
+
+@media (min-width: 48rem) {
+  :root {
+    --page-padding: var(--space-8);
+  }
+}

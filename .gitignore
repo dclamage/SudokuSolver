@@ -283,6 +283,10 @@ FakesAssemblies/
 .ntvs_analysis.dat
 node_modules/
 
+# Web frontend build and browser-test output
+SudokuSolverWeb/dist/
+SudokuSolverWeb/playwright-report/
+
 # Visual Studio 6 build log
 *.plg
 

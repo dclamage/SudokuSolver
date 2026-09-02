@@ -1,0 +1,64 @@
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--color-canvas);
+  color: var(--color-text);
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+body {
+  margin: 0;
+  min-width: 20rem;
+}
+
+button {
+  font: inherit;
+}
+
+.app-shell {
+  min-height: 100svh;
+  background: var(--color-canvas);
+}
+
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: calc(var(--control-min-size) + var(--space-4));
+  padding: var(--space-2) var(--page-padding);
+  background: var(--color-surface);
+  color: var(--color-text-inverse);
+}
+
+.top-bar strong {
+  font-size: 1rem;
+}
+
+[role="tablist"] {
+  display: flex;
+  gap: var(--space-2);
+}
+
+[role="tab"] {
+  min-width: var(--control-min-size);
+  min-height: var(--control-min-size);
+  padding: 0 var(--space-3);
+  border: 1px solid transparent;
+  border-radius: 0.25rem;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+[role="tab"][aria-selected="true"] {
+  border-color: var(--color-accent);
+  background: var(--color-surface-raised);
+}
+
+[role="tab"]:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
