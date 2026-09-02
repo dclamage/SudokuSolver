@@ -51,6 +51,19 @@ function readLineSegments(path: Element) {
   }));
 }
 
+function segmentLength(segment: { from: TestPoint; to: TestPoint }) {
+  return Math.hypot(
+    segment.to.x - segment.from.x,
+    segment.to.y - segment.from.y,
+  );
+}
+
+function totalSegmentLength(
+  segments: readonly { from: TestPoint; to: TestPoint }[],
+) {
+  return segments.reduce((total, segment) => total + segmentLength(segment), 0);
+}
+
 const puzzle = createStarterPuzzle(() => "scene");
 const emptySceneView: PuzzleSceneView = {
   values: {},
@@ -417,6 +430,207 @@ describe("PuzzleCanvas", () => {
     ).toHaveLength(6);
   });
 
+  it("splits non-collinear intersections before tracing overlapping rectangle unions", () => {
+    const overlapPuzzle = structuredClone(puzzle);
+    overlapPuzzle.cells.r1c1.shape = {
+      kind: "rect",
+      x: 0,
+      y: 0,
+      width: 2,
+      height: 2,
+    };
+    overlapPuzzle.cells.r1c2.shape = {
+      kind: "rect",
+      x: 1,
+      y: 1,
+      width: 2,
+      height: 2,
+    };
+    overlapPuzzle.groups.overlap = {
+      id: "overlap",
+      roles: ["region"],
+      cellIds: ["r1c1", "r1c2"],
+    };
+
+    render(
+      <PuzzleCanvas
+        puzzle={overlapPuzzle}
+        view={emptySceneView}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    const segments = readLineSegments(screen.getByTestId("group-border-overlap"));
+    expect(segments).toHaveLength(8);
+    expect(totalSegmentLength(segments)).toBeCloseTo(12, 8);
+  });
+
+  it("traces overlapping polygon unions independent of orientation and translation", () => {
+    const overlapPuzzle = structuredClone(puzzle);
+    const square = [
+      { x: 0, y: 0 },
+      { x: 2, y: 0 },
+      { x: 2, y: 2 },
+      { x: 0, y: 2 },
+    ];
+    const diamond = [
+      { x: 1, y: -1 },
+      { x: 3, y: 1 },
+      { x: 1, y: 3 },
+      { x: -1, y: 1 },
+    ];
+    const translateAndReverse = (points: readonly TestPoint[]) =>
+      [...points]
+        .reverse()
+        .map((point) => ({
+          x: point.x + 1_000_000_000,
+          y: point.y - 1_000_000_000,
+        }));
+    overlapPuzzle.cells.r1c1.shape = { kind: "polygon", points: square };
+    overlapPuzzle.cells.r1c2.shape = { kind: "polygon", points: diamond };
+    overlapPuzzle.cells.r1c3.shape = {
+      kind: "polygon",
+      points: translateAndReverse(square),
+    };
+    overlapPuzzle.cells.r1c4.shape = {
+      kind: "polygon",
+      points: translateAndReverse(diamond),
+    };
+    overlapPuzzle.groups["polygon-overlap"] = {
+      id: "polygon-overlap",
+      roles: ["region"],
+      cellIds: ["r1c1", "r1c2"],
+    };
+    overlapPuzzle.groups["translated-polygon-overlap"] = {
+      id: "translated-polygon-overlap",
+      roles: ["region"],
+      cellIds: ["r1c3", "r1c4"],
+    };
+
+    render(
+      <PuzzleCanvas
+        puzzle={overlapPuzzle}
+        view={emptySceneView}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    const original = readLineSegments(
+      screen.getByTestId("group-border-polygon-overlap"),
+    );
+    const translated = readLineSegments(
+      screen.getByTestId("group-border-translated-polygon-overlap"),
+    );
+    expect(original).toHaveLength(8);
+    expect(translated).toHaveLength(8);
+    expect(totalSegmentLength(original)).toBeCloseTo(8 * Math.SQRT2, 8);
+    expect(totalSegmentLength(translated)).toBeCloseTo(8 * Math.SQRT2, 8);
+  });
+
+  it("keeps one exterior boundary for identical geometry and duplicate membership", () => {
+    const duplicatePuzzle = structuredClone(puzzle);
+    const sharedShape = { kind: "rect" as const, x: 0, y: 0, width: 2, height: 1 };
+    duplicatePuzzle.cells.r1c1.shape = sharedShape;
+    duplicatePuzzle.cells.r1c2.shape = sharedShape;
+    duplicatePuzzle.groups.identical = {
+      id: "identical",
+      roles: ["region"],
+      cellIds: ["r1c1", "r1c1", "r1c2"],
+    };
+
+    render(
+      <PuzzleCanvas
+        puzzle={duplicatePuzzle}
+        view={emptySceneView}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    const segments = readLineSegments(screen.getByTestId("group-border-identical"));
+    expect(segments).toHaveLength(4);
+    expect(totalSegmentLength(segments)).toBeCloseTo(6, 8);
+  });
+
+  it("does not let distant geometry erase a nearby thin union member", () => {
+    const thinPuzzle = structuredClone(puzzle);
+    thinPuzzle.cells.r1c1.shape = {
+      kind: "rect",
+      x: 0,
+      y: 0,
+      width: 0.001,
+      height: 1,
+    };
+    thinPuzzle.cells.r1c2.shape = {
+      kind: "rect",
+      x: 0.001,
+      y: 0,
+      width: 1,
+      height: 1,
+    };
+    thinPuzzle.cells.r1c3.shape = {
+      kind: "rect",
+      x: 1_000_000,
+      y: 0,
+      width: 1,
+      height: 1,
+    };
+    thinPuzzle.groups["thin-and-distant"] = {
+      id: "thin-and-distant",
+      roles: ["region"],
+      cellIds: ["r1c1", "r1c2", "r1c3"],
+    };
+
+    render(
+      <PuzzleCanvas
+        puzzle={thinPuzzle}
+        view={emptySceneView}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    const segments = readLineSegments(
+      screen.getByTestId("group-border-thin-and-distant"),
+    );
+    expect(segments).toHaveLength(10);
+    expect(totalSegmentLength(segments)).toBeCloseTo(8.002, 8);
+  });
+
+  it("retains both outer and hole boundaries in a ring-shaped union", () => {
+    const ringPuzzle = structuredClone(puzzle);
+    const positions = [
+      [0, 0], [1, 0], [2, 0],
+      [0, 1],         [2, 1],
+      [0, 2], [1, 2], [2, 2],
+    ] as const;
+    const cellIds = ["r1c1", "r1c2", "r1c3", "r1c4", "r1c5", "r1c6", "r1c7", "r1c8"];
+    cellIds.forEach((cellId, index) => {
+      const [x, y] = positions[index];
+      ringPuzzle.cells[cellId].shape = { kind: "rect", x, y, width: 1, height: 1 };
+    });
+    ringPuzzle.groups.ring = { id: "ring", roles: ["region"], cellIds };
+
+    render(
+      <PuzzleCanvas
+        puzzle={ringPuzzle}
+        view={emptySceneView}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    const segments = readLineSegments(screen.getByTestId("group-border-ring"));
+    expect(totalSegmentLength(segments)).toBeCloseTo(16, 8);
+    const holeBoundaryLength = segments
+      .filter((segment) => {
+        const midpoint = {
+          x: (segment.from.x + segment.to.x) / 2,
+          y: (segment.from.y + segment.to.y) / 2,
+        };
+        return midpoint.x >= 1 && midpoint.x <= 2 && midpoint.y >= 1 && midpoint.y <= 2;
+      })
+      .reduce((total, segment) => total + segmentLength(segment), 0);
+    expect(holeBoundaryLength).toBeCloseTo(4, 8);
+  });
+
   it("keeps value and candidate anchors inside a concave polygon", () => {
     const concavePuzzle = structuredClone(puzzle);
     const lShape = [
@@ -457,6 +671,102 @@ describe("PuzzleCanvas", () => {
         isPointInPolygon(readTextPoint(screen.getByText(label)), translatedLShape),
       ).toBe(true);
     }
+  });
+
+  it("finds content anchors inside a thin concave polygon with a large bounding box", () => {
+    const thinConcavePuzzle = structuredClone(puzzle);
+    const thinLShape = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 0.00001 },
+      { x: 0.00001, y: 0.00001 },
+      { x: 0.00001, y: 100 },
+      { x: 0, y: 100 },
+    ];
+    const translatedThinLShape = thinLShape.map((point) => ({
+      x: point.x + 110,
+      y: point.y,
+    }));
+    thinConcavePuzzle.cells.r1c1.shape = {
+      kind: "polygon",
+      points: thinLShape,
+    };
+    thinConcavePuzzle.cells["aux-1"].shape = {
+      kind: "polygon",
+      points: translatedThinLShape,
+    };
+
+    render(
+      <PuzzleCanvas
+        puzzle={thinConcavePuzzle}
+        view={{
+          ...emptySceneView,
+          values: { r1c1: "5" },
+          candidates: { "aux-1": ["1", "4", "9"] },
+        }}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    expect(
+      isPointInPolygon(
+        readTextPoint(screen.getByTestId("value-r1c1")),
+        thinLShape,
+      ),
+    ).toBe(true);
+    for (const label of ["1", "4", "9"]) {
+      expect(
+        isPointInPolygon(
+          readTextPoint(screen.getByText(label)),
+          translatedThinLShape,
+        ),
+      ).toBe(true);
+    }
+  });
+
+  it("isolates degenerate polygon geometry with a deterministic accessible explanation", () => {
+    const invalidPuzzle = structuredClone(puzzle);
+    invalidPuzzle.cells.r1c1.shape = { kind: "polygon", points: [] };
+    invalidPuzzle.cells.r1c2.shape = {
+      kind: "polygon",
+      points: [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 2, y: 0 },
+      ],
+    };
+
+    render(
+      <PuzzleCanvas
+        puzzle={invalidPuzzle}
+        view={{
+          ...emptySceneView,
+          values: { r1c1: "5", r1c2: "4" },
+          entityCapabilities: {
+            ...emptySceneView.entityCapabilities,
+            "cell:r1c1": {
+              entityKind: "cell",
+              entityId: "r1c1",
+              status: "fullyVerified",
+              reason: "Solver projection remains authoritative.",
+            },
+          },
+        }}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    const emptyCell = screen.getByRole("button", { name: "Cell r1c1" });
+    expect(emptyCell).toHaveAttribute("data-solver-participation", "fullyVerified");
+    expect(emptyCell).toHaveAccessibleDescription(
+      "Solver participation: fully verified. Solver projection remains authoritative. Visual geometry unavailable: polygon has no usable interior.",
+    );
+    expect(screen.getByRole("button", { name: "Cell r1c2" })).toHaveAccessibleDescription(
+      "Solver participation: unknown. Visual geometry unavailable: polygon has no usable interior.",
+    );
+    expect(screen.getByTestId("cell-r1c3")).toBeVisible();
+    expect(screen.queryByTestId("value-r1c1")).toBeNull();
+    expect(screen.queryByTestId("value-r1c2")).toBeNull();
   });
 
   it("announces cell content, selection, and solver participation without visual duplication", () => {
@@ -598,7 +908,7 @@ describe("PuzzleCanvas", () => {
     const candidate = screen.getByText(longLabel);
     const clipReference = candidate.getAttribute("clip-path");
     expect(clipReference).not.toBeNull();
-    expect(clipReference ?? "").toMatch(/^url\(#candidate-clip-[^)]+\)$/);
+    expect(clipReference ?? "").toMatch(/^url\(#[^)]+-candidate-clip-[^)]+\)$/);
     const clipId = clipReference?.slice(5, -1);
     expect(container.querySelector(`clipPath[id="${clipId}"] rect`)).not.toBeNull();
     expect(
@@ -606,5 +916,39 @@ describe("PuzzleCanvas", () => {
         name: `Cell r1c1, candidates ${longLabel}`,
       }),
     ).toBeVisible();
+  });
+
+  it("namespaces clip identifiers and references independently for each canvas", () => {
+    const { container } = render(
+      <>
+        <PuzzleCanvas
+          puzzle={puzzle}
+          view={{ ...emptySceneView, candidates: { r1c1: ["1"] } }}
+          onSelectCell={() => undefined}
+        />
+        <PuzzleCanvas
+          puzzle={puzzle}
+          view={{ ...emptySceneView, candidates: { r1c1: ["1"] } }}
+          onSelectCell={() => undefined}
+        />
+      </>,
+    );
+
+    const candidates = screen.getAllByText("1");
+    const referencedIds = candidates.map((candidate) =>
+      candidate.getAttribute("clip-path")?.slice(5, -1),
+    );
+    expect(new Set(referencedIds).size).toBe(2);
+    for (const [index, candidate] of candidates.entries()) {
+      const svg = candidate.closest("svg");
+      expect(svg).not.toBeNull();
+      expect(
+        svg?.querySelector(`clipPath[id="${referencedIds[index]}"] rect`),
+      ).not.toBeNull();
+    }
+    const clipIds = [...container.querySelectorAll("clipPath")].map(
+      (clip) => clip.id,
+    );
+    expect(new Set(clipIds).size).toBe(clipIds.length);
   });
 });

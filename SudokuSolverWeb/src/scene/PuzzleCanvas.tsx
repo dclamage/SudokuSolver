@@ -1,4 +1,4 @@
-import { memo, useMemo } from "react";
+import { memo, useId, useMemo } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 
 import type { CellId, PuzzlePackageV1 } from "../domain/puzzle/types";
@@ -46,7 +46,13 @@ function cellNodesEqual(first: SceneCellNode, second: SceneCellNode) {
   );
 }
 
-const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
+const CellNode = memo(function CellNode({
+  node,
+  clipNamespace,
+}: {
+  node: SceneCellNode;
+  clipNamespace: string;
+}) {
   const candidates = node.content.filter(
     (content) => content.role === "candidate",
   );
@@ -89,7 +95,7 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
               clipPath={
                 candidate.clip === undefined
                   ? undefined
-                  : `url(#${candidate.clip.id})`
+                  : `url(#${clipNamespace}-${candidate.clip.id})`
               }
             >
               {candidate.text}
@@ -99,7 +105,10 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
       ) : null}
     </g>
   );
-}, (previous, next) => cellNodesEqual(previous.node, next.node));
+}, (previous, next) =>
+  previous.clipNamespace === next.clipNamespace &&
+  cellNodesEqual(previous.node, next.node),
+);
 
 function findCellId(target: EventTarget | null, currentTarget: SVGSVGElement) {
   if (!(target instanceof Element)) {
@@ -117,6 +126,7 @@ export function PuzzleCanvas({
   view,
   onSelectCell,
 }: PuzzleCanvasProps) {
+  const clipNamespace = `puzzle-${useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
   const scene = useMemo(
     () => projectPuzzleScene(puzzle, view),
     [puzzle, view],
@@ -159,7 +169,11 @@ export function PuzzleCanvas({
     >
       <defs>
         {scene.clips.map((clip) => (
-          <clipPath id={clip.id} key={clip.id} clipPathUnits="userSpaceOnUse">
+          <clipPath
+            id={`${clipNamespace}-${clip.id}`}
+            key={clip.id}
+            clipPathUnits="userSpaceOnUse"
+          >
             <rect
               x={clip.x}
               y={clip.y}
@@ -171,7 +185,11 @@ export function PuzzleCanvas({
       </defs>
       {scene.nodes.map((node) =>
         node.kind === "cell" ? (
-          <CellNode key={node.id} node={node} />
+          <CellNode
+            key={node.id}
+            node={node}
+            clipNamespace={clipNamespace}
+          />
         ) : (
           <path
             className={`puzzle-scene-path puzzle-scene-path--${node.role}`}
