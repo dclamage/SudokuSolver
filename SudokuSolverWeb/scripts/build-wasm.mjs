@@ -7,6 +7,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertGeneratedRuntimeIsSelfContained } from "./wasm-probe-orchestrator.mjs";
 
 const scriptDirectory = path.dirname(fileURLToPath(import.meta.url));
 const webRoot = path.resolve(scriptDirectory, "..");
@@ -65,6 +66,7 @@ const targetEntrypoint = path.join(targetFramework, "dotnet.js");
 if (!existsSync(targetEntrypoint)) {
   throw new Error(`Copied WASM runtime is missing ${targetEntrypoint}`);
 }
+assertGeneratedRuntimeIsSelfContained(targetFramework);
 
 console.log(`Published WASM runtime to ${targetFramework}`);
 

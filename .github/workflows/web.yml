@@ -32,6 +32,6 @@ jobs:
       - run: dotnet workload install wasm-tools
       - run: npm ci
       - run: npm run wasm:build
-      - run: npm run verify
       - run: npx playwright install --with-deps chromium
+      - run: npm run verify
       - run: npm run e2e -- --project=desktop-chromium

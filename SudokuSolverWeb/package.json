@@ -16,7 +16,7 @@
     "wasm:build": "node ./scripts/build-wasm.mjs",
     "wasm:probe:build": "vite build --config vite.probe.config.ts && node ./scripts/verify-wasm-worker-build.mjs",
     "wasm:probe": "node ./scripts/probe-wasm-runtime.mjs",
-    "verify": "npm run typecheck && npm run test && npm run build && npm run wasm:probe:build"
+    "verify": "npm run typecheck && npm run test && npm run build && npm run wasm:probe"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
