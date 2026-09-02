@@ -20,10 +20,12 @@ public enum EntityCapability
 
 /// <summary>Reports one native entity's solver capability.</summary>
 /// <param name="EntityKind">The native entity kind.</param>
+/// <param name="EntityId">The stable identifier within the entity kind.</param>
 /// <param name="Status">The level of solver support.</param>
 /// <param name="Reason">A precise explanation when support is not complete.</param>
 public sealed record EntityCapabilityResult(
     string EntityKind,
+    string EntityId,
     EntityCapability Status,
     string? Reason = null);
 
@@ -37,6 +39,17 @@ public sealed class CapabilityReport
         Entities = entities;
     }
 
-    /// <summary>Gets capability results keyed by stable native entity identifier.</summary>
+    /// <summary>Gets capability results keyed by kind-qualified stable native entity identifier.</summary>
     public IReadOnlyDictionary<string, EntityCapabilityResult> Entities { get; }
+
+    /// <summary>Creates the collision-free dictionary key for a kind-qualified native entity.</summary>
+    /// <param name="entityKind">The native entity kind.</param>
+    /// <param name="entityId">The stable identifier within the entity kind.</param>
+    /// <returns>The kind-qualified capability key.</returns>
+    public static string GetEntityKey(string entityKind, string entityId)
+    {
+        ArgumentNullException.ThrowIfNull(entityKind);
+        ArgumentNullException.ThrowIfNull(entityId);
+        return $"{entityKind}:{entityId}";
+    }
 }

@@ -263,18 +263,35 @@ public static class NativePuzzleProjector
         IReadOnlyDictionary<string, int> projectedCells)
     {
         Dictionary<string, EntityCapabilityResult> entities = new(StringComparer.Ordinal);
-        HashSet<string> selectedGroupIds = new(
-            package.Boards[selectedProjection.BoardId].GroupIds,
-            StringComparer.Ordinal);
+        NativeBoard selectedBoard = package.Boards[selectedProjection.BoardId];
+        HashSet<string> selectedGroupIds = new(selectedBoard.GroupIds, StringComparer.Ordinal);
+        List<HashSet<string>> projectedRows = selectedProjection.CellIdsByRow
+            .Select(row => new HashSet<string>(row, StringComparer.Ordinal))
+            .ToList();
+        List<HashSet<string>> projectedColumns = Enumerable.Range(0, selectedProjection.CellIdsByRow.Count)
+            .Select(column => new HashSet<string>(
+                selectedProjection.CellIdsByRow.Select(row => row[column]),
+                StringComparer.Ordinal))
+            .ToList();
+        HashSet<string> referencedPointIds = [];
         HashSet<string> referencedEdgeIds = [];
         HashSet<string> referencedPathIds = [];
+        HashSet<string> referencedReleaseIds = [];
         foreach (NativeConstraintInstance constraint in package.Constraints)
         {
+            if (constraint.DefinitionReleaseId is not null)
+            {
+                referencedReleaseIds.Add(constraint.DefinitionReleaseId);
+            }
             foreach (List<NativeEntityReference> references in constraint.Bindings.Values)
             {
                 foreach (NativeEntityReference reference in references)
                 {
-                    if (string.Equals(reference.Kind, "edge", StringComparison.Ordinal))
+                    if (string.Equals(reference.Kind, "point", StringComparison.Ordinal))
+                    {
+                        referencedPointIds.Add(reference.Id);
+                    }
+                    else if (string.Equals(reference.Kind, "edge", StringComparison.Ordinal))
                     {
                         referencedEdgeIds.Add(reference.Id);
                     }
@@ -288,114 +305,193 @@ public static class NativePuzzleProjector
 
         foreach (string domainId in package.Domains.Keys)
         {
-            entities[domainId] = string.Equals(domainId, selectedProjection.DomainId, StringComparison.Ordinal)
-                ? new("domain", EntityCapability.FullyVerified)
-                : new(
+            if (string.Equals(domainId, selectedProjection.DomainId, StringComparison.Ordinal))
+            {
+                SetCapability(entities, "domain", domainId, EntityCapability.FullyVerified);
+            }
+            else
+            {
+                SetCapability(
+                    entities,
                     "domain",
+                    domainId,
                     EntityCapability.VisualOnly,
                     $"Domain {domainId} is not used by projection {selectedProjection.Id}.");
+            }
         }
         foreach (string cellId in package.Cells.Keys)
         {
-            entities[cellId] = projectedCells.ContainsKey(cellId)
-                ? new("cell", EntityCapability.FullyVerified)
-                : new("cell", EntityCapability.VisualOnly, $"Not included in projection {selectedProjection.Id}.");
+            if (projectedCells.ContainsKey(cellId))
+            {
+                SetCapability(entities, "cell", cellId, EntityCapability.FullyVerified);
+            }
+            else
+            {
+                SetCapability(
+                    entities,
+                    "cell",
+                    cellId,
+                    EntityCapability.VisualOnly,
+                    $"Not included in projection {selectedProjection.Id}.");
+            }
         }
         foreach (string boardId in package.Boards.Keys)
         {
-            entities[boardId] = string.Equals(boardId, selectedProjection.BoardId, StringComparison.Ordinal)
-                ? new("board", EntityCapability.FullyVerified)
-                : new(
+            if (string.Equals(boardId, selectedProjection.BoardId, StringComparison.Ordinal))
+            {
+                SetCapability(entities, "board", boardId, EntityCapability.FullyVerified);
+            }
+            else
+            {
+                SetCapability(
+                    entities,
                     "board",
+                    boardId,
                     EntityCapability.VisualOnly,
                     $"Board {boardId} is not represented by projection {selectedProjection.Id}.");
+            }
         }
         foreach ((string groupId, NativeGroup group) in package.Groups)
         {
             if (!selectedGroupIds.Contains(groupId))
             {
-                entities[groupId] = new(
+                SetCapability(
+                    entities,
                     "group",
+                    groupId,
                     EntityCapability.VisualOnly,
                     $"Group {groupId} is not part of projected board {selectedProjection.BoardId}.");
             }
-            else if (group.Roles.Any(role => role is "row" or "column" or "region"))
-            {
-                entities[groupId] = new("group", EntityCapability.FullyVerified);
-            }
             else
             {
-                entities[groupId] = new(
-                    "group",
-                    EntityCapability.PartiallyVerified,
-                    $"Group {groupId} is preserved but its roles are not enforced by projection {selectedProjection.Id}.");
+                EntityCapabilityResult groupCapability = EvaluateGroupCapability(
+                    group,
+                    selectedProjection,
+                    projectedRows,
+                    projectedColumns);
+                entities[CapabilityReport.GetEntityKey("group", groupId)] = groupCapability;
             }
         }
         foreach (NativeSolverProjection projection in package.SolverProjections)
         {
-            entities[projection.Id] = string.Equals(projection.Id, selectedProjection.Id, StringComparison.Ordinal)
-                ? new("solverProjection", EntityCapability.FullyVerified)
-                : new(
+            if (string.Equals(projection.Id, selectedProjection.Id, StringComparison.Ordinal))
+            {
+                SetCapability(entities, "solverProjection", projection.Id, EntityCapability.FullyVerified);
+            }
+            else
+            {
+                SetCapability(
+                    entities,
                     "solverProjection",
+                    projection.Id,
                     EntityCapability.PartiallyVerified,
                     $"Projection {projection.Id} was not selected; projection {selectedProjection.Id} was represented.");
+            }
         }
         foreach (NativeAdjacency adjacency in package.Adjacency.Values)
         {
-            entities[adjacency.Id] = new(
+            SetCapability(
+                entities,
                 "adjacency",
+                adjacency.Id,
                 EntityCapability.PartiallyVerified,
                 $"Adjacency kind {adjacency.Kind} is preserved but not enforced by projection {selectedProjection.Id}.");
         }
+        foreach (NativePoint point in package.Points.Values)
+        {
+            bool isReferenced = referencedPointIds.Contains(point.Id);
+            SetCapability(
+                entities,
+                "point",
+                point.Id,
+                isReferenced ? EntityCapability.PartiallyVerified : EntityCapability.VisualOnly,
+                isReferenced
+                    ? $"Point {point.Id} is preserved for an unsupported constraint binding."
+                    : $"Point {point.Id} is presentation geometry and is not bound to a semantic constraint.");
+        }
+        foreach (NativeEdge edge in package.Edges.Values)
+        {
+            bool isReferenced = referencedEdgeIds.Contains(edge.Id);
+            SetCapability(
+                entities,
+                "edge",
+                edge.Id,
+                isReferenced ? EntityCapability.PartiallyVerified : EntityCapability.VisualOnly,
+                isReferenced
+                    ? $"Edge {edge.Id} is preserved for an unsupported constraint binding."
+                    : $"Edge {edge.Id} is presentation geometry and is not bound to a semantic constraint.");
+        }
+        foreach (NativePath path in package.Paths.Values)
+        {
+            bool isReferenced = referencedPathIds.Contains(path.Id);
+            SetCapability(
+                entities,
+                "path",
+                path.Id,
+                isReferenced ? EntityCapability.PartiallyVerified : EntityCapability.VisualOnly,
+                isReferenced
+                    ? $"Path {path.Id} is preserved for an unsupported constraint binding."
+                    : $"Path {path.Id} is presentation geometry and is not bound to a semantic constraint.");
+        }
+
+        HashSet<string> availableReleaseIds = GetDefinitionReleaseIds(package.Release);
         foreach (NativeConstraintInstance constraint in package.Constraints)
         {
             if (constraint.DefinitionReleaseId is not null
-                && !ContainsDefinitionRelease(package.Release, constraint.DefinitionReleaseId))
+                && !availableReleaseIds.Contains(constraint.DefinitionReleaseId))
             {
                 string reason = package.Release.HasValue
                     ? $"Constraint {constraint.Id} references missing definition release {constraint.DefinitionReleaseId}."
                     : $"Constraint {constraint.Id} references definition release {constraint.DefinitionReleaseId}, but no release payload is present.";
-                entities[constraint.Id] = new("constraint", EntityCapability.InvalidDefinition, reason);
-                entities[constraint.DefinitionReleaseId] = new(
+                SetCapability(
+                    entities,
+                    "constraint",
+                    constraint.Id,
+                    EntityCapability.InvalidDefinition,
+                    reason);
+                SetCapability(
+                    entities,
                     "definitionRelease",
+                    constraint.DefinitionReleaseId,
                     EntityCapability.InvalidDefinition,
                     reason);
             }
             else
             {
-                entities[constraint.Id] = new(
+                SetCapability(
+                    entities,
                     "constraint",
+                    constraint.Id,
                     EntityCapability.PartiallyVerified,
                     $"Constraint type {constraint.TypeId} is preserved but not enforced by projection {selectedProjection.Id}.");
                 if (constraint.DefinitionReleaseId is not null)
                 {
-                    entities[constraint.DefinitionReleaseId] = new(
+                    SetCapability(
+                        entities,
                         "definitionRelease",
+                        constraint.DefinitionReleaseId,
                         EntityCapability.PartiallyVerified,
                         $"Definition release {constraint.DefinitionReleaseId} is preserved but not executable by projection {selectedProjection.Id}.");
                 }
             }
         }
-        foreach (string edgeId in referencedEdgeIds)
+        foreach (string releaseId in availableReleaseIds.Except(referencedReleaseIds, StringComparer.Ordinal))
         {
-            entities[edgeId] = new(
-                "edge",
-                EntityCapability.PartiallyVerified,
-                $"Referenced edge {edgeId} is preserved for an unsupported constraint.");
-        }
-        foreach (string pathId in referencedPathIds)
-        {
-            entities[pathId] = new(
-                "path",
-                EntityCapability.PartiallyVerified,
-                $"Referenced path {pathId} is preserved for an unsupported constraint.");
+            SetCapability(
+                entities,
+                "definitionRelease",
+                releaseId,
+                EntityCapability.VisualOnly,
+                $"Definition release {releaseId} is present but not referenced by a constraint.");
         }
         foreach ((string extensionId, NativeExtension extension) in package.Extensions)
         {
             if (string.Equals(extension.Impact, "semantic", StringComparison.Ordinal))
             {
-                entities[extensionId] = new(
+                SetCapability(
+                    entities,
                     "extension",
+                    extensionId,
                     EntityCapability.PartiallyVerified,
                     $"Semantic extension {extensionId} is preserved but not enforced by projection {selectedProjection.Id}.");
             }
@@ -403,16 +499,77 @@ public static class NativePuzzleProjector
         return new CapabilityReport(entities);
     }
 
-    private static bool ContainsDefinitionRelease(JsonElement? release, string definitionReleaseId)
+    private static EntityCapabilityResult EvaluateGroupCapability(
+        NativeGroup group,
+        NativeSolverProjection selectedProjection,
+        IReadOnlyList<HashSet<string>> projectedRows,
+        IReadOnlyList<HashSet<string>> projectedColumns)
+    {
+        if (group.Roles.Count == 0)
+        {
+            return new(
+                "group",
+                group.Id,
+                EntityCapability.PartiallyVerified,
+                $"Group {group.Id} declares no solver-enforced role.");
+        }
+
+        foreach (string role in group.Roles)
+        {
+            bool isEnforced = role switch
+            {
+                "row" => MatchesAnyProjectedGroup(group.CellIds, projectedRows),
+                "column" => MatchesAnyProjectedGroup(group.CellIds, projectedColumns),
+                "region" => true,
+                _ => false,
+            };
+            if (!isEnforced)
+            {
+                string reason = role is "row" or "column"
+                    ? $"Group {group.Id} role {role} does not match any projected {role}."
+                    : $"Group {group.Id} role {role} is not enforced by projection {selectedProjection.Id}.";
+                return new("group", group.Id, EntityCapability.PartiallyVerified, reason);
+            }
+        }
+
+        return new("group", group.Id, EntityCapability.FullyVerified);
+    }
+
+    private static bool MatchesAnyProjectedGroup(
+        IReadOnlyList<string> groupCellIds,
+        IReadOnlyList<HashSet<string>> projectedGroups)
+    {
+        HashSet<string> groupCells = new(groupCellIds, StringComparer.Ordinal);
+        return groupCells.Count == groupCellIds.Count
+            && projectedGroups.Any(projectedGroup => projectedGroup.SetEquals(groupCells));
+    }
+
+    private static HashSet<string> GetDefinitionReleaseIds(JsonElement? release)
     {
         if (!release.HasValue
             || release.Value.ValueKind != JsonValueKind.Object
             || !release.Value.TryGetProperty("releases", out JsonElement releases)
             || releases.ValueKind != JsonValueKind.Object)
         {
-            return false;
+            return [];
         }
-        return releases.TryGetProperty(definitionReleaseId, out _);
+        return new HashSet<string>(
+            releases.EnumerateObject().Select(property => property.Name),
+            StringComparer.Ordinal);
+    }
+
+    private static void SetCapability(
+        Dictionary<string, EntityCapabilityResult> entities,
+        string entityKind,
+        string entityId,
+        EntityCapability status,
+        string? reason = null)
+    {
+        entities[CapabilityReport.GetEntityKey(entityKind, entityId)] = new(
+            entityKind,
+            entityId,
+            status,
+            reason);
     }
 }
 

@@ -10,6 +10,8 @@ namespace SudokuSolver.PuzzleFormats.Native;
 /// </summary>
 public sealed class NativePuzzlePackage
 {
+    private List<JsonElement>? _assets;
+
     /// <summary>Gets the native package schema version.</summary>
     public int SchemaVersion { get; init; }
 
@@ -70,7 +72,19 @@ public sealed class NativePuzzlePackage
     public JsonElement? Release { get; set; }
 
     /// <summary>Gets optional embedded asset descriptors.</summary>
-    public List<JsonElement>? Assets { get; init; }
+    public List<JsonElement>? Assets
+    {
+        get => _assets;
+        init
+        {
+            _assets = value;
+            AssetsWasSpecified = true;
+        }
+    }
+
+    /// <summary>Gets whether the optional assets property was present in the input.</summary>
+    [JsonIgnore]
+    internal bool AssetsWasSpecified { get; set; }
 
     /// <summary>Gets optional provenance information.</summary>
     public JsonElement? Provenance { get; set; }
@@ -97,8 +111,12 @@ public sealed class NativePuzzlePackage
             throw new ArgumentException("Native puzzle JSON cannot be empty.", nameof(json));
         }
 
-        NativePuzzlePackage package = JsonSerializer.Deserialize(json, NativePuzzleJsonContext.Default.NativePuzzlePackage)
+        using JsonDocument document = JsonDocument.Parse(json);
+        NativePuzzlePackage package = JsonSerializer.Deserialize(
+            document.RootElement,
+            NativePuzzleJsonContext.Default.NativePuzzlePackage)
             ?? throw new JsonException("Native puzzle JSON did not contain a package.");
+        package.ApplyOptionalPropertyPresence(document.RootElement);
         if (package.SchemaVersion != 1)
         {
             throw new ArgumentException($"Unsupported native puzzle schema version {package.SchemaVersion}.", nameof(json));
@@ -205,6 +223,69 @@ public sealed class NativePuzzlePackage
         }
     }
 
+    private void ApplyOptionalPropertyPresence(JsonElement root)
+    {
+        AssetsWasSpecified = root.TryGetProperty("assets", out _);
+
+        if (root.TryGetProperty("domains", out JsonElement domains)
+            && domains.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty domainProperty in domains.EnumerateObject())
+            {
+                if (!Domains.TryGetValue(domainProperty.Name, out NativeDomain? domain)
+                    || domainProperty.Value.ValueKind != JsonValueKind.Object
+                    || !domainProperty.Value.TryGetProperty("values", out JsonElement values)
+                    || values.ValueKind != JsonValueKind.Array)
+                {
+                    continue;
+                }
+
+                int valueIndex = 0;
+                foreach (JsonElement valueElement in values.EnumerateArray())
+                {
+                    if (valueIndex < domain.Values.Count && valueElement.ValueKind == JsonValueKind.Object)
+                    {
+                        domain.Values[valueIndex].NumericValueWasSpecified = valueElement.TryGetProperty(
+                            "numericValue",
+                            out _);
+                    }
+                    valueIndex++;
+                }
+            }
+        }
+
+        if (root.TryGetProperty("cells", out JsonElement cells)
+            && cells.ValueKind == JsonValueKind.Object)
+        {
+            foreach (JsonProperty cellProperty in cells.EnumerateObject())
+            {
+                if (Cells.TryGetValue(cellProperty.Name, out NativeCell? cell)
+                    && cellProperty.Value.ValueKind == JsonValueKind.Object)
+                {
+                    cell.LabelWasSpecified = cellProperty.Value.TryGetProperty("label", out _);
+                }
+            }
+        }
+
+        if (root.TryGetProperty("constraints", out JsonElement constraints)
+            && constraints.ValueKind == JsonValueKind.Array)
+        {
+            int constraintIndex = 0;
+            foreach (JsonElement constraintElement in constraints.EnumerateArray())
+            {
+                if (constraintIndex < Constraints.Count && constraintElement.ValueKind == JsonValueKind.Object)
+                {
+                    NativeConstraintInstance constraint = Constraints[constraintIndex];
+                    constraint.DefinitionReleaseIdWasSpecified = constraintElement.TryGetProperty(
+                        "definitionReleaseId",
+                        out _);
+                    constraint.StyleOverridesWasSpecified = constraintElement.TryGetProperty("styleOverrides", out _);
+                }
+                constraintIndex++;
+            }
+        }
+    }
+
     private static void CloneElementDictionary(Dictionary<string, JsonElement>? elements)
     {
         if (elements is null)
@@ -262,12 +343,26 @@ public sealed class NativeDomain
 /// <summary>Defines one stable value in a native domain.</summary>
 public sealed class NativeDomainValue
 {
+    private long? _numericValue;
+
     /// <summary>Gets the stable value identifier.</summary>
     public required string Id { get; init; }
     /// <summary>Gets the display label.</summary>
     public required string Label { get; init; }
     /// <summary>Gets the optional arithmetic interpretation.</summary>
-    public long? NumericValue { get; init; }
+    public long? NumericValue
+    {
+        get => _numericValue;
+        init
+        {
+            _numericValue = value;
+            NumericValueWasSpecified = true;
+        }
+    }
+
+    /// <summary>Gets whether the optional numeric interpretation was present in the input.</summary>
+    [JsonIgnore]
+    internal bool NumericValueWasSpecified { get; set; }
     /// <summary>Gets unknown domain-value members.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement> ExtensionData { get; set; } = [];
@@ -276,6 +371,8 @@ public sealed class NativeDomainValue
 /// <summary>Defines a native puzzle cell.</summary>
 public sealed class NativeCell
 {
+    private string? _label;
+
     /// <summary>Gets the stable cell identifier.</summary>
     public required string Id { get; init; }
     /// <summary>Gets the stable domain identifier.</summary>
@@ -285,7 +382,19 @@ public sealed class NativeCell
     /// <summary>Gets input capabilities.</summary>
     public required NativeCellInput Input { get; init; }
     /// <summary>Gets an optional visual label.</summary>
-    public string? Label { get; init; }
+    public string? Label
+    {
+        get => _label;
+        init
+        {
+            _label = value;
+            LabelWasSpecified = true;
+        }
+    }
+
+    /// <summary>Gets whether the optional label property was present in the input.</summary>
+    [JsonIgnore]
+    internal bool LabelWasSpecified { get; set; }
     /// <summary>Gets unknown cell members.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement> ExtensionData { get; set; } = [];
@@ -435,18 +544,45 @@ public sealed class NativePath
 /// <summary>Defines a native constraint instance with typed entity bindings.</summary>
 public sealed class NativeConstraintInstance
 {
+    private string? _definitionReleaseId;
+    private Dictionary<string, JsonElement>? _styleOverrides;
+
     /// <summary>Gets the stable constraint identifier.</summary>
     public required string Id { get; init; }
     /// <summary>Gets the stable constraint type identifier.</summary>
     public required string TypeId { get; init; }
     /// <summary>Gets the optional immutable custom-definition release identifier.</summary>
-    public string? DefinitionReleaseId { get; init; }
+    public string? DefinitionReleaseId
+    {
+        get => _definitionReleaseId;
+        init
+        {
+            _definitionReleaseId = value;
+            DefinitionReleaseIdWasSpecified = true;
+        }
+    }
+
+    /// <summary>Gets whether the optional definition-release property was present in the input.</summary>
+    [JsonIgnore]
+    internal bool DefinitionReleaseIdWasSpecified { get; set; }
     /// <summary>Gets role-named ordered entity bindings.</summary>
     public required Dictionary<string, List<NativeEntityReference>> Bindings { get; init; }
     /// <summary>Gets typed semantic parameters.</summary>
     public required Dictionary<string, JsonElement> Parameters { get; init; }
     /// <summary>Gets optional nonsemantic style overrides.</summary>
-    public Dictionary<string, JsonElement>? StyleOverrides { get; init; }
+    public Dictionary<string, JsonElement>? StyleOverrides
+    {
+        get => _styleOverrides;
+        init
+        {
+            _styleOverrides = value;
+            StyleOverridesWasSpecified = true;
+        }
+    }
+
+    /// <summary>Gets whether the optional style-overrides property was present in the input.</summary>
+    [JsonIgnore]
+    internal bool StyleOverridesWasSpecified { get; set; }
     /// <summary>Gets unknown constraint members.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement> ExtensionData { get; set; } = [];
@@ -547,7 +683,9 @@ public sealed class NativeExtension
 
 /// <summary>Provides source-generated JSON metadata for native puzzle packages.</summary>
 [JsonSerializable(typeof(NativePuzzlePackage))]
-[JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase)]
+[JsonSourceGenerationOptions(
+    PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase,
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 internal sealed partial class NativePuzzleJsonContext : JsonSerializerContext
 {
 }

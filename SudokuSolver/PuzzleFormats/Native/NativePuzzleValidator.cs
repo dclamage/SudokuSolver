@@ -88,6 +88,10 @@ internal static class NativePuzzleValidator
                     Invalid($"domain {domain.Id} contains duplicate value {value.Id}");
                 }
                 RequireNonEmpty(value.Label, $"domain {domain.Id} value {value.Id} label");
+                if (value.NumericValueWasSpecified && !value.NumericValue.HasValue)
+                {
+                    Invalid("numericValue must be omitted rather than null");
+                }
                 if (value.NumericValue.HasValue)
                 {
                     RequireSafeInteger(value.NumericValue.Value, $"domain {domain.Id} value {value.Id} numericValue");
@@ -119,6 +123,10 @@ internal static class NativePuzzleValidator
             if (cell.Input is null)
             {
                 Invalid($"cell {cell.Id} input must be an object");
+            }
+            if (cell.LabelWasSpecified && cell.Label is null)
+            {
+                Invalid("label must be omitted rather than null");
             }
             if (cell.Label is not null)
             {
@@ -279,6 +287,10 @@ internal static class NativePuzzleValidator
             RequireObject(constraint, "constraint");
             RequireNonEmpty(constraint.Id, "constraint id");
             RequireNonEmpty(constraint.TypeId, $"constraint {constraint.Id} typeId");
+            if (constraint.DefinitionReleaseIdWasSpecified && constraint.DefinitionReleaseId is null)
+            {
+                Invalid("definitionReleaseId must be omitted rather than null");
+            }
             if (constraint.DefinitionReleaseId is not null)
             {
                 RequireNonEmpty(constraint.DefinitionReleaseId, $"constraint {constraint.Id} definitionReleaseId");
@@ -302,6 +314,10 @@ internal static class NativePuzzleValidator
                 }
             }
             ValidateJsonRecord(constraint.Parameters, $"constraint {constraint.Id} parameters", requireSafeIntegers: true);
+            if (constraint.StyleOverridesWasSpecified && constraint.StyleOverrides is null)
+            {
+                Invalid("styleOverrides must be omitted rather than null");
+            }
             if (constraint.StyleOverrides is not null)
             {
                 ValidateJsonRecord(
@@ -547,6 +563,10 @@ internal static class NativePuzzleValidator
         if (package.Release.HasValue)
         {
             ValidateJson(package.Release.Value, "release", requireSafeIntegers: true);
+        }
+        if (package.AssetsWasSpecified && package.Assets is null)
+        {
+            Invalid("assets must be omitted rather than null");
         }
         if (package.Assets is not null)
         {

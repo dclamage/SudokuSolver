@@ -22,9 +22,9 @@ public class NativePuzzleProjectionTests
         NativeProjectionResult result = NativePuzzleProjector.Project(package, "main-latin-square");
 
         Assert.AreEqual(81, result.Solver.NUM_CELLS);
-        Assert.AreEqual(EntityCapability.FullyVerified, result.Capabilities.Entities["r1c1"].Status);
-        Assert.AreEqual(EntityCapability.VisualOnly, result.Capabilities.Entities["aux-1"].Status);
-        Assert.AreEqual("Not included in projection main-latin-square.", result.Capabilities.Entities["aux-1"].Reason);
+        Assert.AreEqual(EntityCapability.FullyVerified, Capability(result, "cell", "r1c1").Status);
+        Assert.AreEqual(EntityCapability.VisualOnly, Capability(result, "cell", "aux-1").Status);
+        Assert.AreEqual("Not included in projection main-latin-square.", Capability(result, "cell", "aux-1").Reason);
     }
 
     /// <summary>
@@ -194,10 +194,10 @@ public class NativePuzzleProjectionTests
         NativeProjectionResult result = NativePuzzleProjector.Project(package, "main-latin-square");
 
         Assert.AreEqual(3, killer.Parameters["sum"].GetInt32());
-        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["killer-1"].Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, Capability(result, "constraint", "killer-1").Status);
         Assert.AreEqual(
             "Constraint type builtin.killer is preserved but not enforced by projection main-latin-square.",
-            result.Capabilities.Entities["killer-1"].Reason);
+            Capability(result, "constraint", "killer-1").Reason);
     }
 
     /// <summary>
@@ -230,6 +230,30 @@ public class NativePuzzleProjectionTests
             () => NativePuzzlePackage.Parse(root.ToJsonString()));
 
         StringAssert.Contains(exception.Message, "acceptsCandidates");
+    }
+
+    /// <summary>
+    /// Distinguishes an omitted optional typed property from an explicit JSON null exactly as Task 2 does.
+    /// </summary>
+    /// <param name="propertyCase">The optional property case to exercise.</param>
+    [TestMethod]
+    [DataRow("numericValue")]
+    [DataRow("label")]
+    [DataRow("definitionReleaseId")]
+    [DataRow("styleOverrides")]
+    [DataRow("assets")]
+    public void ParseRejectsExplicitNullButAcceptsOmittedOptionalProperty(string propertyCase)
+    {
+        JsonNode explicitNull = ReadFixtureNode("classic-with-auxiliary.json");
+        SetOptionalPropertyCase(explicitNull, propertyCase, includeExplicitNull: true);
+
+        ArgumentException exception = Assert.ThrowsExactly<ArgumentException>(
+            () => NativePuzzlePackage.Parse(explicitNull.ToJsonString()));
+        StringAssert.Contains(exception.Message, $"{propertyCase} must be omitted rather than null");
+
+        JsonNode omitted = ReadFixtureNode("classic-with-auxiliary.json");
+        SetOptionalPropertyCase(omitted, propertyCase, includeExplicitNull: false);
+        NativePuzzlePackage.Parse(omitted.ToJsonString());
     }
 
     /// <summary>
@@ -298,15 +322,20 @@ public class NativePuzzleProjectionTests
             "{\"id\":\"adjacency-1\",\"kind\":\"orthogonal\",\"fromCellId\":\"r1c1\",\"toCellId\":\"r1c2\"}");
         root["points"]!["point-1"] = JsonNode.Parse("{\"id\":\"point-1\",\"x\":0,\"y\":0}");
         root["points"]!["point-2"] = JsonNode.Parse("{\"id\":\"point-2\",\"x\":1,\"y\":0}");
+        root["points"]!["point-unbound"] = JsonNode.Parse("{\"id\":\"point-unbound\",\"x\":2,\"y\":0}");
         root["edges"]!["edge-1"] = JsonNode.Parse(
             "{\"id\":\"edge-1\",\"fromPointId\":\"point-1\",\"toPointId\":\"point-2\"}");
+        root["edges"]!["edge-unbound"] = JsonNode.Parse(
+            "{\"id\":\"edge-unbound\",\"fromPointId\":\"point-2\",\"toPointId\":\"point-unbound\"}");
         root["paths"]!["path-1"] = JsonNode.Parse(
             "{\"id\":\"path-1\",\"pointIds\":[\"point-1\",\"point-2\"],\"closed\":false}");
+        root["paths"]!["path-unbound"] = JsonNode.Parse(
+            "{\"id\":\"path-unbound\",\"pointIds\":[\"point-2\",\"point-unbound\"],\"closed\":false}");
         root["constraints"] = JsonNode.Parse("""
-            [{"id":"custom-1","typeId":"example.custom","definitionReleaseId":"release-1","bindings":{"edge":[{"kind":"edge","id":"edge-1"}],"path":[{"kind":"path","id":"path-1"}]},"parameters":{}}]
+            [{"id":"custom-1","typeId":"example.custom","definitionReleaseId":"release-1","bindings":{"point":[{"kind":"point","id":"point-1"}],"edge":[{"kind":"edge","id":"edge-1"}],"path":[{"kind":"path","id":"path-1"}]},"parameters":{}}]
             """);
         root["release"] = JsonNode.Parse(
-            "{\"releases\":{\"release-1\":{\"artifactHash\":\"sha256:artifact\"}}}");
+            "{\"releases\":{\"release-1\":{\"artifactHash\":\"sha256:artifact\"},\"release-unbound\":{\"artifactHash\":\"sha256:unbound\"}}}");
         root["extensions"]!["example:semantic"] = JsonNode.Parse(
             "{\"impact\":\"semantic\",\"data\":{\"enabled\":true}}");
 
@@ -314,16 +343,81 @@ public class NativePuzzleProjectionTests
             NativePuzzlePackage.Parse(root.ToJsonString()),
             "main-latin-square");
 
-        Assert.AreEqual(EntityCapability.FullyVerified, result.Capabilities.Entities["digits-1-9"].Status);
-        Assert.AreEqual(EntityCapability.FullyVerified, result.Capabilities.Entities["main"].Status);
-        Assert.AreEqual(EntityCapability.FullyVerified, result.Capabilities.Entities["row-1"].Status);
-        Assert.AreEqual(EntityCapability.FullyVerified, result.Capabilities.Entities["main-latin-square"].Status);
-        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["adjacency-1"].Status);
-        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["edge-1"].Status);
-        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["path-1"].Status);
-        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["example:semantic"].Status);
-        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["release-1"].Status);
-        Assert.IsFalse(string.IsNullOrWhiteSpace(result.Capabilities.Entities["release-1"].Reason));
+        Assert.AreEqual(EntityCapability.FullyVerified, Capability(result, "domain", "digits-1-9").Status);
+        Assert.AreEqual(EntityCapability.FullyVerified, Capability(result, "board", "main").Status);
+        Assert.AreEqual(EntityCapability.FullyVerified, Capability(result, "group", "row-1").Status);
+        Assert.AreEqual(EntityCapability.FullyVerified, Capability(result, "solverProjection", "main-latin-square").Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, Capability(result, "adjacency", "adjacency-1").Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, Capability(result, "point", "point-1").Status);
+        Assert.AreEqual(EntityCapability.VisualOnly, Capability(result, "point", "point-2").Status);
+        Assert.AreEqual(EntityCapability.VisualOnly, Capability(result, "point", "point-unbound").Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, Capability(result, "edge", "edge-1").Status);
+        Assert.AreEqual(EntityCapability.VisualOnly, Capability(result, "edge", "edge-unbound").Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, Capability(result, "path", "path-1").Status);
+        Assert.AreEqual(EntityCapability.VisualOnly, Capability(result, "path", "path-unbound").Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, Capability(result, "extension", "example:semantic").Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, Capability(result, "definitionRelease", "release-1").Status);
+        Assert.AreEqual(EntityCapability.VisualOnly, Capability(result, "definitionRelease", "release-unbound").Status);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(Capability(result, "definitionRelease", "release-1").Reason));
+    }
+
+    /// <summary>
+    /// Keeps same-text identifiers from different native entity kinds as separate capability entries.
+    /// </summary>
+    [TestMethod]
+    public void CapabilityKeysAreKindQualifiedAndCollisionFree()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["points"]!["main"] = JsonNode.Parse("{\"id\":\"main\",\"x\":0,\"y\":0}");
+
+        NativeProjectionResult result = NativePuzzleProjector.Project(
+            NativePuzzlePackage.Parse(root.ToJsonString()),
+            "main-latin-square");
+
+        Assert.AreEqual("board", Capability(result, "board", "main").EntityKind);
+        Assert.AreEqual("main", Capability(result, "board", "main").EntityId);
+        Assert.AreEqual("point", Capability(result, "point", "main").EntityKind);
+        Assert.AreEqual("main", Capability(result, "point", "main").EntityId);
+    }
+
+    /// <summary>
+    /// Does not claim an arbitrary row-tagged membership is enforced by the selected projection.
+    /// </summary>
+    [TestMethod]
+    public void CapabilityReportDoesNotOverclaimArbitraryRowGroup()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["groups"]!["arbitrary-row"] = JsonNode.Parse(
+            "{\"id\":\"arbitrary-row\",\"roles\":[\"row\"],\"cellIds\":[\"r1c1\",\"r2c2\"]}");
+        root["boards"]!["main"]!["groupIds"]!.AsArray().Add("arbitrary-row");
+
+        NativeProjectionResult result = NativePuzzleProjector.Project(
+            NativePuzzlePackage.Parse(root.ToJsonString()),
+            "main-latin-square");
+
+        Assert.AreEqual(EntityCapability.PartiallyVerified, Capability(result, "group", "arbitrary-row").Status);
+        Assert.AreEqual(
+            "Group arbitrary-row role row does not match any projected row.",
+            Capability(result, "group", "arbitrary-row").Reason);
+    }
+
+    /// <summary>
+    /// Reports a mixed-role group as partial when any declared role is not enforced.
+    /// </summary>
+    [TestMethod]
+    public void CapabilityReportDoesNotOverclaimMixedRoleGroup()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["groups"]!["row-1"]!["roles"]!.AsArray().Add("diagonal");
+
+        NativeProjectionResult result = NativePuzzleProjector.Project(
+            NativePuzzlePackage.Parse(root.ToJsonString()),
+            "main-latin-square");
+
+        Assert.AreEqual(EntityCapability.PartiallyVerified, Capability(result, "group", "row-1").Status);
+        Assert.AreEqual(
+            "Group row-1 role diagonal is not enforced by projection main-latin-square.",
+            Capability(result, "group", "row-1").Reason);
     }
 
     /// <summary>
@@ -340,11 +434,11 @@ public class NativePuzzleProjectionTests
             NativePuzzlePackage.Parse(root.ToJsonString()),
             "main-latin-square");
 
-        Assert.AreEqual(EntityCapability.InvalidDefinition, result.Capabilities.Entities["custom-1"].Status);
-        Assert.AreEqual(EntityCapability.InvalidDefinition, result.Capabilities.Entities["release-1"].Status);
+        Assert.AreEqual(EntityCapability.InvalidDefinition, Capability(result, "constraint", "custom-1").Status);
+        Assert.AreEqual(EntityCapability.InvalidDefinition, Capability(result, "definitionRelease", "release-1").Status);
         Assert.AreEqual(
             "Constraint custom-1 references definition release release-1, but no release payload is present.",
-            result.Capabilities.Entities["custom-1"].Reason);
+            Capability(result, "constraint", "custom-1").Reason);
     }
 
     /// <summary>
@@ -362,11 +456,11 @@ public class NativePuzzleProjectionTests
             NativePuzzlePackage.Parse(root.ToJsonString()),
             "main-latin-square");
 
-        Assert.AreEqual(EntityCapability.InvalidDefinition, result.Capabilities.Entities["custom-1"].Status);
-        Assert.AreEqual(EntityCapability.InvalidDefinition, result.Capabilities.Entities["release-1"].Status);
+        Assert.AreEqual(EntityCapability.InvalidDefinition, Capability(result, "constraint", "custom-1").Status);
+        Assert.AreEqual(EntityCapability.InvalidDefinition, Capability(result, "definitionRelease", "release-1").Status);
         Assert.AreEqual(
             "Constraint custom-1 references missing definition release release-1.",
-            result.Capabilities.Entities["custom-1"].Reason);
+            Capability(result, "constraint", "custom-1").Reason);
     }
 
     /// <summary>
@@ -384,6 +478,54 @@ public class NativePuzzleProjectionTests
 
     private static NativePuzzlePackage ReadPackage(string fileName)
         => NativePuzzlePackage.Parse(File.ReadAllText(FixturePath(fileName)));
+
+    private static EntityCapabilityResult Capability(
+        NativeProjectionResult result,
+        string entityKind,
+        string entityId)
+        => result.Capabilities.Entities[CapabilityReport.GetEntityKey(entityKind, entityId)];
+
+    private static void SetOptionalPropertyCase(JsonNode root, string propertyCase, bool includeExplicitNull)
+    {
+        switch (propertyCase)
+        {
+            case "numericValue":
+                root["domains"]!["optional-domain"] = JsonNode.Parse(
+                    "{\"id\":\"optional-domain\",\"values\":[{\"id\":\"x\",\"label\":\"X\"}]}");
+                SetOrRemove(
+                    root["domains"]!["optional-domain"]!["values"]![0]!.AsObject(),
+                    propertyCase,
+                    includeExplicitNull);
+                break;
+            case "label":
+                SetOrRemove(root["cells"]!["r1c1"]!.AsObject(), propertyCase, includeExplicitNull);
+                break;
+            case "definitionReleaseId":
+            case "styleOverrides":
+                root["constraints"] = JsonNode.Parse(
+                    "[{\"id\":\"custom-1\",\"typeId\":\"example.custom\",\"bindings\":{},\"parameters\":{}}]");
+                SetOrRemove(root["constraints"]![0]!.AsObject(), propertyCase, includeExplicitNull);
+                break;
+            case "assets":
+                SetOrRemove(root.AsObject(), propertyCase, includeExplicitNull);
+                break;
+            default:
+                Assert.Fail($"Unknown optional-property test case {propertyCase}.");
+                break;
+        }
+    }
+
+    private static void SetOrRemove(JsonObject owner, string propertyName, bool includeExplicitNull)
+    {
+        if (includeExplicitNull)
+        {
+            owner[propertyName] = null;
+        }
+        else
+        {
+            owner.Remove(propertyName);
+        }
+    }
 
     private static JsonNode ReadFixtureNode(string fileName)
         => JsonNode.Parse(File.ReadAllText(FixturePath(fileName)))!;
