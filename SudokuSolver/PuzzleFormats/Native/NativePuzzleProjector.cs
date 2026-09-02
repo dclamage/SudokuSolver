@@ -440,7 +440,7 @@ public static class NativePuzzleProjector
             if (constraint.DefinitionReleaseId is not null
                 && !availableReleaseIds.Contains(constraint.DefinitionReleaseId))
             {
-                string reason = package.Release.HasValue
+                string reason = package.Release is not null
                     ? $"Constraint {constraint.Id} references missing definition release {constraint.DefinitionReleaseId}."
                     : $"Constraint {constraint.Id} references definition release {constraint.DefinitionReleaseId}, but no release payload is present.";
                 SetCapability(
@@ -544,9 +544,9 @@ public static class NativePuzzleProjector
             && projectedGroups.Any(projectedGroup => projectedGroup.SetEquals(groupCells));
     }
 
-    private static HashSet<string> GetDefinitionReleaseIds(JsonElement? release)
+    private static HashSet<string> GetDefinitionReleaseIds(NativeOptionalJsonValue? release)
     {
-        if (!release.HasValue
+        if (release is null
             || release.Value.ValueKind != JsonValueKind.Object
             || !release.Value.TryGetProperty("releases", out JsonElement releases)
             || releases.ValueKind != JsonValueKind.Object)

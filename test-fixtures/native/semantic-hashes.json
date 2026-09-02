@@ -1,5 +1,6 @@
 {
   "classic-with-auxiliary": "sha256:b8489ce1173b87c3b8a004a0c69364b16e4a3994cbbc654489e3cc8077837536",
   "four-by-four-killer": "sha256:3c2bd65d13d638b1c6e70d6d1c4da2458f003df2396c228388ceac03f6e7ebc0",
-  "classic-with-unicode-semantic-extension": "sha256:179c60c28c520a8f1dc04234abe0e51c96f8078c99f7ba1e6f158ebf551924bd"
+  "classic-with-unicode-semantic-extension": "sha256:179c60c28c520a8f1dc04234abe0e51c96f8078c99f7ba1e6f158ebf551924bd",
+  "classic-with-referenced-null-release": "sha256:9ae851ad4638da2a9231b34d031e5fbc4cf4d21f039f8860f2ed331bc5441131"
 }

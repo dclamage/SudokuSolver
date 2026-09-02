@@ -352,6 +352,24 @@ describe("computeSemanticHash", () => {
     );
   });
 
+  it("matches the shared referenced-null release golden", async () => {
+    const referencedNullRelease = validatePuzzlePackage(fixture);
+    referencedNullRelease.constraints = [
+      {
+        id: "custom-null-release",
+        typeId: "example.custom",
+        definitionReleaseId: "release-null",
+        bindings: {},
+        parameters: {},
+      },
+    ];
+    referencedNullRelease.release = null;
+
+    await expect(computeSemanticHash(referencedNullRelease)).resolves.toBe(
+      semanticHashes["classic-with-referenced-null-release"],
+    );
+  });
+
   it("excludes auxiliary-cell geometry", async () => {
     const original = validatePuzzlePackage(fixture);
     const moved = structuredClone(original);

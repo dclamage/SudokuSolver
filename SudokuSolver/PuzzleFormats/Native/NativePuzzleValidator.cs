@@ -556,11 +556,11 @@ internal static class NativePuzzleValidator
 
     private static void ValidateOptionalPayloads(NativePuzzlePackage package)
     {
-        if (package.Source.HasValue)
+        if (package.Source is not null)
         {
             ValidateJson(package.Source.Value, "source", requireSafeIntegers: false);
         }
-        if (package.Release.HasValue)
+        if (package.Release is not null)
         {
             ValidateJson(package.Release.Value, "release", requireSafeIntegers: true);
         }
@@ -575,7 +575,7 @@ internal static class NativePuzzleValidator
                 ValidateJson(asset, "asset", requireSafeIntegers: false);
             }
         }
-        if (package.Provenance.HasValue)
+        if (package.Provenance is not null)
         {
             ValidateJson(package.Provenance.Value, "provenance", requireSafeIntegers: false);
         }

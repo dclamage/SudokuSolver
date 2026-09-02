@@ -115,7 +115,7 @@ public static class NativeSemanticHasher
             ["solverProjections"] = ProjectionArray(package.SolverProjections),
             ["extensions"] = SemanticExtensions(package.Extensions),
         };
-        if (hasReferencedRelease && package.Release.HasValue)
+        if (hasReferencedRelease && package.Release is not null)
         {
             view["release"] = ParseElement(package.Release.Value);
         }

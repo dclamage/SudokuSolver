@@ -66,10 +66,10 @@ public sealed class NativePuzzlePackage
     public required NativePresentation Presentation { get; init; }
 
     /// <summary>Gets optional source-format information.</summary>
-    public JsonElement? Source { get; set; }
+    public NativeOptionalJsonValue? Source { get; set; }
 
     /// <summary>Gets optional compiled release information.</summary>
-    public JsonElement? Release { get; set; }
+    public NativeOptionalJsonValue? Release { get; set; }
 
     /// <summary>Gets optional embedded asset descriptors.</summary>
     public List<JsonElement>? Assets
@@ -87,7 +87,7 @@ public sealed class NativePuzzlePackage
     internal bool AssetsWasSpecified { get; set; }
 
     /// <summary>Gets optional provenance information.</summary>
-    public JsonElement? Provenance { get; set; }
+    public NativeOptionalJsonValue? Provenance { get; set; }
 
     /// <summary>Gets portable authoring workspace state.</summary>
     public required NativeAuthoringState Authoring { get; init; }
@@ -137,9 +137,6 @@ public sealed class NativePuzzlePackage
 
     private void CloneOpenPayloads()
     {
-        Source = Source?.Clone();
-        Release = Release?.Clone();
-        Provenance = Provenance?.Clone();
         CloneElements(Assets);
         CloneExtensionData(ExtensionData);
         CloneExtensionData(Metadata.ExtensionData);
@@ -312,6 +309,59 @@ public sealed class NativePuzzlePackage
 
     private static void CloneExtensionData(Dictionary<string, JsonElement> extensionData)
         => CloneElementDictionary(extensionData);
+}
+
+/// <summary>
+/// Owns one present optional JSON value, including an explicit JSON null; a null wrapper means omission.
+/// </summary>
+[JsonConverter(typeof(NativeOptionalJsonValueConverter))]
+public sealed class NativeOptionalJsonValue
+{
+    /// <summary>Initializes a present optional JSON value and takes an owned clone.</summary>
+    /// <param name="value">The present JSON value, which may have <see cref="JsonValueKind.Null"/> kind.</param>
+    /// <exception cref="ArgumentException">The value has <see cref="JsonValueKind.Undefined"/> kind.</exception>
+    public NativeOptionalJsonValue(JsonElement value)
+    {
+        if (value.ValueKind == JsonValueKind.Undefined)
+        {
+            throw new ArgumentException("An optional native JSON value cannot be undefined.", nameof(value));
+        }
+        Value = value.Clone();
+    }
+
+    /// <summary>Gets the present owned JSON value.</summary>
+    public JsonElement Value { get; }
+}
+
+/// <summary>Serializes a present optional native JSON wrapper as its contained JSON value.</summary>
+internal sealed class NativeOptionalJsonValueConverter : JsonConverter<NativeOptionalJsonValue>
+{
+    /// <inheritdoc/>
+    public override bool HandleNull => true;
+
+    /// <inheritdoc/>
+    public override NativeOptionalJsonValue Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        using JsonDocument document = JsonDocument.ParseValue(ref reader);
+        return new NativeOptionalJsonValue(document.RootElement);
+    }
+
+    /// <inheritdoc/>
+    public override void Write(
+        Utf8JsonWriter writer,
+        NativeOptionalJsonValue value,
+        JsonSerializerOptions options)
+    {
+        if (value is null)
+        {
+            writer.WriteNullValue();
+            return;
+        }
+        value.Value.WriteTo(writer);
+    }
 }
 
 /// <summary>Contains nonsemantic puzzle metadata.</summary>

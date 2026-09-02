@@ -134,6 +134,24 @@ public class NativePuzzleProjectionTests
     }
 
     /// <summary>
+    /// Includes an explicitly null release when a constraint references a definition release.
+    /// </summary>
+    [TestMethod]
+    public void SemanticHashMatchesSharedReferencedNullReleaseGolden()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["constraints"] = JsonNode.Parse("""
+            [{"id":"custom-null-release","typeId":"example.custom","definitionReleaseId":"release-null","bindings":{},"parameters":{}}]
+            """);
+        root["release"] = null;
+        using JsonDocument goldens = JsonDocument.Parse(File.ReadAllText(FixturePath("semantic-hashes.json")));
+
+        Assert.AreEqual(
+            goldens.RootElement.GetProperty("classic-with-referenced-null-release").GetString(),
+            NativeSemanticHasher.Compute(NativePuzzlePackage.Parse(root.ToJsonString())));
+    }
+
+    /// <summary>
     /// Excludes presentation geometry and metadata from document-semantic identity.
     /// </summary>
     [TestMethod]
@@ -215,6 +233,62 @@ public class NativePuzzleProjectionTests
 
         Assert.IsTrue(package.ExtensionData.ContainsKey("futureSection"));
         Assert.AreEqual(7, package.Extensions["example:semantic"].Data.GetProperty("weight").GetInt32());
+    }
+
+    /// <summary>
+    /// Preserves explicit JSON null separately from omission for every optional open JSON field.
+    /// </summary>
+    [TestMethod]
+    public void ExplicitNullOpenJsonFieldsSurviveSerializeAndReparse()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["source"] = null;
+        root["release"] = null;
+        root["provenance"] = null;
+
+        NativePuzzlePackage parsed = NativePuzzlePackage.Parse(root.ToJsonString());
+        Assert.AreEqual(JsonValueKind.Null, parsed.Source!.Value.ValueKind);
+        Assert.AreEqual(JsonValueKind.Null, parsed.Release!.Value.ValueKind);
+        Assert.AreEqual(JsonValueKind.Null, parsed.Provenance!.Value.ValueKind);
+        NativePuzzlePackage reparsed = NativePuzzlePackage.Parse(parsed.ToJson());
+        using JsonDocument document = JsonDocument.Parse(reparsed.ToJson());
+
+        AssertExplicitNullProperty(document.RootElement, "source");
+        AssertExplicitNullProperty(document.RootElement, "release");
+        AssertExplicitNullProperty(document.RootElement, "provenance");
+    }
+
+    /// <summary>
+    /// Preserves present non-null values for every optional open JSON field through serialization.
+    /// </summary>
+    [TestMethod]
+    public void NonNullOpenJsonFieldsSurviveSerializeAndReparse()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["source"] = JsonNode.Parse("{\"format\":\"example\"}");
+        root["release"] = JsonNode.Parse("{\"compilerVersion\":1}");
+        root["provenance"] = JsonNode.Parse("{\"importedBy\":\"contract-test\"}");
+
+        NativePuzzlePackage parsed = NativePuzzlePackage.Parse(root.ToJsonString());
+        NativePuzzlePackage reparsed = NativePuzzlePackage.Parse(parsed.ToJson());
+
+        Assert.AreEqual("example", reparsed.Source!.Value.GetProperty("format").GetString());
+        Assert.AreEqual(1, reparsed.Release!.Value.GetProperty("compilerVersion").GetInt32());
+        Assert.AreEqual("contract-test", reparsed.Provenance!.Value.GetProperty("importedBy").GetString());
+    }
+
+    /// <summary>
+    /// Keeps omitted optional open JSON fields omitted during serialization.
+    /// </summary>
+    [TestMethod]
+    public void OmittedOpenJsonFieldsRemainOmittedAfterSerialization()
+    {
+        NativePuzzlePackage package = ReadPackage("classic-with-auxiliary.json");
+        using JsonDocument document = JsonDocument.Parse(package.ToJson());
+
+        Assert.IsFalse(document.RootElement.TryGetProperty("source", out _));
+        Assert.IsFalse(document.RootElement.TryGetProperty("release", out _));
+        Assert.IsFalse(document.RootElement.TryGetProperty("provenance", out _));
     }
 
     /// <summary>
@@ -525,6 +599,12 @@ public class NativePuzzleProjectionTests
         {
             owner.Remove(propertyName);
         }
+    }
+
+    private static void AssertExplicitNullProperty(JsonElement root, string propertyName)
+    {
+        Assert.IsTrue(root.TryGetProperty(propertyName, out JsonElement value));
+        Assert.AreEqual(JsonValueKind.Null, value.ValueKind);
     }
 
     private static JsonNode ReadFixtureNode(string fileName)
