@@ -21,4 +21,8 @@
     <ProjectReference Include="..\SudokuSolver\SudokuSolver.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="..\test-fixtures\native\**" Link="test-fixtures\native\%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
