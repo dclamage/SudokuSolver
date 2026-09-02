@@ -447,13 +447,15 @@ describe("PuzzleCanvas", () => {
 
   it("preserves exact representable thin boundaries across offsets and a noisy overlap", () => {
     const thinPuzzle = structuredClone(puzzle);
-    const width = 0.00001;
+    const standardWidth = 0.00001;
     const cases = [
-      { cellId: "r1c1", groupId: "thin-zero", offset: 0 },
-      { cellId: "r1c2", groupId: "thin-million", offset: 1_000_000 },
-      { cellId: "r1c3", groupId: "thin-billion", offset: 1_000_000_000 },
+      { cellId: "r1c1", groupId: "thin-zero", offset: 0, width: standardWidth },
+      { cellId: "r1c2", groupId: "thin-million", offset: 1_000_000, width: standardWidth },
+      { cellId: "r1c3", groupId: "thin-billion", offset: 1_000_000_000, width: standardWidth },
+      { cellId: "r1c5", groupId: "thin-billion-three-micro", offset: 1_000_000_000, width: 0.000003 },
+      { cellId: "r1c6", groupId: "thin-billion-multi-ulp", offset: 1_000_000_000, width: 0.0000005 },
     ] as const;
-    for (const { cellId, groupId, offset } of cases) {
+    for (const { cellId, groupId, offset, width } of cases) {
       thinPuzzle.cells[cellId].shape = {
         kind: "rect",
         x: offset,
@@ -468,8 +470,8 @@ describe("PuzzleCanvas", () => {
       };
     }
 
-    const overlapOffset = 1_000_000;
-    const overlapRight = overlapOffset + width;
+    const overlapOffset = 1_000_000_000;
+    const overlapRight = overlapOffset + standardWidth;
     const neighborStart = overlapRight - 0.00000496;
     const neighborEnd = neighborStart + 0.5;
     thinPuzzle.cells.r1c4.shape = {
@@ -484,7 +486,7 @@ describe("PuzzleCanvas", () => {
     thinPuzzle.groups["thin-noisy-overlap"] = {
       id: "thin-noisy-overlap",
       roles: ["region"],
-      cellIds: ["r1c2", "r1c4", "r1c2"],
+      cellIds: ["r1c3", "r1c4", "r1c3"],
     };
 
     render(
@@ -495,7 +497,7 @@ describe("PuzzleCanvas", () => {
       />,
     );
 
-    for (const { groupId, offset } of cases) {
+    for (const { groupId, offset, width } of cases) {
       const right = offset + width;
       const segments = readLineSegments(
         screen.getByTestId(`group-border-${groupId}`),
@@ -829,19 +831,79 @@ describe("PuzzleCanvas", () => {
     }
   });
 
-  it("bounds polygon interior work independently of elongated geometry size", () => {
-    const projectElongatedPolygon = (width: number) => {
+  it("keeps value and candidate anchors inside a representable large-coordinate sliver", () => {
+    const sliverPuzzle = structuredClone(puzzle);
+    const x = 1_000_000_000;
+    const height = 0.000007;
+    const valuePolygon = [
+      { x, y: 0 },
+      { x: x + 100, y: 0 },
+      { x: x + 100, y: height },
+      { x, y: height },
+    ];
+    const candidatePolygon = valuePolygon.map((point) => ({
+      x: point.x,
+      y: point.y + 1,
+    }));
+    sliverPuzzle.cells.r1c1.shape = {
+      kind: "polygon",
+      points: valuePolygon,
+    };
+    sliverPuzzle.cells["aux-1"].shape = {
+      kind: "polygon",
+      points: candidatePolygon,
+    };
+
+    render(
+      <PuzzleCanvas
+        puzzle={sliverPuzzle}
+        view={{
+          ...emptySceneView,
+          values: { r1c1: "5" },
+          candidates: { "aux-1": ["1", "4", "9"] },
+        }}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    expect(
+      isPointInPolygon(
+        readTextPoint(screen.getByTestId("value-r1c1")),
+        valuePolygon,
+      ),
+    ).toBe(true);
+    const candidatePoints = ["1", "4", "9"].map((label) =>
+      readTextPoint(screen.getByText(label)),
+    );
+    for (const point of candidatePoints) {
+      expect(isPointInPolygon(point, candidatePolygon)).toBe(true);
+    }
+    expect(
+      new Set(candidatePoints.map((point) => `${point.x},${point.y}`)).size,
+    ).toBe(3);
+  });
+
+  it("accounts for bounded interior work by vertex count rather than aspect ratio", () => {
+    const projectPolygon = (width: number, vertexCount: number) => {
       const elongatedPuzzle = structuredClone(puzzle);
       elongatedPuzzle.cells.r1c1.shape = {
         kind: "polygon",
-        points: [
-          { x: 0, y: 0 },
-          { x: width, y: 0 },
-          { x: width, y: 1 },
-          { x: 0, y: 1 },
-        ],
+        points: Array.from({ length: vertexCount }, (_, index) => {
+          const angle = (index * Math.PI * 2) / vertexCount;
+          return {
+            x: width / 2 + (width / 2) * Math.cos(angle),
+            y: 0.5 + 0.5 * Math.sin(angle),
+          };
+        }),
       };
-      const metrics = { interiorWorkUnits: 0 };
+      const metrics = {
+        interiorWorkUnits: 0,
+        earCandidateScans: 0,
+        pointInTriangleTests: 0,
+        triangleEvaluations: 0,
+        nearestEdgeScans: 0,
+        pointInPolygonEdgeScans: 0,
+      };
       const scene = projectPuzzleScene(
         elongatedPuzzle,
         { ...emptySceneView, values: { r1c1: "5" } },
@@ -853,14 +915,43 @@ describe("PuzzleCanvas", () => {
       return { metrics, cell };
     };
 
-    const short = projectElongatedPolygon(2);
-    const long = projectElongatedPolygon(100);
+    const shortFour = projectPolygon(2, 4);
+    const longFour = projectPolygon(100, 4);
+    const longEight = projectPolygon(100, 8);
+    const longSixteen = projectPolygon(100, 16);
 
-    expect(short.metrics.interiorWorkUnits).toBeGreaterThan(0);
-    expect(long.metrics.interiorWorkUnits).toBe(short.metrics.interiorWorkUnits);
-    expect(long.metrics.interiorWorkUnits).toBeLessThanOrEqual(8);
-    expect(short.cell?.kind === "cell" ? short.cell.content : []).toHaveLength(1);
-    expect(long.cell?.kind === "cell" ? long.cell.content : []).toHaveLength(1);
+    expect(longFour.metrics).toEqual(shortFour.metrics);
+    for (const metrics of [
+      longFour.metrics,
+      longEight.metrics,
+      longSixteen.metrics,
+    ]) {
+      expect(metrics.earCandidateScans).toBeGreaterThan(0);
+      expect(metrics.pointInTriangleTests).toBeGreaterThan(0);
+      expect(metrics.triangleEvaluations).toBeGreaterThan(0);
+      expect(metrics.nearestEdgeScans).toBeGreaterThan(0);
+      expect(metrics.pointInPolygonEdgeScans).toBeGreaterThan(0);
+      expect(metrics.interiorWorkUnits).toBe(
+        metrics.earCandidateScans +
+          metrics.pointInTriangleTests +
+          metrics.triangleEvaluations +
+          metrics.nearestEdgeScans +
+          metrics.pointInPolygonEdgeScans,
+      );
+    }
+    expect(longEight.metrics.interiorWorkUnits).toBeGreaterThan(
+      longFour.metrics.interiorWorkUnits,
+    );
+    expect(longSixteen.metrics.interiorWorkUnits).toBeGreaterThan(
+      longEight.metrics.interiorWorkUnits,
+    );
+    expect(longSixteen.metrics.interiorWorkUnits).toBeLessThanOrEqual(
+      longEight.metrics.interiorWorkUnits * 8,
+    );
+    expect(longSixteen.metrics.interiorWorkUnits).toBeLessThanOrEqual(2_000);
+    expect(
+      longSixteen.cell?.kind === "cell" ? longSixteen.cell.content : [],
+    ).toHaveLength(1);
   });
 
   it("isolates degenerate polygon geometry with a deterministic accessible explanation", () => {

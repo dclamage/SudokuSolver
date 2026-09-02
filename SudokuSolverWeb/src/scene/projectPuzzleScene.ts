@@ -27,6 +27,7 @@ interface Point {
 interface Segment {
   from: Point;
   to: Point;
+  polygonIndex?: number;
 }
 
 interface ContentRegion extends Bounds {
@@ -43,6 +44,27 @@ interface ProjectedShape {
 
 export interface PuzzleSceneProjectionMetrics {
   interiorWorkUnits: number;
+  earCandidateScans: number;
+  pointInTriangleTests: number;
+  triangleEvaluations: number;
+  nearestEdgeScans: number;
+  pointInPolygonEdgeScans: number;
+}
+
+type InteriorWorkCategory = Exclude<
+  keyof PuzzleSceneProjectionMetrics,
+  "interiorWorkUnits"
+>;
+
+function recordInteriorWork(
+  metrics: PuzzleSceneProjectionMetrics | undefined,
+  category: InteriorWorkCategory,
+) {
+  if (metrics === undefined) {
+    return;
+  }
+  metrics[category] += 1;
+  metrics.interiorWorkUnits += 1;
 }
 
 function pointDistanceSquared(first: Point, second: Point) {
@@ -83,13 +105,18 @@ function polygonSegments(vertices: readonly Point[]): Segment[] {
   }));
 }
 
-function isPointInPolygon(point: Point, vertices: readonly Point[]) {
+function isPointInPolygon(
+  point: Point,
+  vertices: readonly Point[],
+  metrics?: PuzzleSceneProjectionMetrics,
+) {
   let inside = false;
   for (
     let index = 0, previousIndex = vertices.length - 1;
     index < vertices.length;
     previousIndex = index, index += 1
   ) {
+    recordInteriorWork(metrics, "pointInPolygonEdgeScans");
     const current = vertices[index];
     const previous = vertices[previousIndex];
     if (
@@ -105,10 +132,17 @@ function isPointInPolygon(point: Point, vertices: readonly Point[]) {
   return inside;
 }
 
-function clearanceAt(point: Point, segments: readonly Segment[]) {
-  return Math.min(
-    ...segments.map((segment) => pointToSegmentDistance(point, segment)),
-  );
+function clearanceAt(
+  point: Point,
+  segments: readonly Segment[],
+  metrics?: PuzzleSceneProjectionMetrics,
+) {
+  let clearance = Number.POSITIVE_INFINITY;
+  for (const segment of segments) {
+    recordInteriorWork(metrics, "nearestEdgeScans");
+    clearance = Math.min(clearance, pointToSegmentDistance(point, segment));
+  }
+  return clearance;
 }
 
 function polygonArea(vertices: readonly Point[]) {
@@ -129,9 +163,10 @@ function signedDistanceToPolygon(
   point: Point,
   vertices: readonly Point[],
   segments: readonly Segment[],
+  metrics?: PuzzleSceneProjectionMetrics,
 ) {
-  const distance = clearanceAt(point, segments);
-  return isPointInPolygon(point, vertices) ? distance : -distance;
+  const distance = clearanceAt(point, segments, metrics);
+  return isPointInPolygon(point, vertices, metrics) ? distance : -distance;
 }
 
 function triangleTurn(first: Point, second: Point, third: Point) {
@@ -182,22 +217,17 @@ function pointInTriangle(
 function triangulatePolygon(
   vertices: readonly Point[],
   area: number,
-  bounds: Bounds,
   metrics?: PuzzleSceneProjectionMetrics,
 ) {
   const orientation = area > 0 ? 1 : -1;
-  const areaTolerance = Math.max(
-    coordinateResolution(bounds) ** 2,
-    Math.abs(area) * Number.EPSILON * COORDINATE_ULP_FACTOR,
-  );
+  const areaTolerance =
+    Math.abs(area) * Number.EPSILON * COORDINATE_ULP_FACTOR;
   const remaining = vertices.map((_, index) => index);
   const triangles: [Point, Point, Point][] = [];
   while (remaining.length > 3) {
     let earIndex = -1;
     for (let index = 0; index < remaining.length; index += 1) {
-      if (metrics !== undefined) {
-        metrics.interiorWorkUnits += 1;
-      }
+      recordInteriorWork(metrics, "earCandidateScans");
       const previousIndex = remaining[(index + remaining.length - 1) % remaining.length];
       const currentIndex = remaining[index];
       const nextIndex = remaining[(index + 1) % remaining.length];
@@ -215,6 +245,7 @@ function triangulatePolygon(
         ) {
           return false;
         }
+        recordInteriorWork(metrics, "pointInTriangleTests");
         return pointInTriangle(
           vertices[candidateIndex],
           previous,
@@ -264,17 +295,6 @@ function triangleIncenter([first, second, third]: [Point, Point, Point]) {
   };
 }
 
-function coordinateResolution(bounds: Bounds) {
-  const magnitude = Math.max(
-    1,
-    Math.abs(bounds.minX),
-    Math.abs(bounds.minY),
-    Math.abs(bounds.maxX),
-    Math.abs(bounds.maxY),
-  );
-  return magnitude * Number.EPSILON * COORDINATE_ULP_FACTOR;
-}
-
 function findPolygonContentRegion(
   vertices: readonly Point[],
   bounds: Bounds,
@@ -294,18 +314,21 @@ function findPolygonContentRegion(
     return undefined;
   }
 
-  const triangles = triangulatePolygon(vertices, area, bounds, metrics);
+  const triangles = triangulatePolygon(vertices, area, metrics);
   if (triangles.length === 0) {
     return undefined;
   }
   let bestPoint: Point | undefined;
   let bestDistance = Number.NEGATIVE_INFINITY;
   for (const triangle of triangles) {
-    if (metrics !== undefined) {
-      metrics.interiorWorkUnits += 1;
-    }
+    recordInteriorWork(metrics, "triangleEvaluations");
     const incenter = triangleIncenter(triangle);
-    const distance = signedDistanceToPolygon(incenter, vertices, segments);
+    const distance = signedDistanceToPolygon(
+      incenter,
+      vertices,
+      segments,
+      metrics,
+    );
     if (distance > bestDistance) {
       bestPoint = incenter;
       bestDistance = distance;
@@ -314,19 +337,23 @@ function findPolygonContentRegion(
 
   if (
     bestPoint === undefined ||
-    bestDistance <= coordinateResolution(bounds)
+    !(bestDistance > 0) ||
+    !isPointInPolygon(bestPoint, vertices)
   ) {
     return undefined;
   }
 
   const halfExtent = (bestDistance * 0.9) / Math.sqrt(2);
-  return {
+  const region = {
     center: bestPoint,
     minX: bestPoint.x - halfExtent,
     minY: bestPoint.y - halfExtent,
     maxX: bestPoint.x + halfExtent,
     maxY: bestPoint.y + halfExtent,
   };
+  return region.minX < region.maxX && region.minY < region.maxY
+    ? region
+    : undefined;
 }
 
 function projectShape(
@@ -547,7 +574,7 @@ function segmentLength(segment: Segment) {
   return Math.sqrt(pointDistanceSquared(segment.from, segment.to));
 }
 
-function segmentTolerance(segment: Segment) {
+function baseSegmentTolerance(segment: Segment) {
   const lengthTolerance = Math.min(
     segmentLength(segment) * RELATIVE_GEOMETRY_TOLERANCE,
     MAX_LENGTH_TOLERANCE,
@@ -563,6 +590,40 @@ function segmentTolerance(segment: Segment) {
     lengthTolerance,
     coordinateMagnitude * Number.EPSILON * COORDINATE_ULP_FACTOR,
   );
+}
+
+function exactlyContainsPoint(segment: Segment, point: Point) {
+  if (lineDistance(point, segment) !== 0) {
+    return false;
+  }
+  const ratio = projectRatio(point, segment);
+  return ratio >= 0 && ratio <= 1;
+}
+
+function segmentTolerance(
+  segment: Segment,
+  arrangement?: readonly Segment[],
+) {
+  const length = segmentLength(segment);
+  let tolerance = Math.min(baseSegmentTolerance(segment), length / 4);
+  if (arrangement === undefined || segment.polygonIndex === undefined) {
+    return tolerance;
+  }
+
+  const midpoint = pointAt(segment, 0.5);
+  for (const candidate of arrangement) {
+    if (
+      candidate.polygonIndex !== segment.polygonIndex ||
+      exactlyContainsPoint(candidate, midpoint)
+    ) {
+      continue;
+    }
+    const separation = pointToSegmentDistance(midpoint, candidate);
+    if (separation > 0) {
+      tolerance = Math.min(tolerance, separation / 4);
+    }
+  }
+  return tolerance;
 }
 
 function pointAt(segment: Segment, ratio: number): Point {
@@ -617,7 +678,7 @@ function splitSegment(
   const segmentDeltaX = segment.to.x - segment.from.x;
   const segmentDeltaY = segment.to.y - segment.from.y;
   const length = segmentLength(segment);
-  const tolerance = segmentTolerance(segment);
+  const tolerance = segmentTolerance(segment, allSegments);
   const ratioTolerance = tolerance / length;
   for (const other of allSegments) {
     if (other === segment || segmentLength(other) === 0) {
@@ -627,7 +688,10 @@ function splitSegment(
     const otherDeltaX = other.to.x - other.from.x;
     const otherDeltaY = other.to.y - other.from.y;
     const otherLength = segmentLength(other);
-    const pairTolerance = Math.max(tolerance, segmentTolerance(other));
+    const pairTolerance = Math.min(
+      tolerance,
+      segmentTolerance(other, allSegments),
+    );
     const parallelThreshold =
       pairTolerance * Math.max(length, otherLength);
     const denominator = cross(
@@ -677,9 +741,15 @@ function splitSegment(
   );
   return uniqueRatios.slice(0, -1).flatMap((start, index) => {
     const end = uniqueRatios[index + 1];
-    return end - start <= ratioTolerance
+    return end <= start
       ? []
-      : [{ from: pointAt(segment, start), to: pointAt(segment, end) }];
+      : [
+          {
+            from: pointAt(segment, start),
+            to: pointAt(segment, end),
+            polygonIndex: segment.polygonIndex,
+          },
+        ];
   });
 }
 
@@ -705,11 +775,12 @@ function localProbeDistance(
   arrangement: readonly Segment[],
 ) {
   const midpoint = pointAt(segment, 0.5);
+  const tolerance = segmentTolerance(segment, arrangement);
   let nearestDistinctEdge = Number.POSITIVE_INFINITY;
   for (const candidate of arrangement) {
-    const pairTolerance = Math.max(
-      segmentTolerance(segment),
-      segmentTolerance(candidate),
+    const pairTolerance = Math.min(
+      tolerance,
+      segmentTolerance(candidate, arrangement),
     );
     if (
       segmentContainsPointWithinTolerance(candidate, midpoint, pairTolerance)
@@ -722,7 +793,7 @@ function localProbeDistance(
     );
   }
   return Math.min(
-    segmentTolerance(segment),
+    tolerance,
     nearestDistinctEdge / 4,
   );
 }
@@ -754,10 +825,14 @@ function isUnionBoundary(
   return firstSide !== secondSide;
 }
 
-function segmentsAreEquivalent(first: Segment, second: Segment) {
-  const tolerance = Math.max(
-    segmentTolerance(first),
-    segmentTolerance(second),
+function segmentsAreEquivalent(
+  first: Segment,
+  second: Segment,
+  arrangement: readonly Segment[],
+) {
+  const tolerance = Math.min(
+    segmentTolerance(first, arrangement),
+    segmentTolerance(second, arrangement),
   );
   const toleranceSquared = tolerance * tolerance;
   return (
@@ -768,12 +843,15 @@ function segmentsAreEquivalent(first: Segment, second: Segment) {
   );
 }
 
-function deduplicateSegments(segments: readonly Segment[]) {
+function deduplicateSegments(
+  segments: readonly Segment[],
+  arrangement: readonly Segment[],
+) {
   const uniqueSegments: Segment[] = [];
   for (const segment of segments) {
     if (
       !uniqueSegments.some((existing) =>
-        segmentsAreEquivalent(existing, segment),
+        segmentsAreEquivalent(existing, segment, arrangement),
       )
     ) {
       uniqueSegments.push(segment);
@@ -792,8 +870,16 @@ function projectGroupBorder(
     return vertices === undefined || vertices.length < 3 ? [] : [vertices];
   });
   const segments = polygons
-    .flatMap((vertices) => polygonSegments(vertices))
-    .filter((segment) => segmentLength(segment) > segmentTolerance(segment));
+    .flatMap((vertices, polygonIndex) =>
+      polygonSegments(vertices).map((segment) => ({
+        ...segment,
+        polygonIndex,
+      })),
+    )
+    .filter((segment) => {
+      const length = segmentLength(segment);
+      return Number.isFinite(length) && length > 0;
+    });
   if (segments.length === 0) {
     return "";
   }
@@ -802,6 +888,7 @@ function projectGroupBorder(
     segments
       .flatMap((segment) => splitSegment(segment, segments))
       .filter((piece) => isUnionBoundary(piece, polygons, segments)),
+    segments,
   )
     .map(
       (segment) =>
