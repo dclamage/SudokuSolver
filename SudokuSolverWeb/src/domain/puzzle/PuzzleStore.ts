@@ -73,6 +73,9 @@ export class PuzzleStore {
 
   public execute(command: ExecutablePuzzleCommand): void {
     const result = applyPuzzleCommand(this.snapshot.document, command);
+    if (!result.changed) {
+      return;
+    }
     this.undoStack.push(result.inverse);
     this.redoStack.length = 0;
     this.commit(result.document, result.semanticChange);
@@ -84,6 +87,9 @@ export class PuzzleStore {
       return;
     }
     const result = applyPuzzleCommand(this.snapshot.document, command);
+    if (!result.changed) {
+      return;
+    }
     this.undoStack.pop();
     this.redoStack.push(result.inverse);
     this.commit(result.document, result.semanticChange);
@@ -95,6 +101,9 @@ export class PuzzleStore {
       return;
     }
     const result = applyPuzzleCommand(this.snapshot.document, command);
+    if (!result.changed) {
+      return;
+    }
     this.redoStack.pop();
     this.undoStack.push(result.inverse);
     this.commit(result.document, result.semanticChange);

@@ -10,11 +10,13 @@ export interface CommandResult {
   document: PuzzlePackageV1;
   inverse: PuzzleCommand;
   semanticChange: boolean;
+  changed: boolean;
 }
 
 interface PendingCommandResult {
   inverse: PuzzleCommand;
   semanticChange: boolean;
+  changed: boolean;
 }
 
 function requireCell(document: PuzzlePackageV1, cellId: CellId) {
@@ -110,6 +112,26 @@ function requireValueIds(
   }
 }
 
+function normalizeValueIds(
+  document: PuzzlePackageV1,
+  cellId: CellId,
+  valueIds: readonly ValueId[],
+): ValueId[] {
+  requireValueIds(document, cellId, valueIds);
+  const cell = document.cells[cellId];
+  const selectedValueIds = new Set(valueIds);
+  return document.domains[cell.domainId].values
+    .map((value) => value.id)
+    .filter((valueId) => selectedValueIds.has(valueId));
+}
+
+function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
 function cloneContextWithIdentity(
   source: CandidateContext,
   id: string,
@@ -142,6 +164,9 @@ function finishCommand(
   next: PuzzlePackageV1,
   pending: PendingCommandResult,
 ): CommandResult {
+  if (!pending.changed) {
+    return { document: previous, ...pending };
+  }
   if (previous.revision >= Number.MAX_SAFE_INTEGER) {
     throw new Error("document revision cannot be incremented safely");
   }
@@ -184,6 +209,7 @@ export function applyPuzzleCommand(
           valueId: previousValue,
         },
         semanticChange: true,
+        changed: previousValue !== command.valueId,
       };
       break;
     }
@@ -212,23 +238,30 @@ export function applyPuzzleCommand(
           y: cell.shape.y,
         },
         semanticChange: false,
+        changed: cell.shape.x !== command.x || cell.shape.y !== command.y,
       };
       break;
     }
 
     case "setManualMarks": {
       findContextIndex(document, command.contextId);
-      requireValueIds(document, command.cellId, command.valueIds);
-      const previousMarks =
-        document.authoring.manualMarks[command.contextId]?.[command.cellId] ??
-        [];
+      const normalizedMarks = normalizeValueIds(
+        document,
+        command.cellId,
+        command.valueIds,
+      );
+      const previousMarks = [
+        ...(document.authoring.manualMarks[command.contextId]?.[
+          command.cellId
+        ] ?? []),
+      ];
       const contextMarks = {
         ...(next.authoring.manualMarks[command.contextId] ?? {}),
       };
-      if (command.valueIds.length === 0) {
+      if (normalizedMarks.length === 0) {
         delete contextMarks[command.cellId];
       } else {
-        contextMarks[command.cellId] = [...command.valueIds];
+        contextMarks[command.cellId] = normalizedMarks;
       }
       next.authoring.manualMarks[command.contextId] = contextMarks;
       pending = {
@@ -239,6 +272,7 @@ export function applyPuzzleCommand(
           valueIds: [...previousMarks],
         },
         semanticChange: false,
+        changed: !arraysEqual(previousMarks, normalizedMarks),
       };
       break;
     }
@@ -261,6 +295,7 @@ export function applyPuzzleCommand(
           name: previous.name,
         },
         semanticChange: false,
+        changed: previous.name !== command.name,
       };
       break;
     }
@@ -291,6 +326,10 @@ export function applyPuzzleCommand(
           solutionCountCap: previous.solutionCountCap,
         },
         semanticChange: false,
+        changed:
+          previous.refresh !== command.refresh ||
+          previous.display !== command.display ||
+          previous.solutionCountCap !== command.solutionCountCap,
       };
       break;
     }
@@ -312,6 +351,7 @@ export function applyPuzzleCommand(
           contextId: command.context.id,
         },
         semanticChange: false,
+        changed: true,
       };
       break;
     }
@@ -341,6 +381,7 @@ export function applyPuzzleCommand(
           contextId: command.contextId,
         },
         semanticChange: false,
+        changed: true,
       };
       break;
     }
@@ -362,6 +403,7 @@ export function applyPuzzleCommand(
           toIndex: fromIndex,
         },
         semanticChange: false,
+        changed: fromIndex !== toIndex,
       };
       break;
     }
@@ -386,6 +428,7 @@ export function applyPuzzleCommand(
           manualMarks: structuredClone(manualMarks),
         },
         semanticChange: false,
+        changed: true,
       };
       break;
     }
@@ -412,6 +455,7 @@ export function applyPuzzleCommand(
           contextId: command.context.id,
         },
         semanticChange: false,
+        changed: true,
       };
       break;
     }

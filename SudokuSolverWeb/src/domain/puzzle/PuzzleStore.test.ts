@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createStarterPuzzle } from "./createStarterPuzzle";
 import { PuzzleStore } from "./PuzzleStore";
+import type { ExecutablePuzzleCommand } from "./PuzzleStore";
 import type { CandidateContext, PuzzlePackageV1 } from "./types";
 
 function contextIds(document: PuzzlePackageV1): string[] {
@@ -219,6 +220,121 @@ describe("PuzzleStore", () => {
 
     expect(store.getSnapshot()).toBe(snapshot);
     expect(store.getSnapshot().document.givens.r1c1).toBeUndefined();
+  });
+
+  it("preserves redo and the current snapshot when a semantic command is a no-op", () => {
+    const store = new PuzzleStore(createStarterPuzzle(() => "semantic-no-op"));
+    store.execute({ type: "setGiven", cellId: "r1c1", valueId: "5" });
+    store.execute({ type: "setGiven", cellId: "r1c2", valueId: "6" });
+    store.undo();
+    const beforeNoOp = store.getSnapshot();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.execute({ type: "setGiven", cellId: "r1c1", valueId: "5" });
+
+    expect(store.getSnapshot()).toBe(beforeNoOp);
+    expect(store.getSnapshot().document.revision).toBe(4);
+    expect(store.getSnapshot().document.semanticRevision).toBe(4);
+    expect(listener).not.toHaveBeenCalled();
+
+    store.redo();
+
+    expect(store.getSnapshot().document.givens.r1c2).toBe("6");
+    expect(store.getSnapshot().document.revision).toBe(5);
+    expect(store.getSnapshot().document.semanticRevision).toBe(5);
+    expect(listener).toHaveBeenCalledTimes(1);
+  });
+
+  it.each<{ name: string; command: ExecutablePuzzleCommand }>([
+    {
+      name: "existing cell coordinates",
+      command: { type: "moveCell", cellId: "aux-1", x: 10, y: 4 },
+    },
+    {
+      name: "empty manual marks",
+      command: {
+        type: "setManualMarks",
+        contextId: "setter-notes",
+        cellId: "r1c1",
+        valueIds: [],
+      },
+    },
+    {
+      name: "existing context name",
+      command: {
+        type: "renameCandidateContext",
+        contextId: "setter-notes",
+        name: "Setter notes",
+      },
+    },
+    {
+      name: "existing True Candidates configuration",
+      command: {
+        type: "configureTrueCandidates",
+        contextId: "true-candidates",
+        refresh: "automatic",
+        display: "possibility",
+        solutionCountCap: 1000,
+      },
+    },
+    {
+      name: "existing context index",
+      command: {
+        type: "moveCandidateContext",
+        contextId: "setter-notes",
+        toIndex: 0,
+      },
+    },
+  ])(
+    "does not commit or notify for nonsemantic no-op: $name",
+    ({ command }) => {
+      const store = new PuzzleStore(createStarterPuzzle(() => "no-op-test"));
+      const listener = vi.fn();
+      store.subscribe(listener);
+      const before = store.getSnapshot();
+
+      store.execute(command);
+
+      expect(store.getSnapshot()).toBe(before);
+      expect(store.getSnapshot().document.revision).toBe(1);
+      expect(store.getSnapshot().document.semanticRevision).toBe(1);
+      expect(listener).not.toHaveBeenCalled();
+    },
+  );
+
+  it("normalizes manual marks by domain order before testing equality", () => {
+    const store = new PuzzleStore(createStarterPuzzle(() => "mark-no-op"));
+    store.execute({
+      type: "setManualMarks",
+      contextId: "setter-notes",
+      cellId: "r1c1",
+      valueIds: ["7", "2", "7"],
+    });
+    expect(
+      store.getSnapshot().document.authoring.manualMarks["setter-notes"].r1c1,
+    ).toEqual(["2", "7"]);
+    const beforeNoOp = store.getSnapshot();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    store.execute({
+      type: "setManualMarks",
+      contextId: "setter-notes",
+      cellId: "r1c1",
+      valueIds: ["2", "7"],
+    });
+
+    expect(store.getSnapshot()).toBe(beforeNoOp);
+    expect(listener).not.toHaveBeenCalled();
+
+    store.undo();
+
+    expect(
+      store.getSnapshot().document.authoring.manualMarks["setter-notes"].r1c1,
+    ).toBeUndefined();
+    expect(store.getSnapshot().document.revision).toBe(3);
+    expect(listener).toHaveBeenCalledTimes(1);
   });
 
   it("rejects invalid commands without committing or notifying", () => {
