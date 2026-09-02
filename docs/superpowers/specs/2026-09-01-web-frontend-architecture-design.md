@@ -1,7 +1,7 @@
 # Sudoku Solver Web Frontend Architecture
 
-**Status:** Approved design · **Date:** 2026-09-01 · **Branch:** `codex/web-frontend`, based on
-`wasm-prototype`
+**Status:** Approved design · **Date:** 2026-09-01 · **Revised:** 2026-09-02 · **Branch:**
+`codex/web-frontend`, based on `wasm-prototype`
 
 ## Purpose
 
@@ -17,8 +17,9 @@ where that enables a materially better setting, solving, or analysis experience.
 
 ## Product principles
 
-1. **One puzzle, three workspaces.** Set, Playtest, and Analyze operate on one native puzzle
-   document and one shared rendering surface.
+1. **One puzzle, one continuous authoring loop.** Set and Playtest are the only primary
+   workspaces. Validation, candidates, logical deductions, and walkthroughs remain available in
+   context instead of requiring a switch to an Analyze workspace.
 2. **Local first, hostable later.** Initial persistence is browser-local and file-based. Repository,
    identity, and revision boundaries must support hosted storage, publishing, and accounts later.
 3. **The document is more general than today's solver.** The native model can describe arbitrary
@@ -28,8 +29,9 @@ where that enables a materially better setting, solving, or analysis experience.
    with partially supported or visual-only semantics. The UI must never overstate validation.
 5. **Custom constraints are first-class.** Their behavior, appearance, parameters, tests, compiled
    releases, and instances are native parts of the product.
-6. **Mobile is a primary target.** Setting, playtesting, analysis, and custom authoring receive
-   purpose-built phone and tablet interactions rather than a collapsed desktop layout.
+6. **Mobile is a primary target.** Setting, playtesting, solver-assisted authoring, walkthroughs,
+   and custom authoring receive purpose-built phone and tablet interactions rather than a
+   collapsed desktop layout.
 7. **Automation is deterministic.** Human and LLM automation produces replayable scripts and
    atomic authoring plans. The LLM translates explicit intent; it is not a creative puzzle setter.
 8. **Explanations are structured data.** The solver reports facts, proofs, and walkthrough frames;
@@ -61,14 +63,15 @@ Packages remain internal until reuse justifies publishing them.
   artifacts.
 - `solver-client`: typed, versioned communication with the C# WASM solver service.
 - `formats`: native package containers, f-puzzles import, and later SudokuPad SCL export.
-- `app`: Set, Playtest, Analyze, custom-definition, automation, and settings experiences.
+- `app`: Set, Playtest, contextual candidate tools, logical walkthrough, custom-definition,
+  automation, and settings experiences.
 
 React owns presentation and subscriptions, not puzzle semantics. Domain operations are framework-
 independent and testable without rendering components.
 
 ## State boundaries
 
-Four kinds of state remain separate:
+Five kinds of state remain separate:
 
 ### Puzzle document
 
@@ -81,6 +84,14 @@ asset references.
 Progress belonging to a particular attempt: entered values, corner/centre marks, colors, timer,
 checkpoints, completion, and session-specific settings. Multiple sessions may reference one puzzle
 without mutating its definition.
+
+### Authoring workspace state
+
+Portable setter-facing work state: named candidate contexts, manual setter marks, per-context
+configuration, and revision-linked walkthrough history. It is stored with the editable native
+package but is not automatically published to players or exported as puzzle content. Generated
+candidate boards remain disposable and can be recomputed from their configuration and base
+revision.
 
 ### Editor state
 
@@ -171,6 +182,8 @@ does not obscure the target.
 - Ordered layers with lock, visibility, grouping, and reordering
 - Persistent foundational elements such as givens and regions
 - Transactional undo/redo and named checkpoints
+- Ambient validity, coverage, uniqueness, candidate, and logical-solver feedback governed by the
+  active candidate context
 
 ### Playtest
 
@@ -178,14 +191,60 @@ does not obscure the target.
 - Multi-cell selection, keypad, keyboard shortcuts, undo/redo, checking, rules, and timer
 - Responsive touch controls and complete auxiliary-cell input
 - Separate solve sessions, restartable from checkpoints, that never mutate the puzzle definition
+- The same candidate-context switcher as Set, with context-specific input or solver controls
 
-### Analyze
+### Contextual solver assistance
 
-- Validation, true candidates, solution count, solve estimate, next step, and full logical path
-- Solver coverage displayed before results
-- Cancellable background jobs
-- Structured deduction list, proof details, and frame-by-frame walkthroughs on the shared surface
-- Progressive disclosure so advanced diagnostics do not overwhelm ordinary setting
+- Validation, solver coverage, and uniqueness remain quiet puzzle-level status in Set and Playtest.
+- Candidate computation and logical deduction controls appear only when their corresponding
+  candidate context is active.
+- Cancellable background jobs report live, calculating, stale, cancelled, and error states without
+  replacing the editing surface.
+- Logical Walkthrough is an expanded focus view opened from the Logical Solver context. Returning
+  to Set or Playtest restores the same context and deduction state.
+- Advanced diagnostics use progressive disclosure rather than a separate Analyze destination.
+
+## Candidate contexts
+
+The UI calls these **layers**, but they are not composited scene layers. A candidate context is an
+exclusive working focus that owns the candidate marks on the grid and the controls surrounding it.
+Exactly one candidate context is active on a surface. Inactive contexts preserve their state but
+contribute no marks, highlights, actions, or panels.
+
+The initial package creates three contexts:
+
+- **Setter Notes:** setter-controlled candidate marks with manual digit, corner, centre, color, and
+  erase controls. It exposes no true-candidate or logical-step actions.
+- **True Candidates:** a read-only solver projection. Its split layer control configures refresh as
+  `Automatic` or `On request` and display as `Possibility`, `Solution frequency`, or
+  `Logic comparison`. Solution-frequency mode also carries a solver-supported count cap.
+- **Logical Solver:** a stateful logical candidate board with its own enabled-technique policy,
+  available deductions, applied-step history, reset, Next Step, and Walkthrough actions.
+
+Setters may add, name, duplicate, reorder, or remove contexts. Each context declares a behavior
+kind, configuration schema, candidate source, invalidation policy, contextual actions, and render
+adapter. This makes future candidate workflows extensible without teaching the application shell
+about every context type.
+
+The active context determines both grid rendering and nearby UI. Manual notes, true candidates,
+and logical candidates are not shown simultaneously. Switching contexts never merges their marks.
+Puzzle-level status may remain visible across contexts, but inactive-context status is limited to a
+compact state indicator such as live, stale, calculating, or error.
+
+Only the active context starts context-specific solver work. An active Automatic True Candidates
+context debounces after semantic puzzle edits; an inactive one becomes stale and recomputes when
+selected. On-request contexts remain stale until explicitly refreshed. Cosmetic-only edits do not
+invalidate either mode. A Logical Solver context follows the puzzle revision by default: a semantic
+edit invalidates its candidate board and, when active or next selected, starts a fresh logical board
+for the new revision. The previous revision's walkthrough remains available in history. Solver
+responses carry their base revision and cannot update a newer context.
+
+## Approved interaction references
+
+- [Desktop True Candidates](../designs/2026-09-02-web-frontend/desktop-true-candidates.png)
+- [Desktop Logical Walkthrough](../designs/2026-09-02-web-frontend/desktop-logical-walkthrough.png)
+- [Mobile True Candidates](../designs/2026-09-02-web-frontend/mobile-true-candidates.png)
+- [Mobile Setter Notes](../designs/2026-09-02-web-frontend/mobile-setter-notes.png)
 
 ## Mobile interaction model
 
@@ -198,8 +257,9 @@ depends on hover, right-click, or precise mouse placement.
 - Tool handles and hit targets remain usable in screen space at every zoom level.
 - Interrupted gestures cancel or commit atomically.
 - The canvas occupies nearly the full phone screen.
-- Primary modes and keypad live in a thumb-reachable bottom dock.
-- Element library, inspector, layers, rules, and analysis use draggable bottom sheets.
+- Set, Playtest, the active candidate context, and keypad controls remain thumb reachable.
+- Element library, inspector, scene layers, candidate contexts, rules, and solver details use
+  draggable bottom sheets. The Layers action opens a tool, not a third primary workspace.
 - Complex editors may become temporarily full-screen.
 - Portrait and landscape preserve document and selection state.
 - Safe areas and software keyboards cannot obscure active controls.
@@ -314,6 +374,12 @@ Initial operations include validation, solve, true candidates, count, estimate, 
 and complete logical path. Jobs carry protocol version, request ID, document/session revisions,
 semantic hash, operation options, and cancellation identity. Responses repeat relevant revisions so
 stale results are discarded.
+
+True-candidate requests explicitly carry refresh-independent display semantics: possibility-only,
+capped per-candidate solution frequency, or comparison with the logical candidate board. The
+frontend never has to infer these modes from legacy f-puzzles flags. Logical operations address a
+candidate-context ID and base revision so applied deductions remain isolated from true candidates
+and manual marks.
 
 Unsupported features, invalid definitions, contradictions, limits, progress, and cancellation are
 typed outcomes rather than prose-only errors. Expensive jobs are cancellable and never block the UI
@@ -505,8 +571,10 @@ semantics SudokuPad can enforce.
 
 ### Application
 
-- Desktop and mobile browser flows for setting, gestures, playtesting, analysis, persistence,
-  recovery, and conversion
+- Desktop and mobile browser flows for setting, gestures, playtesting, context switching,
+  true-candidate configuration, logical walkthroughs, persistence, recovery, and conversion
+- Context isolation tests prove that only the active context supplies marks and controls, switching
+  preserves each context, and stale solver results cannot cross revisions or context IDs
 - Visual regression across representative puzzles, themes, viewports, zoom levels, and display
   densities
 - Accessibility tests for keyboard navigation, focus, labels, and non-color-only state
@@ -527,7 +595,8 @@ semantics SudokuPad can enforce.
 
 Create the TypeScript/React workspace, native schema, commands, IndexedDB persistence, shared SVG
 surface, a 9x9 board plus auxiliary cell, native C# reader/protocol, basic Set and Playtest flows,
-solve/validate/count/true candidates, one structured deduction walkthrough, and desktop/phone shells.
+solve/validate/count, the three default candidate contexts, configurable true candidates, one
+structured deduction walkthrough, and desktop/phone shells.
 
 ### 2. Useful setting beta
 
@@ -541,11 +610,11 @@ Implement definition packages, typed semantics and arithmetic, binary/tuple/auto
 compilation, custom scene rendering, guided and programmable editors, validation, counterexamples,
 compiled releases, and matching C# representations.
 
-### 4. Rich logical solving and analysis
+### 4. Rich logical solving and walkthroughs
 
 Continue the stream begun in milestone 1: complete find/apply separation, technique catalog,
-structured proof/walkthrough coverage, Analyze workspace, migration of existing logical techniques,
-variant-human-logic improvements, and required performance work.
+structured proof/walkthrough coverage, contextual solver tooling, migration of existing logical
+techniques, variant-human-logic improvements, and required performance work.
 
 ### 5. Deterministic authoring automation
 
