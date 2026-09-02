@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:wasm": "npm run wasm:build && vite",
     "lint": "eslint .",
     "typecheck": "tsc -b",
     "test": "vitest run",
@@ -12,6 +13,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "e2e": "playwright test",
+    "wasm:build": "node ./scripts/build-wasm.mjs",
     "verify": "npm run typecheck && npm run test && npm run build"
   },
   "devDependencies": {

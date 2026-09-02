@@ -17,7 +17,21 @@ jobs:
           node-version: 22
           cache: npm
           cache-dependency-path: SudokuSolverWeb/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Cache NuGet and .NET workload downloads
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.nuget/packages
+            ~/.dotnet
+          key: ${{ runner.os }}-dotnet-wasm-${{ hashFiles('global.json', '**/*.csproj') }}
+          restore-keys: |
+            ${{ runner.os }}-dotnet-wasm-
+      - run: dotnet workload install wasm-tools
       - run: npm ci
+      - run: npm run wasm:build
       - run: npm run verify
       - run: npx playwright install --with-deps chromium
       - run: npm run e2e -- --project=desktop-chromium

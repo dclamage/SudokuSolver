@@ -286,6 +286,8 @@ node_modules/
 # Web frontend build and browser-test output
 SudokuSolverWeb/dist/
 SudokuSolverWeb/playwright-report/
+SudokuSolverWeb/.wasm-build/
+SudokuSolverWeb/public/solver/
 
 # Visual Studio 6 build log
 *.plg
