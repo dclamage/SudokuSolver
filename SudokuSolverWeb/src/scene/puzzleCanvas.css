@@ -1,8 +1,8 @@
 .puzzle-canvas {
   display: block;
-  inline-size: calc(var(--puzzle-scene-width) * 44px);
-  block-size: calc(var(--puzzle-scene-height) * 44px);
-  max-inline-size: none;
+  inline-size: min(100%, calc(var(--puzzle-scene-width) * 44px));
+  block-size: auto;
+  max-inline-size: 100%;
   overflow: visible;
   touch-action: manipulation;
   background: #fff;
@@ -16,7 +16,7 @@
 .puzzle-cell__surface {
   fill: #fff;
   stroke: #aeb6bd;
-  stroke-width: 0.02;
+  stroke-width: 1px;
   vector-effect: non-scaling-stroke;
 }
 
@@ -57,18 +57,18 @@
 .puzzle-scene-path--grid {
   stroke: #12191f;
   stroke-linecap: square;
-  stroke-width: 2;
+  stroke-width: 2px;
 }
 
 .puzzle-scene-path--selection {
   fill: rgb(0 174 239 / 12%);
   stroke: #00aeef;
-  stroke-width: 2;
+  stroke-width: 2px;
 }
 
 .puzzle-scene-path--annotation {
   stroke: #00aeef;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 3;
+  stroke-width: 3px;
 }

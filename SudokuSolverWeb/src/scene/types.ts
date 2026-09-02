@@ -12,6 +12,15 @@ export interface SceneTextNode {
   y: number;
   text: string;
   role: "given" | "value" | "candidate";
+  clip?: SceneClipRect;
+}
+
+export interface SceneClipRect {
+  id: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
 }
 
 export interface SceneCellNode {
@@ -20,6 +29,8 @@ export interface SceneCellNode {
   cellId: CellId;
   path: string;
   label: string;
+  description: string;
+  selected: boolean;
   solverParticipation: SolverParticipation;
   content: readonly SceneTextNode[];
 }
@@ -54,4 +65,5 @@ export interface PuzzleScene {
   width: number;
   height: number;
   nodes: readonly SceneNode[];
+  clips: readonly SceneClipRect[];
 }
