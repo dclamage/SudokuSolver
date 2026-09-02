@@ -111,6 +111,29 @@ public class NativePuzzleProjectionTests
     }
 
     /// <summary>
+    /// Matches JavaScript JSON string escaping for valid Unicode semantic text.
+    /// </summary>
+    [TestMethod]
+    public void SemanticHashMatchesSharedUnicodeGolden()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["extensions"]!["example:unicode"] = new JsonObject
+        {
+            ["impact"] = "semantic",
+            ["data"] = new JsonObject
+            {
+                ["emoji"] = "😀",
+                ["lineSeparator"] = "before" + char.ConvertFromUtf32(0x2028) + "after",
+            },
+        };
+        using JsonDocument goldens = JsonDocument.Parse(File.ReadAllText(FixturePath("semantic-hashes.json")));
+
+        Assert.AreEqual(
+            goldens.RootElement.GetProperty("classic-with-unicode-semantic-extension").GetString(),
+            NativeSemanticHasher.Compute(NativePuzzlePackage.Parse(root.ToJsonString())));
+    }
+
+    /// <summary>
     /// Excludes presentation geometry and metadata from document-semantic identity.
     /// </summary>
     [TestMethod]
@@ -192,6 +215,171 @@ public class NativePuzzleProjectionTests
 
         Assert.IsTrue(package.ExtensionData.ContainsKey("futureSection"));
         Assert.AreEqual(7, package.Extensions["example:semantic"].Data.GetProperty("weight").GetInt32());
+    }
+
+    /// <summary>
+    /// Rejects a missing required cell-input boolean rather than silently inventing false.
+    /// </summary>
+    [TestMethod]
+    public void ParseRejectsMissingRequiredBoolean()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["cells"]!["r1c1"]!["input"]!.AsObject().Remove("acceptsCandidates");
+
+        JsonException exception = Assert.ThrowsExactly<JsonException>(
+            () => NativePuzzlePackage.Parse(root.ToJsonString()));
+
+        StringAssert.Contains(exception.Message, "acceptsCandidates");
+    }
+
+    /// <summary>
+    /// Rejects cell-to-domain references that cannot be resolved anywhere in the package.
+    /// </summary>
+    [TestMethod]
+    public void ParseRejectsCellWithMissingDomain()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["cells"]!["aux-1"]!["domainId"] = "missing";
+
+        ArgumentException exception = Assert.ThrowsExactly<ArgumentException>(
+            () => NativePuzzlePackage.Parse(root.ToJsonString()));
+
+        StringAssert.Contains(exception.Message, "cell aux-1 references missing domain missing");
+    }
+
+    /// <summary>
+    /// Rejects an invalid given on an unprojected cell rather than silently skipping it.
+    /// </summary>
+    [TestMethod]
+    public void ParseRejectsInvalidUnprojectedGiven()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["givens"]!["aux-1"] = "missing";
+
+        ArgumentException exception = Assert.ThrowsExactly<ArgumentException>(
+            () => NativePuzzlePackage.Parse(root.ToJsonString()));
+
+        StringAssert.Contains(exception.Message, "given aux-1 references missing value missing");
+    }
+
+    /// <summary>
+    /// Revalidates a mutable package before projection so post-parse invalid data cannot be skipped.
+    /// </summary>
+    [TestMethod]
+    public void ProjectRejectsInvalidUnprojectedGivenAddedAfterParse()
+    {
+        NativePuzzlePackage package = ReadPackage("classic-with-auxiliary.json");
+        package.Givens["aux-1"] = "missing";
+
+        Assert.ThrowsExactly<ArgumentException>(
+            () => NativePuzzleProjector.Project(package, "main-latin-square"));
+    }
+
+    /// <summary>
+    /// Revalidates a mutable package before hashing so invalid references cannot gain an identity.
+    /// </summary>
+    [TestMethod]
+    public void SemanticHasherRejectsInvalidPackageMutation()
+    {
+        NativePuzzlePackage package = ReadPackage("classic-with-auxiliary.json");
+        package.Givens["missing"] = "1";
+
+        Assert.ThrowsExactly<ArgumentException>(() => NativeSemanticHasher.Compute(package));
+    }
+
+    /// <summary>
+    /// Reports the representation status of every semantic entity kind used by a package.
+    /// </summary>
+    [TestMethod]
+    public void CapabilityReportCoversEverySemanticEntityKind()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["adjacency"]!["adjacency-1"] = JsonNode.Parse(
+            "{\"id\":\"adjacency-1\",\"kind\":\"orthogonal\",\"fromCellId\":\"r1c1\",\"toCellId\":\"r1c2\"}");
+        root["points"]!["point-1"] = JsonNode.Parse("{\"id\":\"point-1\",\"x\":0,\"y\":0}");
+        root["points"]!["point-2"] = JsonNode.Parse("{\"id\":\"point-2\",\"x\":1,\"y\":0}");
+        root["edges"]!["edge-1"] = JsonNode.Parse(
+            "{\"id\":\"edge-1\",\"fromPointId\":\"point-1\",\"toPointId\":\"point-2\"}");
+        root["paths"]!["path-1"] = JsonNode.Parse(
+            "{\"id\":\"path-1\",\"pointIds\":[\"point-1\",\"point-2\"],\"closed\":false}");
+        root["constraints"] = JsonNode.Parse("""
+            [{"id":"custom-1","typeId":"example.custom","definitionReleaseId":"release-1","bindings":{"edge":[{"kind":"edge","id":"edge-1"}],"path":[{"kind":"path","id":"path-1"}]},"parameters":{}}]
+            """);
+        root["release"] = JsonNode.Parse(
+            "{\"releases\":{\"release-1\":{\"artifactHash\":\"sha256:artifact\"}}}");
+        root["extensions"]!["example:semantic"] = JsonNode.Parse(
+            "{\"impact\":\"semantic\",\"data\":{\"enabled\":true}}");
+
+        NativeProjectionResult result = NativePuzzleProjector.Project(
+            NativePuzzlePackage.Parse(root.ToJsonString()),
+            "main-latin-square");
+
+        Assert.AreEqual(EntityCapability.FullyVerified, result.Capabilities.Entities["digits-1-9"].Status);
+        Assert.AreEqual(EntityCapability.FullyVerified, result.Capabilities.Entities["main"].Status);
+        Assert.AreEqual(EntityCapability.FullyVerified, result.Capabilities.Entities["row-1"].Status);
+        Assert.AreEqual(EntityCapability.FullyVerified, result.Capabilities.Entities["main-latin-square"].Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["adjacency-1"].Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["edge-1"].Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["path-1"].Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["example:semantic"].Status);
+        Assert.AreEqual(EntityCapability.PartiallyVerified, result.Capabilities.Entities["release-1"].Status);
+        Assert.IsFalse(string.IsNullOrWhiteSpace(result.Capabilities.Entities["release-1"].Reason));
+    }
+
+    /// <summary>
+    /// Identifies a referenced definition as invalid when no release payload accompanies it.
+    /// </summary>
+    [TestMethod]
+    public void CapabilityReportMarksMissingReleaseDefinitionInvalid()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["constraints"] = JsonNode.Parse("""
+            [{"id":"custom-1","typeId":"example.custom","definitionReleaseId":"release-1","bindings":{},"parameters":{}}]
+            """);
+        NativeProjectionResult result = NativePuzzleProjector.Project(
+            NativePuzzlePackage.Parse(root.ToJsonString()),
+            "main-latin-square");
+
+        Assert.AreEqual(EntityCapability.InvalidDefinition, result.Capabilities.Entities["custom-1"].Status);
+        Assert.AreEqual(EntityCapability.InvalidDefinition, result.Capabilities.Entities["release-1"].Status);
+        Assert.AreEqual(
+            "Constraint custom-1 references definition release release-1, but no release payload is present.",
+            result.Capabilities.Entities["custom-1"].Reason);
+    }
+
+    /// <summary>
+    /// Identifies a definition as invalid when the release payload does not contain its stable ID.
+    /// </summary>
+    [TestMethod]
+    public void CapabilityReportMarksUnknownReleaseDefinitionInvalid()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["constraints"] = JsonNode.Parse("""
+            [{"id":"custom-1","typeId":"example.custom","definitionReleaseId":"release-1","bindings":{},"parameters":{}}]
+            """);
+        root["release"] = JsonNode.Parse("{\"releases\":{}}");
+        NativeProjectionResult result = NativePuzzleProjector.Project(
+            NativePuzzlePackage.Parse(root.ToJsonString()),
+            "main-latin-square");
+
+        Assert.AreEqual(EntityCapability.InvalidDefinition, result.Capabilities.Entities["custom-1"].Status);
+        Assert.AreEqual(EntityCapability.InvalidDefinition, result.Capabilities.Entities["release-1"].Status);
+        Assert.AreEqual(
+            "Constraint custom-1 references missing definition release release-1.",
+            result.Capabilities.Entities["custom-1"].Reason);
+    }
+
+    /// <summary>
+    /// Preserves typed killer arithmetic through serialization and a second native parse.
+    /// </summary>
+    [TestMethod]
+    public void KillerSumSurvivesSerializeAndReparseRoundTrip()
+    {
+        NativePuzzlePackage original = ReadPackage("four-by-four-killer.json");
+
+        NativePuzzlePackage reparsed = NativePuzzlePackage.Parse(original.ToJson());
+
+        Assert.AreEqual(3, reparsed.Constraints.Single().Parameters["sum"].GetInt32());
     }
 
     private static NativePuzzlePackage ReadPackage(string fileName)

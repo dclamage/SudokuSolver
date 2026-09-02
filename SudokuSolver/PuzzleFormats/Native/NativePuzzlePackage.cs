@@ -17,9 +17,11 @@ public sealed class NativePuzzlePackage
     public required string Id { get; init; }
 
     /// <summary>Gets the document revision.</summary>
+    [JsonRequired]
     public long Revision { get; init; }
 
     /// <summary>Gets the revision of portable puzzle semantics.</summary>
+    [JsonRequired]
     public long SemanticRevision { get; init; }
 
     /// <summary>Gets display metadata that does not affect solver semantics.</summary>
@@ -102,8 +104,17 @@ public sealed class NativePuzzlePackage
             throw new ArgumentException($"Unsupported native puzzle schema version {package.SchemaVersion}.", nameof(json));
         }
 
+        NativePuzzleValidator.Validate(package);
         package.CloneOpenPayloads();
         return package;
+    }
+
+    /// <summary>Serializes the native package with the shared camel-case JSON contract.</summary>
+    /// <returns>The serialized native package JSON.</returns>
+    public string ToJson()
+    {
+        NativePuzzleValidator.Validate(this);
+        return JsonSerializer.Serialize(this, NativePuzzleJsonContext.Default.NativePuzzlePackage);
     }
 
     private void CloneOpenPayloads()
@@ -306,8 +317,10 @@ public sealed class NativeCellShape
 public sealed class NativeShapePoint
 {
     /// <summary>Gets the X coordinate.</summary>
+    [JsonRequired]
     public double X { get; init; }
     /// <summary>Gets the Y coordinate.</summary>
+    [JsonRequired]
     public double Y { get; init; }
     /// <summary>Gets unknown shape-point members.</summary>
     [JsonExtensionData]
@@ -318,8 +331,10 @@ public sealed class NativeShapePoint
 public sealed class NativeCellInput
 {
     /// <summary>Gets whether the cell accepts a value.</summary>
+    [JsonRequired]
     public bool AcceptsValue { get; init; }
     /// <summary>Gets whether the cell accepts candidate marks.</summary>
+    [JsonRequired]
     public bool AcceptsCandidates { get; init; }
     /// <summary>Gets unknown input members.</summary>
     [JsonExtensionData]
@@ -378,8 +393,10 @@ public sealed class NativePoint
     /// <summary>Gets the stable point identifier.</summary>
     public required string Id { get; init; }
     /// <summary>Gets the X coordinate.</summary>
+    [JsonRequired]
     public double X { get; init; }
     /// <summary>Gets the Y coordinate.</summary>
+    [JsonRequired]
     public double Y { get; init; }
     /// <summary>Gets unknown point members.</summary>
     [JsonExtensionData]
@@ -408,6 +425,7 @@ public sealed class NativePath
     /// <summary>Gets ordered stable point identifiers.</summary>
     public required List<string> PointIds { get; init; }
     /// <summary>Gets whether the path is closed.</summary>
+    [JsonRequired]
     public bool Closed { get; init; }
     /// <summary>Gets unknown path members.</summary>
     [JsonExtensionData]
@@ -520,6 +538,7 @@ public sealed class NativeExtension
     /// <summary>Gets whether the extension is semantic or cosmetic.</summary>
     public required string Impact { get; init; }
     /// <summary>Gets the extension-owned JSON payload.</summary>
+    [JsonRequired]
     public JsonElement Data { get; set; }
     /// <summary>Gets unknown extension members.</summary>
     [JsonExtensionData]

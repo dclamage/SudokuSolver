@@ -1,6 +1,6 @@
+using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 
@@ -20,18 +20,12 @@ public static class NativeSemanticHasher
     public static string Compute(NativePuzzlePackage package)
     {
         ArgumentNullException.ThrowIfNull(package);
+        NativePuzzleValidator.Validate(package);
         JsonObject semanticView = CreateSemanticView(package);
         using JsonDocument document = JsonDocument.Parse(semanticView.ToJsonString());
-        using MemoryStream stream = new();
-        using (Utf8JsonWriter writer = new(stream, new JsonWriterOptions
-        {
-            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
-            Indented = false,
-        }))
-        {
-            WriteCanonical(writer, document.RootElement);
-        }
-        byte[] digest = SHA256.HashData(stream.ToArray());
+        StringBuilder canonical = new();
+        AppendCanonical(canonical, document.RootElement);
+        byte[] digest = SHA256.HashData(Encoding.UTF8.GetBytes(canonical.ToString()));
         return $"sha256:{Convert.ToHexString(digest).ToLowerInvariant()}";
     }
 
@@ -255,31 +249,44 @@ public static class NativeSemanticHasher
     private static JsonNode? ParseElement(JsonElement element)
         => JsonNode.Parse(element.GetRawText());
 
-    private static void WriteCanonical(Utf8JsonWriter writer, JsonElement element)
+    private static void AppendCanonical(StringBuilder builder, JsonElement element)
     {
         switch (element.ValueKind)
         {
             case JsonValueKind.Object:
-                writer.WriteStartObject();
+                builder.Append('{');
+                bool firstProperty = true;
                 foreach (JsonProperty property in element.EnumerateObject().OrderBy(
                     static property => property.Name,
                     StringComparer.Ordinal))
                 {
-                    writer.WritePropertyName(property.Name);
-                    WriteCanonical(writer, property.Value);
+                    if (!firstProperty)
+                    {
+                        builder.Append(',');
+                    }
+                    firstProperty = false;
+                    AppendJsonString(builder, property.Name);
+                    builder.Append(':');
+                    AppendCanonical(builder, property.Value);
                 }
-                writer.WriteEndObject();
+                builder.Append('}');
                 break;
             case JsonValueKind.Array:
-                writer.WriteStartArray();
+                builder.Append('[');
+                bool firstItem = true;
                 foreach (JsonElement item in element.EnumerateArray())
                 {
-                    WriteCanonical(writer, item);
+                    if (!firstItem)
+                    {
+                        builder.Append(',');
+                    }
+                    firstItem = false;
+                    AppendCanonical(builder, item);
                 }
-                writer.WriteEndArray();
+                builder.Append(']');
                 break;
             case JsonValueKind.String:
-                writer.WriteStringValue(element.GetString());
+                AppendJsonString(builder, element.GetString() ?? string.Empty);
                 break;
             case JsonValueKind.Number:
                 if (!element.TryGetInt64(out long number)
@@ -289,19 +296,75 @@ public static class NativeSemanticHasher
                     throw new InvalidOperationException(
                         "Canonical semantic JSON numbers must be finite safe integers.");
                 }
-                writer.WriteNumberValue(number);
+                builder.Append(number.ToString(CultureInfo.InvariantCulture));
                 break;
             case JsonValueKind.True:
-                writer.WriteBooleanValue(true);
+                builder.Append("true");
                 break;
             case JsonValueKind.False:
-                writer.WriteBooleanValue(false);
+                builder.Append("false");
                 break;
             case JsonValueKind.Null:
-                writer.WriteNullValue();
+                builder.Append("null");
                 break;
             default:
                 throw new InvalidOperationException($"Unsupported semantic JSON kind {element.ValueKind}.");
         }
+    }
+
+    private static void AppendJsonString(StringBuilder builder, string value)
+    {
+        builder.Append('"');
+        for (int index = 0; index < value.Length; index++)
+        {
+            char character = value[index];
+            switch (character)
+            {
+                case '"':
+                    builder.Append("\\\"");
+                    break;
+                case '\\':
+                    builder.Append("\\\\");
+                    break;
+                case '\b':
+                    builder.Append("\\b");
+                    break;
+                case '\f':
+                    builder.Append("\\f");
+                    break;
+                case '\n':
+                    builder.Append("\\n");
+                    break;
+                case '\r':
+                    builder.Append("\\r");
+                    break;
+                case '\t':
+                    builder.Append("\\t");
+                    break;
+                default:
+                    if (character < ' ' || IsUnpairedSurrogate(value, index))
+                    {
+                        builder.Append("\\u");
+                        builder.Append(((int)character).ToString("x4", CultureInfo.InvariantCulture));
+                    }
+                    else
+                    {
+                        builder.Append(character);
+                    }
+                    break;
+            }
+        }
+        builder.Append('"');
+    }
+
+    private static bool IsUnpairedSurrogate(string value, int index)
+    {
+        char character = value[index];
+        if (char.IsHighSurrogate(character))
+        {
+            return index + 1 >= value.Length || !char.IsLowSurrogate(value[index + 1]);
+        }
+        return char.IsLowSurrogate(character)
+            && (index == 0 || !char.IsHighSurrogate(value[index - 1]));
     }
 }

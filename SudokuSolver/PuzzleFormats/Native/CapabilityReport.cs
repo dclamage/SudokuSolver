@@ -5,6 +5,9 @@ namespace SudokuSolver.PuzzleFormats.Native;
 /// <summary>Describes how completely an entity is supported by the active solver projection.</summary>
 public enum EntityCapability
 {
+    /// <summary>The entity definition is missing or invalid and cannot be represented safely.</summary>
+    InvalidDefinition,
+
     /// <summary>The projected solver enforces the entity's supported semantics.</summary>
     FullyVerified,
 
@@ -16,9 +19,13 @@ public enum EntityCapability
 }
 
 /// <summary>Reports one native entity's solver capability.</summary>
+/// <param name="EntityKind">The native entity kind.</param>
 /// <param name="Status">The level of solver support.</param>
 /// <param name="Reason">A precise explanation when support is not complete.</param>
-public sealed record EntityCapabilityResult(EntityCapability Status, string? Reason = null);
+public sealed record EntityCapabilityResult(
+    string EntityKind,
+    EntityCapability Status,
+    string? Reason = null);
 
 /// <summary>Contains capability results keyed by stable native entity identifier.</summary>
 public sealed class CapabilityReport

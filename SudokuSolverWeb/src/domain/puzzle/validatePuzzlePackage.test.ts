@@ -335,6 +335,23 @@ describe("computeSemanticHash", () => {
     ).resolves.toBe(semanticHashes["four-by-four-killer"]);
   });
 
+  it("matches the shared Unicode semantic-string golden", async () => {
+    const unicode = validatePuzzlePackage(fixture);
+    unicode.extensions = {
+      "example:unicode": {
+        impact: "semantic",
+        data: {
+          emoji: "😀",
+          lineSeparator: "before after",
+        },
+      },
+    };
+
+    await expect(computeSemanticHash(unicode)).resolves.toBe(
+      semanticHashes["classic-with-unicode-semantic-extension"],
+    );
+  });
+
   it("excludes auxiliary-cell geometry", async () => {
     const original = validatePuzzlePackage(fixture);
     const moved = structuredClone(original);
