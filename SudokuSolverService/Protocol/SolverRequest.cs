@@ -4,6 +4,31 @@ using System.Text.Json.Serialization;
 
 namespace SudokuSolverService.Protocol;
 
+/// <summary>Contains version and correlation fields common to native request envelopes.</summary>
+public sealed class SolverRequestHeader
+{
+    /// <summary>Gets the native solver protocol version.</summary>
+    public required int ProtocolVersion { get; init; }
+
+    /// <summary>Gets the request correlation identifier.</summary>
+    public required string RequestId { get; init; }
+
+    /// <summary>Gets the originating document revision.</summary>
+    public required long DocumentRevision { get; init; }
+
+    /// <summary>Gets the originating semantic revision.</summary>
+    public required long SemanticRevision { get; init; }
+
+    /// <summary>Gets the client-computed semantic hash, which remains unverified at this boundary.</summary>
+    public required string SemanticHash { get; init; }
+
+    /// <summary>Gets the owning candidate or playtest context identifier.</summary>
+    public required string ContextId { get; init; }
+
+    /// <summary>Gets the requested operation name.</summary>
+    public required string Operation { get; init; }
+}
+
 /// <summary>Contains one revision-correlated native solver operation request.</summary>
 public sealed class SolverRequest
 {

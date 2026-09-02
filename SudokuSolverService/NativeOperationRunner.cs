@@ -1,6 +1,6 @@
+using SudokuSolver;
 using SudokuSolver.PuzzleFormats.Native;
 using SudokuSolverService.Protocol;
-using SudokuSolver;
 
 namespace SudokuSolverService;
 
@@ -9,12 +9,28 @@ public sealed class NativeOperationRunner
 {
     private const int SupportedProtocolVersion = 1;
     private readonly bool _singleThreaded;
+    private readonly Func<Solver, CancellationToken, bool> _findSolution;
 
     /// <summary>Initializes a native operation runner.</summary>
     /// <param name="singleThreaded">Whether solver algorithms must avoid internal parallelism.</param>
     public NativeOperationRunner(bool singleThreaded)
     {
         _singleThreaded = singleThreaded;
+        _findSolution = (solver, cancellationToken) => solver.FindSolution(
+            multiThread: !singleThreaded,
+            isRandom: false,
+            cancellationToken: cancellationToken);
+    }
+
+    /// <summary>Initializes a runner with an injectable solve boundary for deterministic cancellation tests.</summary>
+    /// <param name="singleThreaded">Whether solver algorithms must avoid internal parallelism.</param>
+    /// <param name="findSolution">The solver search function.</param>
+    internal NativeOperationRunner(
+        bool singleThreaded,
+        Func<Solver, CancellationToken, bool> findSolution)
+    {
+        _singleThreaded = singleThreaded;
+        _findSolution = findSolution ?? throw new ArgumentNullException(nameof(findSolution));
     }
 
     /// <summary>Executes one native operation and emits progress followed by one terminal response.</summary>
@@ -63,18 +79,27 @@ public sealed class NativeOperationRunner
         {
             string projectionId = GetProjectionId(request);
             EnsureSupportedProjection(request.Puzzle, projectionId);
-            NativeProjectionResult projection = NativePuzzleProjector.Project(request.Puzzle, projectionId);
-
             switch (request.Operation)
             {
                 case "validate":
-                    sendResponse(Result(request, verifiedHash, capability: MapCapability(projection, projectionId)));
+                    NativeProjectionValidationResult validation = NativePuzzleProjector.ValidateProjection(
+                        request.Puzzle,
+                        projectionId);
+                    sendResponse(Result(
+                        request,
+                        verifiedHash,
+                        capability: MapCapability(
+                            validation.Capabilities,
+                            projectionId,
+                            validation.Contradiction)));
                     break;
                 case "solve":
-                    RunSolve(request, verifiedHash, projection, sendResponse, cancellationToken);
+                    NativeProjectionResult solveProjection = NativePuzzleProjector.Project(request.Puzzle, projectionId);
+                    RunSolve(request, verifiedHash, solveProjection, sendResponse, cancellationToken);
                     break;
                 case "count":
-                    RunCount(request, verifiedHash, projection, sendResponse, cancellationToken);
+                    NativeProjectionResult countProjection = NativePuzzleProjector.Project(request.Puzzle, projectionId);
+                    RunCount(request, verifiedHash, countProjection, sendResponse, cancellationToken);
                     break;
                 default:
                     sendResponse(Error(
@@ -114,10 +139,9 @@ public sealed class NativeOperationRunner
         Action<SolverResponse> sendResponse,
         CancellationToken cancellationToken)
     {
-        if (!projection.Solver.FindSolution(
-            multiThread: !_singleThreaded,
-            isRandom: false,
-            cancellationToken: cancellationToken))
+        bool foundSolution = _findSolution(projection.Solver, cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!foundSolution)
         {
             sendResponse(Error(request, verifiedHash, "contradiction", "No solutions found."));
             return;
@@ -227,11 +251,12 @@ public sealed class NativeOperationRunner
     }
 
     private static CapabilityResultDto MapCapability(
-        NativeProjectionResult projection,
-        string projectionId)
+        CapabilityReport capabilities,
+        string projectionId,
+        bool contradiction)
     {
         Dictionary<string, CapabilityEntityDto> entities = new(StringComparer.Ordinal);
-        foreach ((string key, EntityCapabilityResult entity) in projection.Capabilities.Entities)
+        foreach ((string key, EntityCapabilityResult entity) in capabilities.Entities)
         {
             entities[key] = new CapabilityEntityDto
             {
@@ -251,7 +276,7 @@ public sealed class NativeOperationRunner
         return new CapabilityResultDto
         {
             ProjectionId = projectionId,
-            Contradiction = false,
+            Contradiction = contradiction,
             Entities = entities,
         };
     }

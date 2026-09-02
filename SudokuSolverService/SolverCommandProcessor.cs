@@ -1,11 +1,22 @@
+using SudokuSolver;
+using SudokuSolverService.Protocol;
 using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
-using SudokuSolver;
-using SudokuSolverService.Protocol;
 
 namespace SudokuSolverService;
 
+/// <summary>Controls how a legacy host handles request kinds it historically did not support.</summary>
+public enum LegacyInvalidRequestBehavior
+{
+    /// <summary>Emit a legacy <c>invalid</c> response.</summary>
+    RespondWithInvalid,
+
+    /// <summary>Ignore the unsupported request without emitting a response.</summary>
+    Ignore,
+}
+
+/// <summary>Compares byte arrays by their contents for legacy cache keys.</summary>
 internal sealed class ByteArrayComparer : IEqualityComparer<byte[]>
 {
     /// <inheritdoc/>
@@ -35,6 +46,7 @@ internal sealed class ByteArrayComparer : IEqualityComparer<byte[]>
     }
 }
 
+/// <summary>Associates a legacy true-candidates result with the solver state that produced it.</summary>
 internal sealed class ResponseCacheItem
 {
     /// <summary>Gets or sets the solver request whose result was cached.</summary>
@@ -50,16 +62,16 @@ public sealed class SolverCommandProcessor
 {
     private readonly bool singleThreaded;
     private readonly IReadOnlyList<string>? legacyAdditionalConstraints;
-    private readonly object legacyExecutionLock = new();
+    private readonly LegacyInvalidRequestBehavior legacyInvalidRequestBehavior;
+    private readonly object legacyCacheLock = new();
     private readonly NativeOperationRunner nativeRunner;
     private readonly Dictionary<byte[], BaseResponse> trueCandidatesResponseCache = new(new ByteArrayComparer());
     private readonly List<ResponseCacheItem> lastTrueCandidatesResponses = [];
-    private Action<string>? sendJson;
 
     /// <summary>Initializes a processor that uses the repository's standard legacy constraints.</summary>
     /// <param name="singleThreaded">Whether solver algorithms must avoid internal parallelism.</param>
     public SolverCommandProcessor(bool singleThreaded)
-        : this(singleThreaded, null)
+        : this(singleThreaded, null, LegacyInvalidRequestBehavior.RespondWithInvalid)
     {
     }
 
@@ -69,9 +81,22 @@ public sealed class SolverCommandProcessor
     public SolverCommandProcessor(
         bool singleThreaded,
         IEnumerable<string>? legacyAdditionalConstraints)
+        : this(singleThreaded, legacyAdditionalConstraints, LegacyInvalidRequestBehavior.RespondWithInvalid)
+    {
+    }
+
+    /// <summary>Initializes a processor with explicit legacy host compatibility behavior.</summary>
+    /// <param name="singleThreaded">Whether solver algorithms must avoid internal parallelism.</param>
+    /// <param name="legacyAdditionalConstraints">Optional additional legacy constraint declarations.</param>
+    /// <param name="legacyInvalidRequestBehavior">How unsupported legacy requests are handled.</param>
+    public SolverCommandProcessor(
+        bool singleThreaded,
+        IEnumerable<string>? legacyAdditionalConstraints,
+        LegacyInvalidRequestBehavior legacyInvalidRequestBehavior)
     {
         this.singleThreaded = singleThreaded;
         this.legacyAdditionalConstraints = legacyAdditionalConstraints?.ToArray();
+        this.legacyInvalidRequestBehavior = legacyInvalidRequestBehavior;
         nativeRunner = new NativeOperationRunner(singleThreaded);
     }
 
@@ -98,18 +123,7 @@ public sealed class SolverCommandProcessor
             return;
         }
 
-        lock (legacyExecutionLock)
-        {
-            this.sendJson = sendJson;
-            try
-            {
-                HandleLegacy(messageJson, cancellationToken);
-            }
-            finally
-            {
-                this.sendJson = null;
-            }
-        }
+        HandleLegacy(messageJson, sendJson, cancellationToken);
     }
 
     private void HandleNative(
@@ -117,6 +131,42 @@ public sealed class SolverCommandProcessor
         Action<string> sendJson,
         CancellationToken cancellationToken)
     {
+        SolverRequestHeader header;
+        try
+        {
+            header = JsonSerializer.Deserialize(
+                messageJson,
+                ProtocolJsonContext.Default.SolverRequestHeader)
+                ?? throw new JsonException("Native solver request header was empty.");
+        }
+        catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException)
+        {
+            SendNativeEnvelopeError(messageJson, sendJson, "invalidPackage", exception.Message);
+            return;
+        }
+
+        if (header.ProtocolVersion != 1)
+        {
+            SolverResponse unsupported = new()
+            {
+                Kind = "error",
+                ProtocolVersion = 1,
+                RequestId = header.RequestId,
+                DocumentRevision = header.DocumentRevision,
+                SemanticRevision = header.SemanticRevision,
+                SemanticHash = string.Empty,
+                ContextId = header.ContextId,
+                Operation = header.Operation,
+                Error = new SolverErrorDto
+                {
+                    Code = "unsupportedVersion",
+                    Message = $"Unsupported native solver protocol version {header.ProtocolVersion}.",
+                },
+            };
+            sendJson(JsonSerializer.Serialize(unsupported, ProtocolJsonContext.Default.SolverResponse));
+            return;
+        }
+
         SolverRequest request;
         try
         {
@@ -180,20 +230,26 @@ public sealed class SolverCommandProcessor
                 ? value
                 : 0;
 
-    private void HandleLegacy(string messageJson, CancellationToken cancellationToken)
+    private void HandleLegacy(
+        string messageJson,
+        Action<string> sendJson,
+        CancellationToken cancellationToken)
     {
         Message message = JsonSerializer.Deserialize(messageJson, ProtocolJsonContext.Default.Message)
             ?? throw new JsonException("Legacy solver request was empty.");
 
         if (message.command == "cancel")
         {
-            Send(new CanceledResponse(message.nonce));
+            Send(sendJson, new CanceledResponse(message.nonce));
             return;
         }
 
         if (message.dataType != "fpuzzles")
         {
-            Send(new InvalidResponse(message.nonce) { message = $"Unsupported dataType: {message.dataType}" });
+            if (legacyInvalidRequestBehavior == LegacyInvalidRequestBehavior.RespondWithInvalid)
+            {
+                Send(sendJson, new InvalidResponse(message.nonce) { message = $"Unsupported dataType: {message.dataType}" });
+            }
             return;
         }
 
@@ -213,10 +269,9 @@ public sealed class SolverCommandProcessor
             if (message.command == "truecandidates"
                 && solver.customInfo.TryGetValue("ComparableData", out object? comparableDataObj)
                 && comparableDataObj is byte[] cachedKey
-                && trueCandidatesResponseCache.TryGetValue(cachedKey, out BaseResponse? cached))
+                && TryGetCachedResponse(cachedKey, message.nonce, out BaseResponse? cached))
             {
-                cached.nonce = message.nonce;
-                Send(cached);
+                Send(sendJson, cached!);
                 return;
             }
 
@@ -224,38 +279,41 @@ public sealed class SolverCommandProcessor
             switch (message.command)
             {
                 case "truecandidates":
-                    SendTrueCandidates(message.nonce, solver, cancellationToken);
+                    SendTrueCandidates(message.nonce, solver, sendJson, cancellationToken);
                     break;
                 case "solve":
-                    SendSolve(message.nonce, solver, cancellationToken);
+                    SendSolve(message.nonce, solver, sendJson, cancellationToken);
                     break;
                 case "check":
-                    SendCount(message.nonce, solver, 2, cancellationToken);
+                    SendCount(message.nonce, solver, 2, sendJson, cancellationToken);
                     break;
                 case "count":
-                    SendCount(message.nonce, solver, 0, cancellationToken);
+                    SendCount(message.nonce, solver, 0, sendJson, cancellationToken);
                     break;
                 case "estimate":
-                    SendEstimate(message.nonce, solver, cancellationToken);
+                    SendEstimate(message.nonce, solver, sendJson, cancellationToken);
                     break;
                 case "solvepath":
-                    SendSolvePath(message.nonce, solver, cancellationToken);
+                    SendSolvePath(message.nonce, solver, sendJson, cancellationToken);
                     break;
                 case "step":
-                    SendStep(message.nonce, solver, cancellationToken);
+                    SendStep(message.nonce, solver, sendJson, cancellationToken);
                     break;
                 default:
-                    Send(new InvalidResponse(message.nonce) { message = $"Unknown command: {message.command}" });
+                    if (legacyInvalidRequestBehavior == LegacyInvalidRequestBehavior.RespondWithInvalid)
+                    {
+                        Send(sendJson, new InvalidResponse(message.nonce) { message = $"Unknown command: {message.command}" });
+                    }
                     break;
             }
         }
         catch (OperationCanceledException)
         {
-            Send(new CanceledResponse(message.nonce));
+            Send(sendJson, new CanceledResponse(message.nonce));
         }
         catch (Exception e)
         {
-            Send(new InvalidResponse(message.nonce) { message = e.Message });
+            Send(sendJson, new InvalidResponse(message.nonce) { message = e.Message });
         }
     }
 
@@ -264,7 +322,7 @@ public sealed class SolverCommandProcessor
         return solver.customInfo.TryGetValue(option, out object? obj) && obj is bool value && value;
     }
 
-    private void Send(BaseResponse response)
+    private static void Send(Action<string> sendJson, BaseResponse response)
     {
         string json = response switch
         {
@@ -277,31 +335,58 @@ public sealed class SolverCommandProcessor
             EstimateResponse r => JsonSerializer.Serialize(r, ProtocolJsonContext.Default.EstimateResponse),
             _ => throw new NotImplementedException($"Unknown response type: {response.type}"),
         };
-        sendJson!(json);
+        sendJson(json);
+    }
+
+    private bool TryGetCachedResponse(byte[] key, int nonce, out BaseResponse? response)
+    {
+        lock (legacyCacheLock)
+        {
+            if (!trueCandidatesResponseCache.TryGetValue(key, out BaseResponse? cached))
+            {
+                response = null;
+                return false;
+            }
+
+            response = cached switch
+            {
+                TrueCandidatesResponse trueCandidates => new TrueCandidatesResponse(nonce)
+                {
+                    solutionsPerCandidate = trueCandidates.solutionsPerCandidate,
+                },
+                InvalidResponse invalid => new InvalidResponse(nonce) { message = invalid.message },
+                _ => throw new InvalidOperationException($"Unsupported cached response type {cached.type}."),
+            };
+            return true;
+        }
     }
 
     private void SendTrueCandidatesMessage(
         BaseResponse response,
         Solver request,
+        Action<string> sendJson,
         CancellationToken cancellationToken,
         byte[]? trueCandidatesKey = null)
     {
-        if (trueCandidatesKey != null)
+        lock (legacyCacheLock)
         {
-            trueCandidatesResponseCache[trueCandidatesKey] = response;
-        }
-
-        if (!cancellationToken.IsCancellationRequested)
-        {
-            lastTrueCandidatesResponses.Add(new() { request = request, response = response });
-            // Keep only last N responses to minimize search time and memory usage
-            if (lastTrueCandidatesResponses.Count > 1000)
+            if (trueCandidatesKey != null)
             {
-                lastTrueCandidatesResponses.RemoveAt(0);
+                trueCandidatesResponseCache[trueCandidatesKey] = response;
+            }
+
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                lastTrueCandidatesResponses.Add(new() { request = request, response = response });
+                // Keep only last N responses to minimize search time and memory usage
+                if (lastTrueCandidatesResponses.Count > 1000)
+                {
+                    lastTrueCandidatesResponses.RemoveAt(0);
+                }
             }
         }
 
-        Send(response);
+        Send(sendJson, response);
     }
 
     /// <summary>
@@ -309,11 +394,16 @@ public sealed class SolverCommandProcessor
     /// Send an "invalid" response if the puzzle has no more solutions after this operation.
     /// </summary>
     /// <returns>Is the puzzle still valid?</returns>
-    private bool KeepCandidatesOfResponse(int nonce, Solver solver, BaseResponse response, Predicate<long> keepCandidateCondition)
+    private static bool KeepCandidatesOfResponse(
+        int nonce,
+        Solver solver,
+        BaseResponse response,
+        Predicate<long> keepCandidateCondition,
+        Action<string> sendJson)
     {
         if (response is InvalidResponse invalidResponse)
         {
-            Send(new InvalidResponse(nonce) { message = invalidResponse.message });
+            Send(sendJson, new InvalidResponse(nonce) { message = invalidResponse.message });
             return false;
         }
 
@@ -334,7 +424,7 @@ public sealed class SolverCommandProcessor
                     }
                     if (solver.KeepMask(i, j, mask) == LogicResult.Invalid)
                     {
-                        Send(new InvalidResponse(nonce) { message = "No solutions found." });
+                        Send(sendJson, new InvalidResponse(nonce) { message = "No solutions found." });
                         return false;
                     }
                 }
@@ -344,7 +434,11 @@ public sealed class SolverCommandProcessor
         return true;
     }
 
-    private void SendTrueCandidates(int nonce, Solver solver, CancellationToken cancellationToken)
+    private void SendTrueCandidates(
+        int nonce,
+        Solver solver,
+        Action<string> sendJson,
+        CancellationToken cancellationToken)
     {
         long numSolutionsCap = 1;
         if (solver.customInfo.TryGetValue("truecandidatesnumsolutions", out object? numSolutionsObj)
@@ -361,7 +455,11 @@ public sealed class SolverCommandProcessor
         // Save the state of the solver with the initial grid (before applying any logic to the puzzle)
         Solver request = solver.Clone(willRunNonSinglesLogic: false);
 
-        List<ResponseCacheItem> matchingCacheItems = new(lastTrueCandidatesResponses);
+        List<ResponseCacheItem> matchingCacheItems;
+        lock (legacyCacheLock)
+        {
+            matchingCacheItems = new(lastTrueCandidatesResponses);
+        }
         matchingCacheItems = matchingCacheItems.FindAll(item => request.IsInheritOf(item.request));
 
         Solver? logicalSolver = null;
@@ -384,7 +482,7 @@ public sealed class SolverCommandProcessor
                 }
 
                 // Remove candidates that already logically proved to have no solutions
-                if (!KeepCandidatesOfResponse(nonce, logicalSolver, item.response, numSolutions => numSolutions != 0))
+                if (!KeepCandidatesOfResponse(nonce, logicalSolver, item.response, numSolutions => numSolutions != 0, sendJson))
                 {
                     return;
                 }
@@ -392,7 +490,7 @@ public sealed class SolverCommandProcessor
 
             if (logicalSolver.ConsolidateBoard(cancellationToken: cancellationToken) == LogicResult.Invalid)
             {
-                SendTrueCandidatesMessage(new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
+                SendTrueCandidatesMessage(new InvalidResponse(nonce) { message = "No solutions found." }, request, sendJson, cancellationToken);
                 return;
             }
         }
@@ -400,7 +498,7 @@ public sealed class SolverCommandProcessor
         foreach (ResponseCacheItem item in matchingCacheItems)
         {
             // Remove candidates that already proved (by logic or by brute force) to have no solutions
-            if (!KeepCandidatesOfResponse(nonce, solver, item.response, numSolutions => numSolutions > 0))
+            if (!KeepCandidatesOfResponse(nonce, solver, item.response, numSolutions => numSolutions > 0, sendJson))
             {
                 return;
             }
@@ -415,7 +513,7 @@ public sealed class SolverCommandProcessor
 
         if (numSolutions == null || numSolutions.All(candidate => candidate == 0))
         {
-            SendTrueCandidatesMessage(new InvalidResponse(nonce) { message = "No solutions found." }, request, cancellationToken);
+            SendTrueCandidatesMessage(new InvalidResponse(nonce) { message = "No solutions found." }, request, sendJson, cancellationToken);
             return;
         }
 
@@ -465,38 +563,47 @@ public sealed class SolverCommandProcessor
         if (solver.customInfo.TryGetValue("ComparableData", out object? comparableDataObj)
             && comparableDataObj is byte[] comparableData)
         {
-            SendTrueCandidatesMessage(response, request, cancellationToken, comparableData);
+            SendTrueCandidatesMessage(response, request, sendJson, cancellationToken, comparableData);
         }
         else
         {
-            SendTrueCandidatesMessage(response, request, cancellationToken);
+            SendTrueCandidatesMessage(response, request, sendJson, cancellationToken);
         }
     }
 
-    private void SendSolve(int nonce, Solver solver, CancellationToken cancellationToken)
+    private void SendSolve(
+        int nonce,
+        Solver solver,
+        Action<string> sendJson,
+        CancellationToken cancellationToken)
     {
         if (!solver.FindSolution(multiThread: !singleThreaded, isRandom: true, cancellationToken: cancellationToken))
         {
-            Send(new InvalidResponse(nonce) { message = "No solutions found." });
+            Send(sendJson, new InvalidResponse(nonce) { message = "No solutions found." });
         }
         else
         {
-            Send(new SolvedResponse(nonce)
+            Send(sendJson, new SolvedResponse(nonce)
             {
                 solution = solver.FlatBoard.Select(SolverUtility.GetValue).ToArray()
             });
         }
     }
 
-    private void SendCount(int nonce, Solver solver, long maxSolutions, CancellationToken cancellationToken)
+    private void SendCount(
+        int nonce,
+        Solver solver,
+        long maxSolutions,
+        Action<string> sendJson,
+        CancellationToken cancellationToken)
     {
         long numSolutions = solver.CountSolutions(maxSolutions, multiThread: !singleThreaded, cancellationToken: cancellationToken, progressEvent: (count) =>
         {
-            Send(new CountResponse(nonce) { count = count, inProgress = true });
+            Send(sendJson, new CountResponse(nonce) { count = count, inProgress = true });
         });
         if (!cancellationToken.IsCancellationRequested)
         {
-            Send(new CountResponse(nonce) { count = numSolutions, inProgress = false });
+            Send(sendJson, new CountResponse(nonce) { count = numSolutions, inProgress = false });
         }
     }
 
@@ -510,14 +617,22 @@ public sealed class SolverCommandProcessor
         return sb;
     }
 
-    private void SendSolvePath(int nonce, Solver solver, CancellationToken cancellationToken)
+    private static void SendSolvePath(
+        int nonce,
+        Solver solver,
+        Action<string> sendJson,
+        CancellationToken cancellationToken)
     {
         List<LogicalStepDesc> logicalStepDescs = [];
         LogicResult logicResult = solver.ConsolidateBoard(logicalStepDescs, cancellationToken);
-        SendLogicResponse(nonce, solver, logicResult, StepsDescription(logicalStepDescs));
+        SendLogicResponse(nonce, solver, logicResult, StepsDescription(logicalStepDescs), sendJson);
     }
 
-    private void SendStep(int nonce, Solver solver, CancellationToken cancellationToken)
+    private static void SendStep(
+        int nonce,
+        Solver solver,
+        Action<string> sendJson,
+        CancellationToken cancellationToken)
     {
         if (solver.customInfo["OriginalCenterMarks"] is uint[,] originalCenterMarks)
         {
@@ -532,7 +647,7 @@ public sealed class SolverCommandProcessor
                     {
                         StringBuilder sb = new();
                         _ = sb.Append("Initial candidates.");
-                        SendLogicResponse(nonce, solver, LogicResult.Changed, sb);
+                        SendLogicResponse(nonce, solver, LogicResult.Changed, sb, sendJson);
                         return;
                     }
                 }
@@ -541,10 +656,15 @@ public sealed class SolverCommandProcessor
 
         List<LogicalStepDesc> logicalStepDescs = [];
         LogicResult logicResult = solver.StepLogic(logicalStepDescs, cancellationToken);
-        SendLogicResponse(nonce, solver, logicResult, StepsDescription(logicalStepDescs));
+        SendLogicResponse(nonce, solver, logicResult, StepsDescription(logicalStepDescs), sendJson);
     }
 
-    private void SendLogicResponse(int nonce, Solver solver, LogicResult logicResult, StringBuilder description)
+    private static void SendLogicResponse(
+        int nonce,
+        Solver solver,
+        LogicResult logicResult,
+        StringBuilder description,
+        Action<string> sendJson)
     {
         if (!description.ToString().EndsWith(Environment.NewLine))
         {
@@ -583,7 +703,7 @@ public sealed class SolverCommandProcessor
                 cells[i] = new() { value = 0, candidates = candidates.ToArray() };
             }
         }
-        Send(new LogicalResponse(nonce)
+        Send(sendJson, new LogicalResponse(nonce)
         {
             cells = cells,
             message = description.ToString().TrimStart(),
@@ -591,7 +711,11 @@ public sealed class SolverCommandProcessor
         });
     }
 
-    private void SendEstimate(int nonce, Solver solver, CancellationToken cancellationToken)
+    private void SendEstimate(
+        int nonce,
+        Solver solver,
+        Action<string> sendJson,
+        CancellationToken cancellationToken)
     {
         const double z95 = 1.96;
         solver.EstimateSolutions(
@@ -606,7 +730,7 @@ public sealed class SolverCommandProcessor
                 double relErrPercent = estimate != 0 ? 100.0 * (z95 * stderr) / estimate : 0.0;
                 if (!cancellationToken.IsCancellationRequested)
                 {
-                    Send(new EstimateResponse(nonce)
+                    Send(sendJson, new EstimateResponse(nonce)
                     {
                         estimate = estimate,
                         stderr = stderr,

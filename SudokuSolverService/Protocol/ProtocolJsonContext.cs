@@ -4,6 +4,7 @@ namespace SudokuSolverService.Protocol;
 
 /// <summary>Provides AOT-safe source-generated metadata for native and legacy protocol payloads.</summary>
 [JsonSerializable(typeof(SolverRequest))]
+[JsonSerializable(typeof(SolverRequestHeader))]
 [JsonSerializable(typeof(SolverResponse))]
 [JsonSerializable(typeof(Message))]
 [JsonSerializable(typeof(CanceledResponse))]

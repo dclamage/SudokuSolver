@@ -15,6 +15,31 @@ public static class NativePuzzleProjector
     /// <exception cref="InvalidOperationException">The projected constraints or givens are contradictory.</exception>
     public static NativeProjectionResult Project(NativePuzzlePackage package, string projectionId)
     {
+        (NativeProjectionResult result, string? contradiction) = ProjectCore(package, projectionId);
+        if (contradiction is not null)
+        {
+            throw new InvalidOperationException(contradiction);
+        }
+        return result;
+    }
+
+    /// <summary>Validates one native projection while reporting contradictory solver state as data.</summary>
+    /// <param name="package">The native package to validate.</param>
+    /// <param name="projectionId">The stable projection identifier.</param>
+    /// <returns>Entity capabilities and whether the projected puzzle is contradictory.</returns>
+    /// <exception cref="ArgumentException">The package cannot be structurally represented by the selected projection.</exception>
+    public static NativeProjectionValidationResult ValidateProjection(
+        NativePuzzlePackage package,
+        string projectionId)
+    {
+        (NativeProjectionResult result, string? contradiction) = ProjectCore(package, projectionId);
+        return new(result.Capabilities, contradiction is not null);
+    }
+
+    private static (NativeProjectionResult Result, string? Contradiction) ProjectCore(
+        NativePuzzlePackage package,
+        string projectionId)
+    {
         ArgumentNullException.ThrowIfNull(package);
         NativePuzzleValidator.Validate(package);
         if (string.IsNullOrWhiteSpace(projectionId))
@@ -40,31 +65,36 @@ public static class NativePuzzleProjector
 
         Solver solver = new(size, size, size);
         solver.SetRegions(regions);
+        string? contradiction = null;
         if (!solver.FinalizeConstraints())
         {
-            throw new InvalidOperationException($"Projection {projectionId} has contradictory base constraints.");
+            contradiction = $"Projection {projectionId} has contradictory base constraints.";
         }
 
-        foreach ((string cellId, string valueId) in package.Givens)
+        if (contradiction is null)
         {
-            if (!cellIndexById.TryGetValue(cellId, out int cellIndex))
+            foreach ((string cellId, string valueId) in package.Givens)
             {
-                continue;
-            }
-            if (!solverValueById.TryGetValue(valueId, out int solverValue))
-            {
-                throw new ArgumentException(
-                    $"Projected given {cellId} references value {valueId} outside projection {projectionId}.",
-                    nameof(package));
-            }
-            if (!solver.SetValue(cellIndex, solverValue))
-            {
-                throw new InvalidOperationException($"Projected given {cellId}={valueId} is contradictory.");
+                if (!cellIndexById.TryGetValue(cellId, out int cellIndex))
+                {
+                    continue;
+                }
+                if (!solverValueById.TryGetValue(valueId, out int solverValue))
+                {
+                    throw new ArgumentException(
+                        $"Projected given {cellId} references value {valueId} outside projection {projectionId}.",
+                        nameof(package));
+                }
+                if (!solver.SetValue(cellIndex, solverValue))
+                {
+                    contradiction = $"Projected given {cellId}={valueId} is contradictory.";
+                    break;
+                }
             }
         }
 
         CapabilityReport capabilities = BuildCapabilities(package, projection, cellIndexById);
-        return new NativeProjectionResult(solver, cellIndexById, cellIdByIndex, capabilities);
+        return (new NativeProjectionResult(solver, cellIndexById, cellIdByIndex, capabilities), contradiction);
     }
 
     private static int ValidateSquareGrid(NativeSolverProjection projection)
@@ -583,3 +613,10 @@ public sealed record NativeProjectionResult(
     IReadOnlyDictionary<string, int> CellIndexById,
     IReadOnlyList<string> CellIdByIndex,
     CapabilityReport Capabilities);
+
+/// <summary>Contains structural capabilities and satisfiability state for a native projection.</summary>
+/// <param name="Capabilities">Entity-level support results.</param>
+/// <param name="Contradiction">Whether projected constraints or givens are contradictory.</param>
+public sealed record NativeProjectionValidationResult(
+    CapabilityReport Capabilities,
+    bool Contradiction);

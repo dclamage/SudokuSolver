@@ -1,6 +1,6 @@
+using SudokuSolverService;
 using System.Text;
 using System.Text.Json;
-using SudokuSolverService;
 using WatsonWebsocket;
 
 namespace SudokuSolverConsole;
@@ -34,7 +34,10 @@ internal sealed class WebsocketListener : IDisposable
         }
 
         this.verboseLogs = verboseLogs;
-        processor = new SolverCommandProcessor(singleThreaded, additionalConstraints);
+        processor = new SolverCommandProcessor(
+            singleThreaded,
+            additionalConstraints,
+            LegacyInvalidRequestBehavior.Ignore);
         server = new(host, port, false);
         server.ClientConnected += (_, args) => ClientConnected(args);
         server.ClientDisconnected += (_, args) => ClientDisconnected(args);
