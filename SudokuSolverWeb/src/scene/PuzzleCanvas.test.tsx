@@ -1,8 +1,10 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { renderToString } from "react-dom/server";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createStarterPuzzle } from "../domain/puzzle/createStarterPuzzle";
 import { PuzzleCanvas } from "./PuzzleCanvas";
+import { projectPuzzleScene } from "./projectPuzzleScene";
 import type { PuzzleSceneView } from "./types";
 
 interface TestPoint {
@@ -62,6 +64,19 @@ function totalSegmentLength(
   segments: readonly { from: TestPoint; to: TestPoint }[],
 ) {
   return segments.reduce((total, segment) => total + segmentLength(segment), 0);
+}
+
+function canonicalSegments(
+  segments: readonly { from: TestPoint; to: TestPoint }[],
+) {
+  return segments
+    .map((segment) => {
+      const points = [segment.from, segment.to].sort(
+        (first, second) => first.x - second.x || first.y - second.y,
+      );
+      return `${points[0].x},${points[0].y}|${points[1].x},${points[1].y}`;
+    })
+    .sort();
 }
 
 const puzzle = createStarterPuzzle(() => "scene");
@@ -430,6 +445,96 @@ describe("PuzzleCanvas", () => {
     ).toHaveLength(6);
   });
 
+  it("preserves exact representable thin boundaries across offsets and a noisy overlap", () => {
+    const thinPuzzle = structuredClone(puzzle);
+    const width = 0.00001;
+    const cases = [
+      { cellId: "r1c1", groupId: "thin-zero", offset: 0 },
+      { cellId: "r1c2", groupId: "thin-million", offset: 1_000_000 },
+      { cellId: "r1c3", groupId: "thin-billion", offset: 1_000_000_000 },
+    ] as const;
+    for (const { cellId, groupId, offset } of cases) {
+      thinPuzzle.cells[cellId].shape = {
+        kind: "rect",
+        x: offset,
+        y: 0,
+        width,
+        height: 1,
+      };
+      thinPuzzle.groups[groupId] = {
+        id: groupId,
+        roles: ["region"],
+        cellIds: [cellId],
+      };
+    }
+
+    const overlapOffset = 1_000_000;
+    const overlapRight = overlapOffset + width;
+    const neighborStart = overlapRight - 0.00000496;
+    const neighborEnd = neighborStart + 0.5;
+    thinPuzzle.cells.r1c4.shape = {
+      kind: "polygon",
+      points: [
+        { x: neighborEnd, y: 1 },
+        { x: neighborEnd, y: 0 },
+        { x: neighborStart, y: 0 },
+        { x: neighborStart, y: 1 },
+      ],
+    };
+    thinPuzzle.groups["thin-noisy-overlap"] = {
+      id: "thin-noisy-overlap",
+      roles: ["region"],
+      cellIds: ["r1c2", "r1c4", "r1c2"],
+    };
+
+    render(
+      <PuzzleCanvas
+        puzzle={thinPuzzle}
+        view={emptySceneView}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    for (const { groupId, offset } of cases) {
+      const right = offset + width;
+      const segments = readLineSegments(
+        screen.getByTestId(`group-border-${groupId}`),
+      );
+      expect(canonicalSegments(segments)).toEqual(
+        canonicalSegments([
+          { from: { x: offset, y: 0 }, to: { x: right, y: 0 } },
+          { from: { x: right, y: 0 }, to: { x: right, y: 1 } },
+          { from: { x: right, y: 1 }, to: { x: offset, y: 1 } },
+          { from: { x: offset, y: 1 }, to: { x: offset, y: 0 } },
+        ]),
+      );
+      expect(totalSegmentLength(segments)).toBeCloseTo(
+        2 * ((right - offset) + 1),
+        12,
+      );
+    }
+
+    const overlapSegments = readLineSegments(
+      screen.getByTestId("group-border-thin-noisy-overlap"),
+    );
+    expect(canonicalSegments(overlapSegments)).toEqual(
+      canonicalSegments([
+        { from: { x: overlapOffset, y: 0 }, to: { x: neighborStart, y: 0 } },
+        { from: { x: neighborStart, y: 0 }, to: { x: overlapRight, y: 0 } },
+        { from: { x: overlapRight, y: 0 }, to: { x: neighborEnd, y: 0 } },
+        { from: { x: neighborEnd, y: 0 }, to: { x: neighborEnd, y: 1 } },
+        { from: { x: overlapOffset, y: 1 }, to: { x: neighborStart, y: 1 } },
+        { from: { x: neighborStart, y: 1 }, to: { x: overlapRight, y: 1 } },
+        { from: { x: overlapRight, y: 1 }, to: { x: neighborEnd, y: 1 } },
+        { from: { x: overlapOffset, y: 0 }, to: { x: overlapOffset, y: 1 } },
+      ]),
+    );
+    expect(totalSegmentLength(overlapSegments)).toBeCloseTo(
+      2 * ((neighborEnd - overlapOffset) + 1),
+      12,
+    );
+  });
+
   it("splits non-collinear intersections before tracing overlapping rectangle unions", () => {
     const overlapPuzzle = structuredClone(puzzle);
     overlapPuzzle.cells.r1c1.shape = {
@@ -724,6 +829,40 @@ describe("PuzzleCanvas", () => {
     }
   });
 
+  it("bounds polygon interior work independently of elongated geometry size", () => {
+    const projectElongatedPolygon = (width: number) => {
+      const elongatedPuzzle = structuredClone(puzzle);
+      elongatedPuzzle.cells.r1c1.shape = {
+        kind: "polygon",
+        points: [
+          { x: 0, y: 0 },
+          { x: width, y: 0 },
+          { x: width, y: 1 },
+          { x: 0, y: 1 },
+        ],
+      };
+      const metrics = { interiorWorkUnits: 0 };
+      const scene = projectPuzzleScene(
+        elongatedPuzzle,
+        { ...emptySceneView, values: { r1c1: "5" } },
+        metrics,
+      );
+      const cell = scene.nodes.find(
+        (node) => node.kind === "cell" && node.cellId === "r1c1",
+      );
+      return { metrics, cell };
+    };
+
+    const short = projectElongatedPolygon(2);
+    const long = projectElongatedPolygon(100);
+
+    expect(short.metrics.interiorWorkUnits).toBeGreaterThan(0);
+    expect(long.metrics.interiorWorkUnits).toBe(short.metrics.interiorWorkUnits);
+    expect(long.metrics.interiorWorkUnits).toBeLessThanOrEqual(8);
+    expect(short.cell?.kind === "cell" ? short.cell.content : []).toHaveLength(1);
+    expect(long.cell?.kind === "cell" ? long.cell.content : []).toHaveLength(1);
+  });
+
   it("isolates degenerate polygon geometry with a deterministic accessible explanation", () => {
     const invalidPuzzle = structuredClone(puzzle);
     invalidPuzzle.cells.r1c1.shape = { kind: "polygon", points: [] };
@@ -897,7 +1036,7 @@ describe("PuzzleCanvas", () => {
     const longLabel = "A candidate label that is intentionally very long";
     longLabelPuzzle.domains["digits-1-9"].values[0].label = longLabel;
 
-    const { container } = render(
+    render(
       <PuzzleCanvas
         puzzle={longLabelPuzzle}
         view={{ ...emptySceneView, candidates: { r1c1: ["1"] } }}
@@ -906,11 +1045,12 @@ describe("PuzzleCanvas", () => {
     );
 
     const candidate = screen.getByText(longLabel);
-    const clipReference = candidate.getAttribute("clip-path");
-    expect(clipReference).not.toBeNull();
-    expect(clipReference ?? "").toMatch(/^url\(#[^)]+-candidate-clip-[^)]+\)$/);
-    const clipId = clipReference?.slice(5, -1);
-    expect(container.querySelector(`clipPath[id="${clipId}"] rect`)).not.toBeNull();
+    const viewport = candidate.closest("svg");
+    expect(viewport).toHaveClass("puzzle-cell__candidate-viewport");
+    expect(viewport).toHaveAttribute("overflow", "hidden");
+    expect(Number(viewport?.getAttribute("width"))).toBeGreaterThan(0);
+    expect(Number(viewport?.getAttribute("height"))).toBeGreaterThan(0);
+    expect(candidate).not.toHaveAttribute("clip-path");
     expect(
       screen.getByRole("button", {
         name: `Cell r1c1, candidates ${longLabel}`,
@@ -918,37 +1058,31 @@ describe("PuzzleCanvas", () => {
     ).toBeVisible();
   });
 
-  it("namespaces clip identifiers and references independently for each canvas", () => {
-    const { container } = render(
-      <>
+  it("clips candidates without document-global identifiers across server roots", () => {
+    const longLabelPuzzle = structuredClone(puzzle);
+    const longLabel = "Complete accessible candidate label";
+    longLabelPuzzle.domains["digits-1-9"].values[0].label = longLabel;
+    const renderIndependentRoot = () =>
+      renderToString(
         <PuzzleCanvas
-          puzzle={puzzle}
+          puzzle={longLabelPuzzle}
           view={{ ...emptySceneView, candidates: { r1c1: ["1"] } }}
           onSelectCell={() => undefined}
-        />
-        <PuzzleCanvas
-          puzzle={puzzle}
-          view={{ ...emptySceneView, candidates: { r1c1: ["1"] } }}
-          onSelectCell={() => undefined}
-        />
-      </>,
-    );
+        />,
+      );
 
-    const candidates = screen.getAllByText("1");
-    const referencedIds = candidates.map((candidate) =>
-      candidate.getAttribute("clip-path")?.slice(5, -1),
+    const firstRoot = renderIndependentRoot();
+    const secondRoot = renderIndependentRoot();
+    const combinedMarkup = firstRoot + secondRoot;
+
+    expect(combinedMarkup).not.toMatch(/\sid=/);
+    expect(combinedMarkup).not.toContain("url(#");
+    expect(combinedMarkup.match(/overflow="hidden"/g)).toHaveLength(2);
+    expect(firstRoot).toContain(
+      `aria-label="Cell r1c1, candidates ${longLabel}"`,
     );
-    expect(new Set(referencedIds).size).toBe(2);
-    for (const [index, candidate] of candidates.entries()) {
-      const svg = candidate.closest("svg");
-      expect(svg).not.toBeNull();
-      expect(
-        svg?.querySelector(`clipPath[id="${referencedIds[index]}"] rect`),
-      ).not.toBeNull();
-    }
-    const clipIds = [...container.querySelectorAll("clipPath")].map(
-      (clip) => clip.id,
+    expect(secondRoot).toContain(
+      `aria-label="Cell r1c1, candidates ${longLabel}"`,
     );
-    expect(new Set(clipIds).size).toBe(clipIds.length);
   });
 });

@@ -41,10 +41,8 @@ interface ProjectedShape {
   geometryIssue?: string;
 }
 
-interface InteriorSearchCell extends Point {
-  halfSize: number;
-  distance: number;
-  maximumDistance: number;
+export interface PuzzleSceneProjectionMetrics {
+  interiorWorkUnits: number;
 }
 
 function pointDistanceSquared(first: Point, second: Point) {
@@ -136,88 +134,6 @@ function signedDistanceToPolygon(
   return isPointInPolygon(point, vertices) ? distance : -distance;
 }
 
-function createInteriorSearchCell(
-  x: number,
-  y: number,
-  halfSize: number,
-  vertices: readonly Point[],
-  segments: readonly Segment[],
-): InteriorSearchCell {
-  const distance = signedDistanceToPolygon({ x, y }, vertices, segments);
-  return {
-    x,
-    y,
-    halfSize,
-    distance,
-    maximumDistance: distance + halfSize * Math.SQRT2,
-  };
-}
-
-function pushSearchCell(
-  heap: InteriorSearchCell[],
-  cell: InteriorSearchCell,
-) {
-  heap.push(cell);
-  let index = heap.length - 1;
-  while (index > 0) {
-    const parentIndex = Math.floor((index - 1) / 2);
-    if (heap[parentIndex].maximumDistance >= cell.maximumDistance) {
-      break;
-    }
-    heap[index] = heap[parentIndex];
-    index = parentIndex;
-  }
-  heap[index] = cell;
-}
-
-function popSearchCell(heap: InteriorSearchCell[]) {
-  const first = heap[0];
-  const last = heap.pop();
-  if (last === undefined || heap.length === 0) {
-    return first;
-  }
-
-  let index = 0;
-  while (true) {
-    const leftIndex = index * 2 + 1;
-    const rightIndex = leftIndex + 1;
-    if (leftIndex >= heap.length) {
-      break;
-    }
-    const childIndex =
-      rightIndex < heap.length &&
-      heap[rightIndex].maximumDistance > heap[leftIndex].maximumDistance
-        ? rightIndex
-        : leftIndex;
-    if (heap[childIndex].maximumDistance <= last.maximumDistance) {
-      break;
-    }
-    heap[index] = heap[childIndex];
-    index = childIndex;
-  }
-  heap[index] = last;
-  return first;
-}
-
-function polygonCentroid(vertices: readonly Point[], area: number): Point {
-  const origin = vertices[0];
-  let x = 0;
-  let y = 0;
-  for (let index = 0; index < vertices.length; index += 1) {
-    const point = vertices[index];
-    const next = vertices[(index + 1) % vertices.length];
-    const pointX = point.x - origin.x;
-    const pointY = point.y - origin.y;
-    const nextX = next.x - origin.x;
-    const nextY = next.y - origin.y;
-    const relativeCross = pointX * nextY - nextX * pointY;
-    x += (pointX + nextX) * relativeCross;
-    y += (pointY + nextY) * relativeCross;
-  }
-  const scale = 1 / (6 * area);
-  return { x: origin.x + x * scale, y: origin.y + y * scale };
-}
-
 function triangleTurn(first: Point, second: Point, third: Point) {
   return cross(
     second.x - first.x,
@@ -267,6 +183,7 @@ function triangulatePolygon(
   vertices: readonly Point[],
   area: number,
   bounds: Bounds,
+  metrics?: PuzzleSceneProjectionMetrics,
 ) {
   const orientation = area > 0 ? 1 : -1;
   const areaTolerance = Math.max(
@@ -278,6 +195,9 @@ function triangulatePolygon(
   while (remaining.length > 3) {
     let earIndex = -1;
     for (let index = 0; index < remaining.length; index += 1) {
+      if (metrics !== undefined) {
+        metrics.interiorWorkUnits += 1;
+      }
       const previousIndex = remaining[(index + remaining.length - 1) % remaining.length];
       const currentIndex = remaining[index];
       const nextIndex = remaining[(index + 1) % remaining.length];
@@ -358,6 +278,7 @@ function coordinateResolution(bounds: Bounds) {
 function findPolygonContentRegion(
   vertices: readonly Point[],
   bounds: Bounds,
+  metrics?: PuzzleSceneProjectionMetrics,
 ): ContentRegion | undefined {
   const segments = polygonSegments(vertices);
   const width = bounds.maxX - bounds.minX;
@@ -373,114 +294,45 @@ function findPolygonContentRegion(
     return undefined;
   }
 
-  const initialSize = Math.min(width, height);
-  const heap: InteriorSearchCell[] = [];
-  for (let x = bounds.minX; x < bounds.maxX; x += initialSize) {
-    for (let y = bounds.minY; y < bounds.maxY; y += initialSize) {
-      pushSearchCell(
-        heap,
-        createInteriorSearchCell(
-          x + initialSize / 2,
-          y + initialSize / 2,
-          initialSize / 2,
-          vertices,
-          segments,
-        ),
-      );
-    }
-  }
-
-  const centroid = polygonCentroid(vertices, area);
-  let bestCell = createInteriorSearchCell(
-    centroid.x,
-    centroid.y,
-    0,
-    vertices,
-    segments,
-  );
-  const boundsCenter = createInteriorSearchCell(
-    (bounds.minX + bounds.maxX) / 2,
-    (bounds.minY + bounds.maxY) / 2,
-    0,
-    vertices,
-    segments,
-  );
-  if (boundsCenter.distance > bestCell.distance) {
-    bestCell = boundsCenter;
-  }
-  const triangles = triangulatePolygon(vertices, area, bounds);
+  const triangles = triangulatePolygon(vertices, area, bounds, metrics);
   if (triangles.length === 0) {
     return undefined;
   }
+  let bestPoint: Point | undefined;
+  let bestDistance = Number.NEGATIVE_INFINITY;
   for (const triangle of triangles) {
+    if (metrics !== undefined) {
+      metrics.interiorWorkUnits += 1;
+    }
     const incenter = triangleIncenter(triangle);
-    const incenterCell = createInteriorSearchCell(
-      incenter.x,
-      incenter.y,
-      0,
-      vertices,
-      segments,
-    );
-    if (incenterCell.distance > bestCell.distance) {
-      bestCell = incenterCell;
+    const distance = signedDistanceToPolygon(incenter, vertices, segments);
+    if (distance > bestDistance) {
+      bestPoint = incenter;
+      bestDistance = distance;
     }
   }
 
-  const precision = Math.max(
-    initialSize * 1e-6,
-    coordinateResolution(bounds),
-  );
-  if (bestCell.distance > 0 && bestCell.distance <= precision) {
-    const halfExtent = (bestCell.distance * 0.9) / Math.sqrt(2);
-    return {
-      center: { x: bestCell.x, y: bestCell.y },
-      minX: bestCell.x - halfExtent,
-      minY: bestCell.y - halfExtent,
-      maxX: bestCell.x + halfExtent,
-      maxY: bestCell.y + halfExtent,
-    };
-  }
-  while (heap.length > 0) {
-    const cell = popSearchCell(heap);
-    if (cell.distance > bestCell.distance) {
-      bestCell = cell;
-    }
-    if (cell.maximumDistance - bestCell.distance <= precision) {
-      continue;
-    }
-
-    const halfSize = cell.halfSize / 2;
-    for (const offsetX of [-halfSize, halfSize]) {
-      for (const offsetY of [-halfSize, halfSize]) {
-        pushSearchCell(
-          heap,
-          createInteriorSearchCell(
-            cell.x + offsetX,
-            cell.y + offsetY,
-            halfSize,
-            vertices,
-            segments,
-          ),
-        );
-      }
-    }
-  }
-
-  if (bestCell.distance <= coordinateResolution(bounds)) {
+  if (
+    bestPoint === undefined ||
+    bestDistance <= coordinateResolution(bounds)
+  ) {
     return undefined;
   }
 
-  const halfExtent = (bestCell.distance * 0.9) / Math.sqrt(2);
+  const halfExtent = (bestDistance * 0.9) / Math.sqrt(2);
   return {
-    center: { x: bestCell.x, y: bestCell.y },
-    minX: bestCell.x - halfExtent,
-    minY: bestCell.y - halfExtent,
-    maxX: bestCell.x + halfExtent,
-    maxY: bestCell.y + halfExtent,
+    center: bestPoint,
+    minX: bestPoint.x - halfExtent,
+    minY: bestPoint.y - halfExtent,
+    maxX: bestPoint.x + halfExtent,
+    maxY: bestPoint.y + halfExtent,
   };
 }
 
-function projectShape(shape: CellShape): ProjectedShape {
+function projectShape(
+  shape: CellShape,
+  metrics?: PuzzleSceneProjectionMetrics,
+): ProjectedShape {
   if (shape.kind === "path") {
     return {
       path: shape.d,
@@ -533,7 +385,7 @@ function projectShape(shape: CellShape): ProjectedShape {
     shape.kind === "rect" && bounds.maxX > bounds.minX && bounds.maxY > bounds.minY
       ? { ...bounds, center }
       : shape.kind === "polygon"
-        ? findPolygonContentRegion(vertices, bounds)
+        ? findPolygonContentRegion(vertices, bounds, metrics)
         : undefined;
   if (contentRegion === undefined) {
     return {
@@ -835,13 +687,54 @@ function pointInUnion(point: Point, polygons: readonly (readonly Point[])[]) {
   return polygons.some((vertices) => isPointInPolygon(point, vertices));
 }
 
+function segmentContainsPointWithinTolerance(
+  segment: Segment,
+  point: Point,
+  tolerance: number,
+) {
+  if (lineDistance(point, segment) > tolerance) {
+    return false;
+  }
+  const ratio = projectRatio(point, segment);
+  const ratioTolerance = tolerance / segmentLength(segment);
+  return ratio >= -ratioTolerance && ratio <= 1 + ratioTolerance;
+}
+
+function localProbeDistance(
+  segment: Segment,
+  arrangement: readonly Segment[],
+) {
+  const midpoint = pointAt(segment, 0.5);
+  let nearestDistinctEdge = Number.POSITIVE_INFINITY;
+  for (const candidate of arrangement) {
+    const pairTolerance = Math.max(
+      segmentTolerance(segment),
+      segmentTolerance(candidate),
+    );
+    if (
+      segmentContainsPointWithinTolerance(candidate, midpoint, pairTolerance)
+    ) {
+      continue;
+    }
+    nearestDistinctEdge = Math.min(
+      nearestDistinctEdge,
+      pointToSegmentDistance(midpoint, candidate),
+    );
+  }
+  return Math.min(
+    segmentTolerance(segment),
+    nearestDistinctEdge / 4,
+  );
+}
+
 function isUnionBoundary(
   segment: Segment,
   polygons: readonly (readonly Point[])[],
+  arrangement: readonly Segment[],
 ) {
   const length = segmentLength(segment);
   const midpoint = pointAt(segment, 0.5);
-  const probeDistance = segmentTolerance(segment) * 4;
+  const probeDistance = localProbeDistance(segment, arrangement);
   const normalX = -(segment.to.y - segment.from.y) / length;
   const normalY = (segment.to.x - segment.from.x) / length;
   const firstSide = pointInUnion(
@@ -908,7 +801,7 @@ function projectGroupBorder(
   return deduplicateSegments(
     segments
       .flatMap((segment) => splitSegment(segment, segments))
-      .filter((piece) => isUnionBoundary(piece, polygons)),
+      .filter((piece) => isUnionBoundary(piece, polygons, segments)),
   )
     .map(
       (segment) =>
@@ -930,6 +823,7 @@ function deduplicateAnnotations(view: PuzzleSceneView) {
 export function projectPuzzleScene(
   puzzle: PuzzlePackageV1,
   view: PuzzleSceneView,
+  metrics?: PuzzleSceneProjectionMetrics,
 ): PuzzleScene {
   let minX = Number.POSITIVE_INFINITY;
   let minY = Number.POSITIVE_INFINITY;
@@ -940,7 +834,7 @@ export function projectPuzzleScene(
 
   const nodes: SceneCellNode[] = Object.values(puzzle.cells).map(
     (cell, cellIndex) => {
-      const geometry = projectShape(cell.shape);
+      const geometry = projectShape(cell.shape, metrics);
       geometryByCellId.set(cell.id, geometry);
       if (geometry.bounds !== undefined) {
         minX = Math.min(minX, geometry.bounds.minX);

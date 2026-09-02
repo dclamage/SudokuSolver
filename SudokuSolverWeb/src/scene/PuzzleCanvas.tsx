@@ -1,4 +1,4 @@
-import { memo, useId, useMemo } from "react";
+import { memo, useMemo } from "react";
 import type { CSSProperties, KeyboardEvent, PointerEvent } from "react";
 
 import type { CellId, PuzzlePackageV1 } from "../domain/puzzle/types";
@@ -46,13 +46,7 @@ function cellNodesEqual(first: SceneCellNode, second: SceneCellNode) {
   );
 }
 
-const CellNode = memo(function CellNode({
-  node,
-  clipNamespace,
-}: {
-  node: SceneCellNode;
-  clipNamespace: string;
-}) {
+const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
   const candidates = node.content.filter(
     (content) => content.role === "candidate",
   );
@@ -86,29 +80,42 @@ const CellNode = memo(function CellNode({
       )}
       {candidates.length > 0 ? (
         <g data-testid={`candidates-${node.cellId}`} aria-hidden="true">
-          {candidates.map((candidate) => (
-            <text
-              className="puzzle-cell__candidate"
-              key={candidate.id}
-              x={candidate.x}
-              y={candidate.y}
-              clipPath={
-                candidate.clip === undefined
-                  ? undefined
-                  : `url(#${clipNamespace}-${candidate.clip.id})`
-              }
-            >
-              {candidate.text}
-            </text>
-          ))}
+          {candidates.map((candidate) =>
+            candidate.clip === undefined ? (
+              <text
+                className="puzzle-cell__candidate"
+                key={candidate.id}
+                x={candidate.x}
+                y={candidate.y}
+              >
+                {candidate.text}
+              </text>
+            ) : (
+              <svg
+                className="puzzle-cell__candidate-viewport"
+                key={candidate.id}
+                x={candidate.clip.x}
+                y={candidate.clip.y}
+                width={candidate.clip.width}
+                height={candidate.clip.height}
+                viewBox={`${candidate.clip.x} ${candidate.clip.y} ${candidate.clip.width} ${candidate.clip.height}`}
+                overflow="hidden"
+              >
+                <text
+                  className="puzzle-cell__candidate"
+                  x={candidate.x}
+                  y={candidate.y}
+                >
+                  {candidate.text}
+                </text>
+              </svg>
+            ),
+          )}
         </g>
       ) : null}
     </g>
   );
-}, (previous, next) =>
-  previous.clipNamespace === next.clipNamespace &&
-  cellNodesEqual(previous.node, next.node),
-);
+}, (previous, next) => cellNodesEqual(previous.node, next.node));
 
 function findCellId(target: EventTarget | null, currentTarget: SVGSVGElement) {
   if (!(target instanceof Element)) {
@@ -126,7 +133,6 @@ export function PuzzleCanvas({
   view,
   onSelectCell,
 }: PuzzleCanvasProps) {
-  const clipNamespace = `puzzle-${useId().replace(/[^A-Za-z0-9_-]/g, "")}`;
   const scene = useMemo(
     () => projectPuzzleScene(puzzle, view),
     [puzzle, view],
@@ -167,29 +173,9 @@ export function PuzzleCanvas({
       onKeyDown={selectKeyboardCell}
       preserveAspectRatio="xMidYMid meet"
     >
-      <defs>
-        {scene.clips.map((clip) => (
-          <clipPath
-            id={`${clipNamespace}-${clip.id}`}
-            key={clip.id}
-            clipPathUnits="userSpaceOnUse"
-          >
-            <rect
-              x={clip.x}
-              y={clip.y}
-              width={clip.width}
-              height={clip.height}
-            />
-          </clipPath>
-        ))}
-      </defs>
       {scene.nodes.map((node) =>
         node.kind === "cell" ? (
-          <CellNode
-            key={node.id}
-            node={node}
-            clipNamespace={clipNamespace}
-          />
+          <CellNode key={node.id} node={node} />
         ) : (
           <path
             className={`puzzle-scene-path puzzle-scene-path--${node.role}`}
