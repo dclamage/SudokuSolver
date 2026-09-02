@@ -2,13 +2,17 @@ using System.Diagnostics.CodeAnalysis;
 using System.Text;
 using System.Text.Json;
 using SudokuSolver;
+using SudokuSolverService.Protocol;
 
-namespace SudokuSolverWasm;
+namespace SudokuSolverService;
 
 internal sealed class ByteArrayComparer : IEqualityComparer<byte[]>
 {
-    public bool Equals(byte[] x, byte[] y) => x.SequenceEqual(y);
+    /// <inheritdoc/>
+    public bool Equals(byte[]? x, byte[]? y)
+        => ReferenceEquals(x, y) || (x is not null && y is not null && x.SequenceEqual(y));
 
+    /// <inheritdoc/>
     public int GetHashCode([DisallowNull] byte[] data)
     {
         unchecked
@@ -33,31 +37,153 @@ internal sealed class ByteArrayComparer : IEqualityComparer<byte[]>
 
 internal sealed class ResponseCacheItem
 {
-    public Solver request { get; set; }
-    public BaseResponse response { get; set; }
+    /// <summary>Gets or sets the solver request whose result was cached.</summary>
+    public required Solver request { get; set; }
+    /// <summary>Gets or sets the cached legacy response.</summary>
+    public required BaseResponse response { get; set; }
 }
 
 /// <summary>
-/// Transport-agnostic port of the command handling in
-/// <c>SudokuSolverConsole/WebsocketListener.cs</c>. Instead of writing to a websocket it hands
-/// each response to a sink, so the same protocol can be driven from JS interop in the browser.
-///
-/// Prototype note: this is a deliberate copy rather than a refactor of the console listener, to
-/// keep the experiment isolated from shipping code. If the WASM path graduates, the two should be
-/// merged into one shared processor.
+/// Processes native and legacy solver commands independently of their transport host.
 /// </summary>
-internal sealed class SolverCommandProcessor(Action<string> sendJson, bool singleThreaded)
+public sealed class SolverCommandProcessor
 {
+    private readonly bool singleThreaded;
+    private readonly IReadOnlyList<string>? legacyAdditionalConstraints;
+    private readonly object legacyExecutionLock = new();
+    private readonly NativeOperationRunner nativeRunner;
     private readonly Dictionary<byte[], BaseResponse> trueCandidatesResponseCache = new(new ByteArrayComparer());
     private readonly List<ResponseCacheItem> lastTrueCandidatesResponses = [];
+    private Action<string>? sendJson;
+
+    /// <summary>Initializes a processor that uses the repository's standard legacy constraints.</summary>
+    /// <param name="singleThreaded">Whether solver algorithms must avoid internal parallelism.</param>
+    public SolverCommandProcessor(bool singleThreaded)
+        : this(singleThreaded, null)
+    {
+    }
+
+    /// <summary>Initializes a processor with console-supplied legacy additional constraints.</summary>
+    /// <param name="singleThreaded">Whether solver algorithms must avoid internal parallelism.</param>
+    /// <param name="legacyAdditionalConstraints">Optional additional legacy constraint declarations.</param>
+    public SolverCommandProcessor(
+        bool singleThreaded,
+        IEnumerable<string>? legacyAdditionalConstraints)
+    {
+        this.singleThreaded = singleThreaded;
+        this.legacyAdditionalConstraints = legacyAdditionalConstraints?.ToArray();
+        nativeRunner = new NativeOperationRunner(singleThreaded);
+    }
 
     /// <summary>
     /// Runs one protocol message to completion, emitting zero or more responses through the sink.
     /// Long-running commands ("count", "estimate") emit progress responses as they go.
     /// </summary>
-    public void Handle(string messageJson, CancellationToken cancellationToken)
+    /// <param name="messageJson">The native or legacy request JSON.</param>
+    /// <param name="sendJson">The transport-owned serialized response sink.</param>
+    /// <param name="cancellationToken">The transport-owned cancellation token.</param>
+    public void Handle(
+        string messageJson,
+        Action<string> sendJson,
+        CancellationToken cancellationToken)
     {
-        Message message = JsonSerializer.Deserialize(messageJson, WasmJsonContext.Default.Message);
+        ArgumentException.ThrowIfNullOrWhiteSpace(messageJson);
+        ArgumentNullException.ThrowIfNull(sendJson);
+
+        using JsonDocument document = JsonDocument.Parse(messageJson);
+        if (document.RootElement.ValueKind == JsonValueKind.Object
+            && document.RootElement.TryGetProperty("protocolVersion", out _))
+        {
+            HandleNative(messageJson, sendJson, cancellationToken);
+            return;
+        }
+
+        lock (legacyExecutionLock)
+        {
+            this.sendJson = sendJson;
+            try
+            {
+                HandleLegacy(messageJson, cancellationToken);
+            }
+            finally
+            {
+                this.sendJson = null;
+            }
+        }
+    }
+
+    private void HandleNative(
+        string messageJson,
+        Action<string> sendJson,
+        CancellationToken cancellationToken)
+    {
+        SolverRequest request;
+        try
+        {
+            request = JsonSerializer.Deserialize(
+                messageJson,
+                ProtocolJsonContext.Default.SolverRequest)
+                ?? throw new JsonException("Native solver request was empty.");
+        }
+        catch (Exception exception) when (exception is JsonException or ArgumentException or InvalidOperationException)
+        {
+            SendNativeEnvelopeError(messageJson, sendJson, "invalidPackage", exception.Message);
+            return;
+        }
+        catch (Exception exception)
+        {
+            SendNativeEnvelopeError(messageJson, sendJson, "internalError", exception.Message);
+            return;
+        }
+        nativeRunner.Run(
+            request,
+            response => sendJson(JsonSerializer.Serialize(
+                response,
+                ProtocolJsonContext.Default.SolverResponse)),
+            cancellationToken);
+    }
+
+    private static void SendNativeEnvelopeError(
+        string messageJson,
+        Action<string> sendJson,
+        string code,
+        string message)
+    {
+        using JsonDocument document = JsonDocument.Parse(messageJson);
+        JsonElement root = document.RootElement;
+        SolverResponse response = new()
+        {
+            Kind = "error",
+            ProtocolVersion = 1,
+            RequestId = ReadString(root, "requestId"),
+            DocumentRevision = ReadInt64(root, "documentRevision"),
+            SemanticRevision = ReadInt64(root, "semanticRevision"),
+            SemanticHash = string.Empty,
+            ContextId = ReadString(root, "contextId"),
+            Operation = ReadString(root, "operation"),
+            Error = new SolverErrorDto { Code = code, Message = message },
+        };
+        sendJson(JsonSerializer.Serialize(response, ProtocolJsonContext.Default.SolverResponse));
+    }
+
+    private static string ReadString(JsonElement root, string propertyName)
+        => root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty(propertyName, out JsonElement property)
+            && property.ValueKind == JsonValueKind.String
+                ? property.GetString() ?? string.Empty
+                : string.Empty;
+
+    private static long ReadInt64(JsonElement root, string propertyName)
+        => root.ValueKind == JsonValueKind.Object
+            && root.TryGetProperty(propertyName, out JsonElement property)
+            && property.TryGetInt64(out long value)
+                ? value
+                : 0;
+
+    private void HandleLegacy(string messageJson, CancellationToken cancellationToken)
+    {
+        Message message = JsonSerializer.Deserialize(messageJson, ProtocolJsonContext.Default.Message)
+            ?? throw new JsonException("Legacy solver request was empty.");
 
         if (message.command == "cancel")
         {
@@ -79,12 +205,15 @@ internal sealed class SolverCommandProcessor(Action<string> sendJson, bool singl
                 _ => false,
             };
 
-            Solver solver = SolverFactory.CreateFromFPuzzles(message.data, null, onlyGivens: onlyGivens);
+            Solver solver = SolverFactory.CreateFromFPuzzles(
+                message.data,
+                legacyAdditionalConstraints,
+                onlyGivens: onlyGivens);
 
             if (message.command == "truecandidates"
-                && solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj)
+                && solver.customInfo.TryGetValue("ComparableData", out object? comparableDataObj)
                 && comparableDataObj is byte[] cachedKey
-                && trueCandidatesResponseCache.TryGetValue(cachedKey, out BaseResponse cached))
+                && trueCandidatesResponseCache.TryGetValue(cachedKey, out BaseResponse? cached))
             {
                 cached.nonce = message.nonce;
                 Send(cached);
@@ -126,33 +255,36 @@ internal sealed class SolverCommandProcessor(Action<string> sendJson, bool singl
         }
         catch (Exception e)
         {
-            Console.WriteLine(e);
             Send(new InvalidResponse(message.nonce) { message = e.Message });
         }
     }
 
     private static bool GetBooleanOption(Solver solver, string option)
     {
-        return solver.customInfo.TryGetValue(option, out object obj) && obj is bool value && value;
+        return solver.customInfo.TryGetValue(option, out object? obj) && obj is bool value && value;
     }
 
     private void Send(BaseResponse response)
     {
         string json = response switch
         {
-            CanceledResponse r => JsonSerializer.Serialize(r, WasmJsonContext.Default.CanceledResponse),
-            InvalidResponse r => JsonSerializer.Serialize(r, WasmJsonContext.Default.InvalidResponse),
-            TrueCandidatesResponse r => JsonSerializer.Serialize(r, WasmJsonContext.Default.TrueCandidatesResponse),
-            SolvedResponse r => JsonSerializer.Serialize(r, WasmJsonContext.Default.SolvedResponse),
-            CountResponse r => JsonSerializer.Serialize(r, WasmJsonContext.Default.CountResponse),
-            LogicalResponse r => JsonSerializer.Serialize(r, WasmJsonContext.Default.LogicalResponse),
-            EstimateResponse r => JsonSerializer.Serialize(r, WasmJsonContext.Default.EstimateResponse),
+            CanceledResponse r => JsonSerializer.Serialize(r, ProtocolJsonContext.Default.CanceledResponse),
+            InvalidResponse r => JsonSerializer.Serialize(r, ProtocolJsonContext.Default.InvalidResponse),
+            TrueCandidatesResponse r => JsonSerializer.Serialize(r, ProtocolJsonContext.Default.TrueCandidatesResponse),
+            SolvedResponse r => JsonSerializer.Serialize(r, ProtocolJsonContext.Default.SolvedResponse),
+            CountResponse r => JsonSerializer.Serialize(r, ProtocolJsonContext.Default.CountResponse),
+            LogicalResponse r => JsonSerializer.Serialize(r, ProtocolJsonContext.Default.LogicalResponse),
+            EstimateResponse r => JsonSerializer.Serialize(r, ProtocolJsonContext.Default.EstimateResponse),
             _ => throw new NotImplementedException($"Unknown response type: {response.type}"),
         };
-        sendJson(json);
+        sendJson!(json);
     }
 
-    private void SendTrueCandidatesMessage(BaseResponse response, Solver request, CancellationToken cancellationToken, byte[] trueCandidatesKey = null)
+    private void SendTrueCandidatesMessage(
+        BaseResponse response,
+        Solver request,
+        CancellationToken cancellationToken,
+        byte[]? trueCandidatesKey = null)
     {
         if (trueCandidatesKey != null)
         {
@@ -215,7 +347,8 @@ internal sealed class SolverCommandProcessor(Action<string> sendJson, bool singl
     private void SendTrueCandidates(int nonce, Solver solver, CancellationToken cancellationToken)
     {
         long numSolutionsCap = 1;
-        if (solver.customInfo.TryGetValue("truecandidatesnumsolutions", out object numSolutionsObj) && numSolutionsObj is long n)
+        if (solver.customInfo.TryGetValue("truecandidatesnumsolutions", out object? numSolutionsObj)
+            && numSolutionsObj is long n)
         {
             numSolutionsCap = n;
         }
@@ -231,7 +364,7 @@ internal sealed class SolverCommandProcessor(Action<string> sendJson, bool singl
         List<ResponseCacheItem> matchingCacheItems = new(lastTrueCandidatesResponses);
         matchingCacheItems = matchingCacheItems.FindAll(item => request.IsInheritOf(item.request));
 
-        Solver logicalSolver = null;
+        Solver? logicalSolver = null;
         if (logical)
         {
             logicalSolver = solver.Clone(willRunNonSinglesLogic: true);
@@ -273,7 +406,7 @@ internal sealed class SolverCommandProcessor(Action<string> sendJson, bool singl
             }
         }
 
-        long[] numSolutions = solver.TrueCandidates(
+        long[]? numSolutions = solver.TrueCandidates(
                 multiThread: !singleThreaded,
                 numSolutionsCap: numSolutionsCap,
                 cancellationToken: cancellationToken);
@@ -306,7 +439,7 @@ internal sealed class SolverCommandProcessor(Action<string> sendJson, bool singl
             realFlatBoard[cellIndex] = mask;
         }
 
-        IReadOnlyList<uint> logicalFlat = logicalSolver?.FlatBoard;
+        IReadOnlyList<uint>? logicalFlat = logicalSolver?.FlatBoard;
         for (int i = 0; i < realFlatBoard.Length; i++)
         {
             uint realMask = realFlatBoard[i];
@@ -329,7 +462,8 @@ internal sealed class SolverCommandProcessor(Action<string> sendJson, bool singl
         }
 
         TrueCandidatesResponse response = new(nonce) { solutionsPerCandidate = numSolutions };
-        if (solver.customInfo.TryGetValue("ComparableData", out object comparableDataObj) && comparableDataObj is byte[] comparableData)
+        if (solver.customInfo.TryGetValue("ComparableData", out object? comparableDataObj)
+            && comparableDataObj is byte[] comparableData)
         {
             SendTrueCandidatesMessage(response, request, cancellationToken, comparableData);
         }

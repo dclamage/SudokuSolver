@@ -1,5 +1,6 @@
 using System.Runtime.InteropServices.JavaScript;
 using System.Text.Json;
+using SudokuSolverService;
 
 namespace SudokuSolverWasm;
 
@@ -47,7 +48,7 @@ public static partial class SolverInterop
     {
         interopContext = SynchronizationContext.Current;
         interopThreadId = Environment.CurrentManagedThreadId;
-        processor = new SolverCommandProcessor(DispatchResponse, singleThreaded);
+        processor = new SolverCommandProcessor(singleThreaded);
     }
 
     /// <summary>
@@ -71,7 +72,7 @@ public static partial class SolverInterop
     public static void HandleMessage(string messageJson)
     {
         CancellationTokenSource cts = cancellationTokenSource = new();
-        processor.Handle(messageJson, cts.Token);
+        processor.Handle(messageJson, DispatchResponse, cts.Token);
     }
 
     /// <summary>
@@ -82,7 +83,7 @@ public static partial class SolverInterop
     public static Task HandleMessageAsync(string messageJson)
     {
         CancellationTokenSource cts = cancellationTokenSource = new();
-        return Task.Run(() => processor.Handle(messageJson, cts.Token), cts.Token);
+        return Task.Run(() => processor.Handle(messageJson, DispatchResponse, cts.Token), cts.Token);
     }
 
     [JSExport]

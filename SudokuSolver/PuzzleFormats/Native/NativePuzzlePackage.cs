@@ -334,7 +334,7 @@ public sealed class NativeOptionalJsonValue
 }
 
 /// <summary>Serializes a present optional native JSON wrapper as its contained JSON value.</summary>
-internal sealed class NativeOptionalJsonValueConverter : JsonConverter<NativeOptionalJsonValue>
+public sealed class NativeOptionalJsonValueConverter : JsonConverter<NativeOptionalJsonValue>
 {
     /// <inheritdoc/>
     public override bool HandleNull => true;
