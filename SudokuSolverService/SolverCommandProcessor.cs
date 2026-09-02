@@ -16,6 +16,16 @@ public enum LegacyInvalidRequestBehavior
     Ignore,
 }
 
+/// <summary>Identifies an internally observable legacy cache reuse path for regression tests.</summary>
+internal enum LegacyCacheEvent
+{
+    /// <summary>An exact comparable-data cache entry supplied the response.</summary>
+    ExactHit,
+
+    /// <summary>A cached solver response was inherited by a more constrained request.</summary>
+    InheritedMatch,
+}
+
 /// <summary>Compares byte arrays by their contents for legacy cache keys.</summary>
 internal sealed class ByteArrayComparer : IEqualityComparer<byte[]>
 {
@@ -49,10 +59,23 @@ internal sealed class ByteArrayComparer : IEqualityComparer<byte[]>
 /// <summary>Associates a legacy true-candidates result with the solver state that produced it.</summary>
 internal sealed class ResponseCacheItem
 {
+    private readonly object inheritanceLock = new();
+
     /// <summary>Gets or sets the solver request whose result was cached.</summary>
     public required Solver request { get; set; }
     /// <summary>Gets or sets the cached legacy response.</summary>
     public required BaseResponse response { get; set; }
+
+    /// <summary>Checks inheritance while isolating the cached solver's lazily initialized state.</summary>
+    /// <param name="candidate">The request solver that may inherit this cached solver.</param>
+    /// <returns>Whether <paramref name="candidate"/> inherits this cached solver.</returns>
+    internal bool IsInheritedBy(Solver candidate)
+    {
+        lock (inheritanceLock)
+        {
+            return candidate.IsInheritOf(request);
+        }
+    }
 }
 
 /// <summary>
@@ -63,6 +86,7 @@ public sealed class SolverCommandProcessor
     private readonly bool singleThreaded;
     private readonly IReadOnlyList<string>? legacyAdditionalConstraints;
     private readonly LegacyInvalidRequestBehavior legacyInvalidRequestBehavior;
+    private readonly Action<LegacyCacheEvent>? legacyCacheObserver;
     private readonly object legacyCacheLock = new();
     private readonly NativeOperationRunner nativeRunner;
     private readonly Dictionary<byte[], BaseResponse> trueCandidatesResponseCache = new(new ByteArrayComparer());
@@ -93,10 +117,25 @@ public sealed class SolverCommandProcessor
         bool singleThreaded,
         IEnumerable<string>? legacyAdditionalConstraints,
         LegacyInvalidRequestBehavior legacyInvalidRequestBehavior)
+        : this(singleThreaded, legacyAdditionalConstraints, legacyInvalidRequestBehavior, null)
+    {
+    }
+
+    /// <summary>Initializes a processor with an internal cache observer for deterministic regression tests.</summary>
+    /// <param name="singleThreaded">Whether solver algorithms must avoid internal parallelism.</param>
+    /// <param name="legacyAdditionalConstraints">Optional additional legacy constraint declarations.</param>
+    /// <param name="legacyInvalidRequestBehavior">How unsupported legacy requests are handled.</param>
+    /// <param name="legacyCacheObserver">An optional observer for cache reuse paths.</param>
+    internal SolverCommandProcessor(
+        bool singleThreaded,
+        IEnumerable<string>? legacyAdditionalConstraints,
+        LegacyInvalidRequestBehavior legacyInvalidRequestBehavior,
+        Action<LegacyCacheEvent>? legacyCacheObserver)
     {
         this.singleThreaded = singleThreaded;
         this.legacyAdditionalConstraints = legacyAdditionalConstraints?.ToArray();
         this.legacyInvalidRequestBehavior = legacyInvalidRequestBehavior;
+        this.legacyCacheObserver = legacyCacheObserver;
         nativeRunner = new NativeOperationRunner(singleThreaded);
     }
 
@@ -271,6 +310,7 @@ public sealed class SolverCommandProcessor
                 && comparableDataObj is byte[] cachedKey
                 && TryGetCachedResponse(cachedKey, message.nonce, out BaseResponse? cached))
             {
+                legacyCacheObserver?.Invoke(LegacyCacheEvent.ExactHit);
                 Send(sendJson, cached!);
                 return;
             }
@@ -460,7 +500,15 @@ public sealed class SolverCommandProcessor
         {
             matchingCacheItems = new(lastTrueCandidatesResponses);
         }
-        matchingCacheItems = matchingCacheItems.FindAll(item => request.IsInheritOf(item.request));
+        matchingCacheItems = matchingCacheItems.FindAll(item =>
+        {
+            bool inherited = item.IsInheritedBy(request);
+            if (inherited)
+            {
+                legacyCacheObserver?.Invoke(LegacyCacheEvent.InheritedMatch);
+            }
+            return inherited;
+        });
 
         Solver? logicalSolver = null;
         if (logical)

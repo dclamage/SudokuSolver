@@ -374,7 +374,12 @@ public sealed class SolverCommandProcessorTests
     [TestMethod]
     public void LegacyTrueCandidatesCacheHitUsesCurrentNonce()
     {
-        SolverCommandProcessor processor = new(singleThreaded: true);
+        ConcurrentQueue<LegacyCacheEvent> cacheEvents = new();
+        SolverCommandProcessor processor = new(
+            singleThreaded: true,
+            legacyAdditionalConstraints: null,
+            LegacyInvalidRequestBehavior.RespondWithInvalid,
+            cacheEvents.Enqueue);
         List<string> firstResponses = [];
         List<string> secondResponses = [];
 
@@ -388,6 +393,46 @@ public sealed class SolverCommandProcessorTests
         Assert.AreEqual(402, (int)second["nonce"]!);
         first["nonce"] = 402;
         Assert.IsTrue(JsonNode.DeepEquals(first, second));
+        Assert.AreEqual(1, cacheEvents.Count(cacheEvent => cacheEvent == LegacyCacheEvent.ExactHit));
+    }
+
+    /// <summary>Verifies concurrent inherited requests safely reuse the same real cached solver state.</summary>
+    [TestMethod]
+    public async Task ConcurrentInheritedTrueCandidatesReuseSharedCachedSolverSafely()
+    {
+        ConcurrentQueue<LegacyCacheEvent> cacheEvents = new();
+        SolverCommandProcessor processor = new(
+            singleThreaded: true,
+            legacyAdditionalConstraints: null,
+            LegacyInvalidRequestBehavior.RespondWithInvalid,
+            cacheEvents.Enqueue);
+        List<string> seedResponses = [];
+        processor.Handle(LegacyRequest(450, "truecandidates"), seedResponses.Add, CancellationToken.None);
+        Assert.AreEqual("truecandidates", (string?)JsonNode.Parse(seedResponses.Single())!["type"]);
+
+        string[] inheritedPuzzles = Enumerable.Range(0, 8)
+            .Select(LegacyPuzzleWithAdditionalGiven)
+            .ToArray();
+        using ManualResetEventSlim start = new();
+        ConcurrentQueue<JsonObject> responses = new();
+        Task[] tasks = inheritedPuzzles.Select((puzzle, index) => Task.Run(() =>
+        {
+            start.Wait();
+            processor.Handle(
+                LegacyRequest(451 + index, "truecandidates", puzzle),
+                json => responses.Enqueue(JsonNode.Parse(json)!.AsObject()),
+                CancellationToken.None);
+        })).ToArray();
+
+        start.Set();
+        await Task.WhenAll(tasks).WaitAsync(TimeSpan.FromSeconds(30));
+
+        Assert.HasCount(inheritedPuzzles.Length, responses);
+        Assert.IsTrue(responses.All(response => (string?)response["type"] == "truecandidates"));
+        Assert.IsTrue(
+            cacheEvents.Count(cacheEvent => cacheEvent == LegacyCacheEvent.InheritedMatch)
+                >= inheritedPuzzles.Length,
+            "Every derived request should inherit the seeded cached solver response.");
     }
 
     /// <summary>Verifies check and count keep progress-before-final legacy response sequencing.</summary>
@@ -500,6 +545,42 @@ public sealed class SolverCommandProcessorTests
         Assert.HasCount(2, wasmResponses);
         Assert.IsTrue(wasmResponses.All(json => (string?)JsonNode.Parse(json)!["type"] == "invalid"));
         Assert.IsEmpty(consoleResponses);
+    }
+
+    /// <summary>Verifies the factories consumed by the concrete hosts preserve their invalid-command behavior.</summary>
+    [TestMethod]
+    public void HostFactoriesPreserveConsoleAndWasmLegacyBehavior()
+    {
+        List<string> consoleResponses = [];
+        List<string> wasmResponses = [];
+        string request = LegacyRequest(460, "future-command");
+
+        SolverCommandProcessorFactory.CreateConsole(singleThreaded: true).Handle(
+            request,
+            consoleResponses.Add,
+            CancellationToken.None);
+        SolverCommandProcessorFactory.CreateWasm(singleThreaded: true).Handle(
+            request,
+            wasmResponses.Add,
+            CancellationToken.None);
+
+        Assert.IsEmpty(consoleResponses);
+        Assert.HasCount(1, wasmResponses);
+        Assert.AreEqual("invalid", (string?)JsonNode.Parse(wasmResponses.Single())!["type"]);
+    }
+
+    private static string LegacyPuzzleWithAdditionalGiven(int ordinal)
+    {
+        Solver solver = SolverFactory.CreateFromFPuzzles(
+            NativeRequestFixtures.LegacyPuzzle,
+            onlyGivens: true);
+        bool[,] givens = (bool[,])solver.customInfo["Givens"];
+        int cellIndex = Enumerable.Range(0, solver.NUM_CELLS)
+            .Where(index => !givens[index / solver.WIDTH, index % solver.WIDTH])
+            .ElementAt(ordinal);
+        Assert.IsTrue(solver.SetValue(cellIndex, NativeRequestFixtures.LegacySolution[cellIndex] - '0'));
+        givens[cellIndex / solver.WIDTH, cellIndex % solver.WIDTH] = true;
+        return SolverFactory.ToFPuzzlesURL(solver, justBase64: true);
     }
 
     private static string LegacyRequest(

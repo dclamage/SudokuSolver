@@ -8,7 +8,7 @@ namespace SudokuSolverConsole;
 /// <summary>Owns websocket clients and cancellation while delegating solver operations.</summary>
 internal sealed class WebsocketListener : IDisposable
 {
-    private readonly Dictionary<Guid, CancellationTokenSource> cancellationTokenMap = [];
+    private readonly ClientCancellationRegistry cancellations = new();
     private readonly object serverLock = new();
     private WatsonWsServer server;
     private SolverCommandProcessor processor;
@@ -34,10 +34,7 @@ internal sealed class WebsocketListener : IDisposable
         }
 
         this.verboseLogs = verboseLogs;
-        processor = new SolverCommandProcessor(
-            singleThreaded,
-            additionalConstraints,
-            LegacyInvalidRequestBehavior.Ignore);
+        processor = SolverCommandProcessorFactory.CreateConsole(singleThreaded, additionalConstraints);
         server = new(host, port, false);
         server.ClientConnected += (_, args) => ClientConnected(args);
         server.ClientDisconnected += (_, args) => ClientDisconnected(args);
@@ -54,11 +51,7 @@ internal sealed class WebsocketListener : IDisposable
     private void ClientDisconnected(DisconnectionEventArgs args)
     {
         Console.WriteLine("Client disconnected: " + args.Client.IpPort);
-        if (cancellationTokenMap.Remove(args.Client.Guid, out CancellationTokenSource cancellationToken))
-        {
-            cancellationToken.Cancel();
-            cancellationToken.Dispose();
-        }
+        cancellations.CancelAndRemove(args.Client.Guid);
     }
 
     private void MessageReceived(MessageReceivedEventArgs args)
@@ -66,25 +59,23 @@ internal sealed class WebsocketListener : IDisposable
         string messageJson = Encoding.UTF8.GetString(args.Data);
         Guid clientGuid = args.Client.Guid;
 
-        if (cancellationTokenMap.Remove(clientGuid, out CancellationTokenSource previous))
-        {
-            previous.Cancel();
-            previous.Dispose();
-        }
-
         if (IsLegacyCancel(messageJson))
         {
+            cancellations.CancelAndRemove(clientGuid);
             processor.Handle(messageJson, json => SendMessage(clientGuid, json), CancellationToken.None);
             return;
         }
 
-        CancellationTokenSource current = cancellationTokenMap[clientGuid] = new();
+        if (!cancellations.TryReplace(clientGuid, out CancellationToken current))
+        {
+            return;
+        }
         _ = Task.Run(
             () =>
             {
                 try
                 {
-                    processor.Handle(messageJson, json => SendMessage(clientGuid, json), current.Token);
+                    processor.Handle(messageJson, json => SendMessage(clientGuid, json), current);
                 }
                 catch (Exception exception)
                 {
@@ -94,7 +85,7 @@ internal sealed class WebsocketListener : IDisposable
                     }
                 }
             },
-            current.Token);
+            current);
     }
 
     private static bool IsLegacyCancel(string messageJson)
@@ -124,12 +115,7 @@ internal sealed class WebsocketListener : IDisposable
     /// <inheritdoc/>
     public void Dispose()
     {
-        foreach (CancellationTokenSource cancellationToken in cancellationTokenMap.Values)
-        {
-            cancellationToken.Cancel();
-            cancellationToken.Dispose();
-        }
-        cancellationTokenMap.Clear();
+        cancellations.Dispose();
         ((IDisposable)server).Dispose();
     }
 }

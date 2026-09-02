@@ -1,6 +1,6 @@
+using SudokuSolverService;
 using System.Runtime.InteropServices.JavaScript;
 using System.Text.Json;
-using SudokuSolverService;
 
 namespace SudokuSolverWasm;
 
@@ -48,7 +48,7 @@ public static partial class SolverInterop
     {
         interopContext = SynchronizationContext.Current;
         interopThreadId = Environment.CurrentManagedThreadId;
-        processor = new SolverCommandProcessor(singleThreaded);
+        processor = SolverCommandProcessorFactory.CreateWasm(singleThreaded);
     }
 
     /// <summary>
