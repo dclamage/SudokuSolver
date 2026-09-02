@@ -37,6 +37,10 @@ export class FakeWorkerTransport implements WorkerTransport {
     this.publish({ kind: "error", generation, requestId, error });
   }
 
+  done(requestId: string, generation = this.generation): void {
+    this.publish({ kind: "done", generation, requestId });
+  }
+
   restart(): void {
     this.restartCount += 1;
     this.generation += 1;

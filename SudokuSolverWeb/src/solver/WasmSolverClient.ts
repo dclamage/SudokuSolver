@@ -26,8 +26,10 @@ export class SolverResponseError extends Error {
 
 export class WasmSolverClient implements SolverClient {
   private readonly pending = new Map<string, PendingJob>();
+  private readonly completed = new Set<string>();
   private readonly unsubscribeTransport: () => void;
   private disposed = false;
+  private unavailableError: Error | undefined;
 
   constructor(private readonly transport: WorkerTransport) {
     this.unsubscribeTransport = transport.subscribe((event) =>
@@ -40,6 +42,13 @@ export class WasmSolverClient implements SolverClient {
   ): SolverJob<TResponse> {
     if (this.disposed) {
       throw new Error("solver client disposed");
+    }
+
+    if (this.unavailableError !== undefined) {
+      throw new Error(
+        `solver worker unavailable: ${this.unavailableError.message}`,
+        { cause: this.unavailableError },
+      );
     }
 
     if (this.pending.has(request.requestId)) {
@@ -95,6 +104,12 @@ export class WasmSolverClient implements SolverClient {
 
   private handleTransportEvent(event: WorkerTransportEvent): void {
     if (event.kind === "error") {
+      if (
+        event.requestId === undefined &&
+        event.generation === this.transport.generation
+      ) {
+        this.unavailableError ??= event.error;
+      }
       for (const job of this.pending.values()) {
         if (
           job.generation === event.generation &&
@@ -103,6 +118,22 @@ export class WasmSolverClient implements SolverClient {
         ) {
           this.rejectJob(job, event.error);
         }
+      }
+      return;
+    }
+
+    if (event.kind === "done") {
+      const completionKey = getCompletionKey(event.generation, event.requestId);
+      if (this.completed.delete(completionKey)) {
+        return;
+      }
+
+      const job = this.pending.get(event.requestId);
+      if (job !== undefined && job.generation === event.generation) {
+        this.rejectJob(
+          job,
+          new Error("solver worker completed without a terminal response"),
+        );
       }
       return;
     }
@@ -129,6 +160,9 @@ export class WasmSolverClient implements SolverClient {
     }
 
     if (event.response.kind === "result") {
+      this.completed.add(
+        getCompletionKey(event.generation, event.response.requestId),
+      );
       this.pending.delete(job.request.requestId);
       job.resolve(event.response);
       return;
@@ -141,6 +175,9 @@ export class WasmSolverClient implements SolverClient {
             event.response.error.message,
           )
         : new Error("solver job canceled");
+    this.completed.add(
+      getCompletionKey(event.generation, event.response.requestId),
+    );
     this.rejectJob(job, error);
   }
 
@@ -150,6 +187,11 @@ export class WasmSolverClient implements SolverClient {
     }
 
     this.transport.restart();
+    for (const completionKey of this.completed) {
+      if (completionKey.startsWith(`${generation}:`)) {
+        this.completed.delete(completionKey);
+      }
+    }
     for (const job of this.pending.values()) {
       if (job.generation === generation) {
         this.rejectJob(job, new Error("solver worker restarted"));
@@ -161,6 +203,10 @@ export class WasmSolverClient implements SolverClient {
     this.pending.delete(job.request.requestId);
     job.reject(error);
   }
+}
+
+function getCompletionKey(generation: number, requestId: string): string {
+  return `${generation}:${requestId}`;
 }
 
 function isCorrelated(

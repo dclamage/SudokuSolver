@@ -151,6 +151,29 @@ describe("WasmSolverClient", () => {
     ).resolves.toBe("runtime boot failed");
   });
 
+  it("fails a second request immediately after a generation-wide worker failure", async () => {
+    const transport = new FakeWorkerTransport();
+    const client = new WasmSolverClient(transport);
+    const first = client.start(makeValidateRequest({ requestId: "first" }));
+    transport.fail(new Error("runtime boot failed"));
+    await expect(first.result).rejects.toThrow("runtime boot failed");
+
+    expect(() =>
+      client.start(makeValidateRequest({ requestId: "second" })),
+    ).toThrow("solver worker unavailable: runtime boot failed");
+  });
+
+  it("remains unavailable after repeated generation-wide boot failures", () => {
+    const transport = new FakeWorkerTransport();
+    const client = new WasmSolverClient(transport);
+    transport.fail(new Error("first boot failed"));
+    transport.fail(new Error("second boot failed"));
+
+    expect(() =>
+      client.start(makeValidateRequest({ requestId: "after-retries" })),
+    ).toThrow("solver worker unavailable: first boot failed");
+  });
+
   it("publishes correlated progress and resolves only the terminal result", async () => {
     const transport = new FakeWorkerTransport();
     const client = new WasmSolverClient(transport);
@@ -213,6 +236,65 @@ describe("WasmSolverClient", () => {
     transport.emit(current);
 
     await expect(newJob.result).resolves.toBe(current);
+  });
+
+  it("rejects done without a terminal response and frees the request ID", async () => {
+    const transport = new FakeWorkerTransport();
+    const client = new WasmSolverClient(transport);
+    const job = client.start(makeValidateRequest({ requestId: "done-only" }));
+    const outcome = job.result.then(
+      () => "resolved",
+      (error: Error) => error.message,
+    );
+
+    transport.done("done-only");
+
+    await expect(
+      Promise.race([
+        outcome,
+        new Promise<string>((resolve) =>
+          setTimeout(() => resolve("still pending"), 10),
+        ),
+      ]),
+    ).resolves.toBe("solver worker completed without a terminal response");
+    const replacement = client.start(
+      makeValidateRequest({ requestId: "done-only" }),
+    );
+    const response = makeValidateResponse({ requestId: "done-only" });
+    transport.emit(response);
+    await expect(replacement.result).resolves.toBe(response);
+  });
+
+  it("ignores done after a normal terminal response", async () => {
+    const transport = new FakeWorkerTransport();
+    const client = new WasmSolverClient(transport);
+    const job = client.start(makeValidateRequest({ requestId: "terminal" }));
+    const response = makeValidateResponse({ requestId: "terminal" });
+    transport.emit(response);
+    await expect(job.result).resolves.toBe(response);
+
+    transport.done("terminal");
+
+    expect(transport.restartCount).toBe(0);
+  });
+
+  it("ignores late done from a terminated worker generation", async () => {
+    const transport = new FakeWorkerTransport();
+    const client = new WasmSolverClient(transport);
+    const oldJob = client.start(makeValidateRequest({ requestId: "late-done" }));
+    const oldRejection = expect(oldJob.result).rejects.toThrow(
+      "solver worker restarted",
+    );
+    oldJob.cancel();
+    await oldRejection;
+    const currentJob = client.start(
+      makeValidateRequest({ requestId: "late-done" }),
+    );
+    transport.done("late-done", 0);
+    const current = makeValidateResponse({ requestId: "late-done" });
+    transport.emit(current);
+
+    await expect(currentJob.result).resolves.toBe(current);
   });
 });
 

@@ -10,29 +10,36 @@ import type {
   WorkerRequestMessage,
 } from "../WorkerTransport";
 
-const dotnetModuleUrl = "/solver/_framework/dotnet.js";
 const queuedRequests: WorkerRequestMessage[] = [];
 let solver: SudokuSolverAssemblyExports["SudokuSolverWasm"]["SolverInterop"]
   | undefined;
 
 const workerScope = globalThis as unknown as {
+  location: Location;
   postMessage(message: WorkerOutboundMessage): void;
-  onmessage: ((event: MessageEvent<WorkerRequestMessage>) => void) | null;
+  addEventListener(
+    type: "message",
+    listener: (event: MessageEvent<WorkerRequestMessage>) => void,
+  ): void;
 };
 
-workerScope.onmessage = (event) => {
+workerScope.addEventListener("message", (event) => {
   if (solver === undefined) {
     queuedRequests.push(event.data);
     return;
   }
 
   handleRequest(event.data);
-};
+});
 
 void boot();
 
 async function boot(): Promise<void> {
   try {
+    const dotnetModuleUrl = new URL(
+      "/solver/_framework/dotnet.js",
+      workerScope.location.origin,
+    ).href;
     const dotnetModule = (await import(
       /* @vite-ignore */ dotnetModuleUrl
     )) as DotnetModule;

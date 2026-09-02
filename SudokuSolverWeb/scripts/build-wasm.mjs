@@ -34,7 +34,15 @@ mkdirSync(buildRoot, { recursive: true });
 
 const publish = spawnSync(
   "dotnet",
-  ["publish", project, "-c", "Debug", "-o", buildRoot],
+  [
+    "publish",
+    project,
+    "-c",
+    "Debug",
+    "-p:WasmEnableHotReload=false",
+    "-o",
+    buildRoot,
+  ],
   { cwd: repositoryRoot, stdio: "inherit", shell: false },
 );
 if (publish.error !== undefined) {
