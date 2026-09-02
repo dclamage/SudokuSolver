@@ -17,28 +17,6 @@ function referencedReleaseSemantics(
   if (release === undefined || releaseIds.size === 0) {
     return undefined;
   }
-  if (
-    typeof release === "object" &&
-    release !== null &&
-    !Array.isArray(release)
-  ) {
-    const releaseRecord = release as Readonly<Record<string, JsonValue>>;
-    const releases = releaseRecord.releases;
-    if (
-      typeof releases === "object" &&
-      releases !== null &&
-      !Array.isArray(releases)
-    ) {
-      const releasesRecord = releases as Readonly<Record<string, JsonValue>>;
-      return {
-        releases: Object.fromEntries(
-          [...releaseIds]
-            .filter((releaseId) => releaseId in releasesRecord)
-            .map((releaseId) => [releaseId, releasesRecord[releaseId]]),
-        ),
-      };
-    }
-  }
   return release;
 }
 

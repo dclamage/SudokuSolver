@@ -56,6 +56,59 @@ describe("validatePuzzlePackage", () => {
     );
   });
 
+  it.each([
+    {
+      entityType: "adjacency",
+      mutate: (invalid: PuzzlePackageV1) => {
+        invalid.adjacency["adjacency-key"] = {
+          id: "adjacency-id",
+          kind: "orthogonal",
+          fromCellId: "r1c1",
+          toCellId: "r1c2",
+        };
+      },
+    },
+    {
+      entityType: "point",
+      mutate: (invalid: PuzzlePackageV1) => {
+        invalid.points["point-key"] = { id: "point-id", x: 0, y: 0 };
+      },
+    },
+    {
+      entityType: "edge",
+      mutate: (invalid: PuzzlePackageV1) => {
+        invalid.points.from = { id: "from", x: 0, y: 0 };
+        invalid.points.to = { id: "to", x: 1, y: 0 };
+        invalid.edges["edge-key"] = {
+          id: "edge-id",
+          fromPointId: "from",
+          toPointId: "to",
+        };
+      },
+    },
+    {
+      entityType: "path",
+      mutate: (invalid: PuzzlePackageV1) => {
+        invalid.points.anchor = { id: "anchor", x: 0, y: 0 };
+        invalid.paths["path-key"] = {
+          id: "path-id",
+          pointIds: ["anchor"],
+          closed: false,
+        };
+      },
+    },
+  ])(
+    "rejects a $entityType record whose key differs from its embedded ID",
+    ({ entityType, mutate }) => {
+      const invalid = structuredClone(fixture) as unknown as PuzzlePackageV1;
+      mutate(invalid);
+
+      expect(() => validatePuzzlePackage(invalid)).toThrow(
+        `${entityType} key ${entityType}-key does not match id ${entityType}-id`,
+      );
+    },
+  );
+
   it("rejects constraint bindings that are not entity-reference arrays", () => {
     const invalid = structuredClone(fixture) as unknown as PuzzlePackageV1;
     invalid.constraints = [
@@ -192,8 +245,8 @@ describe("validatePuzzlePackage", () => {
     candidate.assets = [{ id: "asset-1", mediaType: "image/svg+xml" }];
     candidate.provenance = { importedBy: "contract-test" };
     candidate.extensions = {
-      "example.semantic": { impact: "semantic", data: { enabled: true } },
-      "example.cosmetic": { impact: "cosmetic", data: { opacity: 1 } },
+      "example:semantic": { impact: "semantic", data: { enabled: true } },
+      "example:cosmetic": { impact: "cosmetic", data: { opacity: 1 } },
     };
 
     const puzzle = validatePuzzlePackage(candidate);
@@ -208,24 +261,41 @@ describe("validatePuzzlePackage", () => {
     ]);
     expect(puzzle.provenance).toEqual({ importedBy: "contract-test" });
     expect(puzzle.extensions).toEqual({
-      "example.semantic": { impact: "semantic", data: { enabled: true } },
-      "example.cosmetic": { impact: "cosmetic", data: { opacity: 1 } },
+      "example:semantic": { impact: "semantic", data: { enabled: true } },
+      "example:cosmetic": { impact: "cosmetic", data: { opacity: 1 } },
     });
   });
 
   it("rejects malformed extension impact declarations", () => {
     const invalid = structuredClone(fixture) as unknown as PuzzlePackageV1;
     invalid.extensions = {
-      "example.unknown": {
+      "example:unknown": {
         impact: "unknown" as "semantic",
         data: { enabled: true },
       },
     };
 
     expect(() => validatePuzzlePackage(invalid)).toThrow(
-      "extension example.unknown has invalid impact",
+      "extension example:unknown has invalid impact",
     );
   });
+
+  it.each(["unnamespaced", ":name", "namespace:", "namespace:   "])(
+    "rejects extension ID %s without non-empty namespace and name tokens",
+    (extensionId) => {
+      const invalid = structuredClone(fixture) as unknown as PuzzlePackageV1;
+      invalid.extensions = {
+        [extensionId]: {
+          impact: "semantic",
+          data: { enabled: true },
+        },
+      };
+
+      expect(() => validatePuzzlePackage(invalid)).toThrow(
+        `extension ${extensionId} must use <namespace>:<name>`,
+      );
+    },
+  );
 
   it("rejects unsafe semantic numbers while permitting decimal geometry", () => {
     const invalid = structuredClone(fixture) as unknown as PuzzlePackageV1;
@@ -315,18 +385,48 @@ describe("computeSemanticHash", () => {
     );
   });
 
+  it("includes the entire opaque release payload when a release is referenced", async () => {
+    const original = validatePuzzlePackage(fixture);
+    original.constraints = [
+      {
+        id: "custom-1",
+        typeId: "example.custom",
+        definitionReleaseId: "release-1",
+        bindings: {},
+        parameters: {},
+      },
+    ];
+    original.release = {
+      releases: {
+        "release-1": { artifactHash: "sha256:artifact" },
+      },
+      compilerVersion: 1,
+    };
+    const changed = structuredClone(original);
+    changed.release = {
+      releases: {
+        "release-1": { artifactHash: "sha256:artifact" },
+      },
+      compilerVersion: 2,
+    };
+
+    await expect(computeSemanticHash(changed)).resolves.not.toBe(
+      await computeSemanticHash(original),
+    );
+  });
+
   it("includes semantic extensions and excludes cosmetic extensions", async () => {
     const original = validatePuzzlePackage(fixture);
     const semantic = structuredClone(original);
     semantic.extensions = {
-      "example.semantic": {
+      "example:semantic": {
         impact: "semantic",
         data: { enabled: true },
       },
     };
     const cosmetic = structuredClone(original);
     cosmetic.extensions = {
-      "example.cosmetic": {
+      "example:cosmetic": {
         impact: "cosmetic",
         data: { opacity: 0.5 },
       },

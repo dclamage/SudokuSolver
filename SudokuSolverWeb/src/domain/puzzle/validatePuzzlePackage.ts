@@ -417,6 +417,11 @@ export function validatePuzzlePackage(value: unknown): PuzzlePackageV1 {
   for (const [adjacencyKey, adjacencyItem] of Object.entries(adjacencyValue)) {
     const item = expectRecord(adjacencyItem, `adjacency ${adjacencyKey}`);
     const id = expectString(item.id, `adjacency ${adjacencyKey} id`);
+    if (id !== adjacencyKey) {
+      throw new Error(
+        `adjacency key ${adjacencyKey} does not match id ${id}`,
+      );
+    }
     const fromCellId = expectString(item.fromCellId, `adjacency ${id} fromCellId`);
     const toCellId = expectString(item.toCellId, `adjacency ${id} toCellId`);
     if (!(fromCellId in cells)) {
@@ -437,8 +442,12 @@ export function validatePuzzlePackage(value: unknown): PuzzlePackageV1 {
   const points: PuzzlePackageV1["points"] = {};
   for (const [pointKey, pointValue] of Object.entries(pointsValue)) {
     const point = expectRecord(pointValue, `point ${pointKey}`);
+    const id = expectString(point.id, `point ${pointKey} id`);
+    if (id !== pointKey) {
+      throw new Error(`point key ${pointKey} does not match id ${id}`);
+    }
     points[pointKey] = {
-      id: expectString(point.id, `point ${pointKey} id`),
+      id,
       x: expectFiniteNumber(point.x, `point ${pointKey} x`),
       y: expectFiniteNumber(point.y, `point ${pointKey} y`),
     };
@@ -449,6 +458,9 @@ export function validatePuzzlePackage(value: unknown): PuzzlePackageV1 {
   for (const [edgeKey, edgeValue] of Object.entries(edgesValue)) {
     const edge = expectRecord(edgeValue, `edge ${edgeKey}`);
     const id = expectString(edge.id, `edge ${edgeKey} id`);
+    if (id !== edgeKey) {
+      throw new Error(`edge key ${edgeKey} does not match id ${id}`);
+    }
     const fromPointId = expectString(edge.fromPointId, `edge ${id} fromPointId`);
     const toPointId = expectString(edge.toPointId, `edge ${id} toPointId`);
     if (!(fromPointId in points)) {
@@ -465,6 +477,9 @@ export function validatePuzzlePackage(value: unknown): PuzzlePackageV1 {
   for (const [pathKey, pathValue] of Object.entries(pathsValue)) {
     const path = expectRecord(pathValue, `path ${pathKey}`);
     const id = expectString(path.id, `path ${pathKey} id`);
+    if (id !== pathKey) {
+      throw new Error(`path key ${pathKey} does not match id ${id}`);
+    }
     const pointIds = parseStringArray(path.pointIds, `path ${id} pointIds`);
     for (const pointId of pointIds) {
       if (!(pointId in points)) {
@@ -729,6 +744,16 @@ export function validatePuzzlePackage(value: unknown): PuzzlePackageV1 {
     { impact: "semantic" | "cosmetic"; data: JsonValue }
   > = {};
   for (const [extensionId, extensionValue] of Object.entries(extensionsValue)) {
+    const separatorIndex = extensionId.indexOf(":");
+    if (
+      separatorIndex < 0 ||
+      extensionId.slice(0, separatorIndex).trim().length === 0 ||
+      extensionId.slice(separatorIndex + 1).trim().length === 0
+    ) {
+      throw new Error(
+        `extension ${extensionId} must use <namespace>:<name>`,
+      );
+    }
     const extension = expectRecord(extensionValue, `extension ${extensionId}`);
     if (extension.impact !== "semantic" && extension.impact !== "cosmetic") {
       throw new Error(`extension ${extensionId} has invalid impact`);
