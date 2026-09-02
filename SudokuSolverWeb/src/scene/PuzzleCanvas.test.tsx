@@ -449,11 +449,48 @@ describe("PuzzleCanvas", () => {
     const thinPuzzle = structuredClone(puzzle);
     const standardWidth = 0.00001;
     const cases = [
-      { cellId: "r1c1", groupId: "thin-zero", offset: 0, width: standardWidth },
-      { cellId: "r1c2", groupId: "thin-million", offset: 1_000_000, width: standardWidth },
-      { cellId: "r1c3", groupId: "thin-billion", offset: 1_000_000_000, width: standardWidth },
-      { cellId: "r1c5", groupId: "thin-billion-three-micro", offset: 1_000_000_000, width: 0.000003 },
-      { cellId: "r1c6", groupId: "thin-billion-multi-ulp", offset: 1_000_000_000, width: 0.0000005 },
+      {
+        cellId: "r1c1",
+        groupId: "thin-zero",
+        offset: 0,
+        width: standardWidth,
+      },
+      {
+        cellId: "r1c2",
+        groupId: "thin-million",
+        offset: 1_000_000,
+        width: standardWidth,
+      },
+      {
+        cellId: "r1c3",
+        groupId: "thin-billion",
+        offset: 1_000_000_000,
+        width: standardWidth,
+      },
+      {
+        cellId: "r1c5",
+        groupId: "thin-billion-three-micro",
+        offset: 1_000_000_000,
+        width: 0.000003,
+      },
+      {
+        cellId: "r1c6",
+        groupId: "thin-billion-multi-ulp",
+        offset: 1_000_000_000,
+        width: 0.0000005,
+      },
+      {
+        cellId: "r1c7",
+        groupId: "thin-billion-two-ulp",
+        offset: 1_000_000_000,
+        width: 0.0000002,
+      },
+      {
+        cellId: "r1c8",
+        groupId: "thin-min-value",
+        offset: 0,
+        width: Number.MIN_VALUE,
+      },
     ] as const;
     for (const { cellId, groupId, offset, width } of cases) {
       thinPuzzle.cells[cellId].shape = {
@@ -502,7 +539,7 @@ describe("PuzzleCanvas", () => {
       const segments = readLineSegments(
         screen.getByTestId(`group-border-${groupId}`),
       );
-      expect(canonicalSegments(segments)).toEqual(
+      expect.soft(canonicalSegments(segments), groupId).toEqual(
         canonicalSegments([
           { from: { x: offset, y: 0 }, to: { x: right, y: 0 } },
           { from: { x: right, y: 0 }, to: { x: right, y: 1 } },
@@ -510,7 +547,7 @@ describe("PuzzleCanvas", () => {
           { from: { x: offset, y: 1 }, to: { x: offset, y: 0 } },
         ]),
       );
-      expect(totalSegmentLength(segments)).toBeCloseTo(
+      expect.soft(totalSegmentLength(segments), groupId).toBeCloseTo(
         2 * ((right - offset) + 1),
         12,
       );
@@ -921,6 +958,14 @@ describe("PuzzleCanvas", () => {
     const longSixteen = projectPolygon(100, 16);
 
     expect(longFour.metrics).toEqual(shortFour.metrics);
+    expect(longFour.metrics).toEqual({
+      interiorWorkUnits: 24,
+      earCandidateScans: 1,
+      pointInTriangleTests: 1,
+      triangleEvaluations: 2,
+      nearestEdgeScans: 8,
+      pointInPolygonEdgeScans: 12,
+    });
     for (const metrics of [
       longFour.metrics,
       longEight.metrics,

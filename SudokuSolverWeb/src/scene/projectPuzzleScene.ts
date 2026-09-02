@@ -11,6 +11,8 @@ import type {
 const RELATIVE_GEOMETRY_TOLERANCE = 1e-7;
 const MAX_LENGTH_TOLERANCE = 1e-6;
 const COORDINATE_ULP_FACTOR = 16;
+const floatingPointBuffer = new ArrayBuffer(8);
+const floatingPointView = new DataView(floatingPointBuffer);
 
 interface Bounds {
   minX: number;
@@ -67,34 +69,30 @@ function recordInteriorWork(
   metrics.interiorWorkUnits += 1;
 }
 
-function pointDistanceSquared(first: Point, second: Point) {
-  const deltaX = first.x - second.x;
-  const deltaY = first.y - second.y;
-  return deltaX * deltaX + deltaY * deltaY;
-}
-
 function pointToSegmentDistance(point: Point, segment: Segment) {
   const segmentX = segment.to.x - segment.from.x;
   const segmentY = segment.to.y - segment.from.y;
-  const lengthSquared = segmentX * segmentX + segmentY * segmentY;
-  if (lengthSquared === 0) {
-    return Math.sqrt(pointDistanceSquared(point, segment.from));
+  const length = Math.hypot(segmentX, segmentY);
+  if (length === 0) {
+    return Math.hypot(
+      point.x - segment.from.x,
+      point.y - segment.from.y,
+    );
   }
 
+  const tangentX = segmentX / length;
+  const tangentY = segmentY / length;
   const projection = Math.max(
     0,
     Math.min(
-      1,
-      ((point.x - segment.from.x) * segmentX +
-        (point.y - segment.from.y) * segmentY) /
-        lengthSquared,
+      length,
+      (point.x - segment.from.x) * tangentX +
+        (point.y - segment.from.y) * tangentY,
     ),
   );
-  return Math.sqrt(
-    pointDistanceSquared(point, {
-      x: segment.from.x + projection * segmentX,
-      y: segment.from.y + projection * segmentY,
-    }),
+  return Math.hypot(
+    point.x - (segment.from.x + projection * tangentX),
+    point.y - (segment.from.y + projection * tangentY),
   );
 }
 
@@ -277,9 +275,9 @@ function triangulatePolygon(
 }
 
 function triangleIncenter([first, second, third]: [Point, Point, Point]) {
-  const firstWeight = Math.sqrt(pointDistanceSquared(second, third));
-  const secondWeight = Math.sqrt(pointDistanceSquared(first, third));
-  const thirdWeight = Math.sqrt(pointDistanceSquared(first, second));
+  const firstWeight = Math.hypot(second.x - third.x, second.y - third.y);
+  const secondWeight = Math.hypot(first.x - third.x, first.y - third.y);
+  const thirdWeight = Math.hypot(first.x - second.x, first.y - second.y);
   const totalWeight = firstWeight + secondWeight + thirdWeight;
   return {
     x:
@@ -338,7 +336,7 @@ function findPolygonContentRegion(
   if (
     bestPoint === undefined ||
     !(bestDistance > 0) ||
-    !isPointInPolygon(bestPoint, vertices)
+    !isPointInPolygon(bestPoint, vertices, metrics)
   ) {
     return undefined;
   }
@@ -571,7 +569,10 @@ function describeCellContent(content: readonly SceneTextNode[]) {
 }
 
 function segmentLength(segment: Segment) {
-  return Math.sqrt(pointDistanceSquared(segment.from, segment.to));
+  return Math.hypot(
+    segment.to.x - segment.from.x,
+    segment.to.y - segment.from.y,
+  );
 }
 
 function baseSegmentTolerance(segment: Segment) {
@@ -633,17 +634,21 @@ function pointAt(segment: Segment, ratio: number): Point {
   };
 }
 
-function lineDistance(point: Point, segment: Segment) {
+function signedLineDistance(point: Point, segment: Segment) {
   const length = segmentLength(segment);
   if (length === 0) {
-    return Math.sqrt(pointDistanceSquared(point, segment.from));
+    return 0;
   }
+  const tangentX = (segment.to.x - segment.from.x) / length;
+  const tangentY = (segment.to.y - segment.from.y) / length;
   return (
-    Math.abs(
-      (segment.to.x - segment.from.x) * (segment.from.y - point.y) -
-        (segment.from.x - point.x) * (segment.to.y - segment.from.y),
-    ) / length
+    -(point.x - segment.from.x) * tangentY +
+    (point.y - segment.from.y) * tangentX
   );
+}
+
+function lineDistance(point: Point, segment: Segment) {
+  return Math.abs(signedLineDistance(point, segment));
 }
 
 function cross(deltaAX: number, deltaAY: number, deltaBX: number, deltaBY: number) {
@@ -653,10 +658,14 @@ function cross(deltaAX: number, deltaAY: number, deltaBX: number, deltaBY: numbe
 function projectRatio(point: Point, segment: Segment) {
   const deltaX = segment.to.x - segment.from.x;
   const deltaY = segment.to.y - segment.from.y;
+  const length = Math.hypot(deltaX, deltaY);
+  if (length === 0) {
+    return 0;
+  }
   return (
-    ((point.x - segment.from.x) * deltaX +
-      (point.y - segment.from.y) * deltaY) /
-    (deltaX * deltaX + deltaY * deltaY)
+    ((point.x - segment.from.x) * (deltaX / length) +
+      (point.y - segment.from.y) * (deltaY / length)) /
+    length
   );
 }
 
@@ -757,6 +766,34 @@ function pointInUnion(point: Point, polygons: readonly (readonly Point[])[]) {
   return polygons.some((vertices) => isPointInPolygon(point, vertices));
 }
 
+function nextUp(value: number) {
+  if (Number.isNaN(value) || value === Number.POSITIVE_INFINITY) {
+    return value;
+  }
+  if (value === 0) {
+    return Number.MIN_VALUE;
+  }
+  floatingPointView.setFloat64(0, value);
+  const bits = floatingPointView.getBigUint64(0);
+  floatingPointView.setBigUint64(0, value > 0 ? bits + 1n : bits - 1n);
+  return floatingPointView.getFloat64(0);
+}
+
+function nextDown(value: number) {
+  return -nextUp(-value);
+}
+
+function stepRepresentably(value: number, delta: number) {
+  if (delta === 0) {
+    return value;
+  }
+  const offset = value + delta;
+  if (Number.isFinite(offset) && offset !== value) {
+    return offset;
+  }
+  return delta > 0 ? nextUp(value) : nextDown(value);
+}
+
 function segmentContainsPointWithinTolerance(
   segment: Segment,
   point: Point,
@@ -798,31 +835,151 @@ function localProbeDistance(
   );
 }
 
-function isUnionBoundary(
+function representableSideProbe(
   segment: Segment,
-  polygons: readonly (readonly Point[])[],
+  side: 1 | -1,
   arrangement: readonly Segment[],
 ) {
   const length = segmentLength(segment);
   const midpoint = pointAt(segment, 0.5);
+  const midpointRatio = projectRatio(midpoint, segment);
+  if (!(midpointRatio > 0 && midpointRatio < 1)) {
+    return undefined;
+  }
+
   const probeDistance = localProbeDistance(segment, arrangement);
   const normalX = -(segment.to.y - segment.from.y) / length;
   const normalY = (segment.to.x - segment.from.x) / length;
+  const point = {
+    x: stepRepresentably(midpoint.x, normalX * probeDistance * side),
+    y: stepRepresentably(midpoint.y, normalY * probeDistance * side),
+  };
+  if (
+    (point.x === midpoint.x && point.y === midpoint.y) ||
+    signedLineDistance(point, segment) * side <= 0
+  ) {
+    return undefined;
+  }
+  for (const candidate of arrangement) {
+    if (
+      segmentContainsPointWithinTolerance(
+        candidate,
+        point,
+        segmentTolerance(candidate, arrangement),
+      )
+    ) {
+      return undefined;
+    }
+  }
+  return point;
+}
+
+function polygonBounds(vertices: readonly Point[]): Bounds | undefined {
+  const first = vertices[0];
+  if (first === undefined) {
+    return undefined;
+  }
+  return vertices.slice(1).reduce<Bounds>(
+    (bounds, point) => ({
+      minX: Math.min(bounds.minX, point.x),
+      minY: Math.min(bounds.minY, point.y),
+      maxX: Math.max(bounds.maxX, point.x),
+      maxY: Math.max(bounds.maxY, point.y),
+    }),
+    { minX: first.x, minY: first.y, maxX: first.x, maxY: first.y },
+  );
+}
+
+function isUnionBoundaryInLocalCoordinates(
+  segment: Segment,
+  polygons: readonly (readonly Point[])[],
+) {
+  const sourcePolygon =
+    segment.polygonIndex === undefined
+      ? undefined
+      : polygons[segment.polygonIndex];
+  const bounds =
+    sourcePolygon === undefined ? undefined : polygonBounds(sourcePolygon);
+  if (bounds === undefined) {
+    return false;
+  }
+  const scaleX = bounds.maxX - bounds.minX;
+  const scaleY = bounds.maxY - bounds.minY;
+  if (!(scaleX > 0) || !(scaleY > 0)) {
+    return false;
+  }
+
+  const normalizePoint = (point: Point): Point => ({
+    x: (point.x - bounds.minX) / scaleX,
+    y: (point.y - bounds.minY) / scaleY,
+  });
+  const normalizedPolygons = polygons.map((vertices) =>
+    vertices.map(normalizePoint),
+  );
+  if (
+    normalizedPolygons.some((vertices) =>
+      vertices.some(
+        (point) => !Number.isFinite(point.x) || !Number.isFinite(point.y),
+      ),
+    )
+  ) {
+    return false;
+  }
+  const normalizedArrangement = normalizedPolygons.flatMap(
+    (vertices, polygonIndex) =>
+      polygonSegments(vertices).map((candidate) => ({
+        ...candidate,
+        polygonIndex,
+      })),
+  );
+  const normalizedSegment: Segment = {
+    from: normalizePoint(segment.from),
+    to: normalizePoint(segment.to),
+    polygonIndex: segment.polygonIndex,
+  };
+  const length = segmentLength(normalizedSegment);
+  if (!(length > 0)) {
+    return false;
+  }
+  const midpoint = pointAt(normalizedSegment, 0.5);
+  const probeDistance = localProbeDistance(
+    normalizedSegment,
+    normalizedArrangement,
+  );
+  const normalX =
+    -(normalizedSegment.to.y - normalizedSegment.from.y) / length;
+  const normalY =
+    (normalizedSegment.to.x - normalizedSegment.from.x) / length;
   const firstSide = pointInUnion(
     {
       x: midpoint.x + normalX * probeDistance,
       y: midpoint.y + normalY * probeDistance,
     },
-    polygons,
+    normalizedPolygons,
   );
   const secondSide = pointInUnion(
     {
       x: midpoint.x - normalX * probeDistance,
       y: midpoint.y - normalY * probeDistance,
     },
-    polygons,
+    normalizedPolygons,
   );
   return firstSide !== secondSide;
+}
+
+function isUnionBoundary(
+  segment: Segment,
+  polygons: readonly (readonly Point[])[],
+  arrangement: readonly Segment[],
+) {
+  const firstProbe = representableSideProbe(segment, 1, arrangement);
+  const secondProbe = representableSideProbe(segment, -1, arrangement);
+  if (firstProbe === undefined || secondProbe === undefined) {
+    return isUnionBoundaryInLocalCoordinates(segment, polygons);
+  }
+  return (
+    pointInUnion(firstProbe, polygons) !== pointInUnion(secondProbe, polygons)
+  );
 }
 
 function segmentsAreEquivalent(
@@ -834,12 +991,19 @@ function segmentsAreEquivalent(
     segmentTolerance(first, arrangement),
     segmentTolerance(second, arrangement),
   );
-  const toleranceSquared = tolerance * tolerance;
   return (
-    (pointDistanceSquared(first.from, second.from) <= toleranceSquared &&
-      pointDistanceSquared(first.to, second.to) <= toleranceSquared) ||
-    (pointDistanceSquared(first.from, second.to) <= toleranceSquared &&
-      pointDistanceSquared(first.to, second.from) <= toleranceSquared)
+    (Math.hypot(
+      first.from.x - second.from.x,
+      first.from.y - second.from.y,
+    ) <= tolerance &&
+      Math.hypot(first.to.x - second.to.x, first.to.y - second.to.y) <=
+        tolerance) ||
+    (Math.hypot(
+      first.from.x - second.to.x,
+      first.from.y - second.to.y,
+    ) <= tolerance &&
+      Math.hypot(first.to.x - second.from.x, first.to.y - second.from.y) <=
+        tolerance)
   );
 }
 
