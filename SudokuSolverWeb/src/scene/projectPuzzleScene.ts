@@ -60,6 +60,18 @@ function sceneCoordinate(value: number) {
   return Number(snapped.toPrecision(15));
 }
 
+function affineCoordinate(value: number) {
+  return Number(value.toPrecision(17));
+}
+
+function svgMatrix(
+  transform: NonNullable<
+    ReturnType<typeof normalizePuzzleGeometry>["nativeToSceneTransform"]
+  >,
+) {
+  return `matrix(${affineCoordinate(transform.scale)} 0 0 ${affineCoordinate(transform.scale)} ${affineCoordinate(transform.translateX)} ${affineCoordinate(transform.translateY)})`;
+}
+
 export interface PuzzleSceneProjectionMetrics {
   interiorWorkUnits: number;
   earCandidateScans: number;
@@ -600,6 +612,7 @@ function baseSegmentTolerance(segment: Segment) {
   );
   return Math.max(
     lengthTolerance,
+    TOPOLOGY_COORDINATE_QUANTUM * 4,
     Number.EPSILON * COORDINATE_ULP_FACTOR,
   );
 }
@@ -705,13 +718,14 @@ function addSplitRatio(
 function splitSegment(
   segment: Segment,
   allSegments: readonly Segment[],
-): Segment[] {
+) {
   const ratios = [0, 1];
   const segmentDeltaX = segment.to.x - segment.from.x;
   const segmentDeltaY = segment.to.y - segment.from.y;
   const length = segmentLength(segment);
   const tolerance = segmentTolerance(segment, allSegments);
   const ratioTolerance = tolerance / length;
+  const splitRatioTolerance = TOPOLOGY_COORDINATE_QUANTUM / length;
   for (const other of allSegments) {
     if (other === segment || segmentLength(other) === 0) {
       continue;
@@ -767,11 +781,30 @@ function splitSegment(
   }
 
   ratios.sort((first, second) => first - second);
+  const fineRatios = ratios.filter(
+    (ratio, index) =>
+      index === 0 ||
+      Math.abs(ratio - ratios[index - 1]) > splitRatioTolerance,
+  );
+  const belowThresholdPieces = fineRatios
+    .slice(0, -1)
+    .flatMap((start, index) => {
+      const end = fineRatios[index + 1];
+      const piece = {
+        from: snapTopologyPoint(pointAt(segment, start)),
+        to: snapTopologyPoint(pointAt(segment, end)),
+        polygonIndex: segment.polygonIndex,
+      };
+      const pieceLength = segmentLength(piece);
+      return pieceLength > 0 && pieceLength < MIN_NORMALIZED_FEATURE_SIZE
+        ? [piece]
+        : [];
+    });
   const uniqueRatios = ratios.filter(
     (ratio, index) =>
       index === 0 || Math.abs(ratio - ratios[index - 1]) > ratioTolerance,
   );
-  return uniqueRatios.slice(0, -1).flatMap((start, index) => {
+  const pieces = uniqueRatios.slice(0, -1).flatMap((start, index) => {
     const end = uniqueRatios[index + 1];
     return end <= start
       ? []
@@ -783,6 +816,7 @@ function splitSegment(
           },
         ];
   });
+  return { pieces, belowThresholdPieces };
 }
 
 function pointInUnion(point: Point, polygons: readonly (readonly Point[])[]) {
@@ -928,27 +962,49 @@ function projectGroupBorder(
       const length = segmentLength(segment);
       return Number.isFinite(length) && length > 0;
     });
+  const geometryIssues: SceneGeometryIssue[] = [];
+  if (omittedCellIds.length > 0) {
+    geometryIssues.push({
+      code: "member-geometry-omitted",
+      affects: "topology",
+      message: `Group border omitted renderer-invalid member geometry: ${omittedCellIds.join(", ")}.`,
+    });
+  }
   if (segments.length === 0) {
     return {
       d: "",
-      geometryIssue:
-        omittedCellIds.length === 0
-          ? undefined
-          : {
-              code: "member-geometry-omitted" as const,
-              affects: "topology" as const,
-              message: `Group border omitted renderer-invalid member geometry: ${omittedCellIds.join(", ")}.`,
-            },
+      geometryIssue: geometryIssues[0],
+      geometryIssues,
     };
   }
 
-  const d = deduplicateSegments(
-    segments
-      .flatMap((segment) => splitSegment(segment, segments))
-      .filter(
-        (piece) => segmentLength(piece) >= MIN_NORMALIZED_FEATURE_SIZE,
-      )
+  const splitResults = segments.map((segment) =>
+    splitSegment(segment, segments),
+  );
+  const atomicPieces = splitResults.flatMap(({ pieces }) => pieces);
+  const boundaryPieces = atomicPieces
+    .filter((piece) => {
+      const length = segmentLength(piece);
+      return Number.isFinite(length) && length > 0;
+    })
+    .filter((piece) => isUnionBoundary(piece, polygons, segments));
+  const droppedBoundaryPieces = deduplicateSegments(
+    splitResults
+      .flatMap(({ belowThresholdPieces }) => belowThresholdPieces)
       .filter((piece) => isUnionBoundary(piece, polygons, segments)),
+    segments,
+  );
+  if (droppedBoundaryPieces.length > 0) {
+    geometryIssues.push({
+      code: "below-minimum-boundary-piece",
+      affects: "topology",
+      message: `Group border omitted ${droppedBoundaryPieces.length} exterior atomic ${droppedBoundaryPieces.length === 1 ? "piece" : "pieces"} below the minimum normalized renderer scale (${MIN_NORMALIZED_FEATURE_SIZE}).`,
+    });
+  }
+  const d = deduplicateSegments(
+    boundaryPieces.filter(
+      (piece) => segmentLength(piece) >= MIN_NORMALIZED_FEATURE_SIZE,
+    ),
     segments,
   )
     .map(
@@ -958,14 +1014,8 @@ function projectGroupBorder(
     .join(" ");
   return {
     d,
-    geometryIssue:
-      omittedCellIds.length === 0
-        ? undefined
-        : {
-            code: "member-geometry-omitted" as const,
-            affects: "topology" as const,
-            message: `Group border omitted renderer-invalid member geometry: ${omittedCellIds.join(", ")}.`,
-          },
+    geometryIssue: geometryIssues[0],
+    geometryIssues,
   };
 }
 
@@ -1058,6 +1108,7 @@ export function projectPuzzleScene(
         d: border.d,
         role: "grid" as const,
         geometryIssue: border.geometryIssue,
+        geometryIssues: border.geometryIssues,
       },
     ];
   });
@@ -1074,12 +1125,17 @@ export function projectPuzzleScene(
           },
         ];
   });
+  const annotationTransform =
+    normalizedGeometry.nativeToSceneTransform === undefined
+      ? undefined
+      : svgMatrix(normalizedGeometry.nativeToSceneTransform);
   const annotations = deduplicateAnnotations(view).map((annotation) => ({
     kind: "path" as const,
     id: `annotation-${annotation.id}`,
     d: annotation.d,
     role: "annotation" as const,
     label: annotation.label,
+    transform: annotationTransform,
   }));
   const clips = nodes.flatMap((node) =>
     node.content.flatMap((content) =>
@@ -1089,8 +1145,18 @@ export function projectPuzzleScene(
 
   const width = sceneCoordinate(Math.max(normalizedGeometry.width, 1));
   const height = sceneCoordinate(Math.max(normalizedGeometry.height, 1));
+  const groupGeometryDescriptions = groupBorders.flatMap((border) =>
+    (border.geometryIssues ?? []).map(
+      (geometryIssue) =>
+        `Group ${border.id.slice("group-border-".length)}: ${geometryIssue.message}`,
+    ),
+  );
   return {
     label: puzzle.metadata.title || "Sudoku puzzle",
+    description:
+      groupGeometryDescriptions.length === 0
+        ? undefined
+        : `Presentation geometry: ${groupGeometryDescriptions.join(" ")}`,
     viewBox: `0 0 ${width} ${height}`,
     width,
     height,

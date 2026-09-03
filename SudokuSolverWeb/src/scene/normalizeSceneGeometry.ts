@@ -26,11 +26,18 @@ export interface NormalizedCellGeometry {
   geometryIssue?: SceneGeometryIssue;
 }
 
+export interface SceneAffineTransform {
+  scale: number;
+  translateX: number;
+  translateY: number;
+}
+
 export interface NormalizedPuzzleGeometry {
   cells: ReadonlyMap<string, NormalizedCellGeometry>;
   width: number;
   height: number;
   displayScale: number;
+  nativeToSceneTransform?: SceneAffineTransform;
 }
 
 interface RawCellGeometry {
@@ -39,12 +46,29 @@ interface RawCellGeometry {
   geometryIssue?: SceneGeometryIssue;
 }
 
+interface NormalizationFrame {
+  coordinateScale: number;
+  minX: number;
+  minY: number;
+  spanX: number;
+  spanY: number;
+  span: number;
+}
+
 function issue(
   code: SceneGeometryIssue["code"],
   affects: SceneGeometryIssue["affects"],
   message: string,
 ): SceneGeometryIssue {
   return { code, affects, message };
+}
+
+function invalidTopology(kind: RawCellGeometry["kind"], detail?: string) {
+  return issue(
+    "invalid-topology",
+    "topology-and-content",
+    detail ?? `${kind} has no usable normalized topology.`,
+  );
 }
 
 function rawVertices(shape: CellShape): RawCellGeometry {
@@ -140,6 +164,209 @@ function signedArea(vertices: readonly NormalizedPoint[]) {
   );
 }
 
+function coordinateScale(vertices: readonly NormalizedPoint[]) {
+  let scale = 0;
+  for (const point of vertices) {
+    scale = Math.max(scale, Math.abs(point.x), Math.abs(point.y));
+  }
+  return scale === 0 ? 1 : scale;
+}
+
+function createNormalizationFrame(
+  vertices: readonly NormalizedPoint[],
+): NormalizationFrame | undefined {
+  if (vertices.length === 0) {
+    return undefined;
+  }
+  const scale = coordinateScale(vertices);
+  const scaledBounds = boundsOf(
+    vertices.map((point) => ({ x: point.x / scale, y: point.y / scale })),
+  );
+  if (scaledBounds === undefined) {
+    return undefined;
+  }
+  const spanX = scaledBounds.maxX - scaledBounds.minX;
+  const spanY = scaledBounds.maxY - scaledBounds.minY;
+  const span = Math.max(spanX, spanY);
+  if (!Number.isFinite(span) || !(span > 0)) {
+    return undefined;
+  }
+  return {
+    coordinateScale: scale,
+    minX: scaledBounds.minX,
+    minY: scaledBounds.minY,
+    spanX,
+    spanY,
+    span,
+  };
+}
+
+function normalizePoint(point: NormalizedPoint, frame: NormalizationFrame) {
+  return {
+    x: (point.x / frame.coordinateScale - frame.minX) / frame.span,
+    y: (point.y / frame.coordinateScale - frame.minY) / frame.span,
+  };
+}
+
+function cross(
+  first: NormalizedPoint,
+  second: NormalizedPoint,
+  third: NormalizedPoint,
+) {
+  return (
+    (second.x - first.x) * (third.y - first.y) -
+    (second.y - first.y) * (third.x - first.x)
+  );
+}
+
+function pointOnSegment(
+  point: NormalizedPoint,
+  from: NormalizedPoint,
+  to: NormalizedPoint,
+) {
+  return (
+    cross(from, to, point) === 0 &&
+    point.x >= Math.min(from.x, to.x) &&
+    point.x <= Math.max(from.x, to.x) &&
+    point.y >= Math.min(from.y, to.y) &&
+    point.y <= Math.max(from.y, to.y)
+  );
+}
+
+function segmentsIntersect(
+  firstFrom: NormalizedPoint,
+  firstTo: NormalizedPoint,
+  secondFrom: NormalizedPoint,
+  secondTo: NormalizedPoint,
+) {
+  const firstTurn = cross(firstFrom, firstTo, secondFrom);
+  const secondTurn = cross(firstFrom, firstTo, secondTo);
+  const thirdTurn = cross(secondFrom, secondTo, firstFrom);
+  const fourthTurn = cross(secondFrom, secondTo, firstTo);
+  if (
+    Math.sign(firstTurn) !== Math.sign(secondTurn) &&
+    Math.sign(thirdTurn) !== Math.sign(fourthTurn) &&
+    firstTurn !== 0 &&
+    secondTurn !== 0 &&
+    thirdTurn !== 0 &&
+    fourthTurn !== 0
+  ) {
+    return true;
+  }
+  return (
+    (firstTurn === 0 && pointOnSegment(secondFrom, firstFrom, firstTo)) ||
+    (secondTurn === 0 && pointOnSegment(secondTo, firstFrom, firstTo)) ||
+    (thirdTurn === 0 && pointOnSegment(firstFrom, secondFrom, secondTo)) ||
+    (fourthTurn === 0 && pointOnSegment(firstTo, secondFrom, secondTo))
+  );
+}
+
+function validateSimpleTopology(raw: RawCellGeometry) {
+  if (raw.geometryIssue !== undefined) {
+    return raw;
+  }
+  const hasExplicitClosure =
+    raw.vertices.length > 1 &&
+    pointsEqual(raw.vertices[0], raw.vertices[raw.vertices.length - 1]);
+  const vertices = hasExplicitClosure
+    ? raw.vertices.slice(0, -1)
+    : [...raw.vertices];
+  if (vertices.length < 3) {
+    return { ...raw, geometryIssue: invalidTopology(raw.kind) };
+  }
+  for (let index = 0; index < vertices.length; index += 1) {
+    if (pointsEqual(vertices[index], vertices[(index + 1) % vertices.length])) {
+      return {
+        ...raw,
+        geometryIssue: invalidTopology(
+          raw.kind,
+          `${raw.kind} contains a repeated vertex or zero-length edge.`,
+        ),
+      };
+    }
+    for (
+      let otherIndex = index + 1;
+      otherIndex < vertices.length;
+      otherIndex += 1
+    ) {
+      if (pointsEqual(vertices[index], vertices[otherIndex])) {
+        return {
+          ...raw,
+          geometryIssue: invalidTopology(
+            raw.kind,
+            `${raw.kind} contains a repeated vertex or zero-length edge.`,
+          ),
+        };
+      }
+    }
+  }
+
+  const localFrame = createNormalizationFrame(vertices);
+  if (localFrame === undefined) {
+    return { ...raw, geometryIssue: invalidTopology(raw.kind) };
+  }
+  const local = vertices.map((point) => normalizePoint(point, localFrame));
+  const area = signedArea(local);
+  if (!Number.isFinite(area) || area === 0) {
+    return { ...raw, geometryIssue: invalidTopology(raw.kind) };
+  }
+  for (let firstIndex = 0; firstIndex < local.length; firstIndex += 1) {
+    const firstNext = (firstIndex + 1) % local.length;
+    for (
+      let secondIndex = firstIndex + 1;
+      secondIndex < local.length;
+      secondIndex += 1
+    ) {
+      const secondNext = (secondIndex + 1) % local.length;
+      const adjacent = firstIndex === secondNext || firstNext === secondIndex;
+      if (adjacent) {
+        const firstVector = {
+          x: local[firstNext].x - local[firstIndex].x,
+          y: local[firstNext].y - local[firstIndex].y,
+        };
+        const secondVector = {
+          x: local[secondNext].x - local[secondIndex].x,
+          y: local[secondNext].y - local[secondIndex].y,
+        };
+        if (
+          firstVector.x * secondVector.y -
+              firstVector.y * secondVector.x ===
+            0 &&
+          firstVector.x * secondVector.x +
+              firstVector.y * secondVector.y <
+            0
+        ) {
+          return {
+            ...raw,
+            geometryIssue: invalidTopology(
+              raw.kind,
+              `${raw.kind} contains overlapping adjacent edges.`,
+            ),
+          };
+        }
+        continue;
+      }
+      if (
+        segmentsIntersect(
+          local[firstIndex],
+          local[firstNext],
+          local[secondIndex],
+          local[secondNext],
+        )
+      ) {
+        return {
+          ...raw,
+          geometryIssue: invalidTopology(
+            raw.kind,
+            `${raw.kind} contains intersecting or overlapping edges.`,
+          ),
+        };
+      }
+    }
+  }
+  return raw;
+}
+
 function hasBelowThresholdFeature(
   vertices: readonly NormalizedPoint[],
   bounds: NormalizedBounds,
@@ -181,21 +408,13 @@ export function normalizePuzzleGeometry(
   const rawByCellId = new Map(
     Object.values(puzzle.cells).map((cell) => [
       cell.id,
-      rawVertices(cell.shape),
+      validateSimpleTopology(rawVertices(cell.shape)),
     ]),
   );
-  const finitePoints = [...rawByCellId.values()].flatMap((geometry) =>
+  const validPoints = [...rawByCellId.values()].flatMap((geometry) =>
     geometry.geometryIssue === undefined ? geometry.vertices : [],
   );
-  const globalBounds = boundsOf(finitePoints);
-  const spanX =
-    globalBounds === undefined ? 0 : globalBounds.maxX - globalBounds.minX;
-  const spanY =
-    globalBounds === undefined ? 0 : globalBounds.maxY - globalBounds.minY;
-  const span = Math.max(spanX, spanY);
-  const hasUsableTransform = Number.isFinite(span) && span > 0;
-  const originX = globalBounds?.minX ?? 0;
-  const originY = globalBounds?.minY ?? 0;
+  const globalFrame = createNormalizationFrame(validPoints);
 
   const cells = new Map<string, NormalizedCellGeometry>();
   const displayUnitCandidates: number[] = [];
@@ -209,32 +428,26 @@ export function normalizePuzzleGeometry(
       });
       continue;
     }
-    if (!hasUsableTransform) {
+    if (globalFrame === undefined) {
       cells.set(cellId, {
         kind: raw.kind,
         vertices: [],
         contentVertices: [],
-        geometryIssue: issue(
-          "invalid-topology",
-          "topology-and-content",
+        geometryIssue: invalidTopology(
+          raw.kind,
           `${raw.kind} cannot be normalized from collapsed global bounds.`,
         ),
       });
       continue;
     }
 
-    const contentVertices = raw.vertices.map((point) => ({
-      x: normalizedCoordinate((point.x - originX) / span),
-      y: normalizedCoordinate((point.y - originY) / span),
-    }));
-    const rawBounds = boundsOf(raw.vertices);
-    const normalizedContentBounds = boundsOf(contentVertices);
+    const unquantizedVertices = raw.vertices.map((point) =>
+      normalizePoint(point, globalFrame),
+    );
+    const unquantizedBounds = boundsOf(unquantizedVertices);
     if (
-      rawBounds !== undefined &&
-      rawBounds.maxX > rawBounds.minX &&
-      rawBounds.maxY > rawBounds.minY &&
-      normalizedContentBounds !== undefined &&
-      hasBelowThresholdFeature(contentVertices, normalizedContentBounds)
+      unquantizedBounds === undefined ||
+      hasBelowThresholdFeature(unquantizedVertices, unquantizedBounds)
     ) {
       cells.set(cellId, {
         kind: raw.kind,
@@ -248,22 +461,26 @@ export function normalizePuzzleGeometry(
       });
       continue;
     }
+
+    const contentVertices = unquantizedVertices.map((point) => ({
+      x: normalizedCoordinate(point.x),
+      y: normalizedCoordinate(point.y),
+    }));
     const vertices = topologyVertices(contentVertices);
     const bounds = boundsOf(vertices);
     if (
       bounds === undefined ||
       vertices.length < 3 ||
-      Math.abs(signedArea(vertices)) <
-        MIN_NORMALIZED_FEATURE_SIZE * MIN_NORMALIZED_FEATURE_SIZE
+      signedArea(vertices) === 0
     ) {
       cells.set(cellId, {
         kind: raw.kind,
         vertices: [],
         contentVertices: [],
         geometryIssue: issue(
-          "invalid-topology",
+          "below-minimum-feature",
           "topology-and-content",
-          `${raw.kind} has no usable normalized topology.`,
+          `${raw.kind} collapsed while preparing normalized renderer coordinates.`,
         ),
       });
       continue;
@@ -282,10 +499,32 @@ export function normalizePuzzleGeometry(
   const displayUnit =
     displayUnitCandidates.length === 0 ? 1 : median(displayUnitCandidates);
   const displayScale = 1 / displayUnit;
+  const nativeToSceneTransform =
+    globalFrame === undefined
+      ? undefined
+      : {
+          scale:
+            (displayScale / globalFrame.coordinateScale) / globalFrame.span,
+          translateX:
+            (-globalFrame.minX / globalFrame.span) * displayScale,
+          translateY:
+            (-globalFrame.minY / globalFrame.span) * displayScale,
+        };
   return {
     cells,
-    width: hasUsableTransform ? (spanX / span) * displayScale : 1,
-    height: hasUsableTransform ? (spanY / span) * displayScale : 1,
+    width:
+      globalFrame === undefined
+        ? 1
+        : (globalFrame.spanX / globalFrame.span) * displayScale,
+    height:
+      globalFrame === undefined
+        ? 1
+        : (globalFrame.spanY / globalFrame.span) * displayScale,
     displayScale,
+    nativeToSceneTransform:
+      nativeToSceneTransform !== undefined &&
+      Object.values(nativeToSceneTransform).every(Number.isFinite)
+        ? nativeToSceneTransform
+        : undefined,
   };
 }

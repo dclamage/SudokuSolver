@@ -172,6 +172,7 @@ export function PuzzleCanvas({
       style={style}
       role="group"
       aria-label={scene.label}
+      aria-description={scene.description}
       onPointerUp={selectPointerCell}
       onKeyDown={selectKeyboardCell}
       preserveAspectRatio="xMidYMid meet"
@@ -184,6 +185,7 @@ export function PuzzleCanvas({
             className={`puzzle-scene-path puzzle-scene-path--${node.role}`}
             data-testid={node.id}
             d={node.d}
+            transform={node.transform}
             key={node.id}
             role={node.label === undefined ? undefined : "img"}
             aria-label={node.label}

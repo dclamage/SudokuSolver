@@ -7,6 +7,7 @@ export type SolverParticipation =
 
 export type SceneGeometryIssueCode =
   | "below-minimum-feature"
+  | "below-minimum-boundary-piece"
   | "invalid-topology"
   | "member-geometry-omitted"
   | "non-finite-geometry"
@@ -56,7 +57,9 @@ export interface ScenePathNode {
   d: string;
   role: "grid" | "selection" | "annotation";
   label?: string;
+  transform?: string;
   geometryIssue?: SceneGeometryIssue;
+  geometryIssues?: readonly SceneGeometryIssue[];
 }
 
 export type SceneNode = SceneCellNode | ScenePathNode;
@@ -77,6 +80,7 @@ export interface PuzzleSceneView {
 
 export interface PuzzleScene {
   label: string;
+  description?: string;
   viewBox: string;
   width: number;
   height: number;
