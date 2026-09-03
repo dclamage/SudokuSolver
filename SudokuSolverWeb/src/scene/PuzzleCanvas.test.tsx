@@ -4,12 +4,31 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createStarterPuzzle } from "../domain/puzzle/createStarterPuzzle";
 import { PuzzleCanvas } from "./PuzzleCanvas";
-import { projectPuzzleScene } from "./projectPuzzleScene";
+import {
+  projectPuzzleScene,
+  rawSplitIntervalLength,
+} from "./projectPuzzleScene";
 import type { PuzzleSceneView } from "./types";
 
 interface TestPoint {
   x: number;
   y: number;
+}
+
+function nextUp(value: number) {
+  const buffer = new ArrayBuffer(8);
+  const view = new DataView(buffer);
+  view.setFloat64(0, value);
+  view.setBigUint64(0, view.getBigUint64(0) + 1n);
+  return view.getFloat64(0);
+}
+
+function advanceUp(value: number, count: number) {
+  let result = value;
+  for (let index = 0; index < count; index += 1) {
+    result = nextUp(result);
+  }
+  return result;
 }
 
 function readTextPoint(element: HTMLElement | SVGElement): TestPoint {
@@ -551,6 +570,104 @@ describe("PuzzleCanvas", () => {
     );
   });
 
+  it("uses one direct finite native span for unequal huge-axis ULP extents", () => {
+    const origin = 1e300;
+    const xHigh = advanceUp(origin, 12);
+    const yHigh = advanceUp(origin, 13);
+    const xSpan = xHigh - origin;
+    const ySpan = yHigh - origin;
+    const buildScene = (
+      minX: number,
+      minY: number,
+      maxX: number,
+      maxY: number,
+    ) => {
+      const framePuzzle = structuredClone(puzzle);
+      framePuzzle.cells = {
+        r1c1: {
+          ...framePuzzle.cells.r1c1,
+          shape: {
+            kind: "polygon",
+            points: [
+              { x: minX, y: minY },
+              { x: maxX, y: minY },
+              { x: maxX, y: maxY },
+              { x: minX, y: maxY },
+            ],
+          },
+        },
+      };
+      framePuzzle.groups = {};
+      return projectPuzzleScene(framePuzzle, {
+        ...emptySceneView,
+        annotations: [
+          {
+            id: "frame",
+            d: `M ${minX} ${minY} C ${maxX} ${minY} ${minX} ${maxY} ${maxX} ${maxY} M ${minX} ${minY} A ${maxX - minX} ${maxY - minY} 0 0 1 ${maxX} ${maxY}`,
+            label: "Frame",
+          },
+        ],
+      });
+    };
+
+    const hugeScene = buildScene(origin, origin, xHigh, yHigh);
+    const ordinaryScene = buildScene(17, -23, 17 + 12 * 7, -23 + 13 * 7);
+    const expectedCell =
+      "M 0 0 L 0.923076923077 0 L 0.923076923077 1 L 0 1 Z";
+    const expectedAnnotation =
+      "M 0 0 C 0.923076923077 0 0 1 0.923076923077 1 M 0 0 A 0.923076923077 1 0 0 1 0.923076923077 1";
+
+    for (const scene of [hugeScene, ordinaryScene]) {
+      expect(scene.nodes.find((node) => node.id === "cell-r1c1")).toMatchObject({
+        path: expectedCell,
+      });
+      expect(
+        scene.nodes.find((node) => node.id === "annotation-frame"),
+      ).toMatchObject({ d: expectedAnnotation, geometryIssue: undefined });
+    }
+    expect(xSpan / ySpan).toBe(12 / 13);
+  });
+
+  it("uses one shared scale-first frame when only one axis span overflows", () => {
+    const framePuzzle = structuredClone(puzzle);
+    framePuzzle.cells = {
+      r1c1: {
+        ...framePuzzle.cells.r1c1,
+        shape: {
+          kind: "polygon",
+          points: [
+            { x: -1e308, y: -8e307 },
+            { x: 1e308, y: -8e307 },
+            { x: 1e308, y: 8e307 },
+            { x: -1e308, y: 8e307 },
+          ],
+        },
+      },
+    };
+    framePuzzle.groups = {};
+    const scene = projectPuzzleScene(framePuzzle, {
+      ...emptySceneView,
+      annotations: [
+        {
+          id: "overflow-frame",
+          d: "M -1e308 -8e307 L 1e308 8e307 M -1e308 -8e307 A 1e308 1.6e308 0 0 1 1e308 8e307",
+          label: "Overflow frame",
+        },
+      ],
+    });
+
+    expect(scene.nodes.find((node) => node.id === "cell-r1c1")).toMatchObject({
+      path: "M 0 0 L 1 0 L 1 0.8 L 0 0.8 Z",
+    });
+    expect(
+      scene.nodes.find((node) => node.id === "annotation-overflow-frame"),
+    ).toMatchObject({
+      d: "M 0 0 L 1 0.8 M 0 0 A 0.5 0.8 0 0 1 1 0.8",
+      geometryIssue: undefined,
+    });
+    expect(JSON.stringify(scene)).not.toMatch(/NaN|Infinity/);
+  });
+
   it("enforces strict SVG separators while preserving valid compact grammar", () => {
     const pathPuzzle = structuredClone(puzzle);
     pathPuzzle.cells = {
@@ -564,7 +681,9 @@ describe("PuzzleCanvas", () => {
       "M,0 0",
       "M 0,,0",
       "M 0 0,",
-      "M 0.0.0",
+      "M\u00a00 0",
+      "M\u000b0 0",
+      "M\u000c0 0",
       "M 0 0 A 1 1 0 2 0 1 1",
       "M 0 0 Z 1",
     ];
@@ -574,6 +693,8 @@ describe("PuzzleCanvas", () => {
       "M0 0 1 1 2 2",
       "M0 0L1 1ZM2 2l1 0z",
       "M0 0A1 1 0 011 1",
+      "M0.6.5",
+      "M1.2.3L4.5.6",
     ];
     const scene = projectPuzzleScene(pathPuzzle, {
       ...emptySceneView,
@@ -1017,6 +1138,107 @@ describe("PuzzleCanvas", () => {
       ],
       d: expect.not.stringMatching(/NaN|Infinity/),
     });
+  });
+
+  it("measures positive split intervals before endpoint reconstruction", () => {
+    const segment = { from: 0.5, to: 1 };
+    const firstRatio = 0.75;
+    const secondRatio = 0.7500000000000001;
+    expect(
+      segment.from + (segment.to - segment.from) * firstRatio,
+    ).toBe(0.875);
+    expect(
+      segment.from + (segment.to - segment.from) * secondRatio,
+    ).toBe(0.875);
+    expect(
+      rawSplitIntervalLength(
+        firstRatio,
+        secondRatio,
+        segment.to - segment.from,
+      ),
+    ).toEqual({
+      positive: true,
+      length: 5.551115123125783e-17,
+    });
+    expect(rawSplitIntervalLength(0, Number.MIN_VALUE, 0.5)).toEqual({
+      positive: true,
+      length: 0,
+    });
+    expect(rawSplitIntervalLength(0.25, 0.5, 0.5)).toEqual({
+      positive: true,
+      length: 0.125,
+    });
+    expect(rawSplitIntervalLength(0.75, 0.75, 0.5)).toEqual({
+      positive: false,
+      length: 0,
+    });
+  });
+
+  it("reports a raw adjacent-ratio boundary atom when pointAt collapses", () => {
+    const collapsedPuzzle = structuredClone(puzzle);
+    const firstCut = 1.75;
+    const secondCut = 1.7500000000000002;
+    collapsedPuzzle.cells = {
+      r1c1: {
+        ...collapsedPuzzle.cells.r1c1,
+        shape: {
+          kind: "polygon",
+          points: [
+            { x: 1, y: 1 },
+            { x: 2, y: 1 },
+            { x: 2, y: 0 },
+            { x: 1, y: 0 },
+          ],
+        },
+      },
+      r1c2: {
+        ...collapsedPuzzle.cells.r1c2,
+        shape: { kind: "rect", x: 1, y: 1, width: firstCut - 1, height: 1 },
+      },
+      r1c3: {
+        ...collapsedPuzzle.cells.r1c3,
+        shape: {
+          kind: "rect",
+          x: secondCut,
+          y: 1,
+          width: 2 - secondCut,
+          height: 1,
+        },
+      },
+      r1c4: {
+        ...collapsedPuzzle.cells.r1c4,
+        shape: { kind: "rect", x: 0, y: 0, width: 1, height: 1 },
+      },
+    };
+    collapsedPuzzle.groups = {
+      collapsed: {
+        id: "collapsed",
+        roles: ["region"],
+        cellIds: ["r1c1", "r1c2", "r1c3"],
+      },
+    };
+    const border = projectPuzzleScene(
+      collapsedPuzzle,
+      emptySceneView,
+    ).nodes.find((node) => node.id === "group-border-collapsed");
+    if (border?.kind !== "path") {
+      throw new Error("expected collapsed-ratio group path");
+    }
+
+    expect(border.geometryIssues).toEqual([
+      expect.objectContaining({ code: "below-minimum-boundary-piece" }),
+    ]);
+    expect(border.d).not.toMatch(/NaN|Infinity/);
+    const segments = parseLineSegments(border.d);
+    const canonicalSegments = segments.map((segment) =>
+      [
+        `${segment.from.x},${segment.from.y}`,
+        `${segment.to.x},${segment.to.y}`,
+      ]
+        .sort()
+        .join("/"),
+    );
+    expect(new Set(canonicalSegments).size).toBe(canonicalSegments.length);
   });
 
   it("evaluates the public feature threshold before display quantization", () => {

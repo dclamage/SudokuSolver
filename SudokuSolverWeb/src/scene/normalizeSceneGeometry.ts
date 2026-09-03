@@ -184,8 +184,29 @@ function createNormalizationFrame(
   if (vertices.length === 0) {
     return undefined;
   }
-  const scale = coordinateScale(vertices);
   const nativeBounds = boundsOf(vertices);
+  if (nativeBounds === undefined) {
+    return undefined;
+  }
+  const nativeSpanX = nativeBounds.maxX - nativeBounds.minX;
+  const nativeSpanY = nativeBounds.maxY - nativeBounds.minY;
+  const commonNativeSpan = Math.max(nativeSpanX, nativeSpanY);
+  if (
+    Number.isFinite(nativeSpanX) &&
+    Number.isFinite(nativeSpanY) &&
+    commonNativeSpan > 0
+  ) {
+    return {
+      coordinateScale: 1,
+      minX: nativeBounds.minX,
+      minY: nativeBounds.minY,
+      spanX: nativeSpanX,
+      spanY: nativeSpanY,
+      span: commonNativeSpan,
+      nativeSpan: commonNativeSpan,
+    };
+  }
+  const scale = coordinateScale(vertices);
   const scaledBounds = boundsOf(
     vertices.map((point) => ({ x: point.x / scale, y: point.y / scale })),
   );
@@ -198,13 +219,6 @@ function createNormalizationFrame(
   if (!Number.isFinite(span) || !(span > 0)) {
     return undefined;
   }
-  const nativeSpan =
-    nativeBounds === undefined
-      ? undefined
-      : Math.max(
-          nativeBounds.maxX - nativeBounds.minX,
-          nativeBounds.maxY - nativeBounds.minY,
-        );
   return {
     coordinateScale: scale,
     minX: scaledBounds.minX,
@@ -212,10 +226,6 @@ function createNormalizationFrame(
     spanX,
     spanY,
     span,
-    nativeSpan:
-      nativeSpan !== undefined && Number.isFinite(nativeSpan) && nativeSpan > 0
-        ? nativeSpan
-        : undefined,
   };
 }
 

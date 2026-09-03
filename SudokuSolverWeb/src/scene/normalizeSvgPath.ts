@@ -9,6 +9,7 @@ import type {
 
 const SUPPORTED_COMMAND = /^[AaCcHhLlMmQqSsTtVvZz]$/;
 const NUMBER_TOKEN = /^[+-]?(?:(?:\d+\.?\d*)|(?:\.\d+))(?:[eE][+-]?\d+)?/;
+const SVG_WHITESPACE = /[ \t\r\n]/;
 
 type PathCommand =
   | "A"
@@ -44,14 +45,20 @@ class PathScanner {
   public constructor(private readonly source: string) {}
 
   private skipWhitespace() {
-    while (this.index < this.source.length && /[\s]/.test(this.source[this.index])) {
+    while (
+      this.index < this.source.length &&
+      SVG_WHITESPACE.test(this.source[this.index])
+    ) {
       this.index += 1;
     }
   }
 
   private nextNonWhitespaceIndex() {
     let index = this.index;
-    while (index < this.source.length && /[\s]/.test(this.source[index])) {
+    while (
+      index < this.source.length &&
+      SVG_WHITESPACE.test(this.source[index])
+    ) {
       index += 1;
     }
     return index;
@@ -95,7 +102,7 @@ class PathScanner {
       return true;
     }
     const next = this.source[this.index];
-    return next === "+" || next === "-";
+    return next === "+" || next === "-" || next === ".";
   }
 
   public readNumber(

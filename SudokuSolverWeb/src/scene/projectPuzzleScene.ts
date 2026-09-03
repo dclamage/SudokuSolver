@@ -698,6 +698,20 @@ function addSplitRatio(
   }
 }
 
+/** Measures an ordered split interval without reconstructing its endpoints. */
+export function rawSplitIntervalLength(
+  startRatio: number,
+  endRatio: number,
+  sourceLength: number,
+) {
+  const ratioDelta = endRatio - startRatio;
+  const positive = ratioDelta > 0 && sourceLength > 0;
+  return {
+    positive,
+    length: positive ? ratioDelta * sourceLength : 0,
+  };
+}
+
 function splitSegment(
   segment: Segment,
   allSegments: readonly Segment[],
@@ -768,19 +782,28 @@ function splitSegment(
       index === 0 ||
       ratio !== ratios[index - 1],
   );
-  const belowThresholdPieces = distinctRatios
+  const belowThresholdIntervals = distinctRatios
     .slice(0, -1)
     .flatMap((start, index) => {
       const end = distinctRatios[index + 1];
+      const rawInterval = rawSplitIntervalLength(start, end, length);
+      if (
+        !rawInterval.positive ||
+        !isBelowMinimumBoundaryLength(rawInterval.length)
+      ) {
+        return [];
+      }
       const piece = {
         from: pointAt(segment, start),
         to: pointAt(segment, end),
         polygonIndex: segment.polygonIndex,
       };
       const pieceLength = segmentLength(piece);
-      return pieceLength > 0 && isBelowMinimumBoundaryLength(pieceLength)
-        ? [piece]
-        : [];
+      return [
+        pieceLength > 0
+          ? { piece, collapsed: false as const }
+          : { collapsed: true as const },
+      ];
     });
   const uniqueRatios = ratios.filter(
     (ratio, index) =>
@@ -798,7 +821,7 @@ function splitSegment(
           },
         ];
   });
-  return { pieces, belowThresholdPieces };
+  return { pieces, belowThresholdIntervals };
 }
 
 function pointInUnionInSegmentFrame(
@@ -988,15 +1011,27 @@ function projectGroupBorder(
     .filter((piece) => isUnionBoundary(piece, polygons, segments));
   const droppedBoundaryPieces = deduplicateSegments(
     splitResults
-      .flatMap(({ belowThresholdPieces }) => belowThresholdPieces)
+      .flatMap(({ belowThresholdIntervals }) =>
+        belowThresholdIntervals.flatMap((interval) =>
+          interval.collapsed ? [] : [interval.piece],
+        ),
+      )
       .filter((piece) => isUnionBoundary(piece, polygons, segments)),
     segments,
   );
-  if (droppedBoundaryPieces.length > 0) {
+  const collapsedBoundaryIntervals = splitResults.reduce(
+    (count, { belowThresholdIntervals }) =>
+      count +
+      belowThresholdIntervals.filter((interval) => interval.collapsed).length,
+    0,
+  );
+  const droppedBoundaryCount =
+    droppedBoundaryPieces.length + collapsedBoundaryIntervals;
+  if (droppedBoundaryCount > 0) {
     geometryIssues.push({
       code: "below-minimum-boundary-piece",
       affects: "topology",
-      message: `Group border omitted ${droppedBoundaryPieces.length} exterior atomic ${droppedBoundaryPieces.length === 1 ? "piece" : "pieces"} below the minimum normalized renderer scale (${MIN_NORMALIZED_FEATURE_SIZE}).`,
+      message: `Group border omitted ${droppedBoundaryCount} exterior atomic ${droppedBoundaryCount === 1 ? "piece" : "pieces"} below the minimum normalized renderer scale (${MIN_NORMALIZED_FEATURE_SIZE}).`,
     });
   }
   const d = deduplicateSegments(
