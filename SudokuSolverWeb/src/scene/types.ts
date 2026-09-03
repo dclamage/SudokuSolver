@@ -5,6 +5,20 @@ export type SolverParticipation =
   | CapabilityEntityResult["status"]
   | "unknown";
 
+export type SceneGeometryIssueCode =
+  | "below-minimum-feature"
+  | "invalid-topology"
+  | "member-geometry-omitted"
+  | "non-finite-geometry"
+  | "unusable-content-anchor"
+  | "unsupported-path-geometry";
+
+export interface SceneGeometryIssue {
+  code: SceneGeometryIssueCode;
+  affects: "content" | "topology" | "topology-and-content";
+  message: string;
+}
+
 export interface SceneTextNode {
   kind: "text";
   id: string;
@@ -32,6 +46,7 @@ export interface SceneCellNode {
   description: string;
   selected: boolean;
   solverParticipation: SolverParticipation;
+  geometryIssue?: SceneGeometryIssue;
   content: readonly SceneTextNode[];
 }
 
@@ -41,6 +56,7 @@ export interface ScenePathNode {
   d: string;
   role: "grid" | "selection" | "annotation";
   label?: string;
+  geometryIssue?: SceneGeometryIssue;
 }
 
 export type SceneNode = SceneCellNode | ScenePathNode;

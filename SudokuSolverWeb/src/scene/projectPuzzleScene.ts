@@ -1,18 +1,25 @@
-import type { CellShape, PuzzlePackageV1 } from "../domain/puzzle/types";
+import type { PuzzlePackageV1 } from "../domain/puzzle/types";
 import type { CapabilityEntityResult } from "../solver/protocol";
+import {
+  MIN_NORMALIZED_FEATURE_SIZE,
+  normalizePuzzleGeometry,
+} from "./normalizeSceneGeometry";
+import type { NormalizedCellGeometry } from "./normalizeSceneGeometry";
 import type {
   PuzzleScene,
   PuzzleSceneView,
   SceneCellNode,
   SceneClipRect,
+  SceneGeometryIssue,
   SceneTextNode,
 } from "./types";
+
+export { MIN_NORMALIZED_FEATURE_SIZE } from "./normalizeSceneGeometry";
 
 const RELATIVE_GEOMETRY_TOLERANCE = 1e-7;
 const MAX_LENGTH_TOLERANCE = 1e-6;
 const COORDINATE_ULP_FACTOR = 16;
-const floatingPointBuffer = new ArrayBuffer(8);
-const floatingPointView = new DataView(floatingPointBuffer);
+const TOPOLOGY_COORDINATE_QUANTUM = MIN_NORMALIZED_FEATURE_SIZE / 1_000;
 
 interface Bounds {
   minX: number;
@@ -41,7 +48,16 @@ interface ProjectedShape {
   bounds?: Bounds;
   contentRegion?: ContentRegion;
   vertices: readonly Point[];
-  geometryIssue?: string;
+  geometryIssue?: SceneGeometryIssue;
+}
+
+function sceneCoordinate(value: number) {
+  const integer = Math.round(value);
+  const snapped = Math.abs(value - integer) <=
+    Number.EPSILON * 32 * Math.max(1, Math.abs(value))
+    ? integer
+    : value;
+  return Number(snapped.toPrecision(15));
 }
 
 export interface PuzzleSceneProjectionMetrics {
@@ -355,76 +371,78 @@ function findPolygonContentRegion(
 }
 
 function projectShape(
-  shape: CellShape,
+  geometry: NormalizedCellGeometry,
+  displayScale: number,
   metrics?: PuzzleSceneProjectionMetrics,
 ): ProjectedShape {
-  if (shape.kind === "path") {
-    return {
-      path: shape.d,
-      vertices: [],
-      geometryIssue: "Visual geometry unavailable: path cells require explicit bounds.",
-    };
-  }
-
-  const vertices: readonly Point[] =
-    shape.kind === "rect"
-      ? [
-          { x: shape.x, y: shape.y },
-          { x: shape.x + shape.width, y: shape.y },
-          { x: shape.x + shape.width, y: shape.y + shape.height },
-          { x: shape.x, y: shape.y + shape.height },
-        ]
-      : shape.points;
-  const [firstPoint, ...remainingPoints] = vertices;
-  if (firstPoint === undefined) {
+  if (geometry.geometryIssue !== undefined) {
     return {
       path: "",
       vertices: [],
-      geometryIssue: "Visual geometry unavailable: polygon has no usable interior.",
+      geometryIssue: geometry.geometryIssue,
     };
   }
 
-  const bounds = remainingPoints.reduce<Bounds>(
-    (current, point) => ({
-      minX: Math.min(current.minX, point.x),
-      minY: Math.min(current.minY, point.y),
-      maxX: Math.max(current.maxX, point.x),
-      maxY: Math.max(current.maxY, point.y),
-    }),
-    {
-      minX: firstPoint.x,
-      minY: firstPoint.y,
-      maxX: firstPoint.x,
-      maxY: firstPoint.y,
-    },
-  );
-  const center = {
-    x: (bounds.minX + bounds.maxX) / 2,
-    y: (bounds.minY + bounds.maxY) / 2,
-  };
+  const vertices = geometry.vertices;
+  const bounds = geometry.bounds!;
+  const scalePoint = (point: Point) => ({
+    x: sceneCoordinate(point.x * displayScale),
+    y: sceneCoordinate(point.y * displayScale),
+  });
+  const sceneVertices = vertices.map(scalePoint);
   const path =
-    shape.kind === "rect"
-      ? `M ${vertices[0].x} ${vertices[0].y} H ${vertices[1].x} V ${vertices[2].y} H ${vertices[3].x} Z`
-      : `M ${vertices.map((point) => `${point.x} ${point.y}`).join(" L ")} Z`;
-  const contentRegion =
-    shape.kind === "rect" && bounds.maxX > bounds.minX && bounds.maxY > bounds.minY
-      ? { ...bounds, center }
-      : shape.kind === "polygon"
-        ? findPolygonContentRegion(vertices, bounds, metrics)
+    geometry.kind === "rect"
+      ? `M ${sceneVertices[0].x} ${sceneVertices[0].y} H ${sceneVertices[1].x} V ${sceneVertices[2].y} H ${sceneVertices[3].x} Z`
+      : `M ${sceneVertices.map((point) => `${point.x} ${point.y}`).join(" L ")} Z`;
+  const normalizedContentRegion =
+    geometry.kind === "rect"
+      ? {
+          ...bounds,
+          center: {
+            x: (bounds.minX + bounds.maxX) / 2,
+            y: (bounds.minY + bounds.maxY) / 2,
+          },
+        }
+      : geometry.kind === "polygon"
+        ? findPolygonContentRegion(
+            geometry.contentVertices,
+            bounds,
+            metrics,
+          )
         : undefined;
-  if (contentRegion === undefined) {
+  if (normalizedContentRegion === undefined) {
     return {
       path,
-      bounds,
-      vertices: [],
-      geometryIssue: `Visual geometry unavailable: ${shape.kind} has no usable interior.`,
+      bounds: {
+        minX: sceneCoordinate(bounds.minX * displayScale),
+        minY: sceneCoordinate(bounds.minY * displayScale),
+        maxX: sceneCoordinate(bounds.maxX * displayScale),
+        maxY: sceneCoordinate(bounds.maxY * displayScale),
+      },
+      vertices,
+      geometryIssue: {
+        code: "unusable-content-anchor",
+        affects: "content",
+        message: `${geometry.kind} has no usable content anchor.`,
+      },
     };
   }
 
   return {
     path,
-    bounds,
-    contentRegion,
+    bounds: {
+      minX: sceneCoordinate(bounds.minX * displayScale),
+      minY: sceneCoordinate(bounds.minY * displayScale),
+      maxX: sceneCoordinate(bounds.maxX * displayScale),
+      maxY: sceneCoordinate(bounds.maxY * displayScale),
+    },
+    contentRegion: {
+      center: scalePoint(normalizedContentRegion.center),
+      minX: sceneCoordinate(normalizedContentRegion.minX * displayScale),
+      minY: sceneCoordinate(normalizedContentRegion.minY * displayScale),
+      maxX: sceneCoordinate(normalizedContentRegion.maxX * displayScale),
+      maxY: sceneCoordinate(normalizedContentRegion.maxY * displayScale),
+    },
     vertices,
   };
 }
@@ -580,25 +598,19 @@ function baseSegmentTolerance(segment: Segment) {
     segmentLength(segment) * RELATIVE_GEOMETRY_TOLERANCE,
     MAX_LENGTH_TOLERANCE,
   );
-  const coordinateMagnitude = Math.max(
-    1,
-    Math.abs(segment.from.x),
-    Math.abs(segment.from.y),
-    Math.abs(segment.to.x),
-    Math.abs(segment.to.y),
-  );
   return Math.max(
     lengthTolerance,
-    coordinateMagnitude * Number.EPSILON * COORDINATE_ULP_FACTOR,
+    Number.EPSILON * COORDINATE_ULP_FACTOR,
   );
 }
 
-function exactlyContainsPoint(segment: Segment, point: Point) {
-  if (lineDistance(point, segment) !== 0) {
+function containsPointOnSnappedLine(segment: Segment, point: Point) {
+  if (lineDistance(point, segment) > TOPOLOGY_COORDINATE_QUANTUM * 4) {
     return false;
   }
   const ratio = projectRatio(point, segment);
-  return ratio >= 0 && ratio <= 1;
+  const ratioTolerance = TOPOLOGY_COORDINATE_QUANTUM / segmentLength(segment);
+  return ratio >= -ratioTolerance && ratio <= 1 + ratioTolerance;
 }
 
 function segmentTolerance(
@@ -615,7 +627,7 @@ function segmentTolerance(
   for (const candidate of arrangement) {
     if (
       candidate.polygonIndex !== segment.polygonIndex ||
-      exactlyContainsPoint(candidate, midpoint)
+      containsPointOnSnappedLine(candidate, midpoint)
     ) {
       continue;
     }
@@ -631,6 +643,17 @@ function pointAt(segment: Segment, ratio: number): Point {
   return {
     x: segment.from.x + (segment.to.x - segment.from.x) * ratio,
     y: segment.from.y + (segment.to.y - segment.from.y) * ratio,
+  };
+}
+
+function snapTopologyPoint(point: Point): Point {
+  return {
+    x:
+      Math.round(point.x / TOPOLOGY_COORDINATE_QUANTUM) *
+      TOPOLOGY_COORDINATE_QUANTUM,
+    y:
+      Math.round(point.y / TOPOLOGY_COORDINATE_QUANTUM) *
+      TOPOLOGY_COORDINATE_QUANTUM,
   };
 }
 
@@ -754,8 +777,8 @@ function splitSegment(
       ? []
       : [
           {
-            from: pointAt(segment, start),
-            to: pointAt(segment, end),
+            from: snapTopologyPoint(pointAt(segment, start)),
+            to: snapTopologyPoint(pointAt(segment, end)),
             polygonIndex: segment.polygonIndex,
           },
         ];
@@ -764,34 +787,6 @@ function splitSegment(
 
 function pointInUnion(point: Point, polygons: readonly (readonly Point[])[]) {
   return polygons.some((vertices) => isPointInPolygon(point, vertices));
-}
-
-function nextUp(value: number) {
-  if (Number.isNaN(value) || value === Number.POSITIVE_INFINITY) {
-    return value;
-  }
-  if (value === 0) {
-    return Number.MIN_VALUE;
-  }
-  floatingPointView.setFloat64(0, value);
-  const bits = floatingPointView.getBigUint64(0);
-  floatingPointView.setBigUint64(0, value > 0 ? bits + 1n : bits - 1n);
-  return floatingPointView.getFloat64(0);
-}
-
-function nextDown(value: number) {
-  return -nextUp(-value);
-}
-
-function stepRepresentably(value: number, delta: number) {
-  if (delta === 0) {
-    return value;
-  }
-  const offset = value + delta;
-  if (Number.isFinite(offset) && offset !== value) {
-    return offset;
-  }
-  return delta > 0 ? nextUp(value) : nextDown(value);
 }
 
 function segmentContainsPointWithinTolerance(
@@ -835,151 +830,32 @@ function localProbeDistance(
   );
 }
 
-function representableSideProbe(
-  segment: Segment,
-  side: 1 | -1,
-  arrangement: readonly Segment[],
-) {
-  const length = segmentLength(segment);
-  const midpoint = pointAt(segment, 0.5);
-  const midpointRatio = projectRatio(midpoint, segment);
-  if (!(midpointRatio > 0 && midpointRatio < 1)) {
-    return undefined;
-  }
-
-  const probeDistance = localProbeDistance(segment, arrangement);
-  const normalX = -(segment.to.y - segment.from.y) / length;
-  const normalY = (segment.to.x - segment.from.x) / length;
-  const point = {
-    x: stepRepresentably(midpoint.x, normalX * probeDistance * side),
-    y: stepRepresentably(midpoint.y, normalY * probeDistance * side),
-  };
-  if (
-    (point.x === midpoint.x && point.y === midpoint.y) ||
-    signedLineDistance(point, segment) * side <= 0
-  ) {
-    return undefined;
-  }
-  for (const candidate of arrangement) {
-    if (
-      segmentContainsPointWithinTolerance(
-        candidate,
-        point,
-        segmentTolerance(candidate, arrangement),
-      )
-    ) {
-      return undefined;
-    }
-  }
-  return point;
-}
-
-function polygonBounds(vertices: readonly Point[]): Bounds | undefined {
-  const first = vertices[0];
-  if (first === undefined) {
-    return undefined;
-  }
-  return vertices.slice(1).reduce<Bounds>(
-    (bounds, point) => ({
-      minX: Math.min(bounds.minX, point.x),
-      minY: Math.min(bounds.minY, point.y),
-      maxX: Math.max(bounds.maxX, point.x),
-      maxY: Math.max(bounds.maxY, point.y),
-    }),
-    { minX: first.x, minY: first.y, maxX: first.x, maxY: first.y },
-  );
-}
-
-function isUnionBoundaryInLocalCoordinates(
-  segment: Segment,
-  polygons: readonly (readonly Point[])[],
-) {
-  const sourcePolygon =
-    segment.polygonIndex === undefined
-      ? undefined
-      : polygons[segment.polygonIndex];
-  const bounds =
-    sourcePolygon === undefined ? undefined : polygonBounds(sourcePolygon);
-  if (bounds === undefined) {
-    return false;
-  }
-  const scaleX = bounds.maxX - bounds.minX;
-  const scaleY = bounds.maxY - bounds.minY;
-  if (!(scaleX > 0) || !(scaleY > 0)) {
-    return false;
-  }
-
-  const normalizePoint = (point: Point): Point => ({
-    x: (point.x - bounds.minX) / scaleX,
-    y: (point.y - bounds.minY) / scaleY,
-  });
-  const normalizedPolygons = polygons.map((vertices) =>
-    vertices.map(normalizePoint),
-  );
-  if (
-    normalizedPolygons.some((vertices) =>
-      vertices.some(
-        (point) => !Number.isFinite(point.x) || !Number.isFinite(point.y),
-      ),
-    )
-  ) {
-    return false;
-  }
-  const normalizedArrangement = normalizedPolygons.flatMap(
-    (vertices, polygonIndex) =>
-      polygonSegments(vertices).map((candidate) => ({
-        ...candidate,
-        polygonIndex,
-      })),
-  );
-  const normalizedSegment: Segment = {
-    from: normalizePoint(segment.from),
-    to: normalizePoint(segment.to),
-    polygonIndex: segment.polygonIndex,
-  };
-  const length = segmentLength(normalizedSegment);
-  if (!(length > 0)) {
-    return false;
-  }
-  const midpoint = pointAt(normalizedSegment, 0.5);
-  const probeDistance = localProbeDistance(
-    normalizedSegment,
-    normalizedArrangement,
-  );
-  const normalX =
-    -(normalizedSegment.to.y - normalizedSegment.from.y) / length;
-  const normalY =
-    (normalizedSegment.to.x - normalizedSegment.from.x) / length;
-  const firstSide = pointInUnion(
-    {
-      x: midpoint.x + normalX * probeDistance,
-      y: midpoint.y + normalY * probeDistance,
-    },
-    normalizedPolygons,
-  );
-  const secondSide = pointInUnion(
-    {
-      x: midpoint.x - normalX * probeDistance,
-      y: midpoint.y - normalY * probeDistance,
-    },
-    normalizedPolygons,
-  );
-  return firstSide !== secondSide;
-}
 
 function isUnionBoundary(
   segment: Segment,
   polygons: readonly (readonly Point[])[],
   arrangement: readonly Segment[],
 ) {
-  const firstProbe = representableSideProbe(segment, 1, arrangement);
-  const secondProbe = representableSideProbe(segment, -1, arrangement);
-  if (firstProbe === undefined || secondProbe === undefined) {
-    return isUnionBoundaryInLocalCoordinates(segment, polygons);
-  }
-  return (
-    pointInUnion(firstProbe, polygons) !== pointInUnion(secondProbe, polygons)
+  const length = segmentLength(segment);
+  const midpoint = pointAt(segment, 0.5);
+  const probeDistance = localProbeDistance(segment, arrangement);
+  const normalX = -(segment.to.y - segment.from.y) / length;
+  const normalY = (segment.to.x - segment.from.x) / length;
+  const firstSide = pointInUnion(
+    {
+      x: midpoint.x + normalX * probeDistance,
+      y: midpoint.y + normalY * probeDistance,
+    },
+    polygons,
   );
+  const secondSide = pointInUnion(
+    {
+      x: midpoint.x - normalX * probeDistance,
+      y: midpoint.y - normalY * probeDistance,
+    },
+    polygons,
+  );
+  return firstSide !== secondSide;
 }
 
 function segmentsAreEquivalent(
@@ -1027,8 +903,16 @@ function deduplicateSegments(
 function projectGroupBorder(
   cellIds: readonly string[],
   geometryByCellId: ReadonlyMap<string, ProjectedShape>,
+  displayScale: number,
 ) {
   const uniqueCellIds = [...new Set(cellIds)];
+  const omittedCellIds = uniqueCellIds.filter((cellId) => {
+    const geometryIssue = geometryByCellId.get(cellId)?.geometryIssue;
+    return (
+      geometryIssue?.affects === "topology" ||
+      geometryIssue?.affects === "topology-and-content"
+    );
+  });
   const polygons = uniqueCellIds.flatMap((cellId) => {
     const vertices = geometryByCellId.get(cellId)?.vertices;
     return vertices === undefined || vertices.length < 3 ? [] : [vertices];
@@ -1045,20 +929,44 @@ function projectGroupBorder(
       return Number.isFinite(length) && length > 0;
     });
   if (segments.length === 0) {
-    return "";
+    return {
+      d: "",
+      geometryIssue:
+        omittedCellIds.length === 0
+          ? undefined
+          : {
+              code: "member-geometry-omitted" as const,
+              affects: "topology" as const,
+              message: `Group border omitted renderer-invalid member geometry: ${omittedCellIds.join(", ")}.`,
+            },
+    };
   }
 
-  return deduplicateSegments(
+  const d = deduplicateSegments(
     segments
       .flatMap((segment) => splitSegment(segment, segments))
+      .filter(
+        (piece) => segmentLength(piece) >= MIN_NORMALIZED_FEATURE_SIZE,
+      )
       .filter((piece) => isUnionBoundary(piece, polygons, segments)),
     segments,
   )
     .map(
       (segment) =>
-        `M ${segment.from.x} ${segment.from.y} L ${segment.to.x} ${segment.to.y}`,
+        `M ${sceneCoordinate(segment.from.x * displayScale)} ${sceneCoordinate(segment.from.y * displayScale)} L ${sceneCoordinate(segment.to.x * displayScale)} ${sceneCoordinate(segment.to.y * displayScale)}`,
     )
     .join(" ");
+  return {
+    d,
+    geometryIssue:
+      omittedCellIds.length === 0
+        ? undefined
+        : {
+            code: "member-geometry-omitted" as const,
+            affects: "topology" as const,
+            message: `Group border omitted renderer-invalid member geometry: ${omittedCellIds.join(", ")}.`,
+          },
+  };
 }
 
 function deduplicateAnnotations(view: PuzzleSceneView) {
@@ -1076,23 +984,30 @@ export function projectPuzzleScene(
   view: PuzzleSceneView,
   metrics?: PuzzleSceneProjectionMetrics,
 ): PuzzleScene {
-  let minX = Number.POSITIVE_INFINITY;
-  let minY = Number.POSITIVE_INFINITY;
-  let maxX = Number.NEGATIVE_INFINITY;
-  let maxY = Number.NEGATIVE_INFINITY;
+  const normalizedGeometry = normalizePuzzleGeometry(puzzle);
   const geometryByCellId = new Map<string, ProjectedShape>();
   const selectedCellIds = new Set(view.selectedCellIds);
 
   const nodes: SceneCellNode[] = Object.values(puzzle.cells).map(
     (cell, cellIndex) => {
-      const geometry = projectShape(cell.shape, metrics);
+      const normalizedCell = normalizedGeometry.cells.get(cell.id);
+      const geometry =
+        normalizedCell === undefined
+          ? {
+              path: "",
+              vertices: [],
+              geometryIssue: {
+                code: "invalid-topology" as const,
+                affects: "topology-and-content" as const,
+                message: "cell geometry was not available for normalization.",
+              },
+            }
+          : projectShape(
+              normalizedCell,
+              normalizedGeometry.displayScale,
+              metrics,
+            );
       geometryByCellId.set(cell.id, geometry);
-      if (geometry.bounds !== undefined) {
-        minX = Math.min(minX, geometry.bounds.minX);
-        minY = Math.min(minY, geometry.bounds.minY);
-        maxX = Math.max(maxX, geometry.bounds.maxX);
-        maxY = Math.max(maxY, geometry.bounds.maxY);
-      }
 
       const capability = getCellCapability(cell.id, view);
       const solverParticipation = capability?.status ?? "unknown";
@@ -1118,26 +1033,34 @@ export function projectPuzzleScene(
           contentDescription === undefined
             ? baseLabel
             : `${baseLabel}, ${contentDescription}`,
-        description: `Solver participation: ${humanizeParticipation(solverParticipation)}.${reason === undefined || reason === "" ? "" : ` ${reason}`}${geometry.geometryIssue === undefined ? "" : ` ${geometry.geometryIssue}`}`,
+        description: `Solver participation: ${humanizeParticipation(solverParticipation)}.${reason === undefined || reason === "" ? "" : ` ${reason}`}${geometry.geometryIssue === undefined ? "" : ` Presentation geometry: ${geometry.geometryIssue.message}`}`,
         selected: selectedCellIds.has(cell.id),
         solverParticipation,
+        geometryIssue: geometry.geometryIssue,
         content,
       };
     },
   );
 
-  const groupBorders = Object.values(puzzle.groups).flatMap((group) =>
-    group.roles.includes("region")
-      ? [
-          {
-            kind: "path" as const,
-            id: `group-border-${group.id}`,
-            d: projectGroupBorder(group.cellIds, geometryByCellId),
-            role: "grid" as const,
-          },
-        ]
-      : [],
-  );
+  const groupBorders = Object.values(puzzle.groups).flatMap((group) => {
+    if (!group.roles.includes("region")) {
+      return [];
+    }
+    const border = projectGroupBorder(
+      group.cellIds,
+      geometryByCellId,
+      normalizedGeometry.displayScale,
+    );
+    return [
+      {
+        kind: "path" as const,
+        id: `group-border-${group.id}`,
+        d: border.d,
+        role: "grid" as const,
+        geometryIssue: border.geometryIssue,
+      },
+    ];
+  });
   const selections = [...selectedCellIds].flatMap((cellId) => {
     const geometry = geometryByCellId.get(cellId);
     return geometry === undefined
@@ -1164,17 +1087,11 @@ export function projectPuzzleScene(
     ),
   );
 
-  if (![minX, minY, maxX, maxY].every(Number.isFinite)) {
-    minX = 0;
-    minY = 0;
-    maxX = 1;
-    maxY = 1;
-  }
-  const width = Math.max(maxX - minX, 1);
-  const height = Math.max(maxY - minY, 1);
+  const width = sceneCoordinate(Math.max(normalizedGeometry.width, 1));
+  const height = sceneCoordinate(Math.max(normalizedGeometry.height, 1));
   return {
     label: puzzle.metadata.title || "Sudoku puzzle",
-    viewBox: `${minX} ${minY} ${width} ${height}`,
+    viewBox: `0 0 ${width} ${height}`,
     width,
     height,
     nodes: [...nodes, ...groupBorders, ...selections, ...annotations],

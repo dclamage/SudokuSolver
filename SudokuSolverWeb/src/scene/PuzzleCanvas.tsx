@@ -39,6 +39,9 @@ function cellNodesEqual(first: SceneCellNode, second: SceneCellNode) {
     first.description === second.description &&
     first.selected === second.selected &&
     first.solverParticipation === second.solverParticipation &&
+    first.geometryIssue?.code === second.geometryIssue?.code &&
+    first.geometryIssue?.affects === second.geometryIssue?.affects &&
+    first.geometryIssue?.message === second.geometryIssue?.message &&
     first.content.length === second.content.length &&
     first.content.every((content, index) =>
       textNodesEqual(content, second.content[index]),
