@@ -5,7 +5,6 @@ import { useExternalStore } from "../../app/useExternalStore";
 import type {
   CandidateContextStatus,
   CandidatePanelDescriptor,
-  CandidatePanelKind,
 } from "../../domain/candidates/types";
 
 export interface CandidateContextOutletProps {
@@ -55,6 +54,17 @@ function LogicalSolverPanel({ panel }: CandidatePanelProps) {
   );
 }
 
+function UnsupportedPanel({ panel }: CandidatePanelProps) {
+  return (
+    <PanelFrame panel={panel}>
+      <p>
+        This version does not support the {panel.contextKind} layer type. Its
+        configuration remains in the puzzle.
+      </p>
+    </PanelFrame>
+  );
+}
+
 function PanelFrame({
   panel,
   children,
@@ -80,7 +90,7 @@ function PanelFrame({
 }
 
 const panelRegistry: Readonly<
-  Record<CandidatePanelKind, (props: CandidatePanelProps) => ReactNode>
+  Record<string, (props: CandidatePanelProps) => ReactNode>
 > = Object.freeze({
   setterNotes: SetterNotesPanel,
   trueCandidates: TrueCandidatesPanel,
@@ -91,6 +101,6 @@ export function CandidateContextOutlet({
   controller,
 }: CandidateContextOutletProps) {
   const panel = useExternalStore(controller.candidates).panel;
-  const Panel = panelRegistry[panel.panelKind];
+  const Panel = panelRegistry[panel.panelKind] ?? UnsupportedPanel;
   return <Panel panel={panel} />;
 }

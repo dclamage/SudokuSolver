@@ -5,6 +5,11 @@ import type {
   PuzzlePackageV1,
   ValueId,
 } from "./types";
+import {
+  isLogicalSolverCandidateContext,
+  isManualCandidateContext,
+  isTrueCandidatesContext,
+} from "./types";
 
 export interface CommandResult {
   document: PuzzlePackageV1;
@@ -70,7 +75,7 @@ function validateContext(context: CandidateContext) {
     throw new Error("candidate context ID must be a non-empty string");
   }
   requireContextName(context.name);
-  if (context.kind === "trueCandidates") {
+  if (isTrueCandidatesContext(context)) {
     requireSolutionCountCap(context.solutionCountCap);
   }
 }
@@ -137,10 +142,10 @@ function cloneContextWithIdentity(
   id: string,
   name: string,
 ): CandidateContext {
-  if (source.kind === "manual") {
+  if (isManualCandidateContext(source)) {
     return { id, name, kind: "manual" };
   }
-  if (source.kind === "trueCandidates") {
+  if (isTrueCandidatesContext(source)) {
     return {
       id,
       name,
@@ -150,13 +155,16 @@ function cloneContextWithIdentity(
       solutionCountCap: source.solutionCountCap,
     };
   }
-  return {
-    id,
-    name,
-    kind: "logicalSolver",
-    followPuzzleRevision: true,
-    enabledTechniqueIds: [...source.enabledTechniqueIds],
-  };
+  if (isLogicalSolverCandidateContext(source)) {
+    return {
+      id,
+      name,
+      kind: "logicalSolver",
+      followPuzzleRevision: true,
+      enabledTechniqueIds: [...source.enabledTechniqueIds],
+    };
+  }
+  return { ...structuredClone(source), id, name };
 }
 
 function finishCommand(
@@ -303,7 +311,7 @@ export function applyPuzzleCommand(
     case "configureTrueCandidates": {
       const contextIndex = findContextIndex(document, command.contextId);
       const previous = document.authoring.candidateContexts[contextIndex];
-      if (previous.kind !== "trueCandidates") {
+      if (!isTrueCandidatesContext(previous)) {
         throw new Error(
           `candidate context ${command.contextId} is not a True Candidates context`,
         );

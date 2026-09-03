@@ -28,14 +28,16 @@ export interface CandidateSceneProjection {
   readonly annotations: readonly SceneAnnotation[];
 }
 
-export type CandidatePanelKind =
-  | "setterNotes"
-  | "trueCandidates"
-  | "logicalSolver";
+export type CandidatePanelKind = string;
+
+export interface CandidateContextActions {
+  readonly manualCandidateEntry: boolean;
+}
 
 export interface CandidatePanelDescriptor {
   readonly contextId: CandidateContextId;
   readonly name: string;
+  readonly contextKind: string;
   readonly panelKind: CandidatePanelKind;
   readonly status: CandidateContextStatus;
 }
@@ -48,6 +50,7 @@ export interface CandidateContextSnapshot {
   >;
   readonly sceneProjection: CandidateSceneProjection;
   readonly panel: CandidatePanelDescriptor;
+  readonly actions: CandidateContextActions;
 }
 
 export interface CandidateBehaviorTransition {
@@ -65,11 +68,12 @@ export interface CandidateBehaviorInput {
 
 export interface CandidateContextBehavior {
   readonly panelKind: CandidatePanelKind;
+  readonly actions: CandidateContextActions;
   activate(input: CandidateBehaviorInput): CandidateBehaviorTransition;
   invalidate(input: CandidateBehaviorInput): CandidateBehaviorTransition;
   getSceneProjection(input: CandidateBehaviorInput): CandidateSceneProjection;
 }
 
 export type CandidateBehaviorRegistry = Readonly<
-  Record<CandidateContext["kind"], CandidateContextBehavior>
+  Record<string, CandidateContextBehavior | undefined>
 >;

@@ -99,6 +99,56 @@ describe("Playtest workspace", () => {
     ).toBeVisible();
   });
 
+  it("removes and guards manual candidate modes outside Setter Notes", async () => {
+    const controller = createTestAppController();
+    render(<App controller={controller} />);
+
+    await userEvent.click(screen.getByRole("tab", { name: "Playtest" }));
+    await userEvent.click(screen.getByTestId("cell-r1c2"));
+    await userEvent.click(screen.getByRole("button", { name: "Corner" }));
+    await userEvent.click(screen.getByRole("tab", { name: "True candidates" }));
+
+    expect(screen.queryByRole("button", { name: "Corner" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Centre" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Erase" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Color" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Enter 4" }));
+    expect(controller.playtest.getSnapshot().values.r1c2).toBe("4");
+    expect(
+      controller.playtest.getSnapshot().manualCandidates.corner.r1c2,
+    ).toBeUndefined();
+  });
+
+  it(
+    "keeps persisted Setter Notes marks out of the Playtest session",
+    async () => {
+      const controller = createTestAppController({
+        preparePuzzle: (puzzle) => {
+          puzzle.authoring.manualMarks["setter-notes"].r1c2 = ["4"];
+        },
+      });
+      render(<App controller={controller} />);
+
+      expect(screen.getByTestId("candidates-r1c2")).toHaveTextContent("4");
+      await userEvent.click(screen.getByRole("tab", { name: "Playtest" }));
+
+      expect(screen.queryByTestId("candidates-r1c2")).toBeNull();
+      await userEvent.click(screen.getByTestId("cell-r1c2"));
+      await userEvent.click(screen.getByRole("button", { name: "Corner" }));
+      await userEvent.click(
+        screen.getByRole("button", { name: "Toggle corner 7" }),
+      );
+      expect(screen.getByTestId("corner-candidates-r1c2")).toHaveTextContent(
+        "7",
+      );
+      expect(
+        controller.puzzle.getSnapshot().document.authoring.manualMarks[
+          "setter-notes"
+        ].r1c2,
+      ).toEqual(["4"]);
+    },
+  );
+
   it("starts on entering Playtest, ticks visibly, and pauses in Set", () => {
     vi.useFakeTimers();
     try {

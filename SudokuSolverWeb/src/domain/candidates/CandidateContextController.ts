@@ -8,6 +8,12 @@ import type {
   CandidateContext,
   CandidateContextId,
   PuzzlePackageV1,
+  TrueCandidatesContext,
+} from "../puzzle/types";
+import {
+  isLogicalSolverCandidateContext,
+  isManualCandidateContext,
+  isTrueCandidatesContext,
 } from "../puzzle/types";
 import type {
   CandidateBehaviorInput,
@@ -22,6 +28,8 @@ import type {
 
 const EMPTY_CANDIDATES = Object.freeze({});
 const EMPTY_ANNOTATIONS = Object.freeze([]);
+const MANUAL_ACTIONS = Object.freeze({ manualCandidateEntry: true });
+const NO_ACTIONS = Object.freeze({ manualCandidateEntry: false });
 
 export interface CandidatePuzzleChange {
   readonly documentRevision: number;
@@ -71,10 +79,22 @@ function unchanged(input: CandidateBehaviorInput): CandidateBehaviorTransition {
   return { runtime: input.runtime, requestWork: false };
 }
 
-function emptyProjection(input: CandidateBehaviorInput): CandidateSceneProjection {
+function runtimeProjection(
+  input: CandidateBehaviorInput,
+): CandidateSceneProjection {
   return Object.freeze({
     contextId: input.definition.id,
     candidates: input.runtime.candidates,
+    annotations: EMPTY_ANNOTATIONS,
+  });
+}
+
+function inertProjection(
+  input: CandidateBehaviorInput,
+): CandidateSceneProjection {
+  return Object.freeze({
+    contextId: input.definition.id,
+    candidates: EMPTY_CANDIDATES,
     annotations: EMPTY_ANNOTATIONS,
   });
 }
@@ -96,6 +116,7 @@ function withStatus(
 
 const manualBehavior: CandidateContextBehavior = Object.freeze({
   panelKind: "setterNotes",
+  actions: MANUAL_ACTIONS,
   activate(input: CandidateBehaviorInput) {
     return {
       runtime: withStatus(
@@ -120,16 +141,17 @@ const manualBehavior: CandidateContextBehavior = Object.freeze({
         }
       : unchanged(input);
   },
-  getSceneProjection: emptyProjection,
+  getSceneProjection: runtimeProjection,
 });
 
 const trueCandidatesBehavior: CandidateContextBehavior = Object.freeze({
   panelKind: "trueCandidates",
+  actions: NO_ACTIONS,
   activate(input: CandidateBehaviorInput) {
     return {
       runtime: input.runtime,
       requestWork:
-        input.definition.kind === "trueCandidates" &&
+        isTrueCandidatesContext(input.definition) &&
         input.definition.refresh === "automatic" &&
         input.runtime.status === "stale" &&
         input.semanticHash !== null,
@@ -141,16 +163,17 @@ const trueCandidatesBehavior: CandidateContextBehavior = Object.freeze({
       runtime,
       requestWork:
         input.active &&
-        input.definition.kind === "trueCandidates" &&
+        isTrueCandidatesContext(input.definition) &&
         input.definition.refresh === "automatic" &&
         input.semanticHash !== null,
     };
   },
-  getSceneProjection: emptyProjection,
+  getSceneProjection: runtimeProjection,
 });
 
 const logicalSolverBehavior: CandidateContextBehavior = Object.freeze({
   panelKind: "logicalSolver",
+  actions: NO_ACTIONS,
   activate: unchanged,
   invalidate(input: CandidateBehaviorInput) {
     return {
@@ -158,7 +181,15 @@ const logicalSolverBehavior: CandidateContextBehavior = Object.freeze({
       requestWork: false,
     };
   },
-  getSceneProjection: emptyProjection,
+  getSceneProjection: runtimeProjection,
+});
+
+const unsupportedBehavior: CandidateContextBehavior = Object.freeze({
+  panelKind: "unsupported",
+  actions: NO_ACTIONS,
+  activate: unchanged,
+  invalidate: unchanged,
+  getSceneProjection: inertProjection,
 });
 
 export const defaultCandidateBehaviorRegistry: CandidateBehaviorRegistry =
@@ -175,16 +206,22 @@ function defaultSchedule(run: () => void): () => void {
 
 function initialRuntime(
   definition: CandidateContext,
-  semanticRevision: number,
+  document: PuzzlePackageV1,
   semanticHash: string | null,
 ): CandidateContextRuntime {
-  const manual = definition.kind === "manual";
+  const manual = isManualCandidateContext(definition);
+  const supported =
+    manual ||
+    isTrueCandidatesContext(definition) ||
+    isLogicalSolverCandidateContext(definition);
   return Object.freeze({
     contextId: definition.id,
-    baseSemanticRevision: manual ? semanticRevision : null,
+    baseSemanticRevision: manual ? document.semanticRevision : null,
     baseSemanticHash: manual ? semanticHash : null,
-    status: manual ? "live" : "stale",
-    candidates: EMPTY_CANDIDATES,
+    status: manual ? "live" : supported ? "stale" : "idle",
+    candidates: manual
+      ? (document.authoring.manualMarks[definition.id] ?? EMPTY_CANDIDATES)
+      : EMPTY_CANDIDATES,
     error: null,
   });
 }
@@ -245,7 +282,7 @@ export class CandidateContextController {
           definition.id,
           initialRuntime(
             definition,
-            this.semanticRevision,
+            this.document,
             this.semanticHash,
           ),
         ]),
@@ -394,14 +431,25 @@ export class CandidateContextController {
       ) {
         changedContextIds.add(definition.id);
       }
-      nextContexts[definition.id] =
-        existing === undefined
-          ? initialRuntime(
-              definition,
-              this.semanticRevision,
-              this.semanticHash,
-            )
-          : existing;
+      if (
+        existing === undefined ||
+        previousDefinition?.kind !== definition.kind
+      ) {
+        nextContexts[definition.id] = initialRuntime(
+          definition,
+          this.document,
+          this.semanticHash,
+        );
+      } else if (isManualCandidateContext(definition)) {
+        nextContexts[definition.id] = Object.freeze({
+          ...existing,
+          candidates:
+            this.document.authoring.manualMarks[definition.id] ??
+            EMPTY_CANDIDATES,
+        });
+      } else {
+        nextContexts[definition.id] = existing;
+      }
     }
     this.definitions = nextDefinitions;
     this.contexts = Object.freeze(nextContexts);
@@ -417,7 +465,7 @@ export class CandidateContextController {
   private scheduleAutomaticWork(definition: CandidateContext): void {
     if (
       definition.id !== this.activeContextId ||
-      definition.kind !== "trueCandidates" ||
+      !isTrueCandidatesContext(definition) ||
       definition.refresh !== "automatic" ||
       this.semanticHash === null
     ) {
@@ -451,7 +499,7 @@ export class CandidateContextController {
   }
 
   private startAutomaticWork(
-    definition: Extract<CandidateContext, { kind: "trueCandidates" }>,
+    definition: TrueCandidatesContext,
     projectionId: string,
   ): void {
     if (
@@ -602,7 +650,7 @@ export class CandidateContextController {
   }
 
   private behaviorFor(definition: CandidateContext): CandidateContextBehavior {
-    return this.behaviors[definition.kind];
+    return this.behaviors[definition.kind] ?? unsupportedBehavior;
   }
 
   private createSnapshot(): CandidateContextSnapshot {
@@ -612,6 +660,7 @@ export class CandidateContextController {
     const panel = Object.freeze({
       contextId: definition.id,
       name: definition.name,
+      contextKind: definition.kind,
       panelKind: behavior.panelKind,
       status: input.runtime.status,
     });
@@ -621,6 +670,7 @@ export class CandidateContextController {
       contexts: this.contexts,
       sceneProjection: behavior.getSceneProjection(input),
       panel,
+      actions: behavior.actions,
     });
   }
 
@@ -653,14 +703,17 @@ function behaviorConfigurationChanged(
   if (previous.kind !== next.kind) {
     return true;
   }
-  if (previous.kind === "trueCandidates" && next.kind === "trueCandidates") {
+  if (isTrueCandidatesContext(previous) && isTrueCandidatesContext(next)) {
     return (
       previous.refresh !== next.refresh ||
       previous.display !== next.display ||
       previous.solutionCountCap !== next.solutionCountCap
     );
   }
-  if (previous.kind === "logicalSolver" && next.kind === "logicalSolver") {
+  if (
+    isLogicalSolverCandidateContext(previous) &&
+    isLogicalSolverCandidateContext(next)
+  ) {
     return (
       previous.followPuzzleRevision !== next.followPuzzleRevision ||
       previous.enabledTechniqueIds.length !== next.enabledTechniqueIds.length ||

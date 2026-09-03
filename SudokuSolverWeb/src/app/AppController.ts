@@ -399,12 +399,17 @@ export class AppController {
       if (generation !== this.candidateHashGeneration) {
         return;
       }
+      const currentDocument = this.puzzle.getSnapshot().document;
+      if (
+        currentDocument.semanticRevision !== document.semanticRevision
+      ) {
+        return;
+      }
       this.candidates.onPuzzleChanged({
-        documentRevision: document.revision,
-        semanticRevision: document.semanticRevision,
+        documentRevision: currentDocument.revision,
+        semanticRevision: currentDocument.semanticRevision,
         semanticHash,
         semantic: true,
-        document,
       });
     });
   }

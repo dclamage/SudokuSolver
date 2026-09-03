@@ -211,10 +211,11 @@ function parseCandidateContext(
   const context = expectRecord(value, `candidate context ${index}`);
   const id = expectString(context.id, `candidate context ${index} id`);
   const name = expectString(context.name, `candidate context ${id} name`);
-  if (context.kind === "manual") {
+  const kind = expectString(context.kind, `candidate context ${id} kind`);
+  if (kind === "manual") {
     return { id, name, kind: "manual" };
   }
-  if (context.kind === "trueCandidates") {
+  if (kind === "trueCandidates") {
     if (context.refresh !== "automatic" && context.refresh !== "onRequest") {
       throw new Error(`candidate context ${id} has invalid refresh mode`);
     }
@@ -237,7 +238,7 @@ function parseCandidateContext(
       ),
     };
   }
-  if (context.kind === "logicalSolver") {
+  if (kind === "logicalSolver") {
     if (context.followPuzzleRevision !== true) {
       throw new Error(
         `candidate context ${id} must follow the puzzle revision`,
@@ -254,7 +255,11 @@ function parseCandidateContext(
       ),
     };
   }
-  throw new Error(`candidate context ${id} has invalid kind`);
+  return parseJsonValue(
+    context,
+    `candidate context ${id}`,
+    false,
+  ) as CandidateContext;
 }
 
 export function validatePuzzlePackage(value: unknown): PuzzlePackageV1 {

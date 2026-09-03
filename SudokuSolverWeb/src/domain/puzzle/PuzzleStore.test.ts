@@ -162,6 +162,36 @@ describe("PuzzleStore", () => {
     ).toThrow("candidate context setter-notes is not a True Candidates context");
   });
 
+  it("renames an unknown context without dropping opaque configuration", () => {
+    const document = createStarterPuzzle(() => "future-context-test");
+    document.authoring.candidateContexts = [
+      ...document.authoring.candidateContexts,
+      {
+        id: "future-candidates",
+        name: "Future candidates",
+        kind: "futureCandidates",
+        futurePolicy: { retain: true, modes: ["one", "two"] },
+      } as unknown as CandidateContext,
+    ];
+    document.authoring.manualMarks["future-candidates"] = {};
+    const store = new PuzzleStore(document);
+
+    store.execute({
+      type: "renameCandidateContext",
+      contextId: "future-candidates",
+      name: "Renamed future candidates",
+    });
+
+    expect(
+      store.getSnapshot().document.authoring.candidateContexts.at(-1),
+    ).toEqual({
+      id: "future-candidates",
+      name: "Renamed future candidates",
+      kind: "futureCandidates",
+      futurePolicy: { retain: true, modes: ["one", "two"] },
+    });
+  });
+
   it("reports the exact last change and notifies active listeners once per commit", () => {
     const store = new PuzzleStore(createStarterPuzzle(() => "listener-test"));
     const listener = vi.fn();

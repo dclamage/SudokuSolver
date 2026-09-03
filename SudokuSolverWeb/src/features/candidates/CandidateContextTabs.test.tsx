@@ -78,6 +78,39 @@ describe("CandidateContextTabs", () => {
     ).toBeVisible();
   });
 
+  it("renders an unknown context with the generic inert panel", async () => {
+    const controller = createTestAppController({
+      preparePuzzle: (puzzle) => {
+        puzzle.authoring.candidateContexts = [
+          ...puzzle.authoring.candidateContexts,
+          {
+            id: "future-candidates",
+            name: "Future candidates",
+            kind: "futureCandidates",
+            futurePolicy: { retain: true },
+          } as never,
+        ];
+        puzzle.authoring.manualMarks["future-candidates"] = {};
+      },
+    });
+    render(<App controller={controller} />);
+
+    await userEvent.click(
+      screen.getByRole("tab", { name: "Future candidates" }),
+    );
+
+    expect(
+      screen.getByRole("tabpanel", { name: "Future candidates" }),
+    ).toHaveTextContent(
+      "This version does not support the futureCandidates layer type.",
+    );
+    expect(
+      controller.testDependencies.solver.requests.filter(
+        (request) => request.operation === "count",
+      ),
+    ).toHaveLength(0);
+  });
+
   it("removes inactive manual marks from the Playtest scene without losing them", async () => {
     const controller = createTestAppController();
     render(<App controller={controller} />);

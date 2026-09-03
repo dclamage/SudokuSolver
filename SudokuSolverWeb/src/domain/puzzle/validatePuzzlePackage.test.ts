@@ -266,6 +266,33 @@ describe("validatePuzzlePackage", () => {
     });
   });
 
+  it("loads an unknown candidate kind without dropping opaque configuration", () => {
+    const candidate = structuredClone(fixture) as unknown as Record<
+      string,
+      unknown
+    >;
+    const authoring = candidate.authoring as {
+      candidateContexts: unknown[];
+      manualMarks: Record<string, unknown>;
+    };
+    authoring.candidateContexts.push({
+      id: "future-candidates",
+      name: "Future candidates",
+      kind: "futureCandidates",
+      futurePolicy: { retain: true, modes: ["one", "two"] },
+    });
+    authoring.manualMarks["future-candidates"] = {};
+
+    const parsed = validatePuzzlePackage(candidate);
+
+    expect(parsed.authoring.candidateContexts.at(-1)).toEqual({
+      id: "future-candidates",
+      name: "Future candidates",
+      kind: "futureCandidates",
+      futurePolicy: { retain: true, modes: ["one", "two"] },
+    });
+  });
+
   it("rejects malformed extension impact declarations", () => {
     const invalid = structuredClone(fixture) as unknown as PuzzlePackageV1;
     invalid.extensions = {

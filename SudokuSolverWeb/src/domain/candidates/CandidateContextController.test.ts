@@ -285,4 +285,65 @@ describe("CandidateContextController", () => {
       name: "Renamed logical-solver",
     });
   });
+
+  it("projects current native Setter Notes marks after document changes", () => {
+    const { controller, document } = createCandidateController({
+      prepareDocument: (candidateDocument) => {
+        candidateDocument.authoring.manualMarks["setter-notes"].r1c2 = ["4"];
+      },
+    });
+
+    expect(controller.getSceneProjection().candidates).toEqual({
+      r1c2: ["4"],
+    });
+
+    const updatedDocument = structuredClone(document);
+    updatedDocument.revision = 2;
+    updatedDocument.authoring.manualMarks["setter-notes"].r1c2 = ["4", "7"];
+    controller.onPuzzleChanged({
+      documentRevision: 2,
+      semanticRevision: 1,
+      semanticHash: initialSemanticHash,
+      semantic: false,
+      document: updatedDocument,
+    });
+
+    expect(controller.getSceneProjection().candidates).toEqual({
+      r1c2: ["4", "7"],
+    });
+  });
+
+  it("keeps an unknown context inert and preserves its opaque definition", () => {
+    const opaqueContext = {
+      id: "future-candidates",
+      name: "Future candidates",
+      kind: "futureCandidates",
+      refreshPolicy: { mode: "future", delay: 12 },
+    } as unknown as CandidateContext;
+    const { controller, solver } = createCandidateController({
+      prepareDocument: (document) => {
+        document.authoring.candidateContexts = [
+          ...document.authoring.candidateContexts,
+          opaqueContext,
+        ];
+        document.authoring.manualMarks[opaqueContext.id] = {};
+      },
+    });
+
+    controller.activate(opaqueContext.id);
+
+    expect(controller.getSnapshot().definitions.at(-1)).toEqual(opaqueContext);
+    expect(controller.getPanelDescriptor()).toMatchObject({
+      contextId: opaqueContext.id,
+      panelKind: "unsupported",
+      contextKind: "futureCandidates",
+      status: "idle",
+    });
+    expect(controller.getSceneProjection()).toEqual({
+      contextId: opaqueContext.id,
+      candidates: {},
+      annotations: [],
+    });
+    expect(solver.requests).toHaveLength(0);
+  });
 });

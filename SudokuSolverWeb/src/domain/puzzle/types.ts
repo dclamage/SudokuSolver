@@ -35,23 +35,47 @@ export interface ConstraintInstance {
   styleOverrides?: Readonly<Record<string, JsonValue>>;
 }
 
-export type CandidateContext =
-  | { id: CandidateContextId; name: string; kind: "manual" }
-  | {
-      id: CandidateContextId;
-      name: string;
-      kind: "trueCandidates";
-      refresh: "automatic" | "onRequest";
-      display: "possibility" | "solutionFrequency" | "logicComparison";
-      solutionCountCap: number;
-    }
-  | {
-      id: CandidateContextId;
-      name: string;
-      kind: "logicalSolver";
-      followPuzzleRevision: true;
-      enabledTechniqueIds: readonly string[];
-    };
+export interface CandidateContext {
+  id: CandidateContextId;
+  name: string;
+  kind: string;
+  [property: string]: JsonValue;
+}
+
+export interface ManualCandidateContext extends CandidateContext {
+  kind: "manual";
+}
+
+export interface TrueCandidatesContext extends CandidateContext {
+  kind: "trueCandidates";
+  refresh: "automatic" | "onRequest";
+  display: "possibility" | "solutionFrequency" | "logicComparison";
+  solutionCountCap: number;
+}
+
+export interface LogicalSolverCandidateContext extends CandidateContext {
+  kind: "logicalSolver";
+  followPuzzleRevision: true;
+  enabledTechniqueIds: readonly string[];
+}
+
+export function isManualCandidateContext(
+  context: CandidateContext,
+): context is ManualCandidateContext {
+  return context.kind === "manual";
+}
+
+export function isTrueCandidatesContext(
+  context: CandidateContext,
+): context is TrueCandidatesContext {
+  return context.kind === "trueCandidates";
+}
+
+export function isLogicalSolverCandidateContext(
+  context: CandidateContext,
+): context is LogicalSolverCandidateContext {
+  return context.kind === "logicalSolver";
+}
 
 export interface PuzzlePackageV1 {
   schemaVersion: 1;
