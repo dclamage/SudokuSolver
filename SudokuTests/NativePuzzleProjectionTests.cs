@@ -201,6 +201,46 @@ public class NativePuzzleProjectionTests
     }
 
     /// <summary>
+    /// Canonicalizes empty and unordered typed notes after parsing and before every serialization.
+    /// </summary>
+    [TestMethod]
+    public void TypedManualNotesSerializeCanonicallyAndDeterministically()
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        root["authoring"]!["manualMarks"]!["setter-notes"]!["r1c1"] =
+            JsonNode.Parse("{\"corner\":[],\"centre\":[],\"color\":null}");
+        root["authoring"]!["manualMarks"]!["setter-notes"]!["r1c2"] =
+            JsonNode.Parse("{\"corner\":[\"7\",\"2\",\"7\"],\"centre\":[\"9\",\"3\",\"9\"],\"color\":null}");
+
+        NativePuzzlePackage package = NativePuzzlePackage.Parse(root.ToJsonString());
+
+        Assert.IsFalse(package.Authoring.ManualMarks["setter-notes"].ContainsKey("r1c1"));
+        CollectionAssert.AreEqual(
+            new[] { "2", "7" },
+            package.Authoring.ManualMarks["setter-notes"]["r1c2"].Corner);
+        CollectionAssert.AreEqual(
+            new[] { "3", "9" },
+            package.Authoring.ManualMarks["setter-notes"]["r1c2"].Centre);
+        string semanticHash = NativeSemanticHasher.Compute(package);
+
+        package.Authoring.ManualMarks["setter-notes"]["r1c1"] = new NativeManualCellNotes();
+        package.Authoring.ManualMarks["setter-notes"]["r1c2"].Corner = ["7", "2", "7"];
+        package.Authoring.ManualMarks["setter-notes"]["r1c2"].Centre = ["9", "3", "9"];
+
+        string serialized = package.ToJson();
+        Assert.AreEqual(serialized, package.ToJson());
+        NativePuzzlePackage reparsed = NativePuzzlePackage.Parse(serialized);
+        Assert.IsFalse(reparsed.Authoring.ManualMarks["setter-notes"].ContainsKey("r1c1"));
+        CollectionAssert.AreEqual(
+            new[] { "2", "7" },
+            reparsed.Authoring.ManualMarks["setter-notes"]["r1c2"].Corner);
+        CollectionAssert.AreEqual(
+            new[] { "3", "9" },
+            reparsed.Authoring.ManualMarks["setter-notes"]["r1c2"].Centre);
+        Assert.AreEqual(semanticHash, NativeSemanticHasher.Compute(reparsed));
+    }
+
+    /// <summary>
     /// Includes a native given in document-semantic identity.
     /// </summary>
     [TestMethod]

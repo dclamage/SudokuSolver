@@ -133,6 +133,7 @@ public sealed class NativePuzzlePackage
     public string ToJson()
     {
         NativePuzzleValidator.Validate(this);
+        NormalizeManualMarks();
         return JsonSerializer.Serialize(this, NativePuzzleJsonContext.Default.NativePuzzlePackage);
     }
 
@@ -289,6 +290,7 @@ public sealed class NativePuzzlePackage
     {
         foreach (Dictionary<string, NativeManualCellNotes> contextMarks in Authoring.ManualMarks.Values)
         {
+            List<string> emptyCellIds = [];
             foreach ((string cellId, NativeManualCellNotes notes) in contextMarks)
             {
                 if (!Cells.TryGetValue(cellId, out NativeCell? cell)
@@ -306,6 +308,14 @@ public sealed class NativePuzzlePackage
                     .Select(value => value.Id)
                     .Where(centre.Contains)
                     .ToList();
+                if (notes.Corner.Count == 0 && notes.Centre.Count == 0 && notes.Color is null)
+                {
+                    emptyCellIds.Add(cellId);
+                }
+            }
+            foreach (string cellId in emptyCellIds)
+            {
+                contextMarks.Remove(cellId);
             }
         }
     }

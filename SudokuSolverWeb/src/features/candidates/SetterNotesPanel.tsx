@@ -5,6 +5,7 @@ import { useExternalStore } from "../../app/useExternalStore";
 import type { ManualInputMode } from "../../domain/candidates/types";
 import {
   isManualCandidateContext,
+  type CandidateContextId,
   type DomainValue,
   type ManualColorToken,
   type ValueId,
@@ -105,11 +106,15 @@ function ValueKeypad({
 function activeManualState(
   controller: AppController,
   workspace: "set" | "playtest",
+  originatingContextId: CandidateContextId,
 ) {
   if (controller.getSnapshot().workspace !== workspace) {
     return undefined;
   }
   const candidates = controller.candidates.getSnapshot();
+  if (candidates.activeContextId !== originatingContextId) {
+    return undefined;
+  }
   const definition = candidates.definitions.find(
     (context) => context.id === candidates.activeContextId,
   );
@@ -128,18 +133,23 @@ function activeManualState(
   return { definition, puzzle, editor, cellId, cell, domain };
 }
 
-function selectSetMode(controller: AppController, mode: ManualInputMode) {
-  if (activeManualState(controller, "set") !== undefined) {
+function selectSetMode(
+  controller: AppController,
+  originatingContextId: CandidateContextId,
+  mode: ManualInputMode,
+) {
+  if (activeManualState(controller, "set", originatingContextId) !== undefined) {
     controller.editor.setSetterNotesInputMode(mode);
   }
 }
 
 function toggleSetMark(
   controller: AppController,
+  originatingContextId: CandidateContextId,
   expectedMode: "corner" | "centre",
   valueId: ValueId,
 ) {
-  const state = activeManualState(controller, "set");
+  const state = activeManualState(controller, "set", originatingContextId);
   if (
     state === undefined ||
     state.editor.setterNotesInputMode !== expectedMode ||
@@ -163,8 +173,12 @@ function toggleSetMark(
   });
 }
 
-function setSetColor(controller: AppController, color: ManualColorToken) {
-  const state = activeManualState(controller, "set");
+function setSetColor(
+  controller: AppController,
+  originatingContextId: CandidateContextId,
+  color: ManualColorToken,
+) {
+  const state = activeManualState(controller, "set", originatingContextId);
   if (
     state === undefined ||
     state.editor.setterNotesInputMode !== "color" ||
@@ -184,8 +198,11 @@ function setSetColor(controller: AppController, color: ManualColorToken) {
   });
 }
 
-function eraseSetNotes(controller: AppController) {
-  const state = activeManualState(controller, "set");
+function eraseSetNotes(
+  controller: AppController,
+  originatingContextId: CandidateContextId,
+) {
+  const state = activeManualState(controller, "set", originatingContextId);
   if (
     state === undefined ||
     state.editor.setterNotesInputMode !== "erase" ||
@@ -201,18 +218,29 @@ function eraseSetNotes(controller: AppController) {
   });
 }
 
-function selectPlaytestMode(controller: AppController, mode: ManualInputMode) {
-  if (activeManualState(controller, "playtest") !== undefined) {
+function selectPlaytestMode(
+  controller: AppController,
+  originatingContextId: CandidateContextId,
+  mode: ManualInputMode,
+) {
+  if (
+    activeManualState(controller, "playtest", originatingContextId) !== undefined
+  ) {
     controller.playtest.setInputMode(mode);
   }
 }
 
 function enterPlaytestValue(
   controller: AppController,
+  originatingContextId: CandidateContextId,
   expectedMode: "digit" | "corner" | "centre",
   valueId: ValueId,
 ) {
-  const state = activeManualState(controller, "playtest");
+  const state = activeManualState(
+    controller,
+    "playtest",
+    originatingContextId,
+  );
   const playtest = controller.playtest.getSnapshot();
   if (
     state === undefined ||
@@ -245,8 +273,16 @@ function enterPlaytestValue(
   );
 }
 
-function setPlaytestColor(controller: AppController, color: ManualColorToken) {
-  const state = activeManualState(controller, "playtest");
+function setPlaytestColor(
+  controller: AppController,
+  originatingContextId: CandidateContextId,
+  color: ManualColorToken,
+) {
+  const state = activeManualState(
+    controller,
+    "playtest",
+    originatingContextId,
+  );
   const playtest = controller.playtest.getSnapshot();
   if (
     state === undefined ||
@@ -260,8 +296,15 @@ function setPlaytestColor(controller: AppController, color: ManualColorToken) {
   controller.playtest.applyColor(state.cellId, color);
 }
 
-function erasePlaytestCell(controller: AppController) {
-  const state = activeManualState(controller, "playtest");
+function erasePlaytestCell(
+  controller: AppController,
+  originatingContextId: CandidateContextId,
+) {
+  const state = activeManualState(
+    controller,
+    "playtest",
+    originatingContextId,
+  );
   if (
     state === undefined ||
     controller.playtest.getSnapshot().inputMode !== "erase" ||
@@ -274,11 +317,12 @@ function erasePlaytestCell(controller: AppController) {
   controller.playtest.erase(state.cellId);
 }
 
-function SetSetterNotesControls({ controller }: SetterNotesPanelProps) {
+function SetSetterNotesControls({
+  controller,
+  contextId,
+}: SetterNotesPanelProps & { readonly contextId: CandidateContextId }) {
   const puzzle = useExternalStore(controller.puzzle).document;
   const editor = useExternalStore(controller.editor);
-  const candidates = useExternalStore(controller.candidates);
-  const contextId = candidates.activeContextId;
   const selectedCellId = editor.selectedCellIds[0];
   const selectedCell =
     selectedCellId === undefined ? undefined : puzzle.cells[selectedCellId];
@@ -303,7 +347,9 @@ function SetSetterNotesControls({ controller }: SetterNotesPanelProps) {
       <p>Setter-controlled notes stay with this layer.</p>
       <ModePicker
         mode={mode}
-        onSelect={(inputMode) => selectSetMode(controller, inputMode)}
+        onSelect={(inputMode) =>
+          selectSetMode(controller, contextId, inputMode)
+        }
       />
       {mode === "corner" || mode === "centre" ? (
         <ValueKeypad
@@ -312,7 +358,9 @@ function SetSetterNotesControls({ controller }: SetterNotesPanelProps) {
           currentValueIds={currentValueIds}
           disabled={candidateInputDisabled}
           buttonLabel={(valueLabel) => `Mark ${valueLabel}`}
-          onValue={(valueId) => toggleSetMark(controller, mode, valueId)}
+          onValue={(valueId) =>
+            toggleSetMark(controller, contextId, mode, valueId)
+          }
         />
       ) : mode === "color" ? (
         <div className="color-picker" aria-label="Cell colors">
@@ -324,7 +372,7 @@ function SetSetterNotesControls({ controller }: SetterNotesPanelProps) {
               aria-pressed={currentColor === color.id}
               disabled={candidateInputDisabled}
               style={{ "--swatch-color": color.value } as CSSProperties}
-              onClick={() => setSetColor(controller, color.id)}
+              onClick={() => setSetColor(controller, contextId, color.id)}
             >
               <span aria-hidden="true" />
             </button>
@@ -336,7 +384,7 @@ function SetSetterNotesControls({ controller }: SetterNotesPanelProps) {
           type="button"
           aria-label="Erase Setter Notes marks"
           disabled={candidateInputDisabled}
-          onClick={() => eraseSetNotes(controller)}
+          onClick={() => eraseSetNotes(controller, contextId)}
         >
           Erase marks
         </button>
@@ -345,7 +393,10 @@ function SetSetterNotesControls({ controller }: SetterNotesPanelProps) {
   );
 }
 
-function PlaytestSetterNotesControls({ controller }: SetterNotesPanelProps) {
+function PlaytestSetterNotesControls({
+  controller,
+  contextId,
+}: SetterNotesPanelProps & { readonly contextId: CandidateContextId }) {
   const puzzle = useExternalStore(controller.puzzle).document;
   const editor = useExternalStore(controller.editor);
   const playtest = useExternalStore(controller.playtest);
@@ -373,7 +424,9 @@ function PlaytestSetterNotesControls({ controller }: SetterNotesPanelProps) {
       <p>Notes, colors, and values stay with this playtest session.</p>
       <ModePicker
         mode={mode}
-        onSelect={(inputMode) => selectPlaytestMode(controller, inputMode)}
+        onSelect={(inputMode) =>
+          selectPlaytestMode(controller, contextId, inputMode)
+        }
       />
       {mode === "digit" || mode === "corner" || mode === "centre" ? (
         <ValueKeypad
@@ -395,7 +448,7 @@ function PlaytestSetterNotesControls({ controller }: SetterNotesPanelProps) {
               : `Toggle ${mode} ${valueLabel}`
           }
           onValue={(valueId) =>
-            enterPlaytestValue(controller, mode, valueId)
+            enterPlaytestValue(controller, contextId, mode, valueId)
           }
         />
       ) : mode === "color" ? (
@@ -410,7 +463,9 @@ function PlaytestSetterNotesControls({ controller }: SetterNotesPanelProps) {
               }
               disabled={inputBlocked}
               style={{ "--swatch-color": color.value } as CSSProperties}
-              onClick={() => setPlaytestColor(controller, color.id)}
+              onClick={() =>
+                setPlaytestColor(controller, contextId, color.id)
+              }
             >
               <span aria-hidden="true" />
             </button>
@@ -422,7 +477,7 @@ function PlaytestSetterNotesControls({ controller }: SetterNotesPanelProps) {
           type="button"
           aria-label="Erase selected cell"
           disabled={inputBlocked}
-          onClick={() => erasePlaytestCell(controller)}
+          onClick={() => erasePlaytestCell(controller, contextId)}
         >
           Erase selected cell
         </button>
@@ -447,8 +502,11 @@ export function SetterNotesPanel({ controller }: SetterNotesPanelProps) {
   }
 
   return app.workspace === "set" ? (
-    <SetSetterNotesControls controller={controller} />
+    <SetSetterNotesControls controller={controller} contextId={definition.id} />
   ) : (
-    <PlaytestSetterNotesControls controller={controller} />
+    <PlaytestSetterNotesControls
+      controller={controller}
+      contextId={definition.id}
+    />
   );
 }

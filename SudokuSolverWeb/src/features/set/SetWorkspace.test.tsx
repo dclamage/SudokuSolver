@@ -1,4 +1,4 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -110,6 +110,34 @@ describe("Set workspace", () => {
     expect(
       controller.puzzle.getSnapshot().document.givens.r1c1,
     ).toBeUndefined();
+  });
+
+  it("rejects a retained Given value after selection moves to another domain", () => {
+    const controller = createTestAppController({
+      preparePuzzle: (puzzle) => {
+        puzzle.domains.symbols = {
+          id: "symbols",
+          values: [{ id: "alpha-id", label: "Alpha" }],
+        };
+        puzzle.cells["aux-1"].domainId = "symbols";
+      },
+    });
+    controller.editor.selectOnly("r1c2");
+    controller.editor.setSetterNotesInputMode("digit");
+    const startingRevision = controller.puzzle.getSnapshot().document.revision;
+    render(
+      <div onClickCapture={() => controller.editor.selectOnly("aux-1")}>
+        <App controller={controller} />
+      </div>,
+    );
+
+    expect(() =>
+      fireEvent.click(screen.getByRole("button", { name: "Enter 5" })),
+    ).not.toThrow();
+    expect(controller.puzzle.getSnapshot().document.givens["aux-1"]).toBeUndefined();
+    expect(controller.puzzle.getSnapshot().document.revision).toBe(
+      startingRevision,
+    );
   });
 
   it("clears the selected given with a visible control", async () => {

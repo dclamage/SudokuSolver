@@ -37,7 +37,13 @@ function runGivenAction(controller: AppController, valueId: string | null) {
   const cellId = controller.editor.getSnapshot().selectedCellIds[0];
   const puzzle = controller.puzzle.getSnapshot().document;
   const cell = cellId === undefined ? undefined : puzzle.cells[cellId];
-  if (cellId === undefined || cell?.input.acceptsValue !== true) {
+  const domain = cell === undefined ? undefined : puzzle.domains[cell.domainId];
+  if (
+    cellId === undefined ||
+    cell?.input.acceptsValue !== true ||
+    domain === undefined ||
+    (valueId !== null && !domain.values.some((value) => value.id === valueId))
+  ) {
     return;
   }
   controller.puzzle.execute({ type: "setGiven", cellId, valueId });

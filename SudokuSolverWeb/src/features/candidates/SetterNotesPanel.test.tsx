@@ -7,6 +7,20 @@ import { validatePuzzlePackage } from "../../domain/puzzle/validatePuzzlePackage
 import { createTestAppController } from "../../test/createTestAppController";
 import { SetterNotesPanel } from "./SetterNotesPanel";
 
+function createControllerWithSecondManualContext() {
+  const controller = createTestAppController();
+  controller.puzzle.execute({
+    type: "addCandidateContext",
+    context: {
+      id: "setter-notes-b",
+      name: "Setter notes B",
+      kind: "manual",
+    },
+    index: 1,
+  });
+  return controller;
+}
+
 describe("SetterNotesPanel", () => {
   it("renders independent Set corner, centre, and color state accessibly", async () => {
     const controller = createTestAppController();
@@ -134,6 +148,108 @@ describe("SetterNotesPanel", () => {
       controller.playtest.getSnapshot().manualCandidates.corner.r1c2,
     ).toBeUndefined();
   });
+
+  it.each([
+    { action: "mark", mode: "corner", label: "Mark 4" },
+    { action: "color", mode: "color", label: "Apply cyan" },
+    { action: "erase", mode: "erase", label: "Erase Setter Notes marks" },
+    { action: "mode", mode: "corner", label: "Centre" },
+  ] as const)(
+    "rejects a retained Set $action callback after switching manual contexts",
+    ({ action, mode, label }) => {
+      const controller = createControllerWithSecondManualContext();
+      controller.editor.selectOnly("r1c2");
+      controller.editor.setSetterNotesInputMode(mode);
+      if (action === "erase") {
+        for (const contextId of ["setter-notes", "setter-notes-b"]) {
+          controller.puzzle.execute({
+            type: "setManualMarks",
+            contextId,
+            cellId: "r1c2",
+            valueIds: ["4"],
+          });
+        }
+      }
+      render(
+        <div
+          onClickCapture={() =>
+            controller.candidates.activate("setter-notes-b")
+          }
+        >
+          <SetterNotesPanel controller={controller} />
+        </div>,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: label }));
+
+      expect(controller.candidates.getSnapshot().activeContextId).toBe(
+        "setter-notes-b",
+      );
+      if (action === "erase") {
+        expect(
+          controller.puzzle.getSnapshot().document.authoring.manualMarks[
+            "setter-notes-b"
+          ].r1c2,
+        ).toEqual({ corner: ["4"], centre: [], color: null });
+      } else if (action === "mode") {
+        expect(controller.editor.getSnapshot().setterNotesInputMode).toBe(
+          "corner",
+        );
+      } else {
+        expect(
+          controller.puzzle.getSnapshot().document.authoring.manualMarks[
+            "setter-notes-b"
+          ].r1c2,
+        ).toBeUndefined();
+      }
+    },
+  );
+
+  it.each([
+    { action: "mark", mode: "corner", label: "Toggle corner 4" },
+    { action: "color", mode: "color", label: "Apply cyan" },
+    { action: "erase", mode: "erase", label: "Erase selected cell" },
+    { action: "mode", mode: "corner", label: "Centre" },
+  ] as const)(
+    "rejects a retained Playtest $action callback after switching manual contexts",
+    ({ action, mode, label }) => {
+      const controller = createControllerWithSecondManualContext();
+      controller.setWorkspace("playtest");
+      controller.editor.selectOnly("r1c2");
+      controller.playtest.setInputMode(mode);
+      if (action === "erase") {
+        controller.playtest.setManualMarks("corner", "r1c2", ["4"]);
+      }
+      render(
+        <div
+          onClickCapture={() =>
+            controller.candidates.activate("setter-notes-b")
+          }
+        >
+          <SetterNotesPanel controller={controller} />
+        </div>,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: label }));
+
+      expect(controller.candidates.getSnapshot().activeContextId).toBe(
+        "setter-notes-b",
+      );
+      if (action === "erase") {
+        expect(
+          controller.playtest.getSnapshot().manualCandidates.corner.r1c2,
+        ).toEqual(["4"]);
+      } else if (action === "mode") {
+        expect(controller.playtest.getSnapshot().inputMode).toBe("corner");
+      } else if (action === "color") {
+        expect(controller.playtest.getSnapshot().colors.r1c2).toBeUndefined();
+      } else {
+        expect(
+          controller.playtest.getSnapshot().manualCandidates.corner.r1c2,
+        ).toBeUndefined();
+      }
+    },
+  );
 
   it("rejects a retained mark action after the Set input mode changes", () => {
     const controller = createTestAppController();
