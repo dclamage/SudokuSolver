@@ -124,12 +124,16 @@ describe("Playtest workspace", () => {
     async () => {
       const controller = createTestAppController({
         preparePuzzle: (puzzle) => {
-          puzzle.authoring.manualMarks["setter-notes"].r1c2 = ["4"];
+          puzzle.authoring.manualMarks["setter-notes"].r1c2 = {
+            corner: ["4"],
+            centre: [],
+            color: null,
+          };
         },
       });
       render(<App controller={controller} />);
 
-      expect(screen.getByTestId("candidates-r1c2")).toHaveTextContent("4");
+      expect(screen.getByTestId("corner-candidates-r1c2")).toHaveTextContent("4");
       await userEvent.click(screen.getByRole("tab", { name: "Playtest" }));
 
       expect(screen.queryByTestId("candidates-r1c2")).toBeNull();
@@ -145,7 +149,7 @@ describe("Playtest workspace", () => {
         controller.puzzle.getSnapshot().document.authoring.manualMarks[
           "setter-notes"
         ].r1c2,
-      ).toEqual(["4"]);
+      ).toEqual({ corner: ["4"], centre: [], color: null });
     },
   );
 

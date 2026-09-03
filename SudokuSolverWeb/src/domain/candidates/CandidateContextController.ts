@@ -191,10 +191,21 @@ function initialRuntime(
     baseSemanticHash: manual ? semanticHash : null,
     status: manual ? "live" : supported ? "stale" : "idle",
     candidates: manual
-      ? (document.authoring.manualMarks[definition.id] ?? EMPTY_CANDIDATES)
+      ? manualCornerMarks(document, definition.id)
       : EMPTY_CANDIDATES,
     error: null,
   });
+}
+
+function manualCornerMarks(
+  document: PuzzlePackageV1,
+  contextId: CandidateContextId,
+): Readonly<Record<string, readonly string[]>> {
+  return Object.fromEntries(
+    Object.entries(document.authoring.manualMarks[contextId] ?? {})
+      .filter(([, notes]) => notes.corner.length > 0)
+      .map(([cellId, notes]) => [cellId, notes.corner]),
+  );
 }
 
 function errorMessage(error: unknown): string {
@@ -422,9 +433,7 @@ export class CandidateContextController {
       } else if (isManualCandidateContext(definition)) {
         nextContexts[definition.id] = Object.freeze({
           ...existing,
-          candidates:
-            this.document.authoring.manualMarks[definition.id] ??
-            EMPTY_CANDIDATES,
+          candidates: manualCornerMarks(this.document, definition.id),
         });
       } else {
         nextContexts[definition.id] = existing;
@@ -615,6 +624,9 @@ export class CandidateContextController {
       semanticRevision: this.semanticRevision,
       semanticHash: this.semanticHash,
       active,
+      manualMarks: isManualCandidateContext(definition)
+        ? this.document.authoring.manualMarks[definition.id]
+        : undefined,
     };
   }
 

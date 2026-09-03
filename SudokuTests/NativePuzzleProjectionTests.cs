@@ -167,6 +167,40 @@ public class NativePuzzleProjectionTests
     }
 
     /// <summary>
+    /// Accepts both legacy candidate arrays and typed manual cell notes without changing solver semantics.
+    /// </summary>
+    [TestMethod]
+    public void TypedAndLegacyManualNotesRoundTripWithTheSameSemanticHash()
+    {
+        JsonNode legacyRoot = ReadFixtureNode("classic-with-auxiliary.json");
+        legacyRoot["authoring"]!["manualMarks"]!["setter-notes"]!["r1c2"] =
+            JsonNode.Parse("[\"7\",\"2\",\"7\"]");
+        NativePuzzlePackage legacy = NativePuzzlePackage.Parse(legacyRoot.ToJsonString());
+
+        JsonNode typedRoot = ReadFixtureNode("classic-with-auxiliary.json");
+        typedRoot["authoring"]!["manualMarks"]!["setter-notes"]!["r1c2"] =
+            JsonNode.Parse("{\"corner\":[\"2\",\"7\"],\"centre\":[\"2\"],\"color\":\"cyan\"}");
+        NativePuzzlePackage typed = NativePuzzlePackage.Parse(typedRoot.ToJsonString());
+
+        Assert.AreEqual(
+            NativeSemanticHasher.Compute(legacy),
+            NativeSemanticHasher.Compute(typed));
+        using JsonDocument serialized = JsonDocument.Parse(typed.ToJson());
+        JsonElement notes = serialized.RootElement
+            .GetProperty("authoring")
+            .GetProperty("manualMarks")
+            .GetProperty("setter-notes")
+            .GetProperty("r1c2");
+        CollectionAssert.AreEqual(
+            new[] { "2", "7" },
+            notes.GetProperty("corner").EnumerateArray().Select(value => value.GetString()).ToArray());
+        CollectionAssert.AreEqual(
+            new[] { "2" },
+            notes.GetProperty("centre").EnumerateArray().Select(value => value.GetString()).ToArray());
+        Assert.AreEqual("cyan", notes.GetProperty("color").GetString());
+    }
+
+    /// <summary>
     /// Includes a native given in document-semantic identity.
     /// </summary>
     [TestMethod]

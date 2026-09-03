@@ -2,6 +2,9 @@ import type {
   CandidateContext,
   CandidateContextId,
   CellId,
+  ManualCellNotes,
+  ManualColorToken,
+  ManualMarkKind,
   ValueId,
 } from "./types";
 
@@ -12,7 +15,25 @@ export type PuzzleCommand =
       type: "setManualMarks";
       contextId: CandidateContextId;
       cellId: CellId;
+      kind?: ManualMarkKind;
       valueIds: readonly ValueId[];
+    }
+  | {
+      type: "setManualColor";
+      contextId: CandidateContextId;
+      cellId: CellId;
+      color: ManualColorToken | null;
+    }
+  | {
+      type: "clearManualCell";
+      contextId: CandidateContextId;
+      cellId: CellId;
+    }
+  | {
+      type: "restoreManualCell";
+      contextId: CandidateContextId;
+      cellId: CellId;
+      notes: ManualCellNotes | null;
     }
   | {
       type: "renameCandidateContext";
@@ -51,5 +72,5 @@ export type PuzzleCommand =
       type: "restoreCandidateContext";
       context: CandidateContext;
       index: number;
-      manualMarks: Record<CellId, readonly ValueId[]>;
+      manualMarks: Record<CellId, ManualCellNotes>;
     };

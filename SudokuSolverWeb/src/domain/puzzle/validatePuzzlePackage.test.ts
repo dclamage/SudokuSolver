@@ -10,6 +10,29 @@ import type { PuzzlePackageV1 } from "./types";
 import { validatePuzzlePackage } from "./validatePuzzlePackage";
 
 describe("validatePuzzlePackage", () => {
+  it("normalizes and round-trips legacy manual mark arrays as ordered corner notes", async () => {
+    const legacy = structuredClone(fixture) as unknown as {
+      authoring: { manualMarks: Record<string, Record<string, unknown>> };
+    };
+    legacy.authoring.manualMarks["setter-notes"].r1c2 = ["7", "2", "7"];
+
+    const parsed = validatePuzzlePackage(legacy);
+
+    expect(parsed.authoring.manualMarks["setter-notes"].r1c2).toEqual({
+      corner: ["2", "7"],
+      centre: [],
+      color: null,
+    });
+    const reparsed = validatePuzzlePackage(
+      JSON.parse(JSON.stringify(parsed)),
+    );
+    expect(reparsed.authoring.manualMarks["setter-notes"].r1c2).toEqual(
+      parsed.authoring.manualMarks["setter-notes"].r1c2,
+    );
+    await expect(computeSemanticHash(reparsed)).resolves.toBe(
+      await computeSemanticHash(parsed),
+    );
+  });
   it("accepts an explicit Latin projection with an ignored auxiliary cell", () => {
     const puzzle = validatePuzzlePackage(fixture);
 

@@ -4,7 +4,7 @@ import type { PuzzlePackageV1 } from "./types";
 
 export type ExecutablePuzzleCommand = Exclude<
   PuzzleCommand,
-  { type: "restoreCandidateContext" }
+  { type: "restoreCandidateContext" | "restoreManualCell" }
 >;
 
 export interface PuzzleStoreChange {

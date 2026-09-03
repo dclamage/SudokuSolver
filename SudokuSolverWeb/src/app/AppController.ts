@@ -50,7 +50,7 @@ export class EditorStore {
   private snapshot: EditorSnapshot = Object.freeze({
     selectedCellIds: Object.freeze([]),
     viewport: Object.freeze({ x: 0, y: 0, zoom: 1 }),
-    activeTool: "given",
+    activeTool: "select",
     activeContextId: "setter-notes",
     setterNotesInputMode: "corner",
     mobileSheet: null,
@@ -74,8 +74,17 @@ export class EditorStore {
   }
 
   public setActiveTool(activeTool: EditorTool): void {
-    if (activeTool !== this.snapshot.activeTool) {
-      this.update({ activeTool });
+    const setterNotesInputMode =
+      activeTool === "given"
+        ? "digit"
+        : this.snapshot.setterNotesInputMode === "digit"
+          ? "corner"
+          : this.snapshot.setterNotesInputMode;
+    if (
+      activeTool !== this.snapshot.activeTool ||
+      setterNotesInputMode !== this.snapshot.setterNotesInputMode
+    ) {
+      this.update({ activeTool, setterNotesInputMode });
     }
   }
 
@@ -88,8 +97,17 @@ export class EditorStore {
   public setSetterNotesInputMode(
     setterNotesInputMode: ManualInputMode,
   ): void {
-    if (setterNotesInputMode !== this.snapshot.setterNotesInputMode) {
-      this.update({ setterNotesInputMode });
+    const activeTool =
+      setterNotesInputMode === "digit"
+        ? "given"
+        : this.snapshot.activeTool === "given"
+          ? "select"
+          : this.snapshot.activeTool;
+    if (
+      setterNotesInputMode !== this.snapshot.setterNotesInputMode ||
+      activeTool !== this.snapshot.activeTool
+    ) {
+      this.update({ setterNotesInputMode, activeTool });
     }
   }
 

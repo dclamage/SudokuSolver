@@ -2,11 +2,13 @@ import type { PuzzleCommand } from "./commands";
 import type {
   CandidateContext,
   CellId,
+  ManualCellNotes,
   PuzzlePackageV1,
   ValueId,
 } from "./types";
 import {
   assertValidCandidateContext,
+  isManualColorToken,
   isLogicalSolverCandidateContext,
   isManualCandidateContext,
   isTrueCandidatesContext,
@@ -29,6 +31,14 @@ function requireCell(document: PuzzlePackageV1, cellId: CellId) {
   const cell = document.cells[cellId];
   if (cell === undefined) {
     throw new Error(`missing cell ${cellId}`);
+  }
+  return cell;
+}
+
+function requireCandidateInput(document: PuzzlePackageV1, cellId: CellId) {
+  const cell = requireCell(document, cellId);
+  if (!cell.input.acceptsCandidates) {
+    throw new Error(`cell ${cellId} does not accept candidate marks`);
   }
   return cell;
 }
@@ -124,6 +134,62 @@ function arraysEqual<T>(left: readonly T[], right: readonly T[]): boolean {
     left.length === right.length &&
     left.every((value, index) => value === right[index])
   );
+}
+
+function emptyManualCellNotes(): ManualCellNotes {
+  return { corner: [], centre: [], color: null };
+}
+
+function manualCellNotesEqual(
+  left: ManualCellNotes | undefined,
+  right: ManualCellNotes | undefined,
+): boolean {
+  if (left === undefined || right === undefined) {
+    return left === right;
+  }
+  return (
+    arraysEqual(left.corner, right.corner) &&
+    arraysEqual(left.centre, right.centre) &&
+    left.color === right.color
+  );
+}
+
+function isEmptyManualCellNotes(notes: ManualCellNotes): boolean {
+  return (
+    notes.corner.length === 0 &&
+    notes.centre.length === 0 &&
+    notes.color === null
+  );
+}
+
+function normalizeManualCellNotes(
+  document: PuzzlePackageV1,
+  cellId: CellId,
+  notes: ManualCellNotes,
+): ManualCellNotes {
+  if (notes.color !== null && !isManualColorToken(notes.color)) {
+    throw new Error(`manual color ${String(notes.color)} is invalid`);
+  }
+  return {
+    corner: normalizeValueIds(document, cellId, notes.corner),
+    centre: normalizeValueIds(document, cellId, notes.centre),
+    color: notes.color,
+  };
+}
+
+function assignManualCellNotes(
+  document: PuzzlePackageV1,
+  contextId: string,
+  cellId: CellId,
+  notes: ManualCellNotes | undefined,
+): void {
+  const contextMarks = { ...(document.authoring.manualMarks[contextId] ?? {}) };
+  if (notes === undefined || isEmptyManualCellNotes(notes)) {
+    delete contextMarks[cellId];
+  } else {
+    contextMarks[cellId] = notes;
+  }
+  document.authoring.manualMarks[contextId] = contextMarks;
 }
 
 function cloneContextWithIdentity(
@@ -243,34 +309,112 @@ export function applyPuzzleCommand(
 
     case "setManualMarks": {
       findContextIndex(document, command.contextId);
+      const kind = command.kind ?? "corner";
+      if (kind !== "corner" && kind !== "centre") {
+        throw new Error(`manual mark kind ${String(kind)} is invalid`);
+      }
+      requireCandidateInput(document, command.cellId);
       const normalizedMarks = normalizeValueIds(
         document,
         command.cellId,
         command.valueIds,
       );
-      const previousMarks = [
-        ...(document.authoring.manualMarks[command.contextId]?.[
-          command.cellId
-        ] ?? []),
-      ];
-      const contextMarks = {
-        ...(next.authoring.manualMarks[command.contextId] ?? {}),
+      const previousNotes =
+        document.authoring.manualMarks[command.contextId]?.[command.cellId];
+      const previousMarks = [...(previousNotes?.[kind] ?? [])];
+      const nextNotes = {
+        ...(previousNotes ?? emptyManualCellNotes()),
+        [kind]: normalizedMarks,
       };
-      if (normalizedMarks.length === 0) {
-        delete contextMarks[command.cellId];
-      } else {
-        contextMarks[command.cellId] = normalizedMarks;
-      }
-      next.authoring.manualMarks[command.contextId] = contextMarks;
+      assignManualCellNotes(next, command.contextId, command.cellId, nextNotes);
       pending = {
         inverse: {
           type: "setManualMarks",
           contextId: command.contextId,
           cellId: command.cellId,
+          kind,
           valueIds: [...previousMarks],
         },
         semanticChange: false,
         changed: !arraysEqual(previousMarks, normalizedMarks),
+      };
+      break;
+    }
+
+    case "setManualColor": {
+      findContextIndex(document, command.contextId);
+      requireCandidateInput(document, command.cellId);
+      if (command.color !== null && !isManualColorToken(command.color)) {
+        throw new Error(`manual color ${String(command.color)} is invalid`);
+      }
+      const previousNotes =
+        document.authoring.manualMarks[command.contextId]?.[command.cellId];
+      const previousColor = previousNotes?.color ?? null;
+      const nextNotes = {
+        ...(previousNotes ?? emptyManualCellNotes()),
+        color: command.color,
+      };
+      assignManualCellNotes(next, command.contextId, command.cellId, nextNotes);
+      pending = {
+        inverse: {
+          type: "setManualColor",
+          contextId: command.contextId,
+          cellId: command.cellId,
+          color: previousColor,
+        },
+        semanticChange: false,
+        changed: previousColor !== command.color,
+      };
+      break;
+    }
+
+    case "clearManualCell": {
+      findContextIndex(document, command.contextId);
+      requireCell(document, command.cellId);
+      const previousNotes =
+        document.authoring.manualMarks[command.contextId]?.[command.cellId];
+      assignManualCellNotes(next, command.contextId, command.cellId, undefined);
+      pending = {
+        inverse: {
+          type: "restoreManualCell",
+          contextId: command.contextId,
+          cellId: command.cellId,
+          notes: previousNotes === undefined ? null : structuredClone(previousNotes),
+        },
+        semanticChange: false,
+        changed: previousNotes !== undefined,
+      };
+      break;
+    }
+
+    case "restoreManualCell": {
+      findContextIndex(document, command.contextId);
+      requireCell(document, command.cellId);
+      const previousNotes =
+        document.authoring.manualMarks[command.contextId]?.[command.cellId];
+      const normalizedNotes =
+        command.notes === null
+          ? undefined
+          : normalizeManualCellNotes(document, command.cellId, command.notes);
+      const canonicalNotes =
+        normalizedNotes === undefined || isEmptyManualCellNotes(normalizedNotes)
+          ? undefined
+          : normalizedNotes;
+      assignManualCellNotes(
+        next,
+        command.contextId,
+        command.cellId,
+        canonicalNotes,
+      );
+      pending = {
+        inverse: {
+          type: "restoreManualCell",
+          contextId: command.contextId,
+          cellId: command.cellId,
+          notes: previousNotes === undefined ? null : structuredClone(previousNotes),
+        },
+        semanticChange: false,
+        changed: !manualCellNotesEqual(previousNotes, canonicalNotes),
       };
       break;
     }
@@ -441,14 +585,19 @@ export function applyPuzzleCommand(
         command.index,
         document.authoring.candidateContexts.length,
       );
-      for (const [cellId, valueIds] of Object.entries(command.manualMarks)) {
-        requireValueIds(document, cellId, valueIds);
-      }
+      const normalizedManualMarks = Object.fromEntries(
+        Object.entries(command.manualMarks).flatMap(([cellId, notes]) => {
+          const normalized = normalizeManualCellNotes(document, cellId, notes);
+          return isEmptyManualCellNotes(normalized)
+            ? []
+            : [[cellId, normalized]];
+        }),
+      );
       const contexts = [...next.authoring.candidateContexts];
       contexts.splice(index, 0, structuredClone(command.context));
       next.authoring.candidateContexts = contexts;
       next.authoring.manualMarks[command.context.id] = structuredClone(
-        command.manualMarks,
+        normalizedManualMarks,
       );
       pending = {
         inverse: {

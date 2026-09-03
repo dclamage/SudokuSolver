@@ -32,9 +32,27 @@ export const manualCandidateBehavior: CandidateContextBehavior =
         : { runtime: input.runtime, requestWork: false };
     },
     getSceneProjection(input: CandidateBehaviorInput) {
+      const entries = Object.entries(input.manualMarks ?? {});
+      const corner = Object.fromEntries(
+        entries
+          .filter(([, notes]) => notes.corner.length > 0)
+          .map(([cellId, notes]) => [cellId, notes.corner]),
+      );
+      const centre = Object.fromEntries(
+        entries
+          .filter(([, notes]) => notes.centre.length > 0)
+          .map(([cellId, notes]) => [cellId, notes.centre]),
+      );
+      const cellColors = Object.fromEntries(
+        entries.flatMap(([cellId, notes]) =>
+          notes.color === null ? [] : [[cellId, notes.color]],
+        ),
+      );
       return Object.freeze({
         contextId: input.definition.id,
-        candidates: input.runtime.candidates,
+        candidates: corner,
+        candidateMarks: Object.freeze({ corner, centre }),
+        cellColors,
         annotations: EMPTY_ANNOTATIONS,
       });
     },

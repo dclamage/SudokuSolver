@@ -555,7 +555,13 @@
       }
     ],
     "manualMarks": {
-      "setter-notes": {},
+      "setter-notes": {
+        "r1c1": {
+          "corner": ["2"],
+          "centre": ["3"],
+          "color": "yellow"
+        }
+      },
       "true-candidates": {},
       "logical-solver": {}
     }

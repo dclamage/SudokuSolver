@@ -2,6 +2,8 @@ import type {
   CandidateContext,
   CandidateContextId,
   CellId,
+  ManualCellNotes,
+  ManualColorToken,
   ValueId,
 } from "../puzzle/types";
 import type { SceneAnnotation } from "../../scene/types";
@@ -32,6 +34,11 @@ export interface CandidateContextRuntime {
 export interface CandidateSceneProjection {
   readonly contextId: CandidateContextId;
   readonly candidates: Readonly<Record<CellId, readonly ValueId[]>>;
+  readonly candidateMarks?: {
+    readonly corner: Readonly<Record<CellId, readonly ValueId[]>>;
+    readonly centre: Readonly<Record<CellId, readonly ValueId[]>>;
+  };
+  readonly cellColors?: Readonly<Record<CellId, ManualColorToken>>;
   readonly annotations: readonly SceneAnnotation[];
 }
 
@@ -71,6 +78,7 @@ export interface CandidateBehaviorInput {
   readonly semanticRevision: number;
   readonly semanticHash: string | null;
   readonly active: boolean;
+  readonly manualMarks?: Readonly<Record<CellId, ManualCellNotes>>;
 }
 
 export interface CandidateContextBehavior {

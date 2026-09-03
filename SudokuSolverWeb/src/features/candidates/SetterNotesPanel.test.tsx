@@ -1,12 +1,216 @@
-import { act, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
 import { App } from "../../app/App";
+import { validatePuzzlePackage } from "../../domain/puzzle/validatePuzzlePackage";
 import { createTestAppController } from "../../test/createTestAppController";
 import { SetterNotesPanel } from "./SetterNotesPanel";
 
 describe("SetterNotesPanel", () => {
+  it("renders independent Set corner, centre, and color state accessibly", async () => {
+    const controller = createTestAppController();
+    render(<App controller={controller} />);
+    await userEvent.click(screen.getByTestId("cell-r1c2"));
+
+    await userEvent.click(screen.getByRole("button", { name: "Mark 4" }));
+    await userEvent.click(screen.getByRole("button", { name: "Centre" }));
+    await userEvent.click(screen.getByRole("button", { name: "Mark 4" }));
+    await userEvent.click(screen.getByRole("button", { name: "Color" }));
+    await userEvent.click(screen.getByRole("button", { name: "Apply cyan" }));
+
+    expect(screen.getByTestId("corner-candidates-r1c2")).toHaveTextContent("4");
+    expect(screen.getByTestId("centre-candidates-r1c2")).toHaveTextContent("4");
+    expect(screen.getByTestId("cell-r1c2")).toHaveAttribute(
+      "data-cell-fill",
+      "cyan",
+    );
+    expect(screen.getByTestId("cell-r1c2")).toHaveAccessibleName(
+      /corner candidates 4; centre candidates 4; color cyan/,
+    );
+    const reloaded = validatePuzzlePackage(
+      JSON.parse(JSON.stringify(controller.testDependencies.persistence.current)),
+    );
+    expect(reloaded.authoring.manualMarks["setter-notes"].r1c2).toEqual({
+      corner: ["4"],
+      centre: ["4"],
+      color: "cyan",
+    });
+
+    await userEvent.click(screen.getByRole("button", { name: "Erase" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Erase Setter Notes marks" }),
+    );
+    expect(
+      controller.puzzle.getSnapshot().document.authoring.manualMarks[
+        "setter-notes"
+      ].r1c2,
+    ).toBeUndefined();
+    act(() => controller.puzzle.undo());
+    expect(screen.getByTestId("cell-r1c2")).toHaveAccessibleName(
+      /corner candidates 4; centre candidates 4; color cyan/,
+    );
+    expect(
+      controller.testDependencies.solver.requests.filter(
+        (request) => request.operation === "count",
+      ),
+    ).toHaveLength(0);
+  });
+
+  it("rejects a retained Set action after its context becomes inactive", () => {
+    const controller = createTestAppController();
+    controller.editor.selectOnly("r1c2");
+    render(
+      <div
+        onClickCapture={() => controller.candidates.activate("true-candidates")}
+      >
+        <SetterNotesPanel controller={controller} />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Mark 4" }));
+    expect(
+      controller.puzzle.getSnapshot().document.authoring.manualMarks[
+        "setter-notes"
+      ].r1c2,
+    ).toBeUndefined();
+  });
+
+  it("applies a retained Set action to the selection current at invocation", () => {
+    const controller = createTestAppController();
+    controller.editor.selectOnly("r1c2");
+    render(
+      <div
+        onClickCapture={() => controller.editor.selectOnly("r2c3")}
+      >
+        <SetterNotesPanel controller={controller} />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Mark 4" }));
+    expect(
+      controller.puzzle.getSnapshot().document.authoring.manualMarks["setter-notes"],
+    ).toMatchObject({ r2c3: expect.anything() });
+    expect(
+      controller.puzzle.getSnapshot().document.authoring.manualMarks[
+        "setter-notes"
+      ].r1c2,
+    ).toBeUndefined();
+  });
+
+  it("rejects a retained Set action after switching to Playtest", () => {
+    const controller = createTestAppController();
+    controller.editor.selectOnly("r1c2");
+    render(
+      <div onClickCapture={() => controller.setWorkspace("playtest")}>
+        <SetterNotesPanel controller={controller} />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Mark 4" }));
+    expect(
+      controller.puzzle.getSnapshot().document.authoring.manualMarks[
+        "setter-notes"
+      ].r1c2,
+    ).toBeUndefined();
+    expect(
+      controller.playtest.getSnapshot().manualCandidates.corner.r1c2,
+    ).toBeUndefined();
+  });
+
+  it("rejects a retained Playtest action after its context becomes inactive", () => {
+    const controller = createTestAppController();
+    controller.setWorkspace("playtest");
+    controller.editor.selectOnly("r1c2");
+    controller.playtest.setInputMode("corner");
+    render(
+      <div
+        onClickCapture={() => controller.candidates.activate("true-candidates")}
+      >
+        <SetterNotesPanel controller={controller} />
+      </div>,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Toggle corner 4" }),
+    );
+    expect(
+      controller.playtest.getSnapshot().manualCandidates.corner.r1c2,
+    ).toBeUndefined();
+  });
+
+  it("rejects a retained mark action after the Set input mode changes", () => {
+    const controller = createTestAppController();
+    controller.editor.selectOnly("r1c2");
+    render(
+      <div
+        onClickCapture={() =>
+          controller.editor.setSetterNotesInputMode("centre")
+        }
+      >
+        <SetterNotesPanel controller={controller} />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Mark 4" }));
+    expect(
+      controller.puzzle.getSnapshot().document.authoring.manualMarks[
+        "setter-notes"
+      ].r1c2,
+    ).toBeUndefined();
+  });
+
+  it("toggles against marks current at invocation", () => {
+    const controller = createTestAppController();
+    controller.editor.selectOnly("r1c2");
+    render(
+      <div
+        onClickCapture={() =>
+          controller.puzzle.execute({
+            type: "setManualMarks",
+            contextId: "setter-notes",
+            cellId: "r1c2",
+            valueIds: ["4"],
+          })
+        }
+      >
+        <SetterNotesPanel controller={controller} />
+      </div>,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Mark 4" }));
+    expect(
+      controller.puzzle.getSnapshot().document.authoring.manualMarks[
+        "setter-notes"
+      ].r1c2,
+    ).toBeUndefined();
+  });
+
+  it.each(["Region", "Auxiliary cell", "More"])(
+    "keeps Digit and Given ownership synchronized after %s",
+    async (toolName) => {
+      const controller = createTestAppController();
+      render(<App controller={controller} />);
+      await userEvent.click(screen.getByTestId("cell-r1c2"));
+      await userEvent.click(screen.getByRole("button", { name: toolName }));
+      await userEvent.click(screen.getByRole("button", { name: "Digit" }));
+
+      expect(screen.getByRole("button", { name: "Digit" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "Given" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      );
+      expect(screen.getByRole("button", { name: "Enter 4" })).toBeEnabled();
+
+      await userEvent.click(screen.getByRole("button", { name: toolName }));
+      expect(screen.getByRole("button", { name: "Digit" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(screen.getByRole("button", { name: "Given" })).toHaveAttribute(
+        "aria-pressed",
+        "false",
+      );
+      expect(screen.queryByLabelText("Given keypad")).toBeNull();
+    },
+  );
   it("preserves manual marks while another context is active", async () => {
     const controller = createTestAppController();
     controller.candidates.activate("setter-notes");
@@ -34,13 +238,13 @@ describe("SetterNotesPanel", () => {
       controller.puzzle.getSnapshot().document.authoring.manualMarks[
         "setter-notes"
       ].r1c2,
-    ).toEqual(["7"]);
+    ).toEqual({ corner: ["7"], centre: [], color: null });
     expect(
       controller.playtest.getSnapshot().manualCandidates.corner.r1c2,
     ).toBeUndefined();
     expect(controller.testDependencies.persistence.current.authoring.manualMarks[
       "setter-notes"
-    ].r1c2).toEqual(["7"]);
+    ].r1c2).toEqual({ corner: ["7"], centre: [], color: null });
 
     act(() => controller.puzzle.undo());
     expect(
@@ -53,7 +257,7 @@ describe("SetterNotesPanel", () => {
       controller.puzzle.getSnapshot().document.authoring.manualMarks[
         "setter-notes"
       ].r1c2,
-    ).toEqual(["7"]);
+    ).toEqual({ corner: ["7"], centre: [], color: null });
     expect(
       controller.testDependencies.solver.requests.filter(
         (request) => request.operation === "count",
@@ -73,10 +277,11 @@ describe("SetterNotesPanel", () => {
           ],
         };
         puzzle.cells["aux-1"].domainId = "symbols";
-        puzzle.authoring.manualMarks["setter-notes"]["aux-1"] = [
-          "omega-id",
-          "omega-id",
-        ];
+        puzzle.authoring.manualMarks["setter-notes"]["aux-1"] = {
+          corner: ["omega-id", "omega-id"],
+          centre: [],
+          color: null,
+        };
       },
     });
     controller.editor.selectOnly("aux-1");
@@ -88,7 +293,11 @@ describe("SetterNotesPanel", () => {
       controller.puzzle.getSnapshot().document.authoring.manualMarks[
         "setter-notes"
       ]["aux-1"],
-    ).toEqual(["ten-id", "omega-id"]);
+    ).toEqual({
+      corner: ["ten-id", "omega-id"],
+      centre: [],
+      color: null,
+    });
     expect(screen.queryByRole("button", { name: "Mark 1" })).toBeNull();
   });
 
@@ -197,7 +406,10 @@ describe("SetterNotesPanel", () => {
       controller.puzzle.getSnapshot().document.authoring.manualMarks[
         "setter-notes"
       ],
-    ).toMatchObject({ r1c2: ["4"], r2c3: ["7"] });
+    ).toMatchObject({
+      r1c2: { corner: ["4"], centre: [], color: null },
+      r2c3: { corner: ["7"], centre: [], color: null },
+    });
   });
 
   it("shows only the keypad owned by the active Set input mode", async () => {

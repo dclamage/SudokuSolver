@@ -2,6 +2,23 @@ export type CellId = string;
 export type ValueId = string;
 export type CandidateContextId = string;
 
+export const manualColorTokens = ["cyan", "green", "yellow", "rose"] as const;
+export type ManualColorToken = (typeof manualColorTokens)[number];
+export type ManualMarkKind = "corner" | "centre";
+
+export interface ManualCellNotes {
+  corner: readonly ValueId[];
+  centre: readonly ValueId[];
+  color: ManualColorToken | null;
+}
+
+export function isManualColorToken(value: unknown): value is ManualColorToken {
+  return (
+    typeof value === "string" &&
+    (manualColorTokens as readonly string[]).includes(value)
+  );
+}
+
 export type JsonValue =
   | null
   | boolean
@@ -290,7 +307,7 @@ export interface PuzzlePackageV1 {
     candidateContexts: readonly CandidateContext[];
     manualMarks: Record<
       CandidateContextId,
-      Record<CellId, readonly ValueId[]>
+      Record<CellId, ManualCellNotes>
     >;
   };
   extensions: Readonly<

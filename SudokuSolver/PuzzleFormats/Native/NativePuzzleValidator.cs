@@ -11,6 +11,7 @@ internal static class NativePuzzleValidator
     private const long MaxSafeInteger = 9_007_199_254_740_991;
     private static readonly HashSet<string> EntityKinds = ["cell", "group", "edge", "point", "path"];
     private static readonly string[] RequiredContextIds = ["setter-notes", "true-candidates", "logical-solver"];
+    private static readonly HashSet<string> ManualColorTokens = ["cyan", "green", "yellow", "rose"];
 
     /// <summary>Validates a parsed or programmatically modified native package.</summary>
     /// <param name="package">The package to validate.</param>
@@ -502,24 +503,30 @@ internal static class NativePuzzleValidator
         }
 
         RequireRecord(authoring.ManualMarks, "authoring manualMarks");
-        foreach ((string contextId, Dictionary<string, List<string>> marks) in authoring.ManualMarks)
+        foreach ((string contextId, Dictionary<string, NativeManualCellNotes> marks) in authoring.ManualMarks)
         {
             if (!contextIds.Contains(contextId))
             {
                 Invalid($"manual marks reference missing context {contextId}");
             }
             RequireRecord(marks, $"manual marks {contextId}");
-            foreach ((string cellId, List<string> valueIds) in marks)
+            foreach ((string cellId, NativeManualCellNotes notes) in marks)
             {
                 if (!package.Cells.TryGetValue(cellId, out NativeCell? cell))
                 {
                     Invalid($"manual marks reference missing cell {cellId}");
                 }
-                ValidateStringList(valueIds, $"manual marks {contextId} cell {cellId}");
+                RequireObject(notes, $"manual marks {contextId} cell {cellId}");
+                ValidateStringList(notes.Corner, $"manual marks {contextId} cell {cellId} corner");
+                ValidateStringList(notes.Centre, $"manual marks {contextId} cell {cellId} centre");
+                if (notes.Color is not null && !ManualColorTokens.Contains(notes.Color))
+                {
+                    Invalid($"manual marks {contextId} cell {cellId} color is invalid");
+                }
                 HashSet<string> domainValueIds = new(
                     package.Domains[cell.DomainId].Values.Select(value => value.Id),
                     StringComparer.Ordinal);
-                foreach (string valueId in valueIds)
+                foreach (string valueId in notes.Corner.Concat(notes.Centre))
                 {
                     if (!domainValueIds.Contains(valueId))
                     {

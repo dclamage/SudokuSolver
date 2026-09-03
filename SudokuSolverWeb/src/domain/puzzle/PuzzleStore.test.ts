@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createStarterPuzzle } from "./createStarterPuzzle";
 import { applyPuzzleCommand } from "./applyPuzzleCommand";
+import { computeSemanticHash } from "./computeSemanticHash";
 import { PuzzleStore } from "./PuzzleStore";
 import type { ExecutablePuzzleCommand } from "./PuzzleStore";
 import type { CandidateContext, PuzzlePackageV1 } from "./types";
@@ -12,6 +13,145 @@ function contextIds(document: PuzzlePackageV1): string[] {
 }
 
 describe("PuzzleStore", () => {
+  it("stores corner, centre, and color independently without changing semantics", async () => {
+    const store = new PuzzleStore(createStarterPuzzle(() => "manual-state"));
+    const startingHash = await computeSemanticHash(store.getSnapshot().document);
+
+    store.execute({
+      type: "setManualMarks",
+      contextId: "setter-notes",
+      cellId: "r1c1",
+      kind: "corner",
+      valueIds: ["7", "2", "7"],
+    } as unknown as ExecutablePuzzleCommand);
+    store.execute({
+      type: "setManualMarks",
+      contextId: "setter-notes",
+      cellId: "r1c1",
+      kind: "centre",
+      valueIds: ["2"],
+    } as unknown as ExecutablePuzzleCommand);
+    store.execute({
+      type: "setManualColor",
+      contextId: "setter-notes",
+      cellId: "r1c1",
+      color: "cyan",
+    } as unknown as ExecutablePuzzleCommand);
+
+    expect(
+      store.getSnapshot().document.authoring.manualMarks["setter-notes"].r1c1,
+    ).toEqual({ corner: ["2", "7"], centre: ["2"], color: "cyan" });
+    expect(store.getSnapshot().document.semanticRevision).toBe(1);
+    await expect(
+      computeSemanticHash(store.getSnapshot().document),
+    ).resolves.toBe(startingHash);
+
+    store.undo();
+    expect(
+      store.getSnapshot().document.authoring.manualMarks["setter-notes"].r1c1,
+    ).toEqual({ corner: ["2", "7"], centre: ["2"], color: null });
+    store.redo();
+    expect(
+      store.getSnapshot().document.authoring.manualMarks["setter-notes"].r1c1,
+    ).toEqual({ corner: ["2", "7"], centre: ["2"], color: "cyan" });
+  });
+
+  it("duplicates and restores every manual cell state field", () => {
+    const store = new PuzzleStore(createStarterPuzzle(() => "manual-clone"));
+    for (const command of [
+      {
+        type: "setManualMarks",
+        contextId: "setter-notes",
+        cellId: "aux-1",
+        kind: "corner",
+        valueIds: ["9"],
+      },
+      {
+        type: "setManualMarks",
+        contextId: "setter-notes",
+        cellId: "aux-1",
+        kind: "centre",
+        valueIds: ["3"],
+      },
+      {
+        type: "setManualColor",
+        contextId: "setter-notes",
+        cellId: "aux-1",
+        color: "rose",
+      },
+    ]) {
+      store.execute(command as unknown as ExecutablePuzzleCommand);
+    }
+
+    store.execute({
+      type: "duplicateCandidateContext",
+      sourceContextId: "setter-notes",
+      contextId: "notes-copy",
+      name: "Notes copy",
+    });
+    expect(
+      store.getSnapshot().document.authoring.manualMarks["notes-copy"][
+        "aux-1"
+      ],
+    ).toEqual({ corner: ["9"], centre: ["3"], color: "rose" });
+
+    store.execute({ type: "removeCandidateContext", contextId: "notes-copy" });
+    store.undo();
+    expect(
+      store.getSnapshot().document.authoring.manualMarks["notes-copy"][
+        "aux-1"
+      ],
+    ).toEqual({ corner: ["9"], centre: ["3"], color: "rose" });
+  });
+
+  it("validates manual mark kind and candidate-input capability before mutation", () => {
+    const document = createStarterPuzzle(() => "manual-validation");
+    document.cells.r1c1.input.acceptsCandidates = false;
+    const store = new PuzzleStore(document);
+    const before = store.getSnapshot();
+
+    expect(() =>
+      store.execute({
+        type: "setManualMarks",
+        contextId: "setter-notes",
+        cellId: "r1c1",
+        kind: "edge",
+        valueIds: ["2"],
+      } as unknown as ExecutablePuzzleCommand),
+    ).toThrow("manual mark kind edge is invalid");
+    expect(() =>
+      store.execute({
+        type: "setManualMarks",
+        contextId: "setter-notes",
+        cellId: "r1c1",
+        kind: "corner",
+        valueIds: ["2"],
+      }),
+    ).toThrow("cell r1c1 does not accept candidate marks");
+    expect(store.getSnapshot()).toBe(before);
+  });
+
+  it("normalizes all restored manual cell fields", () => {
+    const document = createStarterPuzzle(() => "manual-restore");
+    const result = applyPuzzleCommand(document, {
+      type: "restoreCandidateContext",
+      context: { id: "restored", name: "Restored", kind: "manual" },
+      index: 1,
+      manualMarks: {
+        "aux-1": {
+          corner: ["9", "3", "9"],
+          centre: ["7", "3", "7"],
+          color: "yellow",
+        },
+      },
+    });
+
+    expect(result.document.authoring.manualMarks.restored["aux-1"]).toEqual({
+      corner: ["3", "9"],
+      centre: ["3", "7"],
+      color: "yellow",
+    });
+  });
   it("commits a gesture as one reversible revision", () => {
     const store = new PuzzleStore(createStarterPuzzle(() => "history-test"));
 
@@ -75,7 +215,9 @@ describe("PuzzleStore", () => {
     ]);
     expect(
       store.getSnapshot().document.authoring.manualMarks["setter-notes"],
-    ).toEqual({ r1c1: ["2", "7"] });
+    ).toEqual({
+      r1c1: { corner: ["2", "7"], centre: [], color: null },
+    });
   });
 
   it("undoes a context reorder back to the exact prior order", () => {
@@ -130,7 +272,9 @@ describe("PuzzleStore", () => {
       store.getSnapshot().document.authoring.manualMarks[
         "true-candidates-copy"
       ],
-    ).toEqual({ "aux-1": ["3", "9"] });
+    ).toEqual({
+      "aux-1": { corner: ["3", "9"], centre: [], color: null },
+    });
   });
 
   it("configures only True Candidates contexts and treats authoring as nonsemantic", () => {
@@ -594,7 +738,7 @@ describe("PuzzleStore", () => {
     });
     expect(
       store.getSnapshot().document.authoring.manualMarks["setter-notes"].r1c1,
-    ).toEqual(["2", "7"]);
+    ).toEqual({ corner: ["2", "7"], centre: [], color: null });
     const beforeNoOp = store.getSnapshot();
     const listener = vi.fn();
     store.subscribe(listener);

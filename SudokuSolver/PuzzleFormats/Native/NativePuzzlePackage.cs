@@ -123,6 +123,7 @@ public sealed class NativePuzzlePackage
         }
 
         NativePuzzleValidator.Validate(package);
+        package.NormalizeManualMarks();
         package.CloneOpenPayloads();
         return package;
     }
@@ -279,6 +280,32 @@ public sealed class NativePuzzlePackage
                     constraint.StyleOverridesWasSpecified = constraintElement.TryGetProperty("styleOverrides", out _);
                 }
                 constraintIndex++;
+            }
+        }
+    }
+
+    /// <summary>Orders and deduplicates manual candidates using each cell's domain.</summary>
+    private void NormalizeManualMarks()
+    {
+        foreach (Dictionary<string, NativeManualCellNotes> contextMarks in Authoring.ManualMarks.Values)
+        {
+            foreach ((string cellId, NativeManualCellNotes notes) in contextMarks)
+            {
+                if (!Cells.TryGetValue(cellId, out NativeCell? cell)
+                    || !Domains.TryGetValue(cell.DomainId, out NativeDomain? domain))
+                {
+                    continue;
+                }
+                HashSet<string> corner = new(notes.Corner, StringComparer.Ordinal);
+                HashSet<string> centre = new(notes.Centre, StringComparer.Ordinal);
+                notes.Corner = domain.Values
+                    .Select(value => value.Id)
+                    .Where(corner.Contains)
+                    .ToList();
+                notes.Centre = domain.Values
+                    .Select(value => value.Id)
+                    .Where(centre.Contains)
+                    .ToList();
             }
         }
     }
@@ -687,8 +714,8 @@ public sealed class NativeAuthoringState
 {
     /// <summary>Gets ordered candidate-context payloads.</summary>
     public required List<NativeCandidateContext> CandidateContexts { get; init; }
-    /// <summary>Gets manual marks by context, cell, and stable value identifier.</summary>
-    public required Dictionary<string, Dictionary<string, List<string>>> ManualMarks { get; init; }
+    /// <summary>Gets typed manual notes by context and cell.</summary>
+    public required Dictionary<string, Dictionary<string, NativeManualCellNotes>> ManualMarks { get; init; }
     /// <summary>Gets unknown authoring members.</summary>
     [JsonExtensionData]
     public Dictionary<string, JsonElement> ExtensionData { get; set; } = [];
@@ -738,4 +765,109 @@ public sealed class NativeExtension
     DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 internal sealed partial class NativePuzzleJsonContext : JsonSerializerContext
 {
+}
+
+/// <summary>Contains cosmetic setter notes for one cell.</summary>
+[JsonConverter(typeof(NativeManualCellNotesJsonConverter))]
+public sealed class NativeManualCellNotes
+{
+    /// <summary>Gets or sets corner candidates in domain order.</summary>
+    public List<string> Corner { get; set; } = [];
+
+    /// <summary>Gets or sets centre candidates in domain order.</summary>
+    public List<string> Centre { get; set; } = [];
+
+    /// <summary>Gets or sets the stable optional color token.</summary>
+    public string? Color { get; set; }
+}
+
+/// <summary>Reads legacy arrays as corner notes and writes the normalized typed cell contract.</summary>
+public sealed class NativeManualCellNotesJsonConverter : JsonConverter<NativeManualCellNotes>
+{
+    /// <summary>Reads one legacy or typed manual cell-note value.</summary>
+    /// <param name="reader">The JSON reader positioned at the cell-note value.</param>
+    /// <param name="typeToConvert">The target manual-cell-note type.</param>
+    /// <param name="options">The active serializer options.</param>
+    /// <returns>The normalized typed manual cell-note value.</returns>
+    public override NativeManualCellNotes Read(
+        ref Utf8JsonReader reader,
+        Type typeToConvert,
+        JsonSerializerOptions options)
+    {
+        using JsonDocument document = JsonDocument.ParseValue(ref reader);
+        JsonElement value = document.RootElement;
+        if (value.ValueKind == JsonValueKind.Array)
+        {
+            return new NativeManualCellNotes
+            {
+                Corner = ReadStringArray(value, "legacy manual marks"),
+            };
+        }
+        if (value.ValueKind != JsonValueKind.Object)
+        {
+            throw new JsonException("manual cell notes must be an object or legacy array");
+        }
+        List<string> corner = value.TryGetProperty("corner", out JsonElement cornerValue)
+            ? ReadStringArray(cornerValue, "manual corner marks")
+            : [];
+        List<string> centre = value.TryGetProperty("centre", out JsonElement centreValue)
+            ? ReadStringArray(centreValue, "manual centre marks")
+            : [];
+        string? color = null;
+        if (value.TryGetProperty("color", out JsonElement colorValue))
+        {
+            color = colorValue.ValueKind switch
+            {
+                JsonValueKind.Null => null,
+                JsonValueKind.String => colorValue.GetString(),
+                _ => throw new JsonException("manual color must be a string or null"),
+            };
+        }
+        return new NativeManualCellNotes
+        {
+            Corner = corner,
+            Centre = centre,
+            Color = color,
+        };
+    }
+
+    /// <summary>Writes one normalized typed manual cell-note value.</summary>
+    /// <param name="writer">The destination JSON writer.</param>
+    /// <param name="value">The cell-note value to serialize.</param>
+    /// <param name="options">The active serializer options.</param>
+    public override void Write(
+        Utf8JsonWriter writer,
+        NativeManualCellNotes value,
+        JsonSerializerOptions options)
+    {
+        writer.WriteStartObject();
+        writer.WritePropertyName("corner");
+        JsonSerializer.Serialize(writer, value.Corner, options);
+        writer.WritePropertyName("centre");
+        JsonSerializer.Serialize(writer, value.Centre, options);
+        writer.WriteString("color", value.Color);
+        writer.WriteEndObject();
+    }
+
+    /// <summary>Reads an array containing only string identifiers.</summary>
+    /// <param name="value">The JSON array.</param>
+    /// <param name="description">The value description for failures.</param>
+    /// <returns>The copied string identifiers.</returns>
+    private static List<string> ReadStringArray(JsonElement value, string description)
+    {
+        if (value.ValueKind != JsonValueKind.Array)
+        {
+            throw new JsonException($"{description} must be an array");
+        }
+        List<string> result = [];
+        foreach (JsonElement item in value.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.String)
+            {
+                throw new JsonException($"{description} must contain strings");
+            }
+            result.Add(item.GetString()!);
+        }
+        return result;
+    }
 }

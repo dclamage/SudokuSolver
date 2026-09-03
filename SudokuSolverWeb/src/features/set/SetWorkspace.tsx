@@ -8,12 +8,39 @@ import {
 import { useExternalStore } from "../../app/useExternalStore";
 import { CandidateContextOutlet } from "../candidates/CandidateContextOutlet";
 import { CandidateContextTabs } from "../candidates/CandidateContextTabs";
+import { presentManualCellColors } from "../candidates/manualColorPresentation";
 import { PuzzleCanvas } from "../../scene/PuzzleCanvas";
 import type { PuzzleSceneView } from "../../scene/types";
 import { InspectorPanel } from "./InspectorPanel";
 
 export interface SetWorkspaceProps {
   controller: AppController;
+}
+
+function canRunGivenAction(controller: AppController): boolean {
+  if (controller.getSnapshot().workspace !== "set") {
+    return false;
+  }
+  const editor = controller.editor.getSnapshot();
+  const candidates = controller.candidates.getSnapshot();
+  return (
+    editor.activeTool === "given" &&
+    (!candidates.actions.manualCandidateEntry ||
+      editor.setterNotesInputMode === "digit")
+  );
+}
+
+function runGivenAction(controller: AppController, valueId: string | null) {
+  if (!canRunGivenAction(controller)) {
+    return;
+  }
+  const cellId = controller.editor.getSnapshot().selectedCellIds[0];
+  const puzzle = controller.puzzle.getSnapshot().document;
+  const cell = cellId === undefined ? undefined : puzzle.cells[cellId];
+  if (cellId === undefined || cell?.input.acceptsValue !== true) {
+    return;
+  }
+  controller.puzzle.execute({ type: "setGiven", cellId, valueId });
 }
 
 const elementTools: readonly {
@@ -48,9 +75,6 @@ function ElementButtons({
           aria-pressed={activeTool === tool.id}
           onClick={() => {
             controller.editor.setActiveTool(tool.id);
-            if (tool.id === "given") {
-              controller.editor.setSetterNotesInputMode("digit");
-            }
             controller.editor.setMobileSheet(null);
           }}
         >
@@ -95,6 +119,10 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
     () => ({
       values: {},
       candidates: candidates.sceneProjection.candidates,
+      candidateMarks: candidates.sceneProjection.candidateMarks,
+      cellFills: presentManualCellColors(
+        candidates.sceneProjection.cellColors,
+      ),
       selectedCellIds: editor.selectedCellIds,
       annotations: candidates.sceneProjection.annotations,
       entityCapabilities: validation.capability?.entities ?? {},
@@ -102,31 +130,9 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
     [candidates.sceneProjection, editor.selectedCellIds, validation.capability],
   );
 
-  const enterGiven = (valueId: string) => {
-    if (selectedCellId === undefined || editor.activeTool !== "given") {
-      return;
-    }
-    controller.puzzle.execute({
-      type: "setGiven",
-      cellId: selectedCellId,
-      valueId,
-    });
-  };
-
-  const clearGiven = () => {
-    if (selectedCellId === undefined || editor.activeTool !== "given") {
-      return;
-    }
-    controller.puzzle.execute({
-      type: "setGiven",
-      cellId: selectedCellId,
-      valueId: null,
-    });
-  };
-
   const selectCell = (cellId: string) => {
     controller.editor.selectOnly(cellId);
-    if (editor.activeTool === "auxiliary") {
+    if (controller.editor.getSnapshot().activeTool === "auxiliary") {
       controller.editor.setMobileSheet("inspector");
     }
   };
@@ -237,7 +243,7 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
                     type="button"
                     aria-label={`Enter ${value.label}`}
                     disabled={editor.activeTool !== "given"}
-                    onClick={() => enterGiven(value.id)}
+                    onClick={() => runGivenAction(controller, value.id)}
                   >
                     {value.label}
                   </button>
@@ -252,7 +258,7 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
                     selectedCellId === undefined ||
                     puzzleSnapshot.document.givens[selectedCellId] === undefined
                   }
-                  onClick={clearGiven}
+                  onClick={() => runGivenAction(controller, null)}
                 >
                   Clear given
                 </button>

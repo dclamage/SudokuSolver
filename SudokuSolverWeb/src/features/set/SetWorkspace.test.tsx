@@ -59,12 +59,16 @@ describe("Set workspace", () => {
   it("renders and synchronizes persisted Setter Notes marks", () => {
     const controller = createTestAppController({
       preparePuzzle: (puzzle) => {
-        puzzle.authoring.manualMarks["setter-notes"].r1c2 = ["4"];
+        puzzle.authoring.manualMarks["setter-notes"].r1c2 = {
+          corner: ["4"],
+          centre: [],
+          color: null,
+        };
       },
     });
     render(<App controller={controller} />);
 
-    expect(screen.getByTestId("candidates-r1c2")).toHaveTextContent("4");
+    expect(screen.getByTestId("corner-candidates-r1c2")).toHaveTextContent("4");
 
     act(() => {
       controller.puzzle.execute({
@@ -74,7 +78,7 @@ describe("Set workspace", () => {
         valueIds: ["4", "7"],
       });
     });
-    expect(screen.getByTestId("candidates-r1c2")).toHaveTextContent("47");
+    expect(screen.getByTestId("corner-candidates-r1c2")).toHaveTextContent("47");
   });
 
   it("opens and closes the labelled mobile Elements sheet", async () => {

@@ -6,6 +6,7 @@ import type {
   JsonValue,
   PuzzlePackageV1,
 } from "./types";
+import { isManualColorToken } from "./types";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -721,25 +722,58 @@ export function validatePuzzlePackage(value: unknown): PuzzlePackageV1 {
     }
     const marks = expectRecord(marksValue, `manual marks ${contextId}`);
     manualMarks[contextId] = {};
-    for (const [cellId, values] of Object.entries(marks)) {
+    for (const [cellId, value] of Object.entries(marks)) {
       if (!(cellId in cells)) {
         throw new Error(`manual marks reference missing cell ${cellId}`);
       }
-      const valueIds = parseStringArray(
-        values,
-        `manual marks ${contextId} cell ${cellId}`,
+      const description = `manual marks ${contextId} cell ${cellId}`;
+      const legacy = Array.isArray(value);
+      const notes = legacy ? undefined : expectRecord(value, description);
+      const corner = parseStringArray(
+        legacy ? value : (notes?.corner ?? []),
+        `${description} corner`,
+      );
+      const centre = parseStringArray(
+        notes?.centre ?? [],
+        `${description} centre`,
       );
       const domainValueIds = new Set(
         domains[cells[cellId].domainId].values.map((item) => item.id),
       );
-      for (const valueId of valueIds) {
+      for (const valueId of [...corner, ...centre]) {
         if (!domainValueIds.has(valueId)) {
           throw new Error(
             `manual marks ${contextId} cell ${cellId} references missing value ${valueId}`,
           );
         }
       }
-      manualMarks[contextId][cellId] = valueIds;
+      const orderedValueIds = domains[cells[cellId].domainId].values.map(
+        (item) => item.id,
+      );
+      const normalize = (valueIds: readonly string[]) => {
+        const selected = new Set(valueIds);
+        return orderedValueIds.filter((valueId) => selected.has(valueId));
+      };
+      const colorValue = notes?.color;
+      if (
+        colorValue !== undefined &&
+        colorValue !== null &&
+        !isManualColorToken(colorValue)
+      ) {
+        throw new Error(`${description} color is invalid`);
+      }
+      const normalized = {
+        corner: normalize(corner),
+        centre: normalize(centre),
+        color: colorValue ?? null,
+      };
+      if (
+        normalized.corner.length > 0 ||
+        normalized.centre.length > 0 ||
+        normalized.color !== null
+      ) {
+        manualMarks[contextId][cellId] = normalized;
+      }
     }
   }
 

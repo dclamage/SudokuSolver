@@ -175,6 +175,8 @@ describe("CandidateContextController", () => {
     expect(controller.getSceneProjection()).toEqual({
       contextId: "setter-notes",
       candidates: {},
+      candidateMarks: { corner: {}, centre: {} },
+      cellColors: {},
       annotations: [],
     });
     expect(controller.getPanelDescriptor().contextId).toBe("setter-notes");
@@ -289,7 +291,11 @@ describe("CandidateContextController", () => {
   it("projects current native Setter Notes marks after document changes", () => {
     const { controller, document } = createCandidateController({
       prepareDocument: (candidateDocument) => {
-        candidateDocument.authoring.manualMarks["setter-notes"].r1c2 = ["4"];
+        candidateDocument.authoring.manualMarks["setter-notes"].r1c2 = {
+          corner: ["4"],
+          centre: [],
+          color: null,
+        };
       },
     });
 
@@ -299,7 +305,11 @@ describe("CandidateContextController", () => {
 
     const updatedDocument = structuredClone(document);
     updatedDocument.revision = 2;
-    updatedDocument.authoring.manualMarks["setter-notes"].r1c2 = ["4", "7"];
+    updatedDocument.authoring.manualMarks["setter-notes"].r1c2 = {
+      corner: ["4", "7"],
+      centre: [],
+      color: null,
+    };
     controller.onPuzzleChanged({
       documentRevision: 2,
       semanticRevision: 1,
