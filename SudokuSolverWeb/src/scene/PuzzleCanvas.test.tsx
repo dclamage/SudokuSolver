@@ -1209,12 +1209,24 @@ describe("PuzzleCanvas", () => {
         ...collapsedPuzzle.cells.r1c4,
         shape: { kind: "rect", x: 0, y: 0, width: 1, height: 1 },
       },
+      r1c5: {
+        ...collapsedPuzzle.cells.r1c5,
+        shape: {
+          kind: "polygon",
+          points: [
+            { x: 1, y: 0 },
+            { x: 2, y: 0 },
+            { x: 2, y: 1 },
+            { x: 1, y: 1 },
+          ],
+        },
+      },
     };
     collapsedPuzzle.groups = {
       collapsed: {
         id: "collapsed",
         roles: ["region"],
-        cellIds: ["r1c1", "r1c2", "r1c3"],
+        cellIds: ["r1c1", "r1c2", "r1c3", "r1c5", "r1c1"],
       },
     };
     const border = projectPuzzleScene(
@@ -1226,7 +1238,12 @@ describe("PuzzleCanvas", () => {
     }
 
     expect(border.geometryIssues).toEqual([
-      expect.objectContaining({ code: "below-minimum-boundary-piece" }),
+      {
+        code: "below-minimum-boundary-piece",
+        affects: "topology",
+        message:
+          "Group border omitted 1 exterior atomic piece below the minimum normalized renderer scale (1e-9).",
+      },
     ]);
     expect(border.d).not.toMatch(/NaN|Infinity/);
     const segments = parseLineSegments(border.d);
@@ -1239,6 +1256,183 @@ describe("PuzzleCanvas", () => {
         .join("/"),
     );
     expect(new Set(canonicalSegments).size).toBe(canonicalSegments.length);
+  });
+
+  it("does not report a collapsed interval already covered by a redundant outer boundary", () => {
+    const redundantPuzzle = structuredClone(puzzle);
+    const firstCut = 1.75;
+    const secondCut = 1.7500000000000002;
+    redundantPuzzle.cells = {
+      r1c1: {
+        ...redundantPuzzle.cells.r1c1,
+        shape: { kind: "rect", x: 0, y: 0, width: 2, height: 2 },
+      },
+      r1c2: {
+        ...redundantPuzzle.cells.r1c2,
+        shape: { kind: "rect", x: 0, y: 0, width: firstCut, height: 1 },
+      },
+      r1c3: {
+        ...redundantPuzzle.cells.r1c3,
+        shape: {
+          kind: "rect",
+          x: secondCut,
+          y: 0,
+          width: 2 - secondCut,
+          height: 1,
+        },
+      },
+    };
+    redundantPuzzle.groups = {
+      redundant: {
+        id: "redundant",
+        roles: ["region"],
+        cellIds: ["r1c1", "r1c2", "r1c3"],
+      },
+    };
+
+    const scene = projectPuzzleScene(redundantPuzzle, emptySceneView);
+    const border = scene.nodes.find(
+      (node) => node.id === "group-border-redundant",
+    );
+    if (border?.kind !== "path") {
+      throw new Error("expected redundant group path");
+    }
+
+    expect(border.geometryIssues).toEqual([]);
+    const segments = parseLineSegments(border.d);
+    expect(totalSegmentLength(segments)).toBeCloseTo(4 * scene.width, 12);
+    expect(
+      segments.every(
+        ({ from, to }) =>
+          (from.x === 0 && to.x === 0) ||
+          (from.x === scene.width && to.x === scene.width) ||
+          (from.y === 0 && to.y === 0) ||
+          (from.y === scene.height && to.y === scene.height),
+      ),
+    ).toBe(true);
+  });
+
+  it("deduplicates reversed redundant topology without inflating collapsed diagnostics", () => {
+    const redundantPuzzle = structuredClone(puzzle);
+    const firstCut = 1.75;
+    const secondCut = 1.7500000000000002;
+    const reversedRectangle = (
+      minX: number,
+      minY: number,
+      maxX: number,
+      maxY: number,
+    ) => ({
+      kind: "polygon" as const,
+      points: [
+        { x: minX, y: minY },
+        { x: minX, y: maxY },
+        { x: maxX, y: maxY },
+        { x: maxX, y: minY },
+      ],
+    });
+    redundantPuzzle.cells = {
+      r1c1: {
+        ...redundantPuzzle.cells.r1c1,
+        shape: reversedRectangle(0, 0, 2, 2),
+      },
+      r1c2: {
+        ...redundantPuzzle.cells.r1c2,
+        shape: reversedRectangle(0, 0, firstCut, 1),
+      },
+      r1c3: {
+        ...redundantPuzzle.cells.r1c3,
+        shape: reversedRectangle(secondCut, 0, 2, 1),
+      },
+      r1c4: {
+        ...redundantPuzzle.cells.r1c4,
+        shape: reversedRectangle(0, 0, firstCut, 1),
+      },
+    };
+    redundantPuzzle.groups = {
+      redundant: {
+        id: "redundant",
+        roles: ["region"],
+        cellIds: ["r1c1", "r1c2", "r1c3", "r1c4", "r1c2", "r1c1"],
+      },
+    };
+
+    const scene = projectPuzzleScene(redundantPuzzle, emptySceneView);
+    const border = scene.nodes.find(
+      (node) => node.id === "group-border-redundant",
+    );
+    if (border?.kind !== "path") {
+      throw new Error("expected reversed redundant group path");
+    }
+
+    expect(border.geometryIssues).toEqual([]);
+    const segments = parseLineSegments(border.d);
+    expect(totalSegmentLength(segments)).toBeCloseTo(4 * scene.width, 12);
+    const canonicalSegments = segments.map(({ from, to }) =>
+      [`${from.x},${from.y}`, `${to.x},${to.y}`].sort().join("/"),
+    );
+    expect(new Set(canonicalSegments).size).toBe(canonicalSegments.length);
+  });
+
+  it("recognizes collapsed boundary coverage split across emitted segments", () => {
+    const redundantPuzzle = structuredClone(puzzle);
+    const firstCut = 1.75;
+    const secondCut = 1.7500000000000002;
+    redundantPuzzle.cells = {
+      r1c1: {
+        ...redundantPuzzle.cells.r1c1,
+        shape: { kind: "rect", x: 0, y: 0, width: 2, height: 2 },
+      },
+      r1c2: {
+        ...redundantPuzzle.cells.r1c2,
+        shape: { kind: "rect", x: 0, y: 0, width: 1, height: 1 },
+      },
+      r1c3: {
+        ...redundantPuzzle.cells.r1c3,
+        shape: {
+          kind: "rect",
+          x: 1,
+          y: 0,
+          width: firstCut - 1,
+          height: 1,
+        },
+      },
+      r1c4: {
+        ...redundantPuzzle.cells.r1c4,
+        shape: {
+          kind: "rect",
+          x: secondCut,
+          y: 0,
+          width: 2 - secondCut,
+          height: 1,
+        },
+      },
+    };
+    redundantPuzzle.groups = {
+      redundant: {
+        id: "redundant",
+        roles: ["region"],
+        cellIds: ["r1c1", "r1c2", "r1c3", "r1c4"],
+      },
+    };
+
+    const scene = projectPuzzleScene(redundantPuzzle, emptySceneView);
+    const border = scene.nodes.find(
+      (node) => node.id === "group-border-redundant",
+    );
+    if (border?.kind !== "path") {
+      throw new Error("expected split-coverage group path");
+    }
+
+    expect(border.geometryIssues).toEqual([]);
+    const topSegments = parseLineSegments(border.d)
+      .filter(({ from, to }) => from.y === 0 && to.y === 0)
+      .map(({ from, to }) => [Math.min(from.x, to.x), Math.max(from.x, to.x)] as const)
+      .sort(([firstStart], [secondStart]) => firstStart - secondStart);
+    expect(topSegments[0]?.[0]).toBe(0);
+    expect(topSegments.at(-1)?.[1]).toBe(scene.width);
+    expect(
+      topSegments.slice(1).every(([start], index) => start <= topSegments[index][1]),
+    ).toBe(true);
   });
 
   it("evaluates the public feature threshold before display quantization", () => {

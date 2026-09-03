@@ -40,6 +40,13 @@ interface Segment {
   polygonIndex?: number;
 }
 
+interface BelowThresholdInterval {
+  source: Segment;
+  startRatio: number;
+  endRatio: number;
+  piece?: Segment;
+}
+
 interface ContentRegion extends Bounds {
   center: Point;
 }
@@ -782,7 +789,7 @@ function splitSegment(
       index === 0 ||
       ratio !== ratios[index - 1],
   );
-  const belowThresholdIntervals = distinctRatios
+  const belowThresholdIntervals: BelowThresholdInterval[] = distinctRatios
     .slice(0, -1)
     .flatMap((start, index) => {
       const end = distinctRatios[index + 1];
@@ -800,9 +807,12 @@ function splitSegment(
       };
       const pieceLength = segmentLength(piece);
       return [
-        pieceLength > 0
-          ? { piece, collapsed: false as const }
-          : { collapsed: true as const },
+        {
+          source: segment,
+          startRatio: start,
+          endRatio: end,
+          ...(pieceLength > 0 ? { piece } : {}),
+        },
       ];
     });
   const uniqueRatios = ratios.filter(
@@ -913,6 +923,41 @@ function isUnionBoundary(
   return firstSide !== secondSide;
 }
 
+function isBelowThresholdIntervalOnUnionBoundary(
+  interval: BelowThresholdInterval,
+  polygons: readonly (readonly Point[])[],
+  arrangement: readonly Segment[],
+) {
+  if (interval.piece !== undefined) {
+    return isUnionBoundary(interval.piece, polygons, arrangement);
+  }
+  const length = segmentLength(interval.source);
+  if (length === 0) {
+    return false;
+  }
+  const rawInterval = rawSplitIntervalLength(
+    interval.startRatio,
+    interval.endRatio,
+    length,
+  );
+  const along =
+    interval.startRatio * length + rawInterval.length / 2;
+  const probeDistance = localProbeDistance(interval.source, arrangement);
+  const firstSide = pointInUnionInSegmentFrame(
+    interval.source,
+    along,
+    probeDistance,
+    polygons,
+  );
+  const secondSide = pointInUnionInSegmentFrame(
+    interval.source,
+    along,
+    -probeDistance,
+    polygons,
+  );
+  return firstSide !== secondSide;
+}
+
 function segmentsAreEquivalent(
   first: Segment,
   second: Segment,
@@ -953,6 +998,109 @@ function deduplicateSegments(
     }
   }
   return uniqueSegments;
+}
+
+function intervalCoverageOnSource(
+  interval: BelowThresholdInterval,
+  boundarySegment: Segment,
+) {
+  const sourceLength = segmentLength(interval.source);
+  const boundaryLength = segmentLength(boundarySegment);
+  if (sourceLength === 0 || boundaryLength === 0) {
+    return undefined;
+  }
+  const comparisonTolerance = Math.min(
+    UNION_COMPARISON_EPSILON,
+    segmentTolerance(interval.source),
+    segmentTolerance(boundarySegment),
+  );
+  if (
+    lineDistance(boundarySegment.from, interval.source) > comparisonTolerance ||
+    lineDistance(boundarySegment.to, interval.source) > comparisonTolerance
+  ) {
+    return undefined;
+  }
+  const firstRatio = projectRatio(boundarySegment.from, interval.source);
+  const secondRatio = projectRatio(boundarySegment.to, interval.source);
+  const start = Math.max(
+    interval.startRatio,
+    Math.min(firstRatio, secondRatio),
+  );
+  const end = Math.min(
+    interval.endRatio,
+    Math.max(firstRatio, secondRatio),
+  );
+  return end > start ? { start, end } : undefined;
+}
+
+function isIntervalCoveredByBoundary(
+  interval: BelowThresholdInterval,
+  boundarySegments: readonly Segment[],
+) {
+  const coverage = boundarySegments
+    .flatMap((segment) => {
+      const coveredInterval = intervalCoverageOnSource(interval, segment);
+      return coveredInterval === undefined ? [] : [coveredInterval];
+    })
+    .sort((first, second) => first.start - second.start);
+  if (coverage.length === 0 || coverage[0].start > interval.startRatio) {
+    return false;
+  }
+
+  let coveredThrough = coverage[0].end;
+  for (const coveredInterval of coverage.slice(1)) {
+    if (coveredInterval.start > coveredThrough) {
+      return false;
+    }
+    coveredThrough = Math.max(coveredThrough, coveredInterval.end);
+    if (coveredThrough >= interval.endRatio) {
+      return true;
+    }
+  }
+  return coveredThrough >= interval.endRatio;
+}
+
+function intervalsAreEquivalent(
+  first: BelowThresholdInterval,
+  second: BelowThresholdInterval,
+) {
+  const sourceLength = segmentLength(first.source);
+  if (sourceLength === 0) {
+    return false;
+  }
+  if (
+    lineDistance(second.source.from, first.source) > UNION_COMPARISON_EPSILON ||
+    lineDistance(second.source.to, first.source) > UNION_COMPARISON_EPSILON
+  ) {
+    return false;
+  }
+  const secondFromRatio = projectRatio(second.source.from, first.source);
+  const secondToRatio = projectRatio(second.source.to, first.source);
+  const mapSecondRatio = (ratio: number) =>
+    secondFromRatio + (secondToRatio - secondFromRatio) * ratio;
+  const secondStart = mapSecondRatio(second.startRatio);
+  const secondEnd = mapSecondRatio(second.endRatio);
+  const mappedStart = Math.min(secondStart, secondEnd);
+  const mappedEnd = Math.max(secondStart, secondEnd);
+  return (
+    mappedStart === first.startRatio && mappedEnd === first.endRatio
+  );
+}
+
+function deduplicateBelowThresholdIntervals(
+  intervals: readonly BelowThresholdInterval[],
+) {
+  const uniqueIntervals: BelowThresholdInterval[] = [];
+  for (const interval of intervals) {
+    if (
+      !uniqueIntervals.some((existing) =>
+        intervalsAreEquivalent(existing, interval),
+      )
+    ) {
+      uniqueIntervals.push(interval);
+    }
+  }
+  return uniqueIntervals;
 }
 
 function projectGroupBorder(
@@ -1009,24 +1157,26 @@ function projectGroupBorder(
       return Number.isFinite(length) && length > 0;
     })
     .filter((piece) => isUnionBoundary(piece, polygons, segments));
-  const droppedBoundaryPieces = deduplicateSegments(
-    splitResults
-      .flatMap(({ belowThresholdIntervals }) =>
-        belowThresholdIntervals.flatMap((interval) =>
-          interval.collapsed ? [] : [interval.piece],
-        ),
-      )
-      .filter((piece) => isUnionBoundary(piece, polygons, segments)),
+  const emittedBoundaryPieces = deduplicateSegments(
+    boundaryPieces.filter(
+      (piece) => !isBelowMinimumBoundaryLength(segmentLength(piece)),
+    ),
     segments,
   );
-  const collapsedBoundaryIntervals = splitResults.reduce(
-    (count, { belowThresholdIntervals }) =>
-      count +
-      belowThresholdIntervals.filter((interval) => interval.collapsed).length,
-    0,
+  const omittedIntervals = deduplicateBelowThresholdIntervals(
+    splitResults.flatMap(({ belowThresholdIntervals }) =>
+      belowThresholdIntervals.filter(
+        (interval) =>
+          !isIntervalCoveredByBoundary(interval, emittedBoundaryPieces) &&
+          isBelowThresholdIntervalOnUnionBoundary(
+            interval,
+            polygons,
+            segments,
+          ),
+      ),
+    ),
   );
-  const droppedBoundaryCount =
-    droppedBoundaryPieces.length + collapsedBoundaryIntervals;
+  const droppedBoundaryCount = omittedIntervals.length;
   if (droppedBoundaryCount > 0) {
     geometryIssues.push({
       code: "below-minimum-boundary-piece",
@@ -1034,12 +1184,7 @@ function projectGroupBorder(
       message: `Group border omitted ${droppedBoundaryCount} exterior atomic ${droppedBoundaryCount === 1 ? "piece" : "pieces"} below the minimum normalized renderer scale (${MIN_NORMALIZED_FEATURE_SIZE}).`,
     });
   }
-  const d = deduplicateSegments(
-    boundaryPieces.filter(
-      (piece) => !isBelowMinimumBoundaryLength(segmentLength(piece)),
-    ),
-    segments,
-  )
+  const d = emittedBoundaryPieces
     .map(
       (segment) =>
         `M ${sceneCoordinate(normalizedCoordinate(segment.from.x) * displayScale)} ${sceneCoordinate(normalizedCoordinate(segment.from.y) * displayScale)} L ${sceneCoordinate(normalizedCoordinate(segment.to.x) * displayScale)} ${sceneCoordinate(normalizedCoordinate(segment.to.y) * displayScale)}`,
