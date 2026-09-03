@@ -41,9 +41,9 @@ function isPointInPolygon(point: TestPoint, polygon: readonly TestPoint[]) {
   return inside;
 }
 
-function readLineSegments(path: Element) {
+function parseLineSegments(d: string) {
   const matches = [
-    ...(path.getAttribute("d") ?? "").matchAll(
+    ...d.matchAll(
       /M ([\d.eE+-]+) ([\d.eE+-]+) L ([\d.eE+-]+) ([\d.eE+-]+)/g,
     ),
   ];
@@ -51,6 +51,10 @@ function readLineSegments(path: Element) {
     from: { x: Number(match[1]), y: Number(match[2]) },
     to: { x: Number(match[3]), y: Number(match[4]) },
   }));
+}
+
+function readLineSegments(path: Element) {
+  return parseLineSegments(path.getAttribute("d") ?? "");
 }
 
 function segmentLength(segment: { from: TestPoint; to: TestPoint }) {
@@ -64,18 +68,6 @@ function totalSegmentLength(
   segments: readonly { from: TestPoint; to: TestPoint }[],
 ) {
   return segments.reduce((total, segment) => total + segmentLength(segment), 0);
-}
-
-function applySvgMatrix(transform: string, point: TestPoint): TestPoint {
-  const match = transform.match(
-    /^matrix\(([-\d.eE+]+) ([-\d.eE+]+) ([-\d.eE+]+) ([-\d.eE+]+) ([-\d.eE+]+) ([-\d.eE+]+)\)$/,
-  );
-  expect(match).not.toBeNull();
-  const [, a, b, c, d, e, f] = match!.map(Number);
-  return {
-    x: a * point.x + c * point.y + e,
-    y: b * point.x + d * point.y + f,
-  };
 }
 
 const puzzle = createStarterPuzzle(() => "scene");
@@ -374,7 +366,7 @@ describe("PuzzleCanvas", () => {
     expect(JSON.stringify(extremeScene)).not.toMatch(/NaN|Infinity/);
   });
 
-  it("applies the scene affine to arbitrary native annotation paths", () => {
+  it("normalizes native annotation coordinates without a flattened affine", () => {
     const sourcePuzzle = structuredClone(puzzle);
     const transformedPuzzle = structuredClone(puzzle);
     for (const cell of Object.values(transformedPuzzle.cells)) {
@@ -417,13 +409,11 @@ describe("PuzzleCanvas", () => {
 
     expect(sourceAnnotation).toMatchObject({
       kind: "path",
-      d: sourceView.annotations[0].d,
-      transform: expect.stringMatching(/^matrix\(/),
+      d: expect.stringMatching(/^M /),
     });
     expect(transformedAnnotation).toMatchObject({
       kind: "path",
-      d: transformedView.annotations[0].d,
-      transform: expect.stringMatching(/^matrix\(/),
+      d: expect.stringMatching(/^M /),
     });
     if (
       sourceAnnotation?.kind !== "path" ||
@@ -431,17 +421,8 @@ describe("PuzzleCanvas", () => {
     ) {
       throw new Error("expected projected annotation paths");
     }
-    const sourceStart = applySvgMatrix(sourceAnnotation.transform ?? "", {
-      x: 0.5,
-      y: 0.5,
-    });
-    const transformedStart = applySvgMatrix(
-      transformedAnnotation.transform ?? "",
-      { x: 1_048_580, y: -2_097_148 },
-    );
-    expect(transformedStart.x).toBeCloseTo(sourceStart.x, 10);
-    expect(transformedStart.y).toBeCloseTo(sourceStart.y, 10);
-    expect(`${sourceAnnotation.transform} ${transformedAnnotation.transform}`).not.toMatch(
+    expect(transformedAnnotation.d).toBe(sourceAnnotation.d);
+    expect(`${sourceAnnotation.d} ${transformedAnnotation.d}`).not.toMatch(
       /NaN|Infinity/,
     );
 
@@ -453,8 +434,119 @@ describe("PuzzleCanvas", () => {
       />,
     );
     expect(getByRole("img", { name: "Native" })).toHaveAttribute(
+      "d",
+      transformedAnnotation.d,
+    );
+    expect(getByRole("img", { name: "Native" })).not.toHaveAttribute(
       "transform",
-      transformedAnnotation.transform,
+    );
+  });
+
+  it("normalizes the accepted relative, curve, arc, repeated, and exponent path grammar", () => {
+    const pathPuzzle = structuredClone(puzzle);
+    pathPuzzle.cells = {
+      r1c1: {
+        ...pathPuzzle.cells.r1c1,
+        shape: { kind: "rect", x: 0, y: 0, width: 10, height: 10 },
+      },
+    };
+    pathPuzzle.groups = {};
+    const d =
+      "M1e0,1e0 2e0,1e0 L3,1 H4 V2 C4,2 4,3 5,3 S6,4 7,5 Q8,6 9,7 T10,8 A1,2 30 0 1 8,8 a.5,.25 45 1 0 1,1 z";
+    const annotation = projectPuzzleScene(pathPuzzle, {
+      ...emptySceneView,
+      annotations: [{ id: "grammar", d, label: "Grammar" }],
+    }).nodes.find((node) => node.id === "annotation-grammar");
+
+    expect(annotation).toMatchObject({
+      d: "M 0.1 0.1 L 0.2 0.1 L 0.3 0.1 H 0.4 V 0.2 C 0.4 0.2 0.4 0.3 0.5 0.3 S 0.6 0.4 0.7 0.5 Q 0.8 0.6 0.9 0.7 T 1 0.8 A 0.1 0.2 30 0 1 0.8 0.8 A 0.05 0.025 45 1 0 0.9 0.9 Z",
+      geometryIssue: undefined,
+    });
+  });
+
+  it("normalizes huge same-sign annotation coordinates exactly like cell coordinates", () => {
+    const hugePuzzle = structuredClone(puzzle);
+    const low = 1e308;
+    const high = 1.0000000000000002e308;
+    hugePuzzle.cells = {
+      r1c1: {
+        ...hugePuzzle.cells.r1c1,
+        shape: {
+          kind: "polygon",
+          points: [
+            { x: low, y: low },
+            { x: high, y: low },
+            { x: high, y: high },
+            { x: low, y: high },
+          ],
+        },
+      },
+    };
+    hugePuzzle.groups = {};
+    const scene = projectPuzzleScene(hugePuzzle, {
+      ...emptySceneView,
+      annotations: [
+        {
+          id: "huge",
+          d: `M ${low} ${low} L ${high} ${high}`,
+          label: "Huge",
+        },
+      ],
+    });
+
+    expect(scene.nodes.find((node) => node.id === "cell-r1c1")).toMatchObject({
+      path: "M 0 0 L 1 0 L 1 1 L 0 1 Z",
+    });
+    expect(scene.nodes.find((node) => node.id === "annotation-huge")).toMatchObject({
+      d: "M 0 0 L 1 1",
+      geometryIssue: undefined,
+    });
+  });
+
+  it("isolates malformed annotations and valid annotations without a scene frame", () => {
+    const pathPuzzle = structuredClone(puzzle);
+    pathPuzzle.cells = {
+      r1c1: {
+        ...pathPuzzle.cells.r1c1,
+        shape: { kind: "rect", x: 0, y: 0, width: 10, height: 10 },
+      },
+    };
+    pathPuzzle.groups = {};
+    const malformedScene = projectPuzzleScene(pathPuzzle, {
+      ...emptySceneView,
+      annotations: [
+        { id: "malformed", d: "M 0 0 L banana", label: "Malformed" },
+      ],
+    });
+    expect(
+      malformedScene.nodes.find((node) => node.id === "annotation-malformed"),
+    ).toMatchObject({
+      d: "",
+      geometryIssue: {
+        code: "malformed-annotation-path",
+        affects: "topology-and-content",
+      },
+    });
+
+    const invalidPuzzle = structuredClone(pathPuzzle);
+    invalidPuzzle.cells.r1c1.shape = { kind: "polygon", points: [] };
+    const invalidFrameScene = projectPuzzleScene(invalidPuzzle, {
+      ...emptySceneView,
+      annotations: [
+        { id: "no-frame", d: "M 0 0 L 1 1", label: "No frame" },
+      ],
+    });
+    expect(
+      invalidFrameScene.nodes.find((node) => node.id === "annotation-no-frame"),
+    ).toMatchObject({
+      d: "",
+      geometryIssue: {
+        code: "annotation-frame-unavailable",
+        affects: "topology-and-content",
+      },
+    });
+    expect(invalidFrameScene.description).toMatch(
+      /Annotation no-frame:.*normalization frame is unavailable/,
     );
   });
 
@@ -580,6 +672,146 @@ describe("PuzzleCanvas", () => {
       "aria-hidden",
       "true",
     );
+  });
+
+  it("preserves a 2.5e-8 overlap without tolerance-merging its coordinates", () => {
+    const overlapPuzzle = structuredClone(puzzle);
+    const overlap = 2.5e-8;
+    const nativeOffset = overlap * 2;
+    overlapPuzzle.cells = {
+      r1c1: {
+        ...overlapPuzzle.cells.r1c1,
+        shape: { kind: "rect", x: 0, y: 0, width: 1, height: 1 },
+      },
+      r1c2: {
+        ...overlapPuzzle.cells.r1c2,
+        shape: {
+          kind: "rect",
+          x: nativeOffset,
+          y: -1,
+          width: 1 - nativeOffset,
+          height: 2,
+        },
+      },
+      r1c3: {
+        ...overlapPuzzle.cells.r1c3,
+        shape: {
+          kind: "rect",
+          x: nativeOffset,
+          y: -1,
+          width: 1 - nativeOffset,
+          height: 2,
+        },
+      },
+    };
+    overlapPuzzle.groups = {
+      overlap: {
+        id: "overlap",
+        roles: ["region"],
+        cellIds: ["r1c1", "r1c2"],
+      },
+    };
+    const border = projectPuzzleScene(
+      overlapPuzzle,
+      emptySceneView,
+    ).nodes.find((node) => node.id === "group-border-overlap");
+    if (border?.kind !== "path") {
+      throw new Error("expected overlap group path");
+    }
+    const segments = parseLineSegments(border.d);
+    const shortSegments = segments.filter(
+      (segment) => Math.abs(segmentLength(segment) - overlap) < 1e-12,
+    );
+    expect(shortSegments).toHaveLength(2);
+    expect(shortSegments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: expect.objectContaining({ x: 0 }),
+          to: expect.objectContaining({ x: overlap }),
+        }),
+        expect.objectContaining({
+          from: expect.objectContaining({ x: overlap }),
+          to: expect.objectContaining({ x: 0 }),
+        }),
+      ]),
+    );
+    expect(border.geometryIssues).toEqual([]);
+  });
+
+  it("preserves exact-threshold union atoms and reports smaller atoms before snapping", () => {
+    const projectExteriorAtoms = (normalizedFeature: number) => {
+      const atomPuzzle = structuredClone(puzzle);
+      const nativeOffset = normalizedFeature * 2;
+      atomPuzzle.cells = {
+        r1c1: {
+          ...atomPuzzle.cells.r1c1,
+          shape: { kind: "rect", x: 0, y: 0, width: 1, height: 1 },
+        },
+        r1c2: {
+          ...atomPuzzle.cells.r1c2,
+          shape: {
+            kind: "rect",
+            x: nativeOffset,
+            y: -1,
+            width: 1 - nativeOffset,
+            height: 2,
+          },
+        },
+        r1c3: {
+          ...atomPuzzle.cells.r1c3,
+          shape: {
+            kind: "rect",
+            x: nativeOffset,
+            y: -1,
+            width: 1 - nativeOffset,
+            height: 2,
+          },
+        },
+      };
+      atomPuzzle.groups = {
+        atoms: {
+          id: "atoms",
+          roles: ["region"],
+          cellIds: ["r1c1", "r1c2"],
+        },
+      };
+      const border = projectPuzzleScene(atomPuzzle, emptySceneView).nodes.find(
+        (node) => node.id === "group-border-atoms",
+      );
+      if (border?.kind !== "path") {
+        throw new Error("expected atomic group path");
+      }
+      return border;
+    };
+
+    const exact = projectExteriorAtoms(1e-9);
+    const exactSegments = parseLineSegments(exact.d).filter(
+      (segment) => Math.abs(segmentLength(segment) - 1e-9) < 1e-13,
+    );
+    expect(exactSegments).toHaveLength(2);
+    expect(exactSegments).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          from: expect.objectContaining({ x: 0 }),
+          to: expect.objectContaining({ x: 1e-9 }),
+        }),
+        expect.objectContaining({
+          from: expect.objectContaining({ x: 1e-9 }),
+          to: expect.objectContaining({ x: 0 }),
+        }),
+      ]),
+    );
+    expect(exact.geometryIssues).toEqual([]);
+
+    const justBelow = projectExteriorAtoms(1e-9 - 2e-13);
+    expect(justBelow.geometryIssues).toEqual([
+      expect.objectContaining({ code: "below-minimum-boundary-piece" }),
+    ]);
+
+    const subQuantum = projectExteriorAtoms(1e-13);
+    expect(subQuantum.geometryIssues).toEqual([
+      expect.objectContaining({ code: "below-minimum-boundary-piece" }),
+    ]);
   });
 
   it("evaluates the public feature threshold before display quantization", () => {
@@ -812,10 +1044,14 @@ describe("PuzzleCanvas", () => {
         .querySelector("path")
         ?.getAttribute("d") ?? "",
     );
-    expect(screen.getByRole("img", { name: "Focus link" })).toHaveAttribute(
-      "d",
-      "M 0.5 0.5 L 10.5 4.5",
+    const annotationSegments = readLineSegments(
+      screen.getByRole("img", { name: "Focus link" }),
     );
+    expect(annotationSegments).toHaveLength(1);
+    expect(annotationSegments[0].from.x).toBeCloseTo(0.5, 9);
+    expect(annotationSegments[0].from.y).toBeCloseTo(0.5, 9);
+    expect(annotationSegments[0].to.x).toBeCloseTo(10.5, 9);
+    expect(annotationSegments[0].to.y).toBeCloseTo(4.5, 9);
   });
 
   it("labels the SVG and exposes each cell as a focusable control", () => {
@@ -871,7 +1107,7 @@ describe("PuzzleCanvas", () => {
     expect(selectedCellIds).toEqual(["r1c1", "r1c1"]);
   });
 
-  it("traces a tolerance-aware union border across split and reversed edges", () => {
+  it("preserves representable gaps while tracing split and reversed edges", () => {
     const groupedPuzzle = structuredClone(puzzle);
     groupedPuzzle.cells.r1c1.shape = {
       kind: "polygon",
@@ -918,18 +1154,15 @@ describe("PuzzleCanvas", () => {
       screen.getByTestId("group-border-split-union"),
     );
     expect(segments.length).toBeGreaterThan(0);
-    for (const segment of segments) {
-      const midpoint = {
-        x: (segment.from.x + segment.to.x) / 2,
-        y: (segment.from.y + segment.to.y) / 2,
-      };
-      const liesOnOuterBoundary =
-        Math.abs(midpoint.x) < 0.000001 ||
-        Math.abs(midpoint.x - 2) < 0.000001 ||
-        Math.abs(midpoint.y) < 0.000001 ||
-        Math.abs(midpoint.y - 2) < 0.000001;
-      expect(liesOnOuterBoundary, JSON.stringify(segment)).toBe(true);
-    }
+    expect(segments.every((segment) => Number.isFinite(segmentLength(segment)))).toBe(
+      true,
+    );
+    expect(
+      segments.some((segment) => {
+        const midpointY = (segment.from.y + segment.to.y) / 2;
+        return Math.abs(midpointY - 1) < 1e-7;
+      }),
+    ).toBe(true);
   });
 
   it("splits non-collinear intersections before tracing overlapping rectangle unions", () => {

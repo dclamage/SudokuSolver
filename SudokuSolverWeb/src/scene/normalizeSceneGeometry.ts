@@ -20,16 +20,20 @@ export interface NormalizedBounds {
 
 export interface NormalizedCellGeometry {
   kind: "rect" | "polygon" | "path";
+  /** Unquantized validated vertices used by topology operations. */
+  topologyVertices: readonly NormalizedPoint[];
   vertices: readonly NormalizedPoint[];
   contentVertices: readonly NormalizedPoint[];
   bounds?: NormalizedBounds;
   geometryIssue?: SceneGeometryIssue;
 }
 
-export interface SceneAffineTransform {
-  scale: number;
-  translateX: number;
-  translateY: number;
+export interface SceneNormalizationFrame {
+  coordinateScale: number;
+  minX: number;
+  minY: number;
+  span: number;
+  displayScale: number;
 }
 
 export interface NormalizedPuzzleGeometry {
@@ -37,7 +41,7 @@ export interface NormalizedPuzzleGeometry {
   width: number;
   height: number;
   displayScale: number;
-  nativeToSceneTransform?: SceneAffineTransform;
+  nativeToSceneFrame?: SceneNormalizationFrame;
 }
 
 interface RawCellGeometry {
@@ -206,6 +210,36 @@ function normalizePoint(point: NormalizedPoint, frame: NormalizationFrame) {
     x: (point.x / frame.coordinateScale - frame.minX) / frame.span,
     y: (point.y / frame.coordinateScale - frame.minY) / frame.span,
   };
+}
+
+/** Maps a native coordinate with scale-first subtraction before display scaling. */
+export function normalizeNativePoint(
+  point: NormalizedPoint,
+  frame: SceneNormalizationFrame,
+) {
+  return {
+    x:
+      normalizedCoordinate(
+        (point.x / frame.coordinateScale - frame.minX) / frame.span,
+      ) *
+      frame.displayScale,
+    y:
+      normalizedCoordinate(
+        (point.y / frame.coordinateScale - frame.minY) / frame.span,
+      ) *
+      frame.displayScale,
+  };
+}
+
+/** Maps a native relative distance through the common positive scene scale. */
+export function normalizeNativeDistance(
+  distance: number,
+  frame: SceneNormalizationFrame,
+) {
+  return (
+    normalizedCoordinate((distance / frame.coordinateScale) / frame.span) *
+    frame.displayScale
+  );
 }
 
 function cross(
@@ -394,7 +428,8 @@ function median(values: number[]) {
     : values[middle];
 }
 
-function normalizedCoordinate(value: number) {
+/** Quantizes only display coordinates, after topology thresholds are evaluated. */
+export function normalizedCoordinate(value: number) {
   return (
     Math.round(value / NORMALIZED_COORDINATE_QUANTUM) *
     NORMALIZED_COORDINATE_QUANTUM
@@ -422,6 +457,7 @@ export function normalizePuzzleGeometry(
     if (raw.geometryIssue !== undefined) {
       cells.set(cellId, {
         kind: raw.kind,
+        topologyVertices: [],
         vertices: [],
         contentVertices: [],
         geometryIssue: raw.geometryIssue,
@@ -431,6 +467,7 @@ export function normalizePuzzleGeometry(
     if (globalFrame === undefined) {
       cells.set(cellId, {
         kind: raw.kind,
+        topologyVertices: [],
         vertices: [],
         contentVertices: [],
         geometryIssue: invalidTopology(
@@ -451,6 +488,7 @@ export function normalizePuzzleGeometry(
     ) {
       cells.set(cellId, {
         kind: raw.kind,
+        topologyVertices: [],
         vertices: [],
         contentVertices: [],
         geometryIssue: issue(
@@ -475,6 +513,7 @@ export function normalizePuzzleGeometry(
     ) {
       cells.set(cellId, {
         kind: raw.kind,
+        topologyVertices: [],
         vertices: [],
         contentVertices: [],
         geometryIssue: issue(
@@ -487,6 +526,7 @@ export function normalizePuzzleGeometry(
     }
     cells.set(cellId, {
       kind: raw.kind,
+      topologyVertices: unquantizedVertices,
       vertices,
       contentVertices,
       bounds,
@@ -499,16 +539,15 @@ export function normalizePuzzleGeometry(
   const displayUnit =
     displayUnitCandidates.length === 0 ? 1 : median(displayUnitCandidates);
   const displayScale = 1 / displayUnit;
-  const nativeToSceneTransform =
+  const nativeToSceneFrame =
     globalFrame === undefined
       ? undefined
       : {
-          scale:
-            (displayScale / globalFrame.coordinateScale) / globalFrame.span,
-          translateX:
-            (-globalFrame.minX / globalFrame.span) * displayScale,
-          translateY:
-            (-globalFrame.minY / globalFrame.span) * displayScale,
+          coordinateScale: globalFrame.coordinateScale,
+          minX: globalFrame.minX,
+          minY: globalFrame.minY,
+          span: globalFrame.span,
+          displayScale,
         };
   return {
     cells,
@@ -521,10 +560,6 @@ export function normalizePuzzleGeometry(
         ? 1
         : (globalFrame.spanY / globalFrame.span) * displayScale,
     displayScale,
-    nativeToSceneTransform:
-      nativeToSceneTransform !== undefined &&
-      Object.values(nativeToSceneTransform).every(Number.isFinite)
-        ? nativeToSceneTransform
-        : undefined,
+    nativeToSceneFrame,
   };
 }

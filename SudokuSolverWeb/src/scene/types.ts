@@ -6,10 +6,12 @@ export type SolverParticipation =
   | "unknown";
 
 export type SceneGeometryIssueCode =
+  | "annotation-frame-unavailable"
   | "below-minimum-feature"
   | "below-minimum-boundary-piece"
   | "invalid-topology"
   | "member-geometry-omitted"
+  | "malformed-annotation-path"
   | "non-finite-geometry"
   | "unusable-content-anchor"
   | "unsupported-path-geometry";
@@ -57,7 +59,6 @@ export interface ScenePathNode {
   d: string;
   role: "grid" | "selection" | "annotation";
   label?: string;
-  transform?: string;
   geometryIssue?: SceneGeometryIssue;
   geometryIssues?: readonly SceneGeometryIssue[];
 }

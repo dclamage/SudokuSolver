@@ -3,8 +3,10 @@ import type { CapabilityEntityResult } from "../solver/protocol";
 import {
   MIN_NORMALIZED_FEATURE_SIZE,
   normalizePuzzleGeometry,
+  normalizedCoordinate,
 } from "./normalizeSceneGeometry";
 import type { NormalizedCellGeometry } from "./normalizeSceneGeometry";
+import { normalizeSvgPathData } from "./normalizeSvgPath";
 import type {
   PuzzleScene,
   PuzzleSceneView,
@@ -16,10 +18,10 @@ import type {
 
 export { MIN_NORMALIZED_FEATURE_SIZE } from "./normalizeSceneGeometry";
 
-const RELATIVE_GEOMETRY_TOLERANCE = 1e-7;
-const MAX_LENGTH_TOLERANCE = 1e-6;
+/** Comparison slack is 1/65536 of the smallest publicly preserved feature. */
+const UNION_COMPARISON_EPSILON = MIN_NORMALIZED_FEATURE_SIZE / 65_536;
 const COORDINATE_ULP_FACTOR = 16;
-const TOPOLOGY_COORDINATE_QUANTUM = MIN_NORMALIZED_FEATURE_SIZE / 1_000;
+const SPLIT_RATIO_EPSILON = Number.EPSILON * 32;
 
 interface Bounds {
   minX: number;
@@ -58,18 +60,6 @@ function sceneCoordinate(value: number) {
     ? integer
     : value;
   return Number(snapped.toPrecision(15));
-}
-
-function affineCoordinate(value: number) {
-  return Number(value.toPrecision(17));
-}
-
-function svgMatrix(
-  transform: NonNullable<
-    ReturnType<typeof normalizePuzzleGeometry>["nativeToSceneTransform"]
-  >,
-) {
-  return `matrix(${affineCoordinate(transform.scale)} 0 0 ${affineCoordinate(transform.scale)} ${affineCoordinate(transform.translateX)} ${affineCoordinate(transform.translateY)})`;
 }
 
 export interface PuzzleSceneProjectionMetrics {
@@ -431,7 +421,7 @@ function projectShape(
         maxX: sceneCoordinate(bounds.maxX * displayScale),
         maxY: sceneCoordinate(bounds.maxY * displayScale),
       },
-      vertices,
+      vertices: geometry.topologyVertices,
       geometryIssue: {
         code: "unusable-content-anchor",
         affects: "content",
@@ -455,7 +445,7 @@ function projectShape(
       maxX: sceneCoordinate(normalizedContentRegion.maxX * displayScale),
       maxY: sceneCoordinate(normalizedContentRegion.maxY * displayScale),
     },
-    vertices,
+    vertices: geometry.topologyVertices,
   };
 }
 
@@ -606,23 +596,25 @@ function segmentLength(segment: Segment) {
 }
 
 function baseSegmentTolerance(segment: Segment) {
-  const lengthTolerance = Math.min(
-    segmentLength(segment) * RELATIVE_GEOMETRY_TOLERANCE,
-    MAX_LENGTH_TOLERANCE,
-  );
-  return Math.max(
-    lengthTolerance,
-    TOPOLOGY_COORDINATE_QUANTUM * 4,
-    Number.EPSILON * COORDINATE_ULP_FACTOR,
+  return Math.min(
+    segmentLength(segment) / 4,
+    Math.max(
+      UNION_COMPARISON_EPSILON,
+      Number.EPSILON * COORDINATE_ULP_FACTOR,
+    ),
   );
 }
 
+function isBelowMinimumBoundaryLength(length: number) {
+  return length < MIN_NORMALIZED_FEATURE_SIZE;
+}
+
 function containsPointOnSnappedLine(segment: Segment, point: Point) {
-  if (lineDistance(point, segment) > TOPOLOGY_COORDINATE_QUANTUM * 4) {
+  if (lineDistance(point, segment) > UNION_COMPARISON_EPSILON) {
     return false;
   }
   const ratio = projectRatio(point, segment);
-  const ratioTolerance = TOPOLOGY_COORDINATE_QUANTUM / segmentLength(segment);
+  const ratioTolerance = UNION_COMPARISON_EPSILON / segmentLength(segment);
   return ratio >= -ratioTolerance && ratio <= 1 + ratioTolerance;
 }
 
@@ -656,17 +648,6 @@ function pointAt(segment: Segment, ratio: number): Point {
   return {
     x: segment.from.x + (segment.to.x - segment.from.x) * ratio,
     y: segment.from.y + (segment.to.y - segment.from.y) * ratio,
-  };
-}
-
-function snapTopologyPoint(point: Point): Point {
-  return {
-    x:
-      Math.round(point.x / TOPOLOGY_COORDINATE_QUANTUM) *
-      TOPOLOGY_COORDINATE_QUANTUM,
-    y:
-      Math.round(point.y / TOPOLOGY_COORDINATE_QUANTUM) *
-      TOPOLOGY_COORDINATE_QUANTUM,
   };
 }
 
@@ -725,7 +706,7 @@ function splitSegment(
   const length = segmentLength(segment);
   const tolerance = segmentTolerance(segment, allSegments);
   const ratioTolerance = tolerance / length;
-  const splitRatioTolerance = TOPOLOGY_COORDINATE_QUANTUM / length;
+  const splitRatioTolerance = SPLIT_RATIO_EPSILON;
   for (const other of allSegments) {
     if (other === segment || segmentLength(other) === 0) {
       continue;
@@ -791,12 +772,12 @@ function splitSegment(
     .flatMap((start, index) => {
       const end = fineRatios[index + 1];
       const piece = {
-        from: snapTopologyPoint(pointAt(segment, start)),
-        to: snapTopologyPoint(pointAt(segment, end)),
+        from: pointAt(segment, start),
+        to: pointAt(segment, end),
         polygonIndex: segment.polygonIndex,
       };
       const pieceLength = segmentLength(piece);
-      return pieceLength > 0 && pieceLength < MIN_NORMALIZED_FEATURE_SIZE
+      return pieceLength > 0 && isBelowMinimumBoundaryLength(pieceLength)
         ? [piece]
         : [];
     });
@@ -810,8 +791,8 @@ function splitSegment(
       ? []
       : [
           {
-            from: snapTopologyPoint(pointAt(segment, start)),
-            to: snapTopologyPoint(pointAt(segment, end)),
+            from: pointAt(segment, start),
+            to: pointAt(segment, end),
             polygonIndex: segment.polygonIndex,
           },
         ];
@@ -1003,13 +984,13 @@ function projectGroupBorder(
   }
   const d = deduplicateSegments(
     boundaryPieces.filter(
-      (piece) => segmentLength(piece) >= MIN_NORMALIZED_FEATURE_SIZE,
+      (piece) => !isBelowMinimumBoundaryLength(segmentLength(piece)),
     ),
     segments,
   )
     .map(
       (segment) =>
-        `M ${sceneCoordinate(segment.from.x * displayScale)} ${sceneCoordinate(segment.from.y * displayScale)} L ${sceneCoordinate(segment.to.x * displayScale)} ${sceneCoordinate(segment.to.y * displayScale)}`,
+        `M ${sceneCoordinate(normalizedCoordinate(segment.from.x) * displayScale)} ${sceneCoordinate(normalizedCoordinate(segment.from.y) * displayScale)} L ${sceneCoordinate(normalizedCoordinate(segment.to.x) * displayScale)} ${sceneCoordinate(normalizedCoordinate(segment.to.y) * displayScale)}`,
     )
     .join(" ");
   return {
@@ -1125,18 +1106,38 @@ export function projectPuzzleScene(
           },
         ];
   });
-  const annotationTransform =
-    normalizedGeometry.nativeToSceneTransform === undefined
-      ? undefined
-      : svgMatrix(normalizedGeometry.nativeToSceneTransform);
-  const annotations = deduplicateAnnotations(view).map((annotation) => ({
-    kind: "path" as const,
-    id: `annotation-${annotation.id}`,
-    d: annotation.d,
-    role: "annotation" as const,
-    label: annotation.label,
-    transform: annotationTransform,
-  }));
+  const annotations = deduplicateAnnotations(view).map((annotation) => {
+    const normalizedPath =
+      normalizedGeometry.nativeToSceneFrame === undefined
+        ? {
+            error: "the scene normalization frame is unavailable.",
+            code: "annotation-frame-unavailable" as const,
+          }
+        : {
+            ...normalizeSvgPathData(
+              annotation.d,
+              normalizedGeometry.nativeToSceneFrame,
+            ),
+            code: "malformed-annotation-path" as const,
+          };
+    const geometryIssue =
+      normalizedPath.error === undefined
+        ? undefined
+        : {
+            code: normalizedPath.code,
+            affects: "topology-and-content" as const,
+            message: normalizedPath.error,
+          };
+    return {
+      kind: "path" as const,
+      id: `annotation-${annotation.id}`,
+      d: "d" in normalizedPath ? (normalizedPath.d ?? "") : "",
+      role: "annotation" as const,
+      label: annotation.label,
+      geometryIssue,
+      geometryIssues: geometryIssue === undefined ? [] : [geometryIssue],
+    };
+  });
   const clips = nodes.flatMap((node) =>
     node.content.flatMap((content) =>
       content.clip === undefined ? [] : [content.clip],
@@ -1151,12 +1152,22 @@ export function projectPuzzleScene(
         `Group ${border.id.slice("group-border-".length)}: ${geometryIssue.message}`,
     ),
   );
+  const annotationGeometryDescriptions = annotations.flatMap((annotation) =>
+    (annotation.geometryIssues ?? []).map(
+      (geometryIssue) =>
+        `Annotation ${annotation.id.slice("annotation-".length)}: ${geometryIssue.message}`,
+    ),
+  );
+  const presentationDescriptions = [
+    ...groupGeometryDescriptions,
+    ...annotationGeometryDescriptions,
+  ];
   return {
     label: puzzle.metadata.title || "Sudoku puzzle",
     description:
-      groupGeometryDescriptions.length === 0
+      presentationDescriptions.length === 0
         ? undefined
-        : `Presentation geometry: ${groupGeometryDescriptions.join(" ")}`,
+        : `Presentation geometry: ${presentationDescriptions.join(" ")}`,
     viewBox: `0 0 ${width} ${height}`,
     width,
     height,
