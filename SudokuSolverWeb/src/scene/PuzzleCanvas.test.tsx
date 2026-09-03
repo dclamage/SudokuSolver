@@ -1336,7 +1336,37 @@ describe("PuzzleCanvas", () => {
     const firstCut = 1.75;
     const secondCut = 1.7500000000000002;
 
-    for (const angle of [0.1, Math.PI / 6, Math.PI / 4]) {
+    const rotations = [
+      {
+        angle: 0.1,
+        expectedOuter: [
+          { x: 0.10845029669402097, y: 0 },
+          { x: 1.1893358414402948, y: 0.10845029669402097 },
+          { x: 1.0808855447462737, y: 1.1893358414402948 },
+          { x: 0, y: 1.0808855447462737 },
+        ],
+      },
+      {
+        angle: Math.PI / 6,
+        expectedOuter: [
+          { x: 0.496143856670665, y: 0 },
+          { x: 1.3554902242874278, y: 0.496143856670665 },
+          { x: 0.8593463676167628, y: 1.3554902242874278 },
+          { x: 0, y: 0.8593463676167628 },
+        ],
+      },
+      {
+        angle: Math.PI / 4,
+        expectedOuter: [
+          { x: 0.7272727272727272, y: 0 },
+          { x: 1.4545454545454544, y: 0.7272727272727272 },
+          { x: 0.7272727272727273, y: 1.4545454545454544 },
+          { x: 0, y: 0.7272727272727273 },
+        ],
+      },
+    ] as const;
+
+    for (const { angle, expectedOuter } of rotations) {
       const redundantPuzzle = structuredClone(puzzle);
       const outer = rotate(rectangle(0, 0, 2, 2, true), angle);
       const firstInner = rotate(rectangle(0, 0, firstCut, 1), angle);
@@ -1378,17 +1408,82 @@ describe("PuzzleCanvas", () => {
       expect(border.geometryIssues, `angle ${angle}`).toEqual([]);
       const segments = parseLineSegments(border.d);
       expect(segments, `angle ${angle}`).toHaveLength(7);
-      expect(totalSegmentLength(segments), `angle ${angle}`).toBeCloseTo(
-        (4 * scene.width) / (Math.cos(angle) + Math.sin(angle)),
-        10,
-      );
-      const canonicalSegments = segments.map(({ from, to }) =>
-        [`${from.x},${from.y}`, `${to.x},${to.y}`].sort().join("/"),
-      );
-      expect(
-        new Set(canonicalSegments).size,
-        `angle ${angle}`,
-      ).toBe(canonicalSegments.length);
+      const expectedEdges = expectedOuter.map((from, index) => ({
+        from,
+        to: expectedOuter[(index + 1) % expectedOuter.length],
+      }));
+      const coverageByEdge = expectedEdges.map(() => [] as {
+        start: number;
+        end: number;
+      }[]);
+      const tolerance = 1e-9;
+
+      for (const segment of segments) {
+        const matches = expectedEdges.flatMap((edge, edgeIndex) => {
+          const deltaX = edge.to.x - edge.from.x;
+          const deltaY = edge.to.y - edge.from.y;
+          const squaredLength = deltaX * deltaX + deltaY * deltaY;
+          const edgeLength = Math.sqrt(squaredLength);
+          const parameter = (point: TestPoint) =>
+            ((point.x - edge.from.x) * deltaX +
+              (point.y - edge.from.y) * deltaY) /
+            squaredLength;
+          const distance = (point: TestPoint) =>
+            Math.abs(
+              (point.x - edge.from.x) * deltaY -
+                (point.y - edge.from.y) * deltaX,
+            ) / edgeLength;
+          const firstParameter = parameter(segment.from);
+          const secondParameter = parameter(segment.to);
+          if (
+            distance(segment.from) > tolerance ||
+            distance(segment.to) > tolerance ||
+            firstParameter < -tolerance ||
+            firstParameter > 1 + tolerance ||
+            secondParameter < -tolerance ||
+            secondParameter > 1 + tolerance
+          ) {
+            return [];
+          }
+          return [
+            {
+              edgeIndex,
+              start: Math.min(firstParameter, secondParameter),
+              end: Math.max(firstParameter, secondParameter),
+            },
+          ];
+        });
+        expect(
+          matches,
+          `angle ${angle}, segment ${JSON.stringify(segment)}`,
+        ).toHaveLength(1);
+        const [match] = matches;
+        expect(match.end - match.start).toBeGreaterThan(tolerance);
+        coverageByEdge[match.edgeIndex].push({
+          start: match.start,
+          end: match.end,
+        });
+      }
+
+      for (const [edgeIndex, intervals] of coverageByEdge.entries()) {
+        intervals.sort((first, second) => first.start - second.start);
+        expect(
+          intervals.length,
+          `angle ${angle}, edge ${edgeIndex}`,
+        ).toBeGreaterThan(0);
+        let coveredThrough = 0;
+        for (const interval of intervals) {
+          expect(
+            Math.abs(interval.start - coveredThrough),
+            `angle ${angle}, edge ${edgeIndex}`,
+          ).toBeLessThan(tolerance);
+          coveredThrough = interval.end;
+        }
+        expect(
+          Math.abs(coveredThrough - 1),
+          `angle ${angle}, edge ${edgeIndex}`,
+        ).toBeLessThan(tolerance);
+      }
     }
   });
 
