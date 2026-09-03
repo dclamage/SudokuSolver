@@ -92,6 +92,50 @@
   text-transform: uppercase;
 }
 
+.candidate-context-panel[data-panel-kind="setterNotes"] {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.candidate-context-panel[data-panel-kind="setterNotes"]
+  > div:first-child {
+  grid-column: 1;
+  grid-row: 1;
+}
+
+.candidate-context-panel[data-panel-kind="setterNotes"]
+  > .candidate-context-status {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.setter-notes-controls {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-row: 2;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.setter-notes-controls .mode-picker {
+  width: 100%;
+}
+
+.setter-notes-controls .mode-picker button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.setter-notes-controls .keypad {
+  grid-template-columns: repeat(auto-fit, minmax(var(--control-min-size), 1fr));
+  width: 100%;
+  margin: 0;
+}
+
+.setter-notes-controls .erase-selected-button {
+  min-height: var(--control-min-size);
+  justify-self: center;
+}
+
 @media (max-width: 719px) {
   .candidate-context-navigation,
   .candidate-context-panel {
@@ -120,5 +164,15 @@
 
   .candidate-context-panel p {
     grid-column: 1 / -1;
+  }
+
+  .setter-notes-controls .mode-picker button {
+    min-width: 0;
+    padding: 0.25rem;
+    font-size: 0.78rem;
+  }
+
+  .setter-notes-controls .keypad {
+    grid-template-columns: repeat(3, minmax(var(--control-min-size), 1fr));
   }
 }

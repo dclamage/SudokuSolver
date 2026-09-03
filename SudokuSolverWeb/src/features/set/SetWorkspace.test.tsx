@@ -101,7 +101,7 @@ describe("Set workspace", () => {
 
     await userEvent.click(screen.getByTestId("cell-r1c1"));
     await userEvent.click(screen.getByRole("button", { name: "Region" }));
-    await userEvent.click(screen.getByRole("button", { name: "Enter 5" }));
+    expect(screen.queryByRole("button", { name: "Enter 5" })).toBeNull();
 
     expect(
       controller.puzzle.getSnapshot().document.givens.r1c1,
@@ -112,6 +112,7 @@ describe("Set workspace", () => {
     const controller = createTestAppController();
     render(<App controller={controller} />);
 
+    await userEvent.click(screen.getByRole("button", { name: "Digit" }));
     await userEvent.click(screen.getByTestId("cell-r1c1"));
     await userEvent.click(screen.getByRole("button", { name: "Enter 5" }));
     expect(screen.getByTestId("given-r1c1")).toHaveTextContent("5");

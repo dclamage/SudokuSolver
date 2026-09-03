@@ -192,6 +192,21 @@ export class PlaytestSession {
     });
   }
 
+  public setManualMarks(
+    kind: "corner" | "centre",
+    cellId: CellId,
+    valueIds: readonly ValueId[],
+  ): void {
+    this.commit((next) => {
+      delete next.values[cellId];
+      if (valueIds.length === 0) {
+        delete next[kind][cellId];
+      } else {
+        next[kind][cellId] = [...valueIds];
+      }
+    });
+  }
+
   public applyColor(cellId: CellId, color: string): void {
     this.commit((next) => {
       if (next.colors[cellId]?.[0] === color) {

@@ -9,28 +9,17 @@ import { PuzzleCanvas } from "../../scene/PuzzleCanvas";
 import type { PuzzleSceneView, SceneCellFill } from "../../scene/types";
 import { CandidateContextOutlet } from "../candidates/CandidateContextOutlet";
 import { CandidateContextTabs } from "../candidates/CandidateContextTabs";
-import type { PlaytestInputMode } from "./PlaytestSession";
 import type { PlaytestSession } from "./PlaytestSession";
 
 export interface PlaytestWorkspaceProps {
   controller: AppController;
 }
 
-const inputModes: readonly {
-  id: PlaytestInputMode;
-  label: string;
-  glyph: string;
-}[] = [
-  { id: "digit", label: "Digit", glyph: "▦" },
-  { id: "corner", label: "Corner", glyph: "⌜" },
-  { id: "centre", label: "Centre", glyph: "⊙" },
-  { id: "color", label: "Color", glyph: "◉" },
-  { id: "erase", label: "Erase", glyph: "⌫" },
-];
-const independentInputModes = inputModes.filter(
-  (mode) => mode.id === "digit" || mode.id === "color",
-);
+const independentInputModes = Object.freeze([
+  Object.freeze({ id: "digit" as const, label: "Digit", glyph: "▦" }),
+]);
 const EMPTY_CANDIDATES = Object.freeze({});
+const EMPTY_CELL_FILLS = Object.freeze({});
 
 const cellFillPalette: Readonly<Record<string, SceneCellFill>> = Object.freeze({
   cyan: Object.freeze({ color: "#b9efff", label: "cyan" }),
@@ -70,24 +59,6 @@ function presentCellFills(
   );
 }
 
-function inputLabel(
-  mode: "digit" | "corner" | "centre",
-  valueLabel: string,
-) {
-  switch (mode) {
-    case "digit":
-      return `Enter ${valueLabel}`;
-    case "corner":
-      return `Toggle corner ${valueLabel}`;
-    case "centre":
-      return `Toggle centre ${valueLabel}`;
-  }
-}
-
-function isManualCandidateMode(mode: PlaytestInputMode): boolean {
-  return mode === "corner" || mode === "centre" || mode === "erase";
-}
-
 export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
   const puzzleSnapshot = useExternalStore(controller.puzzle);
   const editor = useExternalStore(controller.editor);
@@ -98,15 +69,15 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
   const selectedCellId = editor.selectedCellIds[0];
   const manualCandidateEntry = candidates.actions.manualCandidateEntry;
   const inputMode =
-    !manualCandidateEntry && isManualCandidateMode(playtest.inputMode)
+    !manualCandidateEntry && playtest.inputMode !== "digit"
       ? "digit"
       : playtest.inputMode;
-  const availableInputModes = manualCandidateEntry
-    ? inputModes
-    : independentInputModes;
   const cellFills = useMemo(
-    () => presentCellFills(playtest.colors),
-    [playtest.colors],
+    () =>
+      manualCandidateEntry
+        ? presentCellFills(playtest.colors)
+        : EMPTY_CELL_FILLS,
+    [manualCandidateEntry, playtest.colors],
   );
   const sceneView = useMemo<PuzzleSceneView>(
     () => ({
@@ -140,13 +111,6 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
     }
   };
 
-  const selectInputMode = (mode: PlaytestInputMode) => {
-    if (!manualCandidateEntry && isManualCandidateMode(mode)) {
-      return;
-    }
-    controller.playtest.setInputMode(mode);
-  };
-
   const enter = (valueId: string) => {
     if (
       selectedCellId === undefined ||
@@ -154,34 +118,12 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
     ) {
       return;
     }
-    switch (inputMode) {
-      case "digit":
-        controller.playtest.enterValue(selectedCellId, valueId);
-        break;
-      case "corner":
-      case "centre":
-        if (!manualCandidateEntry) {
-          return;
-        }
-        controller.playtest.toggleCandidate(
-          inputMode,
-          selectedCellId,
-          valueId,
-        );
-        break;
-      case "color":
-      case "erase":
-        break;
+    if (inputMode === "digit") {
+      controller.playtest.enterValue(selectedCellId, valueId);
     }
   };
 
   const rulesOpen = editor.mobileSheet === "rules";
-  const keypadMode =
-    inputMode === "digit" ||
-    inputMode === "corner" ||
-    inputMode === "centre"
-      ? inputMode
-      : null;
   const statusMessage =
     playtest.checkMessage ?? documentValidationLabel(validation);
 
@@ -229,70 +171,38 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
             />
           </div>
           <div className="playtest-controls" aria-label="Playtest tools">
-            <div className="mode-picker" aria-label="Input mode">
-              {availableInputModes.map((mode) => (
-                <button
-                  key={mode.id}
-                  type="button"
-                  aria-label={mode.label}
-                  aria-pressed={inputMode === mode.id}
-                  onClick={() => selectInputMode(mode.id)}
-                >
-                  <span aria-hidden="true">{mode.glyph}</span>
-                  <span>{mode.label}</span>
-                </button>
-              ))}
-            </div>
-            {inputMode === "color" ? (
-              <div className="color-picker" aria-label="Cell colors">
-                {[
-                  ["cyan", "#39c6f4"],
-                  ["green", "#4bd37b"],
-                  ["yellow", "#f2c94c"],
-                  ["rose", "#ee6c8a"],
-                ].map(([name, color]) => (
+            {!manualCandidateEntry ? (
+              <div
+                className="mode-picker mode-picker--single"
+                aria-label="Input mode"
+              >
+                {independentInputModes.map((mode) => (
                   <button
-                    key={name}
+                    key={mode.id}
                     type="button"
-                    aria-label={`Apply ${name}`}
-                    style={{ "--swatch-color": color } as React.CSSProperties}
-                    onClick={() => {
-                      if (selectedCellId !== undefined) {
-                        controller.playtest.applyColor(selectedCellId, name);
-                      }
-                    }}
+                    aria-label={mode.label}
+                    aria-pressed={inputMode === mode.id}
+                    onClick={() => controller.playtest.setInputMode(mode.id)}
                   >
-                    <span aria-hidden="true" />
+                    <span aria-hidden="true">{mode.glyph}</span>
+                    <span>{mode.label}</span>
                   </button>
                 ))}
               </div>
             ) : null}
             <CandidateContextTabs controller={controller} />
             <CandidateContextOutlet controller={controller} />
-            {inputMode === "erase" ? (
-              <button
-                className="erase-selected-button"
-                type="button"
-                aria-label="Erase selected cell"
-                disabled={
-                  selectedCellId === undefined ||
-                  puzzle.givens[selectedCellId] !== undefined
-                }
-                onClick={() => {
-                  if (selectedCellId !== undefined) {
-                    controller.playtest.erase(selectedCellId);
-                  }
-                }}
-              >
-                Erase selected cell
-              </button>
-            ) : keypadMode !== null ? (
+            {!manualCandidateEntry ? (
               <div className="keypad" aria-label="Playtest keypad">
-                {puzzle.domains["digits-1-9"].values.map((value) => (
+                {(selectedCellId === undefined
+                  ? []
+                  : puzzle.domains[puzzle.cells[selectedCellId]?.domainId]
+                      ?.values ?? []
+                ).map((value) => (
                   <button
                     key={value.id}
                     type="button"
-                    aria-label={inputLabel(keypadMode, value.label)}
+                    aria-label={`Enter ${value.label}`}
                     onClick={() => enter(value.id)}
                   >
                     {value.label}

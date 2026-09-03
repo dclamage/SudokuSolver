@@ -26,10 +26,10 @@ import type {
   CandidatePanelDescriptor,
   CandidateSceneProjection,
 } from "./types";
+import { manualCandidateBehavior } from "./manualCandidateBehavior";
 
 const EMPTY_CANDIDATES = Object.freeze({});
 const EMPTY_ANNOTATIONS = Object.freeze([]);
-const MANUAL_ACTIONS = Object.freeze({ manualCandidateEntry: true });
 const NO_ACTIONS = Object.freeze({ manualCandidateEntry: false });
 
 export interface CandidatePuzzleChange {
@@ -115,36 +115,6 @@ function withStatus(
   });
 }
 
-const manualBehavior: CandidateContextBehavior = Object.freeze({
-  panelKind: "setterNotes",
-  actions: MANUAL_ACTIONS,
-  activate(input: CandidateBehaviorInput) {
-    return {
-      runtime: withStatus(
-        input.runtime,
-        "live",
-        input.semanticRevision,
-        input.semanticHash,
-      ),
-      requestWork: false,
-    };
-  },
-  invalidate(input: CandidateBehaviorInput) {
-    return input.active
-      ? {
-          runtime: withStatus(
-            input.runtime,
-            "live",
-            input.semanticRevision,
-            input.semanticHash,
-          ),
-          requestWork: false,
-        }
-      : unchanged(input);
-  },
-  getSceneProjection: runtimeProjection,
-});
-
 const trueCandidatesBehavior: CandidateContextBehavior = Object.freeze({
   panelKind: "trueCandidates",
   actions: NO_ACTIONS,
@@ -195,7 +165,7 @@ const unsupportedBehavior: CandidateContextBehavior = Object.freeze({
 
 export const defaultCandidateBehaviorRegistry: CandidateBehaviorRegistry =
   Object.freeze({
-    manual: manualBehavior,
+    manual: manualCandidateBehavior,
     trueCandidates: trueCandidatesBehavior,
     logicalSolver: logicalSolverBehavior,
   });

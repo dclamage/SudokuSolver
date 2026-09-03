@@ -48,6 +48,9 @@ function ElementButtons({
           aria-pressed={activeTool === tool.id}
           onClick={() => {
             controller.editor.setActiveTool(tool.id);
+            if (tool.id === "given") {
+              controller.editor.setSetterNotesInputMode("digit");
+            }
             controller.editor.setMobileSheet(null);
           }}
         >
@@ -77,6 +80,17 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
   const validation = useExternalStore(controller.validation);
   const candidates = useExternalStore(controller.candidates);
   const selectedCellId = editor.selectedCellIds[0];
+  const selectedCell =
+    selectedCellId === undefined
+      ? undefined
+      : puzzleSnapshot.document.cells[selectedCellId];
+  const selectedDomain =
+    selectedCell === undefined
+      ? undefined
+      : puzzleSnapshot.document.domains[selectedCell.domainId];
+  const showGivenControls =
+    !candidates.actions.manualCandidateEntry ||
+    editor.setterNotesInputMode === "digit";
   const sceneView = useMemo<PuzzleSceneView>(
     () => ({
       values: {},
@@ -214,35 +228,37 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
               Inspector
             </button>
           </div>
-          <div className="keypad" aria-label="Given keypad">
-            {puzzleSnapshot.document.domains["digits-1-9"].values.map(
-              (value) => (
+          {showGivenControls ? (
+            <>
+              <div className="keypad" aria-label="Given keypad">
+                {(selectedDomain?.values ?? []).map((value) => (
+                  <button
+                    key={value.id}
+                    type="button"
+                    aria-label={`Enter ${value.label}`}
+                    disabled={editor.activeTool !== "given"}
+                    onClick={() => enterGiven(value.id)}
+                  >
+                    {value.label}
+                  </button>
+                ))}
+              </div>
+              <div className="given-actions">
                 <button
-                  key={value.id}
                   type="button"
-                  aria-label={`Enter ${value.label}`}
-                  disabled={editor.activeTool !== "given"}
-                  onClick={() => enterGiven(value.id)}
+                  aria-label="Clear given"
+                  disabled={
+                    editor.activeTool !== "given" ||
+                    selectedCellId === undefined ||
+                    puzzleSnapshot.document.givens[selectedCellId] === undefined
+                  }
+                  onClick={clearGiven}
                 >
-                  {value.label}
+                  Clear given
                 </button>
-              ),
-            )}
-          </div>
-          <div className="given-actions">
-            <button
-              type="button"
-              aria-label="Clear given"
-              disabled={
-                editor.activeTool !== "given" ||
-                selectedCellId === undefined ||
-                puzzleSnapshot.document.givens[selectedCellId] === undefined
-              }
-              onClick={clearGiven}
-            >
-              Clear given
-            </button>
-          </div>
+              </div>
+            </>
+          ) : null}
           <div
             className={`puzzle-status puzzle-status--${validation.status}`}
             role="status"

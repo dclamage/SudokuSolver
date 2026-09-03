@@ -111,7 +111,7 @@ describe("Playtest workspace", () => {
     expect(screen.queryByRole("button", { name: "Corner" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Centre" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Erase" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Color" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Color" })).toBeNull();
     await userEvent.click(screen.getByRole("button", { name: "Enter 4" }));
     expect(controller.playtest.getSnapshot().values.r1c2).toBe("4");
     expect(

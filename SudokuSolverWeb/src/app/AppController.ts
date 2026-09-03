@@ -9,6 +9,7 @@ import type {
   CellId,
   PuzzlePackageV1,
 } from "../domain/puzzle/types";
+import type { ManualInputMode } from "../domain/candidates/types";
 import { PlaytestSession } from "../features/playtest/PlaytestSession";
 import type { SolverClient, SolverJob } from "../solver/SolverClient";
 import {
@@ -38,6 +39,7 @@ export interface EditorSnapshot {
   readonly viewport: Readonly<{ x: number; y: number; zoom: number }>;
   readonly activeTool: EditorTool;
   readonly activeContextId: CandidateContextId;
+  readonly setterNotesInputMode: ManualInputMode;
   readonly mobileSheet: MobileSheet;
 }
 
@@ -50,6 +52,7 @@ export class EditorStore {
     viewport: Object.freeze({ x: 0, y: 0, zoom: 1 }),
     activeTool: "given",
     activeContextId: "setter-notes",
+    setterNotesInputMode: "corner",
     mobileSheet: null,
   });
 
@@ -79,6 +82,14 @@ export class EditorStore {
   public setActiveContext(activeContextId: CandidateContextId): void {
     if (activeContextId !== this.snapshot.activeContextId) {
       this.update({ activeContextId });
+    }
+  }
+
+  public setSetterNotesInputMode(
+    setterNotesInputMode: ManualInputMode,
+  ): void {
+    if (setterNotesInputMode !== this.snapshot.setterNotesInputMode) {
+      this.update({ setterNotesInputMode });
     }
   }
 

@@ -6,6 +6,7 @@ import type {
   CandidateContextStatus,
   CandidatePanelDescriptor,
 } from "../../domain/candidates/types";
+import { SetterNotesPanel } from "./SetterNotesPanel";
 
 export interface CandidateContextOutletProps {
   controller: AppController;
@@ -13,6 +14,7 @@ export interface CandidateContextOutletProps {
 
 interface CandidatePanelProps {
   readonly panel: CandidatePanelDescriptor;
+  readonly controller: AppController;
 }
 
 function statusLabel(status: CandidateContextStatus): string {
@@ -30,10 +32,10 @@ function statusLabel(status: CandidateContextStatus): string {
   }
 }
 
-function SetterNotesPanel({ panel }: CandidatePanelProps) {
+function SetterNotesPanelOutlet({ panel, controller }: CandidatePanelProps) {
   return (
     <PanelFrame panel={panel}>
-      <p>Setter-controlled notes stay with this puzzle.</p>
+      <SetterNotesPanel controller={controller} />
     </PanelFrame>
   );
 }
@@ -68,10 +70,11 @@ function UnsupportedPanel({ panel }: CandidatePanelProps) {
 function PanelFrame({
   panel,
   children,
-}: CandidatePanelProps & { children: ReactNode }) {
+}: Pick<CandidatePanelProps, "panel"> & { children: ReactNode }) {
   return (
     <section
       className="candidate-context-panel"
+      data-panel-kind={panel.panelKind}
       id={`candidate-context-panel-${panel.contextId}`}
       role="tabpanel"
       aria-label={panel.name}
@@ -92,7 +95,7 @@ function PanelFrame({
 const panelRegistry: Readonly<
   Record<string, (props: CandidatePanelProps) => ReactNode>
 > = Object.freeze({
-  setterNotes: SetterNotesPanel,
+  setterNotes: SetterNotesPanelOutlet,
   trueCandidates: TrueCandidatesPanel,
   logicalSolver: LogicalSolverPanel,
 });
@@ -102,5 +105,5 @@ export function CandidateContextOutlet({
 }: CandidateContextOutletProps) {
   const panel = useExternalStore(controller.candidates).panel;
   const Panel = panelRegistry[panel.panelKind] ?? UnsupportedPanel;
-  return <Panel panel={panel} />;
+  return <Panel panel={panel} controller={controller} />;
 }

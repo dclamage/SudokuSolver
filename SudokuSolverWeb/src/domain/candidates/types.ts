@@ -13,6 +13,13 @@ export type CandidateContextStatus =
   | "calculating"
   | "error";
 
+export type ManualInputMode =
+  | "digit"
+  | "corner"
+  | "centre"
+  | "color"
+  | "erase";
+
 export interface CandidateContextRuntime {
   readonly contextId: CandidateContextId;
   readonly baseSemanticRevision: number | null;
