@@ -7,6 +7,8 @@ import {
 import { useExternalStore } from "../../app/useExternalStore";
 import { PuzzleCanvas } from "../../scene/PuzzleCanvas";
 import type { PuzzleSceneView, SceneCellFill } from "../../scene/types";
+import { CandidateContextOutlet } from "../candidates/CandidateContextOutlet";
+import { CandidateContextTabs } from "../candidates/CandidateContextTabs";
 import type { PlaytestInputMode } from "./PlaytestSession";
 import type { PlaytestSession } from "./PlaytestSession";
 
@@ -83,12 +85,12 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
   const editor = useExternalStore(controller.editor);
   const playtest = useExternalStore(controller.playtest);
   const validation = useExternalStore(controller.validation);
+  const candidates = useExternalStore(controller.candidates);
   const puzzle = puzzleSnapshot.document;
   const selectedCellId = editor.selectedCellIds[0];
-  const activeContextName =
-    puzzle.authoring.candidateContexts.find(
-      (context) => context.id === editor.activeContextId,
-    )?.name ?? "Setter notes";
+  const activeContext = candidates.definitions.find(
+    (context) => context.id === candidates.activeContextId,
+  );
   const cellFills = useMemo(
     () => presentCellFills(playtest.colors),
     [playtest.colors],
@@ -96,16 +98,21 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
   const sceneView = useMemo<PuzzleSceneView>(
     () => ({
       values: playtest.values,
-      candidates: {},
-      candidateMarks: playtest.manualCandidates,
+      candidates: candidates.sceneProjection.candidates,
+      candidateMarks:
+        activeContext?.kind === "manual"
+          ? playtest.manualCandidates
+          : undefined,
       cellFills,
       selectedCellIds: editor.selectedCellIds,
-      annotations: [],
+      annotations: candidates.sceneProjection.annotations,
       entityCapabilities: validation.capability?.entities ?? {},
     }),
     [
       cellFills,
+      candidates.sceneProjection,
       editor.selectedCellIds,
+      activeContext?.kind,
       playtest.manualCandidates,
       playtest.values,
       validation.capability,
@@ -236,10 +243,8 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
                 ))}
               </div>
             ) : null}
-            <div className="context-strip" aria-label="Active layer">
-              <strong>Layer: {activeContextName}</strong>
-              <span>Manual playtest marks</span>
-            </div>
+            <CandidateContextTabs controller={controller} />
+            <CandidateContextOutlet controller={controller} />
             {playtest.inputMode === "erase" ? (
               <button
                 className="erase-selected-button"

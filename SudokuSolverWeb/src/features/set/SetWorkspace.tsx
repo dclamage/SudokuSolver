@@ -6,6 +6,8 @@ import {
   type EditorTool,
 } from "../../app/AppController";
 import { useExternalStore } from "../../app/useExternalStore";
+import { CandidateContextOutlet } from "../candidates/CandidateContextOutlet";
+import { CandidateContextTabs } from "../candidates/CandidateContextTabs";
 import { PuzzleCanvas } from "../../scene/PuzzleCanvas";
 import type { PuzzleSceneView } from "../../scene/types";
 import { InspectorPanel } from "./InspectorPanel";
@@ -73,16 +75,17 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
   const puzzleSnapshot = useExternalStore(controller.puzzle);
   const editor = useExternalStore(controller.editor);
   const validation = useExternalStore(controller.validation);
+  const candidates = useExternalStore(controller.candidates);
   const selectedCellId = editor.selectedCellIds[0];
   const sceneView = useMemo<PuzzleSceneView>(
     () => ({
       values: {},
-      candidates: {},
+      candidates: candidates.sceneProjection.candidates,
       selectedCellIds: editor.selectedCellIds,
-      annotations: [],
+      annotations: candidates.sceneProjection.annotations,
       entityCapabilities: validation.capability?.entities ?? {},
     }),
-    [editor.selectedCellIds, validation.capability],
+    [candidates.sceneProjection, editor.selectedCellIds, validation.capability],
   );
 
   const enterGiven = (valueId: string) => {
@@ -165,6 +168,8 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
               onSelectCell={selectCell}
             />
           </div>
+          <CandidateContextTabs controller={controller} />
+          <CandidateContextOutlet controller={controller} />
           <div className="canvas-toolbar" aria-label="Canvas toolbar">
             <button
               type="button"

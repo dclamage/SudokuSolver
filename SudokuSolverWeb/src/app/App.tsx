@@ -115,8 +115,7 @@ function AppHeader({
 
 function MobileLayersSheet({ controller }: AppProps) {
   const editor = useExternalStore(controller.editor);
-  const contexts = useExternalStore(controller.puzzle).document.authoring
-    .candidateContexts;
+  const candidateState = useExternalStore(controller.candidates);
   if (editor.mobileSheet !== "layers") {
     return null;
   }
@@ -137,13 +136,13 @@ function MobileLayersSheet({ controller }: AppProps) {
         </button>
       </div>
       <div className="layer-list">
-        {contexts.map((context) => (
+        {candidateState.definitions.map((context) => (
           <button
             key={context.id}
             type="button"
             aria-label={context.name}
-            aria-pressed={editor.activeContextId === context.id}
-            onClick={() => controller.editor.setActiveContext(context.id)}
+            aria-pressed={candidateState.activeContextId === context.id}
+            onClick={() => controller.candidates.activate(context.id)}
           >
             <span>{context.name}</span>
             <small>{context.kind === "manual" ? "Manual" : "Solver"}</small>

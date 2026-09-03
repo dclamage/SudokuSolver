@@ -1,4 +1,8 @@
 import { computeSemanticHash } from "../domain/puzzle/computeSemanticHash";
+import {
+  CandidateContextController,
+  type CandidateWorkScheduler,
+} from "../domain/candidates/CandidateContextController";
 import type { PuzzleStore } from "../domain/puzzle/PuzzleStore";
 import type {
   CandidateContextId,
@@ -271,6 +275,7 @@ export interface AppControllerOptions {
   readonly createRequestId?: () => string;
   readonly now?: () => number;
   readonly persist?: (document: PuzzlePackageV1) => void;
+  readonly scheduleCandidateWork?: CandidateWorkScheduler;
 }
 
 export class AppController {
@@ -278,11 +283,13 @@ export class AppController {
   public readonly editor = new EditorStore();
   public readonly playtest: PlaytestSession;
   public readonly validation: DocumentValidationStore;
+  public readonly candidates: CandidateContextController;
   public readonly solver: SolverClient;
   public readonly hasPersistence: boolean;
 
   private readonly listeners = new Set<StoreListener>();
   private readonly unsubscribePuzzle: () => void;
+  private candidateHashGeneration = 0;
   private snapshot: AppControllerSnapshot = Object.freeze({
     workspace: "set",
     walkthroughOpen: false,
@@ -293,19 +300,42 @@ export class AppController {
     this.solver = options.solver;
     this.hasPersistence = options.persist !== undefined;
     this.playtest = new PlaytestSession(options.now);
+    const createRequestId =
+      options.createRequestId ?? (() => crypto.randomUUID());
+    const initialDocument = options.puzzle.getSnapshot().document;
+    this.candidates = new CandidateContextController({
+      definitions: initialDocument.authoring.candidateContexts,
+      activeContextId: this.editor.getSnapshot().activeContextId,
+      document: initialDocument,
+      semanticHash: null,
+      solver: options.solver,
+      createRequestId,
+      schedule: options.scheduleCandidateWork,
+      onActiveContextChanged: (contextId) =>
+        this.editor.setActiveContext(contextId),
+    });
     this.validation = new DocumentValidationStore(
       options.solver,
-      options.createRequestId ?? (() => crypto.randomUUID()),
-      options.puzzle.getSnapshot().document,
+      createRequestId,
+      initialDocument,
     );
     this.unsubscribePuzzle = this.puzzle.subscribe(() => {
       const puzzleSnapshot = this.puzzle.getSnapshot();
       options.persist?.(puzzleSnapshot.document);
       if (puzzleSnapshot.lastChange?.semantic === true) {
         this.validation.validate(puzzleSnapshot.document);
+        this.updateCandidateSemanticIdentity(puzzleSnapshot.document);
+      } else {
+        this.candidates.onPuzzleChanged({
+          documentRevision: puzzleSnapshot.document.revision,
+          semanticRevision: puzzleSnapshot.document.semanticRevision,
+          semantic: false,
+          document: puzzleSnapshot.document,
+        });
       }
     });
-    this.validation.validate(this.puzzle.getSnapshot().document);
+    this.validation.validate(initialDocument);
+    this.updateCandidateSemanticIdentity(initialDocument);
   }
 
   public readonly getSnapshot = (): AppControllerSnapshot => this.snapshot;
@@ -341,6 +371,8 @@ export class AppController {
 
   public dispose(): void {
     this.unsubscribePuzzle();
+    this.candidateHashGeneration += 1;
+    this.candidates.dispose();
     this.validation.dispose();
     this.solver.dispose();
     this.listeners.clear();
@@ -351,6 +383,30 @@ export class AppController {
     for (const listener of [...this.listeners]) {
       listener();
     }
+  }
+
+  private updateCandidateSemanticIdentity(document: PuzzlePackageV1): void {
+    this.candidateHashGeneration += 1;
+    const generation = this.candidateHashGeneration;
+    this.candidates.onPuzzleChanged({
+      documentRevision: document.revision,
+      semanticRevision: document.semanticRevision,
+      semanticHash: null,
+      semantic: true,
+      document,
+    });
+    void computeSemanticHash(document).then((semanticHash) => {
+      if (generation !== this.candidateHashGeneration) {
+        return;
+      }
+      this.candidates.onPuzzleChanged({
+        documentRevision: document.revision,
+        semanticRevision: document.semanticRevision,
+        semanticHash,
+        semantic: true,
+        document,
+      });
+    });
   }
 }
 

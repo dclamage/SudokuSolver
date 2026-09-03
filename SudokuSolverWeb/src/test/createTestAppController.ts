@@ -67,6 +67,10 @@ export function createTestAppController(
       requestIds.push(requestId);
       return requestId;
     },
+    scheduleCandidateWork: (run) => {
+      run();
+      return () => undefined;
+    },
   });
   return Object.assign(controller, {
     testDependencies: {

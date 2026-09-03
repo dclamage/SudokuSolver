@@ -1,0 +1,124 @@
+.candidate-context-navigation {
+  display: flex;
+  align-items: stretch;
+  gap: 0.45rem;
+  width: min(100%, 60rem);
+  min-width: 0;
+  margin: 0.75rem auto 0;
+  color: #172027;
+}
+
+.candidate-context-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.candidate-context-tab-group {
+  display: flex;
+  flex: 0 0 auto;
+}
+
+.candidate-context-tab,
+.candidate-context-settings,
+.candidate-context-add {
+  min-height: var(--control-min-size);
+  border-color: #bcc7ce !important;
+  border-radius: 0 !important;
+  color: #172027 !important;
+}
+
+.candidate-context-tab {
+  display: grid;
+  align-content: center;
+  min-width: 8.5rem;
+  padding: 0.3rem 0.75rem;
+  text-align: left;
+}
+
+.candidate-context-tab small {
+  color: #667681;
+  font-size: 0.68rem;
+  text-transform: capitalize;
+}
+
+.candidate-context-tab[aria-selected="true"] {
+  border-color: #138eb5 !important;
+  background: #dff6fd !important;
+  box-shadow: inset 0 -3px #138eb5;
+}
+
+.candidate-context-settings {
+  min-width: var(--control-min-size);
+  margin-left: -1px;
+}
+
+.candidate-context-add {
+  flex: 0 0 auto;
+  padding: 0 0.75rem;
+  white-space: nowrap;
+}
+
+.candidate-context-panel {
+  display: grid;
+  grid-template-columns: minmax(8rem, auto) minmax(12rem, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  width: min(100%, 60rem);
+  min-height: 4.25rem;
+  margin: 0 auto 0.75rem;
+  padding: 0.65rem 0.8rem;
+  border: 1px solid #d4dadd;
+  background: #fff;
+  color: #172027;
+}
+
+.candidate-context-panel h2,
+.candidate-context-panel p {
+  margin: 0;
+}
+
+.candidate-context-panel p {
+  color: #5d6a73;
+  font-size: 0.82rem;
+}
+
+.candidate-context-status {
+  color: #52616a;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+@media (max-width: 719px) {
+  .candidate-context-navigation,
+  .candidate-context-panel {
+    width: 100%;
+  }
+
+  .candidate-context-tab {
+    min-width: 7.75rem;
+  }
+
+  .candidate-context-add {
+    width: var(--control-min-size);
+    padding: 0;
+    overflow: hidden;
+    color: transparent !important;
+  }
+
+  .candidate-context-add span {
+    color: #172027;
+  }
+
+  .candidate-context-panel {
+    grid-template-columns: 1fr auto;
+    gap: 0.25rem 0.75rem;
+  }
+
+  .candidate-context-panel p {
+    grid-column: 1 / -1;
+  }
+}

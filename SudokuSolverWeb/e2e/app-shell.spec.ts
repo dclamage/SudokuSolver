@@ -3,9 +3,15 @@ import { expect, test } from "@playwright/test";
 test("shows only Set and Playtest as primary workspaces", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.getByRole("tab", { name: "Set" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Playtest" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Analyze" })).toHaveCount(0);
+  await expect(
+    page.getByRole("tab", { name: "Set", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "Playtest", exact: true }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("tab", { name: "Analyze", exact: true }),
+  ).toHaveCount(0);
 });
 
 test("keeps mobile cells touch-sized without page overflow and sheets on-screen", async ({
@@ -39,7 +45,9 @@ test("keeps mobile cells touch-sized without page overflow and sheets on-screen"
   }
 
   for (const workspace of ["Set", "Playtest"] as const) {
-    await page.getByRole("tab", { name: workspace }).click();
+    await page
+      .getByRole("tab", { name: workspace, exact: true })
+      .click();
     if (workspace === "Playtest") {
       await expect(page.locator(".playtest-heading")).toHaveCSS(
         "background-color",
