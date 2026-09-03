@@ -29,4 +29,13 @@ describe("App", () => {
     );
     expect(screen.queryByRole("tab", { name: "Layers" })).toBeNull();
   });
+
+  it("labels a production-like in-memory session as not saved", () => {
+    render(
+      <App controller={createTestAppController({ withPersistence: false })} />,
+    );
+
+    expect(screen.getByText("Session only · not saved")).toBeVisible();
+    expect(screen.queryByText("Saved locally")).toBeNull();
+  });
 });

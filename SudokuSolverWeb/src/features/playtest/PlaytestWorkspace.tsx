@@ -1,10 +1,14 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import type { AppController } from "../../app/AppController";
+import {
+  documentValidationLabel,
+  type AppController,
+} from "../../app/AppController";
 import { useExternalStore } from "../../app/useExternalStore";
 import { PuzzleCanvas } from "../../scene/PuzzleCanvas";
-import type { PuzzleSceneView } from "../../scene/types";
+import type { PuzzleSceneView, SceneCellFill } from "../../scene/types";
 import type { PlaytestInputMode } from "./PlaytestSession";
+import type { PlaytestSession } from "./PlaytestSession";
 
 export interface PlaytestWorkspaceProps {
   controller: AppController;
@@ -22,6 +26,13 @@ const inputModes: readonly {
   { id: "erase", label: "Erase", glyph: "⌫" },
 ];
 
+const cellFillPalette: Readonly<Record<string, SceneCellFill>> = Object.freeze({
+  cyan: Object.freeze({ color: "#b9efff", label: "cyan" }),
+  green: Object.freeze({ color: "#c9f5d5", label: "green" }),
+  yellow: Object.freeze({ color: "#fff0b3", label: "yellow" }),
+  rose: Object.freeze({ color: "#ffd1dc", label: "rose" }),
+});
+
 function formatElapsed(milliseconds: number) {
   const totalSeconds = Math.floor(milliseconds / 1000);
   const minutes = Math.floor(totalSeconds / 60);
@@ -29,20 +40,34 @@ function formatElapsed(milliseconds: number) {
   return `${minutes}:${seconds}`;
 }
 
-function mergeCandidates(
-  corner: Readonly<Record<string, readonly string[]>>,
-  centre: Readonly<Record<string, readonly string[]>>,
-) {
-  const cellIds = new Set([...Object.keys(corner), ...Object.keys(centre)]);
+function ElapsedTimer({ session }: { session: PlaytestSession }) {
+  const [elapsed, setElapsed] = useState(() =>
+    session.getElapsedMilliseconds(),
+  );
+  useEffect(() => {
+    const timerId = window.setInterval(() => {
+      setElapsed(session.getElapsedMilliseconds());
+    }, 1_000);
+    return () => window.clearInterval(timerId);
+  }, [session]);
+  return <time aria-label="Elapsed time">{formatElapsed(elapsed)}</time>;
+}
+
+function presentCellFills(
+  colors: Readonly<Record<string, readonly string[]>>,
+): Readonly<Record<string, SceneCellFill>> {
   return Object.fromEntries(
-    [...cellIds].map((cellId) => [
-      cellId,
-      [...new Set([...(corner[cellId] ?? []), ...(centre[cellId] ?? [])])],
-    ]),
+    Object.entries(colors).flatMap(([cellId, colorIds]) => {
+      const fill = cellFillPalette[colorIds[0]];
+      return fill === undefined ? [] : [[cellId, fill]];
+    }),
   );
 }
 
-function inputLabel(mode: PlaytestInputMode, valueLabel: string) {
+function inputLabel(
+  mode: "digit" | "corner" | "centre",
+  valueLabel: string,
+) {
   switch (mode) {
     case "digit":
       return `Enter ${valueLabel}`;
@@ -50,10 +75,6 @@ function inputLabel(mode: PlaytestInputMode, valueLabel: string) {
       return `Toggle corner ${valueLabel}`;
     case "centre":
       return `Toggle centre ${valueLabel}`;
-    case "color":
-      return `Color shortcut ${valueLabel}`;
-    case "erase":
-      return `Erase with ${valueLabel}`;
   }
 }
 
@@ -68,25 +89,24 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
     puzzle.authoring.candidateContexts.find(
       (context) => context.id === editor.activeContextId,
     )?.name ?? "Setter notes";
-  const candidates = useMemo(
-    () =>
-      mergeCandidates(
-        playtest.manualCandidates.corner,
-        playtest.manualCandidates.centre,
-      ),
-    [playtest.manualCandidates],
+  const cellFills = useMemo(
+    () => presentCellFills(playtest.colors),
+    [playtest.colors],
   );
   const sceneView = useMemo<PuzzleSceneView>(
     () => ({
       values: playtest.values,
-      candidates,
+      candidates: {},
+      candidateMarks: playtest.manualCandidates,
+      cellFills,
       selectedCellIds: editor.selectedCellIds,
       annotations: [],
       entityCapabilities: validation.capability?.entities ?? {},
     }),
     [
-      candidates,
+      cellFills,
       editor.selectedCellIds,
+      playtest.manualCandidates,
       playtest.values,
       validation.capability,
     ],
@@ -119,24 +139,20 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
         );
         break;
       case "color":
-        controller.playtest.applyColor(selectedCellId, "cyan");
-        break;
       case "erase":
-        controller.playtest.erase(selectedCellId);
         break;
     }
   };
 
   const rulesOpen = editor.mobileSheet === "rules";
+  const keypadMode =
+    playtest.inputMode === "digit" ||
+    playtest.inputMode === "corner" ||
+    playtest.inputMode === "centre"
+      ? playtest.inputMode
+      : null;
   const statusMessage =
-    playtest.checkMessage ??
-    (validation.status === "validating"
-      ? "Checking puzzle…"
-      : validation.status === "invalid"
-        ? "Puzzle definition needs attention"
-        : validation.status === "error"
-          ? "Validation unavailable"
-          : "Playable");
+    playtest.checkMessage ?? documentValidationLabel(validation);
 
   return (
     <section
@@ -161,9 +177,7 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
           <span className="eyebrow">Playtest</span>
           <h1>{puzzle.metadata.title}</h1>
         </div>
-        <time aria-label="Elapsed time">
-          {formatElapsed(controller.playtest.getElapsedMilliseconds())}
-        </time>
+        <ElapsedTimer session={controller.playtest} />
         <button
           type="button"
           aria-label="Check"
@@ -226,18 +240,37 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
               <strong>Layer: {activeContextName}</strong>
               <span>Manual playtest marks</span>
             </div>
-            <div className="keypad" aria-label="Playtest keypad">
-              {puzzle.domains["digits-1-9"].values.map((value) => (
-                <button
-                  key={value.id}
-                  type="button"
-                  aria-label={inputLabel(playtest.inputMode, value.label)}
-                  onClick={() => enter(value.id)}
-                >
-                  {value.label}
-                </button>
-              ))}
-            </div>
+            {playtest.inputMode === "erase" ? (
+              <button
+                className="erase-selected-button"
+                type="button"
+                aria-label="Erase selected cell"
+                disabled={
+                  selectedCellId === undefined ||
+                  puzzle.givens[selectedCellId] !== undefined
+                }
+                onClick={() => {
+                  if (selectedCellId !== undefined) {
+                    controller.playtest.erase(selectedCellId);
+                  }
+                }}
+              >
+                Erase selected cell
+              </button>
+            ) : keypadMode !== null ? (
+              <div className="keypad" aria-label="Playtest keypad">
+                {puzzle.domains["digits-1-9"].values.map((value) => (
+                  <button
+                    key={value.id}
+                    type="button"
+                    aria-label={inputLabel(keypadMode, value.label)}
+                    onClick={() => enter(value.id)}
+                  >
+                    {value.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
           <div
             className={`puzzle-status puzzle-status--${validation.status}`}

@@ -1,4 +1,4 @@
-.app-shell {
+.app-shell.app-shell {
   --shell-bg: #11181e;
   --shell-panel: #172027;
   --shell-panel-raised: #202a31;
@@ -297,6 +297,10 @@
   box-shadow: 0 0.8rem 2.5rem rgb(13 20 24 / 11%);
 }
 
+.canvas-stage .puzzle-canvas {
+  inline-size: min(100%, calc(var(--puzzle-scene-width) * 62px));
+}
+
 .canvas-toolbar {
   display: flex;
   align-items: center;
@@ -335,6 +339,22 @@
   font-size: 1.15rem;
 }
 
+.given-actions {
+  display: flex;
+  justify-content: center;
+  width: min(100%, 40rem);
+  margin: 0.5rem auto 0.75rem;
+}
+
+.given-actions button,
+.app-shell .erase-selected-button {
+  min-width: 10rem;
+  padding-inline: 1rem;
+  border-color: #b8c1c7;
+  background: #fff;
+  color: #273139;
+}
+
 .puzzle-status {
   display: flex;
   align-items: center;
@@ -357,6 +377,12 @@
 .puzzle-status--error > span:first-child,
 .puzzle-status--invalid > span:first-child {
   color: #d4504c;
+}
+
+.puzzle-status--partial > span:first-child,
+.puzzle-status--visualOnly > span:first-child,
+.puzzle-status--coverageUnknown > span:first-child {
+  color: #b26a00;
 }
 
 .selected-item-card {
@@ -428,7 +454,12 @@
   width: min(100% - 2rem, 72rem);
   margin-block: 0;
   padding: 0.8rem 0;
+  background: var(--shell-bg);
   color: #fff;
+}
+
+.workspace--playtest {
+  background: var(--shell-bg);
 }
 
 .playtest-heading > button {
@@ -725,15 +756,22 @@
 
   .canvas-stage,
   .canvas-stage--playtest {
+    display: block;
+    place-items: start;
     width: 100%;
     padding: 0.35rem;
+    overflow-x: auto;
+    overflow-y: hidden;
     border-right: 0;
     border-left: 0;
     box-shadow: none;
+    overscroll-behavior-x: contain;
   }
 
-  .puzzle-canvas {
-    width: 100%;
+  .canvas-stage .puzzle-canvas {
+    inline-size: calc(var(--puzzle-scene-width) * 44px);
+    max-inline-size: none;
+    touch-action: pan-x pan-y;
   }
 
   .canvas-toolbar {
@@ -760,7 +798,7 @@
   }
 
   .element-list {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .element-button {
@@ -786,8 +824,11 @@
     left: 0;
     z-index: 35;
     display: none;
+    width: 100%;
+    max-width: 100vw;
     max-height: min(70svh, 36rem);
     padding: 1rem 1.25rem;
+    overflow-x: hidden;
     overflow-y: auto;
     border: 1px solid var(--shell-border);
     border-radius: 1.5rem 1.5rem 0 0;
@@ -801,9 +842,14 @@
     display: block;
   }
 
-  .keypad {
-    order: 5;
+  .workspace-layout--set .keypad {
+    order: 4;
     grid-template-columns: repeat(3, 1fr);
+    width: calc(100% - 1rem);
+  }
+
+  .workspace-layout--set .given-actions {
+    order: 5;
     width: calc(100% - 1rem);
   }
 
@@ -815,17 +861,25 @@
   .puzzle-status {
     order: 6;
     width: calc(100% - 1rem);
-    margin-bottom: 0.75rem;
+    margin-bottom: calc(6.05rem + env(safe-area-inset-bottom));
   }
 
   .playtest-heading {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
     width: 100%;
     min-height: 6.3rem;
+    gap: 0.35rem;
     padding: 0.5rem 0.75rem;
   }
 
+  .playtest-heading > button {
+    min-width: var(--control-min-size);
+    padding-inline: 0.2rem;
+  }
+
   .playtest-heading h1 {
-    max-width: 9rem;
+    max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
@@ -859,8 +913,18 @@
     bottom: calc(5.3rem + env(safe-area-inset-bottom));
     left: 0;
     width: 100%;
+    max-width: 100vw;
     max-height: min(62svh, 34rem);
+    overflow-x: hidden;
     overflow-y: auto;
     border-radius: 1.5rem 1.5rem 0 0;
+  }
+
+  .inspector-fields,
+  .selected-item-card,
+  .position-editor,
+  .layer-list,
+  .element-button {
+    min-width: 0;
   }
 }

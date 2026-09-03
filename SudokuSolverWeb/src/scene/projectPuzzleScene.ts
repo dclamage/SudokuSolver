@@ -502,7 +502,58 @@ function projectCandidateNodes(
   region: ContentRegion,
   view: PuzzleSceneView,
 ): SceneTextNode[] {
-  const candidateIds = view.candidates[cellId];
+  if (view.candidateMarks === undefined) {
+    return projectCornerCandidateNodes(
+      puzzle,
+      cellId,
+      cellIndex,
+      region,
+      view.candidates[cellId],
+    );
+  }
+
+  const corner = projectCornerCandidateNodes(
+    puzzle,
+    cellId,
+    cellIndex,
+    region,
+    view.candidateMarks.corner[cellId],
+    "corner",
+  );
+  const centreIds = view.candidateMarks.centre[cellId];
+  if (centreIds === undefined || centreIds.length === 0) {
+    return corner;
+  }
+  const cell = puzzle.cells[cellId];
+  const centreSet = new Set(centreIds);
+  const labels = puzzle.domains[cell.domainId].values
+    .filter((value) => centreSet.has(value.id))
+    .map((value) => value.label);
+  if (labels.length === 0) {
+    return corner;
+  }
+  return [
+    ...corner,
+    {
+      kind: "text",
+      id: `candidate-centre-${cellId}`,
+      x: region.center.x,
+      y: region.center.y,
+      text: labels.join(" "),
+      role: "candidate",
+      candidateKind: "centre",
+    },
+  ];
+}
+
+function projectCornerCandidateNodes(
+  puzzle: PuzzlePackageV1,
+  cellId: string,
+  cellIndex: number,
+  region: ContentRegion,
+  candidateIds: readonly string[] | undefined,
+  candidateKind?: "corner",
+): SceneTextNode[] {
   if (candidateIds === undefined || candidateIds.length === 0) {
     return [];
   }
@@ -524,11 +575,15 @@ function projectCandidateNodes(
     return [
       {
         kind: "text" as const,
-        id: `candidate-${cellId}-${value.id}`,
+        id:
+          candidateKind === undefined
+            ? `candidate-${cellId}-${value.id}`
+            : `candidate-${candidateKind}-${cellId}-${value.id}`,
         x: region.minX + ((column + 0.5) * regionWidth) / columns,
         y: region.minY + ((row + 0.5) * regionHeight) / columns,
         text: value.label,
         role: "candidate" as const,
+        candidateKind,
         clip: createCandidateClip(
           `candidate-clip-${cellIndex}-${domainIndex}`,
           region,
@@ -576,15 +631,35 @@ function projectCellContent(
   ];
 }
 
-function describeCellContent(content: readonly SceneTextNode[]) {
+function describeCellContent(
+  content: readonly SceneTextNode[],
+  fill: { label: string } | undefined,
+) {
   const displayedValue = content.find((node) => node.role !== "candidate");
   if (displayedValue !== undefined) {
-    return `${displayedValue.role} ${displayedValue.text}`;
+    const valueDescription = `${displayedValue.role} ${displayedValue.text}`;
+    return fill === undefined
+      ? valueDescription
+      : `${valueDescription}; color ${fill.label}`;
   }
-  const candidates = content
-    .filter((node) => node.role === "candidate")
-    .map((node) => node.text);
-  return candidates.length === 0 ? undefined : `candidates ${candidates.join(", ")}`;
+  const describeCandidates = (kind: SceneTextNode["candidateKind"]) => {
+    const values = content
+      .filter(
+        (node) => node.role === "candidate" && node.candidateKind === kind,
+      )
+      .map((node) => node.text);
+    return values.length === 0 ? undefined : values.join(", ");
+  };
+  const legacy = describeCandidates(undefined);
+  const corner = describeCandidates("corner");
+  const centre = describeCandidates("centre");
+  const descriptions = [
+    legacy === undefined ? undefined : `candidates ${legacy}`,
+    corner === undefined ? undefined : `corner candidates ${corner}`,
+    centre === undefined ? undefined : `centre candidates ${centre}`,
+    fill === undefined ? undefined : `color ${fill.label}`,
+  ].filter((description): description is string => description !== undefined);
+  return descriptions.length === 0 ? undefined : descriptions.join("; ");
 }
 
 function segmentLength(segment: Segment) {
@@ -1027,6 +1102,7 @@ export function projectPuzzleScene(
 
       const capability = getCellCapability(cell.id, view);
       const solverParticipation = capability?.status ?? "unknown";
+      const fill = view.cellFills?.[cell.id];
       const content =
         geometry.contentRegion === undefined
           ? []
@@ -1037,7 +1113,7 @@ export function projectPuzzleScene(
               geometry.contentRegion,
               view,
             );
-      const contentDescription = describeCellContent(content);
+      const contentDescription = describeCellContent(content, fill);
       const baseLabel = cell.label ?? `Cell ${cell.id}`;
       const reason = capability?.reason?.trim();
       return {
@@ -1052,6 +1128,7 @@ export function projectPuzzleScene(
         description: `Solver participation: ${humanizeParticipation(solverParticipation)}.${reason === undefined || reason === "" ? "" : ` ${reason}`}${geometry.geometryIssue === undefined ? "" : ` Presentation geometry: ${geometry.geometryIssue.message}`}`,
         selected: selectedCellIds.has(cell.id),
         solverParticipation,
+        fill,
         geometryIssue: geometry.geometryIssue,
         content,
       };

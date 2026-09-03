@@ -22,6 +22,7 @@ function textNodesEqual(
     first.y === second.y &&
     first.text === second.text &&
     first.role === second.role &&
+    first.candidateKind === second.candidateKind &&
     first.clip?.id === second.clip?.id &&
     first.clip?.x === second.clip?.x &&
     first.clip?.y === second.clip?.y &&
@@ -39,6 +40,8 @@ function cellNodesEqual(first: SceneCellNode, second: SceneCellNode) {
     first.description === second.description &&
     first.selected === second.selected &&
     first.solverParticipation === second.solverParticipation &&
+    first.fill?.color === second.fill?.color &&
+    first.fill?.label === second.fill?.label &&
     first.geometryIssue?.code === second.geometryIssue?.code &&
     first.geometryIssue?.affects === second.geometryIssue?.affects &&
     first.geometryIssue?.message === second.geometryIssue?.message &&
@@ -56,12 +59,18 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
   const displayedValue = node.content.find(
     (content) => content.role !== "candidate",
   );
+  const candidateKinds = [undefined, "corner", "centre"] as const;
+  const surfaceStyle =
+    node.fill === undefined
+      ? undefined
+      : ({ "--puzzle-cell-fill": node.fill.color } as CSSProperties);
 
   return (
     <g
       className="puzzle-cell"
       data-cell-id={node.cellId}
       data-solver-participation={node.solverParticipation}
+      data-cell-fill={node.fill?.label}
       data-testid={node.id}
       role="button"
       tabIndex={0}
@@ -69,7 +78,7 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
       aria-description={node.description}
       aria-pressed={node.selected}
     >
-      <path className="puzzle-cell__surface" d={node.path} />
+      <path className="puzzle-cell__surface" d={node.path} style={surfaceStyle} />
       {displayedValue === undefined ? null : (
         <text
           className={`puzzle-cell__value puzzle-cell__value--${displayedValue.role}`}
@@ -81,41 +90,53 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
           {displayedValue.text}
         </text>
       )}
-      {candidates.length > 0 ? (
-        <g data-testid={`candidates-${node.cellId}`} aria-hidden="true">
-          {candidates.map((candidate) =>
-            candidate.clip === undefined ? (
-              <text
-                className="puzzle-cell__candidate"
-                key={candidate.id}
-                x={candidate.x}
-                y={candidate.y}
-              >
-                {candidate.text}
-              </text>
-            ) : (
-              <svg
-                className="puzzle-cell__candidate-viewport"
-                key={candidate.id}
-                x={candidate.clip.x}
-                y={candidate.clip.y}
-                width={candidate.clip.width}
-                height={candidate.clip.height}
-                viewBox={`${candidate.clip.x} ${candidate.clip.y} ${candidate.clip.width} ${candidate.clip.height}`}
-                overflow="hidden"
-              >
+      {candidateKinds.map((candidateKind) => {
+        const markedCandidates = candidates.filter(
+          (candidate) => candidate.candidateKind === candidateKind,
+        );
+        if (markedCandidates.length === 0) {
+          return null;
+        }
+        const testId =
+          candidateKind === undefined
+            ? `candidates-${node.cellId}`
+            : `${candidateKind}-candidates-${node.cellId}`;
+        return (
+          <g data-testid={testId} aria-hidden="true" key={testId}>
+            {markedCandidates.map((candidate) =>
+              candidate.clip === undefined ? (
                 <text
-                  className="puzzle-cell__candidate"
+                  className={`puzzle-cell__candidate${candidate.candidateKind === undefined ? "" : ` puzzle-cell__candidate--${candidate.candidateKind}`}`}
+                  key={candidate.id}
                   x={candidate.x}
                   y={candidate.y}
                 >
                   {candidate.text}
                 </text>
-              </svg>
-            ),
-          )}
-        </g>
-      ) : null}
+              ) : (
+                <svg
+                  className="puzzle-cell__candidate-viewport"
+                  key={candidate.id}
+                  x={candidate.clip.x}
+                  y={candidate.clip.y}
+                  width={candidate.clip.width}
+                  height={candidate.clip.height}
+                  viewBox={`${candidate.clip.x} ${candidate.clip.y} ${candidate.clip.width} ${candidate.clip.height}`}
+                  overflow="hidden"
+                >
+                  <text
+                    className={`puzzle-cell__candidate${candidate.candidateKind === undefined ? "" : ` puzzle-cell__candidate--${candidate.candidateKind}`}`}
+                    x={candidate.x}
+                    y={candidate.y}
+                  >
+                    {candidate.text}
+                  </text>
+                </svg>
+              ),
+            )}
+          </g>
+        );
+      })}
     </g>
   );
 }, (previous, next) => cellNodesEqual(previous.node, next.node));

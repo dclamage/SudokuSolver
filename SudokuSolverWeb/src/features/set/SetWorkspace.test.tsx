@@ -73,4 +73,32 @@ describe("Set workspace", () => {
     expect(controller.editor.getSnapshot().activeTool).toBe("region");
     expect(controller.editor.getSnapshot().mobileSheet).toBeNull();
   });
+
+  it("does not enter a given while another element tool is active", async () => {
+    const controller = createTestAppController();
+    render(<App controller={controller} />);
+
+    await userEvent.click(screen.getByTestId("cell-r1c1"));
+    await userEvent.click(screen.getByRole("button", { name: "Region" }));
+    await userEvent.click(screen.getByRole("button", { name: "Enter 5" }));
+
+    expect(
+      controller.puzzle.getSnapshot().document.givens.r1c1,
+    ).toBeUndefined();
+  });
+
+  it("clears the selected given with a visible control", async () => {
+    const controller = createTestAppController();
+    render(<App controller={controller} />);
+
+    await userEvent.click(screen.getByTestId("cell-r1c1"));
+    await userEvent.click(screen.getByRole("button", { name: "Enter 5" }));
+    expect(screen.getByTestId("given-r1c1")).toHaveTextContent("5");
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear given" }));
+    expect(screen.queryByTestId("given-r1c1")).toBeNull();
+    expect(
+      controller.puzzle.getSnapshot().document.givens.r1c1,
+    ).toBeUndefined();
+  });
 });

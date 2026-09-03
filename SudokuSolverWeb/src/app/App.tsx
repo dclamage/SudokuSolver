@@ -104,8 +104,10 @@ function AppHeader({
       </div>
       <HistoryActions controller={controller} workspace={workspace} />
       <div className="save-state">
-        <span aria-hidden="true">☁</span>
-        Saved locally
+        <span aria-hidden="true">{controller.hasPersistence ? "☁" : "•"}</span>
+        {controller.hasPersistence
+          ? "Saved locally"
+          : "Session only · not saved"}
       </div>
     </header>
   );

@@ -105,6 +105,9 @@ export class EditorStore {
 export type DocumentValidationStatus =
   | "validating"
   | "valid"
+  | "partial"
+  | "visualOnly"
+  | "coverageUnknown"
   | "invalid"
   | "error";
 
@@ -228,7 +231,7 @@ export class DocumentValidationStore {
       return;
     }
     this.setSnapshot({
-      status: response.capability.contradiction ? "invalid" : "valid",
+      status: deriveValidationStatus(response.capability),
       documentRevision: response.documentRevision,
       semanticRevision: response.semanticRevision,
       semanticHash: response.semanticHash,
@@ -276,6 +279,7 @@ export class AppController {
   public readonly playtest: PlaytestSession;
   public readonly validation: DocumentValidationStore;
   public readonly solver: SolverClient;
+  public readonly hasPersistence: boolean;
 
   private readonly listeners = new Set<StoreListener>();
   private readonly unsubscribePuzzle: () => void;
@@ -287,6 +291,7 @@ export class AppController {
   public constructor(options: AppControllerOptions) {
     this.puzzle = options.puzzle;
     this.solver = options.solver;
+    this.hasPersistence = options.persist !== undefined;
     this.playtest = new PlaytestSession(options.now);
     this.validation = new DocumentValidationStore(
       options.solver,
@@ -313,6 +318,11 @@ export class AppController {
   public setWorkspace(workspace: WorkspaceId): void {
     if (workspace === this.snapshot.workspace) {
       return;
+    }
+    if (workspace === "playtest") {
+      this.playtest.resumeTimer();
+    } else {
+      this.playtest.pauseTimer();
     }
     this.update({ workspace });
   }
@@ -342,6 +352,50 @@ export class AppController {
       listener();
     }
   }
+}
+
+export function documentValidationLabel(
+  snapshot: DocumentValidationSnapshot,
+): string {
+  switch (snapshot.status) {
+    case "validating":
+      return "Checking puzzle…";
+    case "valid":
+      return "Valid · Fully solver-supported";
+    case "partial":
+      return "Validation limited · Partial solver coverage";
+    case "visualOnly":
+      return "Validation limited · Visual-only semantics";
+    case "coverageUnknown":
+      return "Validation complete · Coverage not reported";
+    case "invalid":
+      return snapshot.capability?.contradiction === true
+        ? "Contradiction found"
+        : "Invalid puzzle definition";
+    case "error":
+      return "Validation unavailable";
+  }
+}
+
+function deriveValidationStatus(
+  capability: CapabilityResult,
+): DocumentValidationStatus {
+  if (capability.contradiction) {
+    return "invalid";
+  }
+  const statuses = Object.values(capability.entities).map(
+    (entity) => entity.status,
+  );
+  if (statuses.includes("invalidDefinition")) {
+    return "invalid";
+  }
+  if (statuses.includes("visualOnly")) {
+    return "visualOnly";
+  }
+  if (statuses.includes("partiallyVerified")) {
+    return "partial";
+  }
+  return statuses.length === 0 ? "coverageUnknown" : "valid";
 }
 
 function errorMessage(error: unknown): string {

@@ -22,7 +22,9 @@ export interface PlaytestSessionSnapshot {
   readonly historyLength: number;
   readonly canUndo: boolean;
   readonly canRedo: boolean;
-  readonly timerStartedAt: number;
+  readonly timerStartedAt: number | null;
+  readonly elapsedMilliseconds: number;
+  readonly timerRunning: boolean;
   readonly checkMessage: string | null;
 }
 
@@ -34,6 +36,13 @@ interface PlaytestContent {
 }
 
 type PlaytestListener = () => void;
+
+const uniquenessGroupRoles: ReadonlySet<string> = new Set([
+  "row",
+  "column",
+  "region",
+  "all-different",
+]);
 
 function cloneArrayRecord<T>(
   record: Readonly<Record<CellId, readonly T[]>>,
@@ -113,12 +122,14 @@ export class PlaytestSession {
   private readonly listeners = new Set<PlaytestListener>();
   private inputMode: PlaytestInputMode = "digit";
   private checkMessage: string | null = null;
+  private timerStartedAt: number | null = null;
+  private elapsedMilliseconds = 0;
   private snapshot: PlaytestSessionSnapshot;
 
   public constructor(
     private readonly now: () => number = () => Date.now(),
   ) {
-    this.snapshot = this.createSnapshot(this.now());
+    this.snapshot = this.createSnapshot();
   }
 
   public readonly getSnapshot = (): PlaytestSessionSnapshot => this.snapshot;
@@ -133,6 +144,23 @@ export class PlaytestSession {
       return;
     }
     this.inputMode = mode;
+    this.publish();
+  }
+
+  public resumeTimer(): void {
+    if (this.timerStartedAt !== null) {
+      return;
+    }
+    this.timerStartedAt = this.now();
+    this.publish();
+  }
+
+  public pauseTimer(): void {
+    if (this.timerStartedAt === null) {
+      return;
+    }
+    this.elapsedMilliseconds = this.getElapsedMilliseconds();
+    this.timerStartedAt = null;
     this.publish();
   }
 
@@ -207,27 +235,35 @@ export class PlaytestSession {
 
   public check(puzzle: PuzzlePackageV1): void {
     const values = { ...puzzle.givens, ...this.content.values };
-    const hasConflict = Object.values(puzzle.groups).some((group) => {
-      const seen = new Set<ValueId>();
-      for (const cellId of group.cellIds) {
-        const value = values[cellId];
-        if (value !== undefined) {
-          if (seen.has(value)) {
-            return true;
+    const hasConflict = Object.values(puzzle.groups)
+      .filter((group) =>
+        group.roles.some((role) => uniquenessGroupRoles.has(role)),
+      )
+      .some((group) => {
+        const seen = new Set<ValueId>();
+        for (const cellId of group.cellIds) {
+          const value = values[cellId];
+          if (value !== undefined) {
+            if (seen.has(value)) {
+              return true;
+            }
+            seen.add(value);
           }
-          seen.add(value);
         }
-      }
-      return false;
-    });
+        return false;
+      });
     this.checkMessage = hasConflict
-      ? "Check found a conflict"
-      : "No conflicts found";
+      ? "Basic check: duplicate value in a uniqueness group. Other constraints are not checked."
+      : "Basic check: no duplicate values in uniqueness groups. Other constraints are not checked.";
     this.publish();
   }
 
   public getElapsedMilliseconds(): number {
-    return Math.max(0, this.now() - this.snapshot.timerStartedAt);
+    return Math.max(
+      0,
+      this.elapsedMilliseconds +
+        (this.timerStartedAt === null ? 0 : this.now() - this.timerStartedAt),
+    );
   }
 
   private commit(update: (content: PlaytestContent) => void): void {
@@ -244,13 +280,13 @@ export class PlaytestSession {
   }
 
   private publish(): void {
-    this.snapshot = this.createSnapshot(this.snapshot.timerStartedAt);
+    this.snapshot = this.createSnapshot();
     for (const listener of [...this.listeners]) {
       listener();
     }
   }
 
-  private createSnapshot(timerStartedAt: number): PlaytestSessionSnapshot {
+  private createSnapshot(): PlaytestSessionSnapshot {
     const values = Object.freeze({ ...this.content.values });
     const corner = freezeArrayRecord(cloneArrayRecord(this.content.corner));
     const centre = freezeArrayRecord(cloneArrayRecord(this.content.centre));
@@ -263,7 +299,9 @@ export class PlaytestSession {
       historyLength: this.undoStack.length,
       canUndo: this.undoStack.length > 0,
       canRedo: this.redoStack.length > 0,
-      timerStartedAt,
+      timerStartedAt: this.timerStartedAt,
+      elapsedMilliseconds: this.getElapsedMilliseconds(),
+      timerRunning: this.timerStartedAt !== null,
       checkMessage: this.checkMessage,
     });
   }

@@ -1,6 +1,10 @@
 import { useMemo } from "react";
 
-import type { AppController, EditorTool } from "../../app/AppController";
+import {
+  documentValidationLabel,
+  type AppController,
+  type EditorTool,
+} from "../../app/AppController";
 import { useExternalStore } from "../../app/useExternalStore";
 import { PuzzleCanvas } from "../../scene/PuzzleCanvas";
 import type { PuzzleSceneView } from "../../scene/types";
@@ -26,20 +30,6 @@ const elementTools: readonly {
   },
   { id: "more", label: "More", glyph: "•••", detail: "More elements" },
 ];
-
-function validationLabel(controller: AppController) {
-  const snapshot = controller.validation.getSnapshot();
-  switch (snapshot.status) {
-    case "validating":
-      return "Checking puzzle…";
-    case "valid":
-      return snapshot.capability === null ? "Valid" : "Valid · Solver ready";
-    case "invalid":
-      return "Puzzle needs attention";
-    case "error":
-      return "Validation unavailable";
-  }
-}
 
 function ElementButtons({
   controller,
@@ -96,13 +86,24 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
   );
 
   const enterGiven = (valueId: string) => {
-    if (selectedCellId === undefined) {
+    if (selectedCellId === undefined || editor.activeTool !== "given") {
       return;
     }
     controller.puzzle.execute({
       type: "setGiven",
       cellId: selectedCellId,
       valueId,
+    });
+  };
+
+  const clearGiven = () => {
+    if (selectedCellId === undefined || editor.activeTool !== "given") {
+      return;
+    }
+    controller.puzzle.execute({
+      type: "setGiven",
+      cellId: selectedCellId,
+      valueId: null,
     });
   };
 
@@ -215,6 +216,7 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
                   key={value.id}
                   type="button"
                   aria-label={`Enter ${value.label}`}
+                  disabled={editor.activeTool !== "given"}
                   onClick={() => enterGiven(value.id)}
                 >
                   {value.label}
@@ -222,13 +224,27 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
               ),
             )}
           </div>
+          <div className="given-actions">
+            <button
+              type="button"
+              aria-label="Clear given"
+              disabled={
+                editor.activeTool !== "given" ||
+                selectedCellId === undefined ||
+                puzzleSnapshot.document.givens[selectedCellId] === undefined
+              }
+              onClick={clearGiven}
+            >
+              Clear given
+            </button>
+          </div>
           <div
             className={`puzzle-status puzzle-status--${validation.status}`}
             role="status"
             aria-label="Puzzle status"
           >
             <span aria-hidden="true">✓</span>
-            <span>{validationLabel(controller)}</span>
+            <span>{documentValidationLabel(validation)}</span>
             <span aria-hidden="true">·</span>
             <span>Revision {puzzleSnapshot.document.semanticRevision}</span>
           </div>

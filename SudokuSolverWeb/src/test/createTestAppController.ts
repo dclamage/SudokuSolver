@@ -34,8 +34,16 @@ export type TestAppController = AppController & {
   readonly testDependencies: TestAppDependencies;
 };
 
-export function createTestAppController(): TestAppController {
+export interface TestAppControllerOptions {
+  readonly withPersistence?: boolean;
+  readonly preparePuzzle?: (puzzle: PuzzlePackageV1) => void;
+}
+
+export function createTestAppController(
+  options: TestAppControllerOptions = {},
+): TestAppController {
   const starter = createStarterPuzzle(() => "test-puzzle");
+  options.preparePuzzle?.(starter);
   const puzzle = new PuzzleStore(starter);
   const solver = new FakeSolverClient();
   const persistence = new InMemoryPuzzlePersistence(starter);
@@ -52,7 +60,7 @@ export function createTestAppController(): TestAppController {
     puzzle,
     solver,
     now: clock.now,
-    persist: persistence.save,
+    persist: options.withPersistence === false ? undefined : persistence.save,
     createRequestId: () => {
       requestNumber += 1;
       const requestId = `test-request-${requestNumber}`;

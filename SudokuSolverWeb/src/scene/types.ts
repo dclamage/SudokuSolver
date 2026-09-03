@@ -28,7 +28,13 @@ export interface SceneTextNode {
   y: number;
   text: string;
   role: "given" | "value" | "candidate";
+  candidateKind?: "corner" | "centre";
   clip?: SceneClipRect;
+}
+
+export interface SceneCellFill {
+  color: string;
+  label: string;
 }
 
 export interface SceneClipRect {
@@ -48,6 +54,7 @@ export interface SceneCellNode {
   description: string;
   selected: boolean;
   solverParticipation: SolverParticipation;
+  fill?: SceneCellFill;
   geometryIssue?: SceneGeometryIssue;
   content: readonly SceneTextNode[];
 }
@@ -73,6 +80,11 @@ export interface SceneAnnotation {
 export interface PuzzleSceneView {
   values: Readonly<Record<CellId, ValueId>>;
   candidates: Readonly<Record<CellId, readonly ValueId[]>>;
+  candidateMarks?: {
+    corner: Readonly<Record<CellId, readonly ValueId[]>>;
+    centre: Readonly<Record<CellId, readonly ValueId[]>>;
+  };
+  cellFills?: Readonly<Record<CellId, SceneCellFill>>;
   selectedCellIds: readonly CellId[];
   annotations: readonly SceneAnnotation[];
   entityCapabilities: Readonly<Record<string, CapabilityEntityResult>>;

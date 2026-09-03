@@ -14,7 +14,7 @@
 }
 
 .puzzle-cell__surface {
-  fill: #fff;
+  fill: var(--puzzle-cell-fill, #fff);
   stroke: #aeb6bd;
   stroke-width: 1px;
   vector-effect: non-scaling-stroke;
@@ -33,6 +33,11 @@
   pointer-events: none;
   text-anchor: middle;
   user-select: none;
+}
+
+.puzzle-cell__candidate--centre {
+  font-size: 0.26px;
+  font-weight: 600;
 }
 
 .puzzle-cell__value {
