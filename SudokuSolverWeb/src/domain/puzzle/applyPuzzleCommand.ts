@@ -6,6 +6,7 @@ import type {
   ValueId,
 } from "./types";
 import {
+  assertValidCandidateContext,
   isLogicalSolverCandidateContext,
   isManualCandidateContext,
   isTrueCandidatesContext,
@@ -64,20 +65,8 @@ function requireContextName(name: string) {
   }
 }
 
-function requireSolutionCountCap(solutionCountCap: number) {
-  if (!Number.isSafeInteger(solutionCountCap) || solutionCountCap < 0) {
-    throw new Error("solutionCountCap must be a non-negative safe integer");
-  }
-}
-
 function validateContext(context: CandidateContext) {
-  if (context.id.length === 0) {
-    throw new Error("candidate context ID must be a non-empty string");
-  }
-  requireContextName(context.name);
-  if (isTrueCandidatesContext(context)) {
-    requireSolutionCountCap(context.solutionCountCap);
-  }
+  assertValidCandidateContext(context);
 }
 
 function requireInsertionIndex(index: number | undefined, length: number): number {
@@ -142,6 +131,7 @@ function cloneContextWithIdentity(
   id: string,
   name: string,
 ): CandidateContext {
+  assertValidCandidateContext(source);
   if (isManualCandidateContext(source)) {
     return { id, name, kind: "manual" };
   }
@@ -311,19 +301,21 @@ export function applyPuzzleCommand(
     case "configureTrueCandidates": {
       const contextIndex = findContextIndex(document, command.contextId);
       const previous = document.authoring.candidateContexts[contextIndex];
+      assertValidCandidateContext(previous);
       if (!isTrueCandidatesContext(previous)) {
         throw new Error(
           `candidate context ${command.contextId} is not a True Candidates context`,
         );
       }
-      requireSolutionCountCap(command.solutionCountCap);
-      const contexts = [...next.authoring.candidateContexts];
-      contexts[contextIndex] = {
+      const configured: CandidateContext = {
         ...previous,
         refresh: command.refresh,
         display: command.display,
         solutionCountCap: command.solutionCountCap,
       };
+      assertValidCandidateContext(configured);
+      const contexts = [...next.authoring.candidateContexts];
+      contexts[contextIndex] = configured;
       next.authoring.candidateContexts = contexts;
       pending = {
         inverse: {
@@ -422,6 +414,7 @@ export function applyPuzzleCommand(
         throw new Error("cannot remove the last candidate context");
       }
       const context = document.authoring.candidateContexts[contextIndex];
+      assertValidCandidateContext(context);
       const manualMarks =
         document.authoring.manualMarks[command.contextId] ?? {};
       const contexts = [...next.authoring.candidateContexts];

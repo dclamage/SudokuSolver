@@ -59,22 +59,165 @@ export interface LogicalSolverCandidateContext extends CandidateContext {
   enabledTechniqueIds: readonly string[];
 }
 
+export type KnownCandidateContext =
+  | ManualCandidateContext
+  | TrueCandidatesContext
+  | LogicalSolverCandidateContext;
+
+function hasValidCandidateContextIdentity(context: CandidateContext): boolean {
+  return (
+    typeof context.id === "string" &&
+    context.id.length > 0 &&
+    typeof context.name === "string" &&
+    context.name.length > 0 &&
+    typeof context.kind === "string" &&
+    context.kind.length > 0
+  );
+}
+
+function isJsonValue(value: unknown, ancestors = new Set<object>()): boolean {
+  if (
+    value === null ||
+    typeof value === "boolean" ||
+    typeof value === "string"
+  ) {
+    return true;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+  if (typeof value !== "object") {
+    return false;
+  }
+  if (ancestors.has(value)) {
+    return false;
+  }
+  const prototype = Object.getPrototypeOf(value);
+  if (
+    !Array.isArray(value) &&
+    prototype !== Object.prototype &&
+    prototype !== null
+  ) {
+    return false;
+  }
+  ancestors.add(value);
+  const items = Array.isArray(value) ? Array.from(value) : Object.values(value);
+  const valid = items.every((item) => isJsonValue(item, ancestors));
+  ancestors.delete(value);
+  return valid;
+}
+
+function hasValidTrueCandidatesConfiguration(
+  candidate: Record<string, unknown>,
+): boolean {
+  return (
+    (candidate.refresh === "automatic" || candidate.refresh === "onRequest") &&
+    (candidate.display === "possibility" ||
+      candidate.display === "solutionFrequency" ||
+      candidate.display === "logicComparison") &&
+    typeof candidate.solutionCountCap === "number" &&
+    Number.isSafeInteger(candidate.solutionCountCap) &&
+    candidate.solutionCountCap >= 0
+  );
+}
+
+function hasValidTechniqueIds(value: unknown): value is readonly string[] {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (techniqueId) =>
+        typeof techniqueId === "string" && techniqueId.length > 0,
+    )
+  );
+}
+
 export function isManualCandidateContext(
   context: CandidateContext,
 ): context is ManualCandidateContext {
-  return context.kind === "manual";
+  return hasValidCandidateContextIdentity(context) && context.kind === "manual";
 }
 
 export function isTrueCandidatesContext(
   context: CandidateContext,
 ): context is TrueCandidatesContext {
-  return context.kind === "trueCandidates";
+  const candidate = context as unknown as Record<string, unknown>;
+  return (
+    hasValidCandidateContextIdentity(context) &&
+    context.kind === "trueCandidates" &&
+    hasValidTrueCandidatesConfiguration(candidate)
+  );
 }
 
 export function isLogicalSolverCandidateContext(
   context: CandidateContext,
 ): context is LogicalSolverCandidateContext {
-  return context.kind === "logicalSolver";
+  const candidate = context as unknown as Record<string, unknown>;
+  return (
+    hasValidCandidateContextIdentity(context) &&
+    context.kind === "logicalSolver" &&
+    candidate.followPuzzleRevision === true &&
+    hasValidTechniqueIds(candidate.enabledTechniqueIds)
+  );
+}
+
+export function assertValidCandidateContext(
+  context: unknown,
+): asserts context is CandidateContext {
+  if (typeof context !== "object" || context === null || Array.isArray(context)) {
+    throw new Error("candidate context must be an object");
+  }
+  const candidate = context as Record<string, unknown>;
+  if (typeof candidate.id !== "string" || candidate.id.length === 0) {
+    throw new Error("candidate context ID must be a non-empty string");
+  }
+  if (typeof candidate.name !== "string" || candidate.name.length === 0) {
+    throw new Error("candidate context name must be a non-empty string");
+  }
+  if (typeof candidate.kind !== "string" || candidate.kind.length === 0) {
+    throw new Error("candidate context kind must be a non-empty string");
+  }
+  if (!isJsonValue(candidate)) {
+    throw new Error(`candidate context ${candidate.id} must be valid JSON`);
+  }
+  if (candidate.kind === "manual") {
+    return;
+  }
+  if (candidate.kind === "trueCandidates") {
+    if (candidate.refresh !== "automatic" && candidate.refresh !== "onRequest") {
+      throw new Error(
+        `candidate context ${candidate.id} refresh must be automatic or onRequest`,
+      );
+    }
+    if (
+      candidate.display !== "possibility" &&
+      candidate.display !== "solutionFrequency" &&
+      candidate.display !== "logicComparison"
+    ) {
+      throw new Error(`candidate context ${candidate.id} display is invalid`);
+    }
+    if (
+      typeof candidate.solutionCountCap !== "number" ||
+      !Number.isSafeInteger(candidate.solutionCountCap) ||
+      candidate.solutionCountCap < 0
+    ) {
+      throw new Error("solutionCountCap must be a non-negative safe integer");
+    }
+    return;
+  }
+  if (candidate.kind === "logicalSolver") {
+    if (candidate.followPuzzleRevision !== true) {
+      throw new Error(
+        `candidate context ${candidate.id} followPuzzleRevision must be true`,
+      );
+    }
+    if (
+      !hasValidTechniqueIds(candidate.enabledTechniqueIds)
+    ) {
+      throw new Error(
+        `candidate context ${candidate.id} enabledTechniqueIds must be an array of non-empty strings`,
+      );
+    }
+  }
 }
 
 export interface PuzzlePackageV1 {

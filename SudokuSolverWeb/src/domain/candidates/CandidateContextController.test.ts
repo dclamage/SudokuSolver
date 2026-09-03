@@ -346,4 +346,56 @@ describe("CandidateContextController", () => {
     });
     expect(solver.requests).toHaveLength(0);
   });
+
+  it("rejects malformed known definitions during construction", () => {
+    expect(() =>
+      createCandidateController({
+        prepareDocument: (document) => {
+          document.authoring.candidateContexts =
+            document.authoring.candidateContexts.map((context) =>
+              context.id === "true-candidates"
+                ? ({
+                    ...context,
+                    refresh: "eventually",
+                  } as unknown as CandidateContext)
+                : context,
+            );
+        },
+      }),
+    ).toThrow("refresh must be automatic or onRequest");
+  });
+
+  it("rejects malformed known definitions before reconciliation mutates state", () => {
+    const { controller, document, solver } = createCandidateController();
+    const before = controller.getSnapshot();
+    const invalidDocument = structuredClone(document);
+    invalidDocument.revision = 2;
+    invalidDocument.authoring.candidateContexts =
+      invalidDocument.authoring.candidateContexts.map((context) =>
+        context.id === "logical-solver"
+          ? ({
+              ...context,
+              enabledTechniqueIds: [""],
+            } as unknown as CandidateContext)
+          : context,
+      );
+
+    expect(() =>
+      controller.onPuzzleChanged({
+        documentRevision: 2,
+        semanticRevision: 1,
+        semanticHash: initialSemanticHash,
+        semantic: false,
+        document: invalidDocument,
+      }),
+    ).toThrow("enabledTechniqueIds must be an array of non-empty strings");
+    expect(controller.getSnapshot()).toBe(before);
+    expect(controller.getSnapshot().definitions).toBe(before.definitions);
+    controller.activate("true-candidates");
+    expect(solver.requests[0]).toMatchObject({
+      documentRevision: 1,
+      semanticRevision: 1,
+      semanticHash: initialSemanticHash,
+    });
+  });
 });

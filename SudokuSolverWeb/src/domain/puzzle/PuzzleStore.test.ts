@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createStarterPuzzle } from "./createStarterPuzzle";
+import { applyPuzzleCommand } from "./applyPuzzleCommand";
 import { PuzzleStore } from "./PuzzleStore";
 import type { ExecutablePuzzleCommand } from "./PuzzleStore";
 import type { CandidateContext, PuzzlePackageV1 } from "./types";
+import { validatePuzzlePackage } from "./validatePuzzlePackage";
 
 function contextIds(document: PuzzlePackageV1): string[] {
   return document.authoring.candidateContexts.map((context) => context.id);
@@ -162,6 +164,50 @@ describe("PuzzleStore", () => {
     ).toThrow("candidate context setter-notes is not a True Candidates context");
   });
 
+  it.each([
+    {
+      name: "refresh",
+      command: {
+        type: "configureTrueCandidates",
+        contextId: "true-candidates",
+        refresh: "eventually",
+        display: "possibility",
+        solutionCountCap: 10,
+      },
+      error: "refresh must be automatic or onRequest",
+    },
+    {
+      name: "display",
+      command: {
+        type: "configureTrueCandidates",
+        contextId: "true-candidates",
+        refresh: "automatic",
+        display: "heatmap",
+        solutionCountCap: 10,
+      },
+      error: "display is invalid",
+    },
+    {
+      name: "solution count cap",
+      command: {
+        type: "configureTrueCandidates",
+        contextId: "true-candidates",
+        refresh: "automatic",
+        display: "possibility",
+        solutionCountCap: -1,
+      },
+      error: "solutionCountCap must be a non-negative safe integer",
+    },
+  ])("rejects an invalid runtime $name configuration", ({ command, error }) => {
+    const store = new PuzzleStore(createStarterPuzzle(() => "invalid-config"));
+    const before = store.getSnapshot();
+
+    expect(() =>
+      store.execute(command as unknown as ExecutablePuzzleCommand),
+    ).toThrow(error);
+    expect(store.getSnapshot()).toBe(before);
+  });
+
   it("renames an unknown context without dropping opaque configuration", () => {
     const document = createStarterPuzzle(() => "future-context-test");
     document.authoring.candidateContexts = [
@@ -191,6 +237,211 @@ describe("PuzzleStore", () => {
       futurePolicy: { retain: true, modes: ["one", "two"] },
     });
   });
+
+  it("round-trips, renames, and duplicates an opaque unknown context", () => {
+    const opaqueContext = {
+      id: "future-candidates",
+      name: "Future candidates",
+      kind: "futureCandidates",
+      futurePolicy: {
+        retain: true,
+        modes: ["one", "two"],
+        nested: { threshold: 0.5 },
+      },
+    } as unknown as CandidateContext;
+    const store = new PuzzleStore(
+      createStarterPuzzle(() => "future-round-trip-test"),
+    );
+
+    store.execute({ type: "addCandidateContext", context: opaqueContext });
+    store.execute({
+      type: "duplicateCandidateContext",
+      sourceContextId: opaqueContext.id,
+      contextId: "future-candidates-copy",
+      name: "Future candidates copy",
+    });
+    store.execute({
+      type: "renameCandidateContext",
+      contextId: opaqueContext.id,
+      name: "Renamed future candidates",
+    });
+
+    expect(
+      store.getSnapshot().document.authoring.candidateContexts.slice(-2),
+    ).toEqual([
+      {
+        ...opaqueContext,
+        name: "Renamed future candidates",
+      },
+      {
+        ...opaqueContext,
+        id: "future-candidates-copy",
+        name: "Future candidates copy",
+      },
+    ]);
+    const reloaded = validatePuzzlePackage(
+      JSON.parse(JSON.stringify(store.getSnapshot().document)),
+    );
+    expect(reloaded.authoring.candidateContexts.slice(-2)).toEqual(
+      store.getSnapshot().document.authoring.candidateContexts.slice(-2),
+    );
+  });
+
+  it.each([
+    {
+      name: "missing True Candidates refresh",
+      context: {
+        id: "invalid-true",
+        name: "Invalid true",
+        kind: "trueCandidates",
+        display: "possibility",
+        solutionCountCap: 10,
+      },
+      error: "refresh must be automatic or onRequest",
+    },
+    {
+      name: "invalid True Candidates display",
+      context: {
+        id: "invalid-true",
+        name: "Invalid true",
+        kind: "trueCandidates",
+        refresh: "automatic",
+        display: "heatmap",
+        solutionCountCap: 10,
+      },
+      error: "display is invalid",
+    },
+    {
+      name: "invalid True Candidates count cap",
+      context: {
+        id: "invalid-true",
+        name: "Invalid true",
+        kind: "trueCandidates",
+        refresh: "automatic",
+        display: "possibility",
+        solutionCountCap: -1,
+      },
+      error: "solutionCountCap must be a non-negative safe integer",
+    },
+    {
+      name: "invalid Logical Solver follow flag",
+      context: {
+        id: "invalid-logical",
+        name: "Invalid logical",
+        kind: "logicalSolver",
+        followPuzzleRevision: false,
+        enabledTechniqueIds: [],
+      },
+      error: "followPuzzleRevision must be true",
+    },
+    {
+      name: "non-array Logical Solver techniques",
+      context: {
+        id: "invalid-logical",
+        name: "Invalid logical",
+        kind: "logicalSolver",
+        followPuzzleRevision: true,
+        enabledTechniqueIds: "single",
+      },
+      error: "enabledTechniqueIds must be an array of non-empty strings",
+    },
+    {
+      name: "empty Logical Solver technique",
+      context: {
+        id: "invalid-logical",
+        name: "Invalid logical",
+        kind: "logicalSolver",
+        followPuzzleRevision: true,
+        enabledTechniqueIds: [""],
+      },
+      error: "enabledTechniqueIds must be an array of non-empty strings",
+    },
+    {
+      name: "empty unknown kind",
+      context: {
+        id: "invalid-unknown",
+        name: "Invalid unknown",
+        kind: "",
+        futurePolicy: { retain: true },
+      },
+      error: "kind must be a non-empty string",
+    },
+    {
+      name: "non-JSON unknown configuration",
+      context: {
+        id: "invalid-unknown",
+        name: "Invalid unknown",
+        kind: "futureCandidates",
+        futurePolicy: undefined,
+      },
+      error: "candidate context invalid-unknown must be valid JSON",
+    },
+  ])("rejects $name at the add boundary", ({ context, error }) => {
+    const store = new PuzzleStore(createStarterPuzzle(() => "invalid-context"));
+    const before = store.getSnapshot();
+    const listener = vi.fn();
+    store.subscribe(listener);
+
+    expect(() =>
+      store.execute({
+        type: "addCandidateContext",
+        context: context as unknown as CandidateContext,
+      }),
+    ).toThrow(error);
+    expect(store.getSnapshot()).toBe(before);
+    expect(listener).not.toHaveBeenCalled();
+  });
+
+  it("rejects a malformed known context at the restore boundary", () => {
+    const document = createStarterPuzzle(() => "invalid-restore");
+
+    expect(() =>
+      applyPuzzleCommand(document, {
+        type: "restoreCandidateContext",
+        context: {
+          id: "invalid-logical",
+          name: "Invalid logical",
+          kind: "logicalSolver",
+          followPuzzleRevision: true,
+          enabledTechniqueIds: [""],
+        } as unknown as CandidateContext,
+        index: 1,
+        manualMarks: {},
+      }),
+    ).toThrow("enabledTechniqueIds must be an array of non-empty strings");
+  });
+
+  it.each(["renameCandidateContext", "duplicateCandidateContext"] as const)(
+    "rejects malformed known source definitions before %s cloning",
+    (type) => {
+      const document = createStarterPuzzle(() => "invalid-clone");
+      document.authoring.candidateContexts =
+        document.authoring.candidateContexts.map((context) =>
+          context.id === "logical-solver"
+            ? ({
+                ...context,
+                enabledTechniqueIds: "single",
+              } as unknown as CandidateContext)
+            : context,
+        );
+      const store = new PuzzleStore(document);
+
+      expect(() =>
+        type === "renameCandidateContext"
+          ? store.execute({
+              type,
+              contextId: "logical-solver",
+              name: "Renamed logical",
+            })
+          : store.execute({
+              type,
+              sourceContextId: "logical-solver",
+              contextId: "logical-solver-copy",
+              name: "Logical copy",
+            }),
+      ).toThrow("enabledTechniqueIds must be an array of non-empty strings");
+    },
+  );
 
   it("reports the exact last change and notifies active listeners once per commit", () => {
     const store = new PuzzleStore(createStarterPuzzle(() => "listener-test"));

@@ -11,6 +11,7 @@ import type {
   TrueCandidatesContext,
 } from "../puzzle/types";
 import {
+  assertValidCandidateContext,
   isLogicalSolverCandidateContext,
   isManualCandidateContext,
   isTrueCandidatesContext,
@@ -254,6 +255,9 @@ export class CandidateContextController {
   private snapshot: CandidateContextSnapshot;
 
   public constructor(options: CandidateContextControllerOptions) {
+    for (const definition of options.definitions) {
+      assertValidCandidateContext(definition);
+    }
     const activeDefinition = options.definitions.find(
       (definition) => definition.id === options.activeContextId,
     );
@@ -328,6 +332,11 @@ export class CandidateContextController {
   }
 
   public onPuzzleChanged(change: CandidatePuzzleChange): void {
+    if (change.document !== undefined) {
+      for (const definition of change.document.authoring.candidateContexts) {
+        assertValidCandidateContext(definition);
+      }
+    }
     const nextSemanticHash =
       change.semanticHash === undefined
         ? this.semanticHash

@@ -293,6 +293,61 @@ describe("validatePuzzlePackage", () => {
     });
   });
 
+  it.each([
+    {
+      name: "True Candidates refresh",
+      contextId: "true-candidates",
+      property: "refresh",
+      value: "eventually",
+      error: "candidate context true-candidates has invalid refresh mode",
+    },
+    {
+      name: "True Candidates display",
+      contextId: "true-candidates",
+      property: "display",
+      value: "heatmap",
+      error: "candidate context true-candidates has invalid display mode",
+    },
+    {
+      name: "True Candidates solution count cap",
+      contextId: "true-candidates",
+      property: "solutionCountCap",
+      value: 1.5,
+      error: "solutionCountCap must be a non-negative safe integer",
+    },
+    {
+      name: "Logical Solver follow flag",
+      contextId: "logical-solver",
+      property: "followPuzzleRevision",
+      value: false,
+      error: "candidate context logical-solver must follow the puzzle revision",
+    },
+    {
+      name: "Logical Solver techniques",
+      contextId: "logical-solver",
+      property: "enabledTechniqueIds",
+      value: [""],
+      error:
+        "candidate context logical-solver enabledTechniqueIds[0] must be a non-empty string",
+    },
+  ])(
+    "rejects malformed known candidate context $name during native load",
+    ({ contextId, property, value, error }) => {
+      const invalid = structuredClone(fixture) as unknown as Record<
+        string,
+        unknown
+      >;
+      const authoring = invalid.authoring as { candidateContexts: unknown[] };
+      const context = authoring.candidateContexts.find(
+        (candidate) =>
+          (candidate as { id?: unknown }).id === contextId,
+      ) as Record<string, unknown>;
+      context[property] = value;
+
+      expect(() => validatePuzzlePackage(invalid)).toThrow(error);
+    },
+  );
+
   it("rejects malformed extension impact declarations", () => {
     const invalid = structuredClone(fixture) as unknown as PuzzlePackageV1;
     invalid.extensions = {
