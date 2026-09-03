@@ -8,7 +8,6 @@ export type SolverParticipation =
 export type SceneGeometryIssueCode =
   | "annotation-frame-unavailable"
   | "below-minimum-feature"
-  | "below-minimum-boundary-piece"
   | "invalid-topology"
   | "member-geometry-omitted"
   | "malformed-annotation-path"

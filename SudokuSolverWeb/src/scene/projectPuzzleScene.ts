@@ -40,13 +40,6 @@ interface Segment {
   polygonIndex?: number;
 }
 
-interface BelowThresholdInterval {
-  source: Segment;
-  startRatio: number;
-  endRatio: number;
-  piece?: Segment;
-}
-
 interface ContentRegion extends Bounds {
   center: Point;
 }
@@ -705,20 +698,6 @@ function addSplitRatio(
   }
 }
 
-/** Measures an ordered split interval without reconstructing its endpoints. */
-export function rawSplitIntervalLength(
-  startRatio: number,
-  endRatio: number,
-  sourceLength: number,
-) {
-  const ratioDelta = endRatio - startRatio;
-  const positive = ratioDelta > 0 && sourceLength > 0;
-  return {
-    positive,
-    length: positive ? ratioDelta * sourceLength : 0,
-  };
-}
-
 function splitSegment(
   segment: Segment,
   allSegments: readonly Segment[],
@@ -784,37 +763,6 @@ function splitSegment(
   }
 
   ratios.sort((first, second) => first - second);
-  const distinctRatios = ratios.filter(
-    (ratio, index) =>
-      index === 0 ||
-      ratio !== ratios[index - 1],
-  );
-  const belowThresholdIntervals: BelowThresholdInterval[] = distinctRatios
-    .slice(0, -1)
-    .flatMap((start, index) => {
-      const end = distinctRatios[index + 1];
-      const rawInterval = rawSplitIntervalLength(start, end, length);
-      if (
-        !rawInterval.positive ||
-        !isBelowMinimumBoundaryLength(rawInterval.length)
-      ) {
-        return [];
-      }
-      const piece = {
-        from: pointAt(segment, start),
-        to: pointAt(segment, end),
-        polygonIndex: segment.polygonIndex,
-      };
-      const pieceLength = segmentLength(piece);
-      return [
-        {
-          source: segment,
-          startRatio: start,
-          endRatio: end,
-          ...(pieceLength > 0 ? { piece } : {}),
-        },
-      ];
-    });
   const uniqueRatios = ratios.filter(
     (ratio, index) =>
       index === 0 || Math.abs(ratio - ratios[index - 1]) > ratioTolerance,
@@ -831,7 +779,7 @@ function splitSegment(
           },
         ];
   });
-  return { pieces, belowThresholdIntervals };
+  return pieces;
 }
 
 function pointInUnionInSegmentFrame(
@@ -923,41 +871,6 @@ function isUnionBoundary(
   return firstSide !== secondSide;
 }
 
-function isBelowThresholdIntervalOnUnionBoundary(
-  interval: BelowThresholdInterval,
-  polygons: readonly (readonly Point[])[],
-  arrangement: readonly Segment[],
-) {
-  if (interval.piece !== undefined) {
-    return isUnionBoundary(interval.piece, polygons, arrangement);
-  }
-  const length = segmentLength(interval.source);
-  if (length === 0) {
-    return false;
-  }
-  const rawInterval = rawSplitIntervalLength(
-    interval.startRatio,
-    interval.endRatio,
-    length,
-  );
-  const along =
-    interval.startRatio * length + rawInterval.length / 2;
-  const probeDistance = localProbeDistance(interval.source, arrangement);
-  const firstSide = pointInUnionInSegmentFrame(
-    interval.source,
-    along,
-    probeDistance,
-    polygons,
-  );
-  const secondSide = pointInUnionInSegmentFrame(
-    interval.source,
-    along,
-    -probeDistance,
-    polygons,
-  );
-  return firstSide !== secondSide;
-}
-
 function segmentsAreEquivalent(
   first: Segment,
   second: Segment,
@@ -998,109 +911,6 @@ function deduplicateSegments(
     }
   }
   return uniqueSegments;
-}
-
-function intervalCoverageOnSource(
-  interval: BelowThresholdInterval,
-  boundarySegment: Segment,
-) {
-  const sourceLength = segmentLength(interval.source);
-  const boundaryLength = segmentLength(boundarySegment);
-  if (sourceLength === 0 || boundaryLength === 0) {
-    return undefined;
-  }
-  const comparisonTolerance = Math.min(
-    UNION_COMPARISON_EPSILON,
-    segmentTolerance(interval.source),
-    segmentTolerance(boundarySegment),
-  );
-  if (
-    lineDistance(boundarySegment.from, interval.source) > comparisonTolerance ||
-    lineDistance(boundarySegment.to, interval.source) > comparisonTolerance
-  ) {
-    return undefined;
-  }
-  const firstRatio = projectRatio(boundarySegment.from, interval.source);
-  const secondRatio = projectRatio(boundarySegment.to, interval.source);
-  const start = Math.max(
-    interval.startRatio,
-    Math.min(firstRatio, secondRatio),
-  );
-  const end = Math.min(
-    interval.endRatio,
-    Math.max(firstRatio, secondRatio),
-  );
-  return end > start ? { start, end } : undefined;
-}
-
-function isIntervalCoveredByBoundary(
-  interval: BelowThresholdInterval,
-  boundarySegments: readonly Segment[],
-) {
-  const coverage = boundarySegments
-    .flatMap((segment) => {
-      const coveredInterval = intervalCoverageOnSource(interval, segment);
-      return coveredInterval === undefined ? [] : [coveredInterval];
-    })
-    .sort((first, second) => first.start - second.start);
-  if (coverage.length === 0 || coverage[0].start > interval.startRatio) {
-    return false;
-  }
-
-  let coveredThrough = coverage[0].end;
-  for (const coveredInterval of coverage.slice(1)) {
-    if (coveredInterval.start > coveredThrough) {
-      return false;
-    }
-    coveredThrough = Math.max(coveredThrough, coveredInterval.end);
-    if (coveredThrough >= interval.endRatio) {
-      return true;
-    }
-  }
-  return coveredThrough >= interval.endRatio;
-}
-
-function intervalsAreEquivalent(
-  first: BelowThresholdInterval,
-  second: BelowThresholdInterval,
-) {
-  const sourceLength = segmentLength(first.source);
-  if (sourceLength === 0) {
-    return false;
-  }
-  if (
-    lineDistance(second.source.from, first.source) > UNION_COMPARISON_EPSILON ||
-    lineDistance(second.source.to, first.source) > UNION_COMPARISON_EPSILON
-  ) {
-    return false;
-  }
-  const secondFromRatio = projectRatio(second.source.from, first.source);
-  const secondToRatio = projectRatio(second.source.to, first.source);
-  const mapSecondRatio = (ratio: number) =>
-    secondFromRatio + (secondToRatio - secondFromRatio) * ratio;
-  const secondStart = mapSecondRatio(second.startRatio);
-  const secondEnd = mapSecondRatio(second.endRatio);
-  const mappedStart = Math.min(secondStart, secondEnd);
-  const mappedEnd = Math.max(secondStart, secondEnd);
-  return (
-    mappedStart === first.startRatio && mappedEnd === first.endRatio
-  );
-}
-
-function deduplicateBelowThresholdIntervals(
-  intervals: readonly BelowThresholdInterval[],
-) {
-  const uniqueIntervals: BelowThresholdInterval[] = [];
-  for (const interval of intervals) {
-    if (
-      !uniqueIntervals.some((existing) =>
-        intervalsAreEquivalent(existing, interval),
-      )
-    ) {
-      uniqueIntervals.push(interval);
-    }
-  }
-  return uniqueIntervals;
 }
 
 function projectGroupBorder(
@@ -1147,10 +957,9 @@ function projectGroupBorder(
     };
   }
 
-  const splitResults = segments.map((segment) =>
+  const atomicPieces = segments.flatMap((segment) =>
     splitSegment(segment, segments),
   );
-  const atomicPieces = splitResults.flatMap(({ pieces }) => pieces);
   const boundaryPieces = atomicPieces
     .filter((piece) => {
       const length = segmentLength(piece);
@@ -1163,27 +972,6 @@ function projectGroupBorder(
     ),
     segments,
   );
-  const omittedIntervals = deduplicateBelowThresholdIntervals(
-    splitResults.flatMap(({ belowThresholdIntervals }) =>
-      belowThresholdIntervals.filter(
-        (interval) =>
-          !isIntervalCoveredByBoundary(interval, emittedBoundaryPieces) &&
-          isBelowThresholdIntervalOnUnionBoundary(
-            interval,
-            polygons,
-            segments,
-          ),
-      ),
-    ),
-  );
-  const droppedBoundaryCount = omittedIntervals.length;
-  if (droppedBoundaryCount > 0) {
-    geometryIssues.push({
-      code: "below-minimum-boundary-piece",
-      affects: "topology",
-      message: `Group border omitted ${droppedBoundaryCount} exterior atomic ${droppedBoundaryCount === 1 ? "piece" : "pieces"} below the minimum normalized renderer scale (${MIN_NORMALIZED_FEATURE_SIZE}).`,
-    });
-  }
   const d = emittedBoundaryPieces
     .map(
       (segment) =>

@@ -4,10 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 
 import { createStarterPuzzle } from "../domain/puzzle/createStarterPuzzle";
 import { PuzzleCanvas } from "./PuzzleCanvas";
-import {
-  projectPuzzleScene,
-  rawSplitIntervalLength,
-} from "./projectPuzzleScene";
+import { projectPuzzleScene } from "./projectPuzzleScene";
 import type { PuzzleSceneView } from "./types";
 
 interface TestPoint {
@@ -829,7 +826,7 @@ describe("PuzzleCanvas", () => {
     expect(JSON.stringify(scene)).not.toMatch(/NaN|Infinity/);
   });
 
-  it("reports omitted members and partial below-threshold group borders accessibly", () => {
+  it("reports omitted native members without diagnosing derived boundary atoms", () => {
     const lossyPuzzle = structuredClone(puzzle);
     lossyPuzzle.cells["aux-1"].shape = { kind: "polygon", points: [] };
     lossyPuzzle.cells.r1c1.shape = {
@@ -872,14 +869,7 @@ describe("PuzzleCanvas", () => {
     expect(
       scene.nodes.find((node) => node.id === "group-border-partial-review"),
     ).toMatchObject({
-      geometryIssues: [
-        {
-          code: "below-minimum-boundary-piece",
-          affects: "topology",
-          message:
-            "Group border omitted 2 exterior atomic pieces below the minimum normalized renderer scale (1e-9).",
-        },
-      ],
+      geometryIssues: [],
     });
 
     render(
@@ -891,9 +881,7 @@ describe("PuzzleCanvas", () => {
     );
     const canvas = screen.getByRole("group", { name: "Untitled puzzle" });
     expect(canvas).toHaveAccessibleDescription(/Group omitted-review:.*aux-1/);
-    expect(canvas).toHaveAccessibleDescription(
-      /Group partial-review:.*below the minimum normalized renderer scale/,
-    );
+    expect(canvas).not.toHaveAccessibleDescription(/Group partial-review:/);
     expect(screen.getByTestId("group-border-partial-review")).toHaveAttribute(
       "aria-hidden",
       "true",
@@ -964,7 +952,7 @@ describe("PuzzleCanvas", () => {
     expect(border.geometryIssues).toEqual([]);
   });
 
-  it("preserves exact-threshold union atoms and reports smaller atoms before snapping", () => {
+  it("preserves exact-threshold union atoms without diagnosing smaller derived atoms", () => {
     const projectExteriorAtoms = (normalizedFeature: number) => {
       const atomPuzzle = structuredClone(puzzle);
       const nativeOffset = normalizedFeature * 2;
@@ -1030,17 +1018,13 @@ describe("PuzzleCanvas", () => {
     expect(exact.geometryIssues).toEqual([]);
 
     const justBelow = projectExteriorAtoms(1e-9 - 2e-13);
-    expect(justBelow.geometryIssues).toEqual([
-      expect.objectContaining({ code: "below-minimum-boundary-piece" }),
-    ]);
+    expect(justBelow.geometryIssues).toEqual([]);
 
     const subQuantum = projectExteriorAtoms(1e-13);
-    expect(subQuantum.geometryIssues).toEqual([
-      expect.objectContaining({ code: "below-minimum-boundary-piece" }),
-    ]);
+    expect(subQuantum.geometryIssues).toEqual([]);
   });
 
-  it("reports every distinct sub-threshold split ratio before clustering", () => {
+  it("does not diagnose sub-threshold split ratios derived during union", () => {
     const projectExteriorAtom = (normalizedFeature: number) => {
       const atomPuzzle = structuredClone(puzzle);
       const nativeOffset = normalizedFeature * 2;
@@ -1078,9 +1062,7 @@ describe("PuzzleCanvas", () => {
 
     for (const feature of [1e-14, 3e-15, 1e-15]) {
       const border = projectExteriorAtom(feature);
-      expect(border.geometryIssues, `feature ${feature}`).toEqual([
-        expect.objectContaining({ code: "below-minimum-boundary-piece" }),
-      ]);
+      expect(border.geometryIssues, `feature ${feature}`).toEqual([]);
       expect(border.d).not.toMatch(/NaN|Infinity/);
       const segments = parseLineSegments(border.d);
       const canonicalSegments = segments.map((segment) =>
@@ -1133,48 +1115,12 @@ describe("PuzzleCanvas", () => {
       (node) => node.id === "group-border-adjacent",
     );
     expect(adjacentBorder).toMatchObject({
-      geometryIssues: [
-        expect.objectContaining({ code: "below-minimum-boundary-piece" }),
-      ],
+      geometryIssues: [],
       d: expect.not.stringMatching(/NaN|Infinity/),
     });
   });
 
-  it("measures positive split intervals before endpoint reconstruction", () => {
-    const segment = { from: 0.5, to: 1 };
-    const firstRatio = 0.75;
-    const secondRatio = 0.7500000000000001;
-    expect(
-      segment.from + (segment.to - segment.from) * firstRatio,
-    ).toBe(0.875);
-    expect(
-      segment.from + (segment.to - segment.from) * secondRatio,
-    ).toBe(0.875);
-    expect(
-      rawSplitIntervalLength(
-        firstRatio,
-        secondRatio,
-        segment.to - segment.from,
-      ),
-    ).toEqual({
-      positive: true,
-      length: 5.551115123125783e-17,
-    });
-    expect(rawSplitIntervalLength(0, Number.MIN_VALUE, 0.5)).toEqual({
-      positive: true,
-      length: 0,
-    });
-    expect(rawSplitIntervalLength(0.25, 0.5, 0.5)).toEqual({
-      positive: true,
-      length: 0.125,
-    });
-    expect(rawSplitIntervalLength(0.75, 0.75, 0.5)).toEqual({
-      positive: false,
-      length: 0,
-    });
-  });
-
-  it("reports a raw adjacent-ratio boundary atom when pointAt collapses", () => {
+  it("does not diagnose a derived adjacent-ratio atom when pointAt collapses", () => {
     const collapsedPuzzle = structuredClone(puzzle);
     const firstCut = 1.75;
     const secondCut = 1.7500000000000002;
@@ -1237,14 +1183,7 @@ describe("PuzzleCanvas", () => {
       throw new Error("expected collapsed-ratio group path");
     }
 
-    expect(border.geometryIssues).toEqual([
-      {
-        code: "below-minimum-boundary-piece",
-        affects: "topology",
-        message:
-          "Group border omitted 1 exterior atomic piece below the minimum normalized renderer scale (1e-9).",
-      },
-    ]);
+    expect(border.geometryIssues).toEqual([]);
     expect(border.d).not.toMatch(/NaN|Infinity/);
     const segments = parseLineSegments(border.d);
     const canonicalSegments = segments.map((segment) =>
@@ -1371,6 +1310,86 @@ describe("PuzzleCanvas", () => {
       [`${from.x},${from.y}`, `${to.x},${to.y}`].sort().join("/"),
     );
     expect(new Set(canonicalSegments).size).toBe(canonicalSegments.length);
+  });
+
+  it("does not diagnose derived sub-threshold atoms in rotated redundant unions", () => {
+    const rectangle = (
+      minX: number,
+      minY: number,
+      maxX: number,
+      maxY: number,
+      reverse = false,
+    ) => {
+      const points = [
+        { x: minX, y: minY },
+        { x: maxX, y: minY },
+        { x: maxX, y: maxY },
+        { x: minX, y: maxY },
+      ];
+      return reverse ? points.reverse() : points;
+    };
+    const rotate = (points: readonly TestPoint[], angle: number) =>
+      points.map(({ x, y }) => ({
+        x: x * Math.cos(angle) - y * Math.sin(angle),
+        y: x * Math.sin(angle) + y * Math.cos(angle),
+      }));
+    const firstCut = 1.75;
+    const secondCut = 1.7500000000000002;
+
+    for (const angle of [0.1, Math.PI / 6, Math.PI / 4]) {
+      const redundantPuzzle = structuredClone(puzzle);
+      const outer = rotate(rectangle(0, 0, 2, 2, true), angle);
+      const firstInner = rotate(rectangle(0, 0, firstCut, 1), angle);
+      const secondInner = rotate(rectangle(secondCut, 0, 2, 1, true), angle);
+      redundantPuzzle.cells = {
+        r1c1: {
+          ...redundantPuzzle.cells.r1c1,
+          shape: { kind: "polygon", points: outer },
+        },
+        r1c2: {
+          ...redundantPuzzle.cells.r1c2,
+          shape: { kind: "polygon", points: firstInner },
+        },
+        r1c3: {
+          ...redundantPuzzle.cells.r1c3,
+          shape: { kind: "polygon", points: secondInner },
+        },
+        r1c4: {
+          ...redundantPuzzle.cells.r1c4,
+          shape: { kind: "polygon", points: firstInner },
+        },
+      };
+      redundantPuzzle.groups = {
+        redundant: {
+          id: "redundant",
+          roles: ["region"],
+          cellIds: ["r1c1", "r1c2", "r1c3", "r1c4", "r1c2", "r1c1"],
+        },
+      };
+
+      const scene = projectPuzzleScene(redundantPuzzle, emptySceneView);
+      const border = scene.nodes.find(
+        (node) => node.id === "group-border-redundant",
+      );
+      if (border?.kind !== "path") {
+        throw new Error("expected rotated redundant group path");
+      }
+
+      expect(border.geometryIssues, `angle ${angle}`).toEqual([]);
+      const segments = parseLineSegments(border.d);
+      expect(segments, `angle ${angle}`).toHaveLength(7);
+      expect(totalSegmentLength(segments), `angle ${angle}`).toBeCloseTo(
+        (4 * scene.width) / (Math.cos(angle) + Math.sin(angle)),
+        10,
+      );
+      const canonicalSegments = segments.map(({ from, to }) =>
+        [`${from.x},${from.y}`, `${to.x},${to.y}`].sort().join("/"),
+      );
+      expect(
+        new Set(canonicalSegments).size,
+        `angle ${angle}`,
+      ).toBe(canonicalSegments.length);
+    }
   });
 
   it("recognizes collapsed boundary coverage split across emitted segments", () => {
