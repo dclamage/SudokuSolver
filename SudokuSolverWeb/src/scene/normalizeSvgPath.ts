@@ -43,27 +43,32 @@ class PathScanner {
 
   public constructor(private readonly source: string) {}
 
-  private skipSeparators() {
-    while (
-      this.index < this.source.length &&
-      (/[\s]/.test(this.source[this.index]) || this.source[this.index] === ",")
-    ) {
+  private skipWhitespace() {
+    while (this.index < this.source.length && /[\s]/.test(this.source[this.index])) {
       this.index += 1;
     }
   }
 
+  private nextNonWhitespaceIndex() {
+    let index = this.index;
+    while (index < this.source.length && /[\s]/.test(this.source[index])) {
+      index += 1;
+    }
+    return index;
+  }
+
   public atEnd() {
-    this.skipSeparators();
-    return this.index >= this.source.length;
+    return this.nextNonWhitespaceIndex() >= this.source.length;
   }
 
   public peekIsCommand() {
-    this.skipSeparators();
-    return /[A-Za-z]/.test(this.source[this.index] ?? "");
+    return /[A-Za-z]/.test(
+      this.source[this.nextNonWhitespaceIndex()] ?? "",
+    );
   }
 
   public readCommand() {
-    this.skipSeparators();
+    this.skipWhitespace();
     const command = this.source[this.index];
     if (command === undefined || !/[A-Za-z]/.test(command)) {
       return undefined;
@@ -72,8 +77,33 @@ class PathScanner {
     return command;
   }
 
-  public readNumber() {
-    this.skipSeparators();
+  private prepareNumber(
+    separator: "after-command" | "arc-compact" | "between-numbers",
+  ) {
+    const start = this.index;
+    this.skipWhitespace();
+    const hadWhitespace = this.index > start;
+    if (separator === "after-command") {
+      return this.source[this.index] === "," ? false : true;
+    }
+    if (this.source[this.index] === ",") {
+      this.index += 1;
+      this.skipWhitespace();
+      return this.source[this.index] !== "," && this.index < this.source.length;
+    }
+    if (separator === "arc-compact" || hadWhitespace) {
+      return true;
+    }
+    const next = this.source[this.index];
+    return next === "+" || next === "-";
+  }
+
+  public readNumber(
+    separator: "after-command" | "arc-compact" | "between-numbers",
+  ) {
+    if (!this.prepareNumber(separator)) {
+      return undefined;
+    }
     const match = this.source.slice(this.index).match(NUMBER_TOKEN);
     if (match === null) {
       return undefined;
@@ -83,8 +113,12 @@ class PathScanner {
     return Number.isFinite(value) ? value : undefined;
   }
 
-  public readFlag() {
-    this.skipSeparators();
+  public readFlag(
+    separator: "after-command" | "arc-compact" | "between-numbers",
+  ) {
+    if (!this.prepareNumber(separator)) {
+      return undefined;
+    }
     const flag = this.source[this.index];
     if (flag !== "0" && flag !== "1") {
       return undefined;
@@ -105,13 +139,23 @@ function sceneNumber(value: number) {
   return Object.is(rounded, -0) ? "0" : String(rounded);
 }
 
-function readParameters(scanner: PathScanner, command: Exclude<PathCommand, "Z">) {
+function readParameters(
+  scanner: PathScanner,
+  command: Exclude<PathCommand, "Z">,
+  firstGroup: boolean,
+) {
   const parameters: number[] = [];
   for (let index = 0; index < PARAMETER_COUNTS[command]; index += 1) {
+    const separator =
+      firstGroup && index === 0
+        ? "after-command"
+        : command === "A" && (index === 4 || index === 5)
+          ? "arc-compact"
+          : "between-numbers";
     const value =
       command === "A" && (index === 3 || index === 4)
-        ? scanner.readFlag()
-        : scanner.readNumber();
+        ? scanner.readFlag(separator)
+        : scanner.readNumber(separator);
     if (value === undefined) {
       return undefined;
     }
@@ -120,19 +164,18 @@ function readParameters(scanner: PathScanner, command: Exclude<PathCommand, "Z">
   return parameters;
 }
 
-function normalizedPoint(
+function nativePoint(
   x: number,
   y: number,
   relative: boolean,
   current: NormalizedPoint,
-  frame: SceneNormalizationFrame,
 ) {
   return relative
     ? {
-        x: current.x + normalizeNativeDistance(x, frame),
-        y: current.y + normalizeNativeDistance(y, frame),
+        x: current.x + x,
+        y: current.y + y,
       }
-    : normalizeNativePoint({ x, y }, frame);
+    : { x, y };
 }
 
 function pointsAreFinite(points: readonly NormalizedPoint[]) {
@@ -149,8 +192,10 @@ export function normalizeSvgPathData(
   const scanner = new PathScanner(d);
   const output: string[] = [];
   let activeCommand: string | undefined;
-  let current = normalizeNativePoint({ x: 0, y: 0 }, frame);
-  let subpathStart = current;
+  let currentNative: NormalizedPoint = { x: 0, y: 0 };
+  let subpathStartNative = currentNative;
+  let lastCubicControlNative: NormalizedPoint | undefined;
+  let lastQuadraticControlNative: NormalizedPoint | undefined;
   let hasMove = false;
 
   while (!scanner.atEnd()) {
@@ -168,100 +213,169 @@ export function normalizeSvgPathData(
     }
     if (command === "Z") {
       output.push("Z");
-      current = subpathStart;
+      currentNative = subpathStartNative;
+      lastCubicControlNative = undefined;
+      lastQuadraticControlNative = undefined;
       activeCommand = undefined;
       continue;
     }
 
     let groupIndex = 0;
     while (true) {
-      const parameters = readParameters(scanner, command);
+      const parameters = readParameters(scanner, command, groupIndex === 0);
       if (parameters === undefined) {
         return { error: `annotation path has invalid ${command} parameters.` };
       }
       const emittedCommand = command === "M" && groupIndex > 0 ? "L" : command;
-      const base = current;
-      let next = current;
+      const baseNative = currentNative;
+      let nextNative = currentNative;
       let rendered: string;
 
       switch (emittedCommand) {
         case "M":
-        case "L":
-        case "T": {
-          next = normalizedPoint(
+        case "L": {
+          nextNative = nativePoint(
             parameters[0],
             parameters[1],
             relative,
-            base,
-            frame,
+            baseNative,
           );
+          const next = normalizeNativePoint(nextNative, frame);
           rendered = `${emittedCommand} ${sceneNumber(next.x)} ${sceneNumber(next.y)}`;
+          lastCubicControlNative = undefined;
+          lastQuadraticControlNative = undefined;
           break;
         }
         case "H": {
-          const x = relative
-            ? base.x + normalizeNativeDistance(parameters[0], frame)
-            : normalizeNativePoint({ x: parameters[0], y: 0 }, frame).x;
-          next = { x, y: base.y };
-          rendered = `H ${sceneNumber(x)}`;
+          nextNative = {
+            x: relative ? baseNative.x + parameters[0] : parameters[0],
+            y: baseNative.y,
+          };
+          const next = normalizeNativePoint(nextNative, frame);
+          rendered = `H ${sceneNumber(next.x)}`;
+          lastCubicControlNative = undefined;
+          lastQuadraticControlNative = undefined;
           break;
         }
         case "V": {
-          const y = relative
-            ? base.y + normalizeNativeDistance(parameters[0], frame)
-            : normalizeNativePoint({ x: 0, y: parameters[0] }, frame).y;
-          next = { x: base.x, y };
-          rendered = `V ${sceneNumber(y)}`;
+          nextNative = {
+            x: baseNative.x,
+            y: relative ? baseNative.y + parameters[0] : parameters[0],
+          };
+          const next = normalizeNativePoint(nextNative, frame);
+          rendered = `V ${sceneNumber(next.y)}`;
+          lastCubicControlNative = undefined;
+          lastQuadraticControlNative = undefined;
           break;
         }
         case "C": {
-          const first = normalizedPoint(
+          const firstNative = nativePoint(
             parameters[0],
             parameters[1],
             relative,
-            base,
-            frame,
+            baseNative,
           );
-          const second = normalizedPoint(
+          const secondNative = nativePoint(
             parameters[2],
             parameters[3],
             relative,
-            base,
-            frame,
+            baseNative,
           );
-          next = normalizedPoint(
+          nextNative = nativePoint(
             parameters[4],
             parameters[5],
             relative,
-            base,
-            frame,
+            baseNative,
           );
+          const first = normalizeNativePoint(firstNative, frame);
+          const second = normalizeNativePoint(secondNative, frame);
+          const next = normalizeNativePoint(nextNative, frame);
           rendered = `C ${sceneNumber(first.x)} ${sceneNumber(first.y)} ${sceneNumber(second.x)} ${sceneNumber(second.y)} ${sceneNumber(next.x)} ${sceneNumber(next.y)}`;
-          if (!pointsAreFinite([first, second])) {
+          if (!pointsAreFinite([firstNative, secondNative, first, second])) {
             return { error: "annotation path coordinate is outside the scene frame." };
           }
+          lastCubicControlNative = secondNative;
+          lastQuadraticControlNative = undefined;
           break;
         }
-        case "S":
-        case "Q": {
-          const control = normalizedPoint(
+        case "S": {
+          const reflectedControlNative =
+            lastCubicControlNative === undefined
+              ? baseNative
+              : {
+                  x: baseNative.x + (baseNative.x - lastCubicControlNative.x),
+                  y: baseNative.y + (baseNative.y - lastCubicControlNative.y),
+                };
+          const controlNative = nativePoint(
             parameters[0],
             parameters[1],
             relative,
-            base,
-            frame,
+            baseNative,
           );
-          next = normalizedPoint(
+          nextNative = nativePoint(
             parameters[2],
             parameters[3],
             relative,
-            base,
-            frame,
+            baseNative,
           );
-          rendered = `${emittedCommand} ${sceneNumber(control.x)} ${sceneNumber(control.y)} ${sceneNumber(next.x)} ${sceneNumber(next.y)}`;
-          if (!pointsAreFinite([control])) {
+          const control = normalizeNativePoint(controlNative, frame);
+          const next = normalizeNativePoint(nextNative, frame);
+          rendered = `S ${sceneNumber(control.x)} ${sceneNumber(control.y)} ${sceneNumber(next.x)} ${sceneNumber(next.y)}`;
+          if (!pointsAreFinite([reflectedControlNative, controlNative, control])) {
             return { error: "annotation path coordinate is outside the scene frame." };
           }
+          lastCubicControlNative = controlNative;
+          lastQuadraticControlNative = undefined;
+          break;
+        }
+        case "Q": {
+          const controlNative = nativePoint(
+            parameters[0],
+            parameters[1],
+            relative,
+            baseNative,
+          );
+          nextNative = nativePoint(
+            parameters[2],
+            parameters[3],
+            relative,
+            baseNative,
+          );
+          const control = normalizeNativePoint(controlNative, frame);
+          const next = normalizeNativePoint(nextNative, frame);
+          rendered = `Q ${sceneNumber(control.x)} ${sceneNumber(control.y)} ${sceneNumber(next.x)} ${sceneNumber(next.y)}`;
+          if (!pointsAreFinite([controlNative, control])) {
+            return { error: "annotation path coordinate is outside the scene frame." };
+          }
+          lastCubicControlNative = undefined;
+          lastQuadraticControlNative = controlNative;
+          break;
+        }
+        case "T": {
+          const reflectedControlNative =
+            lastQuadraticControlNative === undefined
+              ? baseNative
+              : {
+                  x:
+                    baseNative.x +
+                    (baseNative.x - lastQuadraticControlNative.x),
+                  y:
+                    baseNative.y +
+                    (baseNative.y - lastQuadraticControlNative.y),
+                };
+          nextNative = nativePoint(
+            parameters[0],
+            parameters[1],
+            relative,
+            baseNative,
+          );
+          const next = normalizeNativePoint(nextNative, frame);
+          rendered = `T ${sceneNumber(next.x)} ${sceneNumber(next.y)}`;
+          if (!pointsAreFinite([reflectedControlNative])) {
+            return { error: "annotation path coordinate is outside the scene frame." };
+          }
+          lastCubicControlNative = undefined;
+          lastQuadraticControlNative = reflectedControlNative;
           break;
         }
         case "A": {
@@ -270,28 +384,31 @@ export function normalizeSvgPathData(
           }
           const radiusX = normalizeNativeDistance(parameters[0], frame);
           const radiusY = normalizeNativeDistance(parameters[1], frame);
-          next = normalizedPoint(
+          nextNative = nativePoint(
             parameters[5],
             parameters[6],
             relative,
-            base,
-            frame,
+            baseNative,
           );
+          const next = normalizeNativePoint(nextNative, frame);
           rendered = `A ${sceneNumber(radiusX)} ${sceneNumber(radiusY)} ${sceneNumber(parameters[2])} ${parameters[3]} ${parameters[4]} ${sceneNumber(next.x)} ${sceneNumber(next.y)}`;
           if (!Number.isFinite(radiusX) || !Number.isFinite(radiusY)) {
             return { error: "annotation arc radius is outside the scene frame." };
           }
+          lastCubicControlNative = undefined;
+          lastQuadraticControlNative = undefined;
           break;
         }
       }
 
-      if (!pointsAreFinite([next])) {
+      const next = normalizeNativePoint(nextNative, frame);
+      if (!pointsAreFinite([nextNative, next])) {
         return { error: "annotation path coordinate is outside the scene frame." };
       }
       output.push(rendered);
-      current = next;
+      currentNative = nextNative;
       if (emittedCommand === "M") {
-        subpathStart = next;
+        subpathStartNative = nextNative;
         hasMove = true;
       }
       groupIndex += 1;

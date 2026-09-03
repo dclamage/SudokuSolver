@@ -34,6 +34,7 @@ export interface SceneNormalizationFrame {
   minY: number;
   span: number;
   displayScale: number;
+  nativeSpan?: number;
 }
 
 export interface NormalizedPuzzleGeometry {
@@ -57,6 +58,7 @@ interface NormalizationFrame {
   spanX: number;
   spanY: number;
   span: number;
+  nativeSpan?: number;
 }
 
 function issue(
@@ -183,6 +185,7 @@ function createNormalizationFrame(
     return undefined;
   }
   const scale = coordinateScale(vertices);
+  const nativeBounds = boundsOf(vertices);
   const scaledBounds = boundsOf(
     vertices.map((point) => ({ x: point.x / scale, y: point.y / scale })),
   );
@@ -195,6 +198,13 @@ function createNormalizationFrame(
   if (!Number.isFinite(span) || !(span > 0)) {
     return undefined;
   }
+  const nativeSpan =
+    nativeBounds === undefined
+      ? undefined
+      : Math.max(
+          nativeBounds.maxX - nativeBounds.minX,
+          nativeBounds.maxY - nativeBounds.minY,
+        );
   return {
     coordinateScale: scale,
     minX: scaledBounds.minX,
@@ -202,6 +212,10 @@ function createNormalizationFrame(
     spanX,
     spanY,
     span,
+    nativeSpan:
+      nativeSpan !== undefined && Number.isFinite(nativeSpan) && nativeSpan > 0
+        ? nativeSpan
+        : undefined,
   };
 }
 
@@ -236,10 +250,11 @@ export function normalizeNativeDistance(
   distance: number,
   frame: SceneNormalizationFrame,
 ) {
-  return (
-    normalizedCoordinate((distance / frame.coordinateScale) / frame.span) *
-    frame.displayScale
-  );
+  const normalizedDistance =
+    frame.nativeSpan === undefined
+      ? (distance / frame.coordinateScale) / frame.span
+      : distance / frame.nativeSpan;
+  return normalizedCoordinate(normalizedDistance) * frame.displayScale;
 }
 
 function cross(
@@ -548,6 +563,7 @@ export function normalizePuzzleGeometry(
           minY: globalFrame.minY,
           span: globalFrame.span,
           displayScale,
+          nativeSpan: globalFrame.nativeSpan,
         };
   return {
     cells,

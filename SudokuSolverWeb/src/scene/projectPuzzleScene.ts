@@ -21,7 +21,6 @@ export { MIN_NORMALIZED_FEATURE_SIZE } from "./normalizeSceneGeometry";
 /** Comparison slack is 1/65536 of the smallest publicly preserved feature. */
 const UNION_COMPARISON_EPSILON = MIN_NORMALIZED_FEATURE_SIZE / 65_536;
 const COORDINATE_ULP_FACTOR = 16;
-const SPLIT_RATIO_EPSILON = Number.EPSILON * 32;
 
 interface Bounds {
   minX: number;
@@ -595,13 +594,10 @@ function segmentLength(segment: Segment) {
   );
 }
 
-function baseSegmentTolerance(segment: Segment) {
-  return Math.min(
-    segmentLength(segment) / 4,
-    Math.max(
-      UNION_COMPARISON_EPSILON,
-      Number.EPSILON * COORDINATE_ULP_FACTOR,
-    ),
+function baseSegmentTolerance() {
+  return Math.max(
+    UNION_COMPARISON_EPSILON,
+    Number.EPSILON * COORDINATE_ULP_FACTOR,
   );
 }
 
@@ -622,8 +618,7 @@ function segmentTolerance(
   segment: Segment,
   arrangement?: readonly Segment[],
 ) {
-  const length = segmentLength(segment);
-  let tolerance = Math.min(baseSegmentTolerance(segment), length / 4);
+  let tolerance = baseSegmentTolerance();
   if (arrangement === undefined || segment.polygonIndex === undefined) {
     return tolerance;
   }
@@ -679,11 +674,18 @@ function projectRatio(point: Point, segment: Segment) {
   if (length === 0) {
     return 0;
   }
-  return (
-    ((point.x - segment.from.x) * (deltaX / length) +
-      (point.y - segment.from.y) * (deltaY / length)) /
-    length
-  );
+  const tangentX = deltaX / length;
+  const tangentY = deltaY / length;
+  const fromDeltaX = point.x - segment.from.x;
+  const fromDeltaY = point.y - segment.from.y;
+  const toDeltaX = point.x - segment.to.x;
+  const toDeltaY = point.y - segment.to.y;
+  if (
+    Math.hypot(fromDeltaX, fromDeltaY) <= Math.hypot(toDeltaX, toDeltaY)
+  ) {
+    return (fromDeltaX * tangentX + fromDeltaY * tangentY) / length;
+  }
+  return 1 + (toDeltaX * tangentX + toDeltaY * tangentY) / length;
 }
 
 function addSplitRatio(
@@ -706,7 +708,6 @@ function splitSegment(
   const length = segmentLength(segment);
   const tolerance = segmentTolerance(segment, allSegments);
   const ratioTolerance = tolerance / length;
-  const splitRatioTolerance = SPLIT_RATIO_EPSILON;
   for (const other of allSegments) {
     if (other === segment || segmentLength(other) === 0) {
       continue;
@@ -762,15 +763,15 @@ function splitSegment(
   }
 
   ratios.sort((first, second) => first - second);
-  const fineRatios = ratios.filter(
+  const distinctRatios = ratios.filter(
     (ratio, index) =>
       index === 0 ||
-      Math.abs(ratio - ratios[index - 1]) > splitRatioTolerance,
+      ratio !== ratios[index - 1],
   );
-  const belowThresholdPieces = fineRatios
+  const belowThresholdPieces = distinctRatios
     .slice(0, -1)
     .flatMap((start, index) => {
-      const end = fineRatios[index + 1];
+      const end = distinctRatios[index + 1];
       const piece = {
         from: pointAt(segment, start),
         to: pointAt(segment, end),
@@ -800,8 +801,29 @@ function splitSegment(
   return { pieces, belowThresholdPieces };
 }
 
-function pointInUnion(point: Point, polygons: readonly (readonly Point[])[]) {
-  return polygons.some((vertices) => isPointInPolygon(point, vertices));
+function pointInUnionInSegmentFrame(
+  segment: Segment,
+  along: number,
+  normal: number,
+  polygons: readonly (readonly Point[])[],
+) {
+  const length = segmentLength(segment);
+  const tangentX = (segment.to.x - segment.from.x) / length;
+  const tangentY = (segment.to.y - segment.from.y) / length;
+  const localPoint = { x: along, y: normal };
+  return polygons.some((vertices) =>
+    isPointInPolygon(
+      localPoint,
+      vertices.map((point) => {
+        const deltaX = point.x - segment.from.x;
+        const deltaY = point.y - segment.from.y;
+        return {
+          x: deltaX * tangentX + deltaY * tangentY,
+          y: -deltaX * tangentY + deltaY * tangentX,
+        };
+      }),
+    ),
+  );
 }
 
 function segmentContainsPointWithinTolerance(
@@ -852,22 +874,17 @@ function isUnionBoundary(
   arrangement: readonly Segment[],
 ) {
   const length = segmentLength(segment);
-  const midpoint = pointAt(segment, 0.5);
   const probeDistance = localProbeDistance(segment, arrangement);
-  const normalX = -(segment.to.y - segment.from.y) / length;
-  const normalY = (segment.to.x - segment.from.x) / length;
-  const firstSide = pointInUnion(
-    {
-      x: midpoint.x + normalX * probeDistance,
-      y: midpoint.y + normalY * probeDistance,
-    },
+  const firstSide = pointInUnionInSegmentFrame(
+    segment,
+    length / 2,
+    probeDistance,
     polygons,
   );
-  const secondSide = pointInUnion(
-    {
-      x: midpoint.x - normalX * probeDistance,
-      y: midpoint.y - normalY * probeDistance,
-    },
+  const secondSide = pointInUnionInSegmentFrame(
+    segment,
+    length / 2,
+    -probeDistance,
     polygons,
   );
   return firstSide !== secondSide;

@@ -503,6 +503,111 @@ describe("PuzzleCanvas", () => {
     });
   });
 
+  it("resolves huge relative path state in native coordinates before normalization", () => {
+    const hugePuzzle = structuredClone(puzzle);
+    const low = 1e308;
+    const high = 1.0000000000000002e308;
+    const span = high - low;
+    hugePuzzle.cells = {
+      r1c1: {
+        ...hugePuzzle.cells.r1c1,
+        shape: {
+          kind: "polygon",
+          points: [
+            { x: low, y: low },
+            { x: high, y: low },
+            { x: high, y: high },
+            { x: low, y: high },
+          ],
+        },
+      },
+    };
+    hugePuzzle.groups = {};
+    const absolute = `M ${low} ${low} L ${high} ${low} H ${low} V ${high} C ${low} ${low} ${high} ${low} ${high} ${high} S ${low} ${high} ${low} ${low} Q ${high} ${low} ${high} ${high} T ${low} ${low} A ${span} ${span} 0 0 1 ${high} ${high} Z`;
+    const relative = `m ${low} ${low} l ${span} 0 h ${-span} v ${span} c 0 ${-span} ${span} ${-span} ${span} 0 s ${-span} 0 ${-span} ${-span} q ${span} 0 ${span} ${span} t ${-span} ${-span} a ${span} ${span} 0 0 1 ${span} ${span} z`;
+    const scene = projectPuzzleScene(hugePuzzle, {
+      ...emptySceneView,
+      annotations: [
+        { id: "absolute", d: absolute, label: "Absolute" },
+        { id: "relative", d: relative, label: "Relative" },
+      ],
+    });
+    const absoluteNode = scene.nodes.find(
+      (node) => node.id === "annotation-absolute",
+    );
+    const relativeNode = scene.nodes.find(
+      (node) => node.id === "annotation-relative",
+    );
+    const expected =
+      "M 0 0 L 1 0 H 0 V 1 C 0 0 1 0 1 1 S 0 1 0 0 Q 1 0 1 1 T 0 0 A 1 1 0 0 1 1 1 Z";
+
+    expect(absoluteNode).toMatchObject({ d: expected, geometryIssue: undefined });
+    expect(relativeNode).toMatchObject({
+      d: expected,
+      geometryIssue: undefined,
+    });
+    expect(relativeNode?.kind === "path" ? relativeNode.d : "").toContain(
+      "A 1 1 0 0 1 1 1",
+    );
+  });
+
+  it("enforces strict SVG separators while preserving valid compact grammar", () => {
+    const pathPuzzle = structuredClone(puzzle);
+    pathPuzzle.cells = {
+      r1c1: {
+        ...pathPuzzle.cells.r1c1,
+        shape: { kind: "rect", x: -200, y: -200, width: 400, height: 400 },
+      },
+    };
+    pathPuzzle.groups = {};
+    const malformed = [
+      "M,0 0",
+      "M 0,,0",
+      "M 0 0,",
+      "M 0.0.0",
+      "M 0 0 A 1 1 0 2 0 1 1",
+      "M 0 0 Z 1",
+    ];
+    const valid = [
+      "M0-1L2-3",
+      "M1e-3-2e+2L0 0",
+      "M0 0 1 1 2 2",
+      "M0 0L1 1ZM2 2l1 0z",
+      "M0 0A1 1 0 011 1",
+    ];
+    const scene = projectPuzzleScene(pathPuzzle, {
+      ...emptySceneView,
+      annotations: [
+        ...malformed.map((d, index) => ({
+          id: `malformed-${index}`,
+          d,
+          label: `Malformed ${index}`,
+        })),
+        ...valid.map((d, index) => ({
+          id: `valid-${index}`,
+          d,
+          label: `Valid ${index}`,
+        })),
+      ],
+    });
+    for (const [index] of malformed.entries()) {
+      expect(
+        scene.nodes.find((node) => node.id === `annotation-malformed-${index}`),
+      ).toMatchObject({
+        d: "",
+        geometryIssue: { code: "malformed-annotation-path" },
+      });
+    }
+    for (const [index] of valid.entries()) {
+      expect(
+        scene.nodes.find((node) => node.id === `annotation-valid-${index}`),
+      ).toMatchObject({
+        d: expect.stringMatching(/^M /),
+        geometryIssue: undefined,
+      });
+    }
+  });
+
   it("isolates malformed annotations and valid annotations without a scene frame", () => {
     const pathPuzzle = structuredClone(puzzle);
     pathPuzzle.cells = {
@@ -812,6 +917,106 @@ describe("PuzzleCanvas", () => {
     expect(subQuantum.geometryIssues).toEqual([
       expect.objectContaining({ code: "below-minimum-boundary-piece" }),
     ]);
+  });
+
+  it("reports every distinct sub-threshold split ratio before clustering", () => {
+    const projectExteriorAtom = (normalizedFeature: number) => {
+      const atomPuzzle = structuredClone(puzzle);
+      const nativeOffset = normalizedFeature * 2;
+      atomPuzzle.cells = {
+        r1c1: {
+          ...atomPuzzle.cells.r1c1,
+          shape: { kind: "rect", x: 0, y: 0, width: 1, height: 1 },
+        },
+        r1c2: {
+          ...atomPuzzle.cells.r1c2,
+          shape: {
+            kind: "rect",
+            x: nativeOffset,
+            y: -1,
+            width: 1 - nativeOffset,
+            height: 2,
+          },
+        },
+      };
+      atomPuzzle.groups = {
+        atoms: {
+          id: "atoms",
+          roles: ["region"],
+          cellIds: ["r1c1", "r1c2"],
+        },
+      };
+      const border = projectPuzzleScene(atomPuzzle, emptySceneView).nodes.find(
+        (node) => node.id === "group-border-atoms",
+      );
+      if (border?.kind !== "path") {
+        throw new Error("expected atomic group path");
+      }
+      return border;
+    };
+
+    for (const feature of [1e-14, 3e-15, 1e-15]) {
+      const border = projectExteriorAtom(feature);
+      expect(border.geometryIssues, `feature ${feature}`).toEqual([
+        expect.objectContaining({ code: "below-minimum-boundary-piece" }),
+      ]);
+      expect(border.d).not.toMatch(/NaN|Infinity/);
+      const segments = parseLineSegments(border.d);
+      const canonicalSegments = segments.map((segment) =>
+        [
+          `${segment.from.x},${segment.from.y}`,
+          `${segment.to.x},${segment.to.y}`,
+        ]
+          .sort()
+          .join("/"),
+      );
+      expect(new Set(canonicalSegments).size).toBe(canonicalSegments.length);
+    }
+
+    const lowerRatio = 0.75;
+    const upperRatio = lowerRatio + Number.EPSILON / 2;
+    expect(upperRatio).toBeGreaterThan(lowerRatio);
+    const adjacentPuzzle = structuredClone(puzzle);
+    adjacentPuzzle.cells = {
+      r1c1: {
+        ...adjacentPuzzle.cells.r1c1,
+        shape: { kind: "rect", x: 0, y: 0, width: 1, height: 1 },
+      },
+      r1c2: {
+        ...adjacentPuzzle.cells.r1c2,
+        shape: { kind: "rect", x: 0, y: 1, width: lowerRatio, height: 1 },
+      },
+      r1c3: {
+        ...adjacentPuzzle.cells.r1c3,
+        shape: {
+          kind: "rect",
+          x: upperRatio,
+          y: 1,
+          width: 1 - upperRatio,
+          height: 1,
+        },
+      },
+    };
+    adjacentPuzzle.groups = {
+      adjacent: {
+        id: "adjacent",
+        roles: ["region"],
+        cellIds: ["r1c1", "r1c2", "r1c3"],
+      },
+    };
+    const adjacentScene = projectPuzzleScene(
+      adjacentPuzzle,
+      emptySceneView,
+    );
+    const adjacentBorder = adjacentScene.nodes.find(
+      (node) => node.id === "group-border-adjacent",
+    );
+    expect(adjacentBorder).toMatchObject({
+      geometryIssues: [
+        expect.objectContaining({ code: "below-minimum-boundary-piece" }),
+      ],
+      d: expect.not.stringMatching(/NaN|Infinity/),
+    });
   });
 
   it("evaluates the public feature threshold before display quantization", () => {
