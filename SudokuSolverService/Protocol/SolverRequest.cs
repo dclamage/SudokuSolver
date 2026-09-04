@@ -68,6 +68,12 @@ public sealed class SolverRequest
 
     /// <summary>Gets true-candidate options when <see cref="Operation"/> is <c>trueCandidates</c>.</summary>
     public TrueCandidatesOptionsDto? TrueCandidatesOptions { get; init; }
+
+    /// <summary>Gets logical-session creation options when <see cref="Operation"/> is <c>logical.create</c>.</summary>
+    public LogicalCreateOptionsDto? LogicalCreateOptions { get; init; }
+
+    /// <summary>Gets logical-deduction apply options when <see cref="Operation"/> is <c>logical.apply</c>.</summary>
+    public LogicalApplyOptionsDto? LogicalApplyOptions { get; init; }
 }
 
 /// <summary>Uses the native package's authoritative parser and serializer at the protocol boundary.</summary>
@@ -129,4 +135,30 @@ public sealed class TrueCandidatesOptionsDto
 
     /// <summary>Gets the maximum solution count retained for each candidate.</summary>
     public required long SolutionCountCap { get; init; }
+}
+
+/// <summary>Contains options for creating or deterministically restoring a logical session.</summary>
+public sealed class LogicalCreateOptionsDto
+{
+    /// <summary>Gets the stable native projection identifier.</summary>
+    public required string ProjectionId { get; init; }
+
+    /// <summary>Gets ordered deduction identifiers to replay from the projected source.</summary>
+    public required string[] AppliedDeductionIds { get; init; }
+}
+
+/// <summary>Contains the exact preconditions for applying one logical deduction.</summary>
+public sealed class LogicalApplyOptionsDto
+{
+    /// <summary>Gets the stable native projection identifier owned by the session.</summary>
+    public required string ProjectionId { get; init; }
+
+    /// <summary>Gets the stable logical session identifier.</summary>
+    public required string SessionId { get; init; }
+
+    /// <summary>Gets the expected current logical position hash.</summary>
+    public required string PositionHash { get; init; }
+
+    /// <summary>Gets the exact available deduction identifier to apply.</summary>
+    public required string DeductionId { get; init; }
 }

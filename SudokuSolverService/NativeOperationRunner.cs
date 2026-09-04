@@ -1,6 +1,9 @@
 using SudokuSolver;
+using SudokuSolver.Logical;
 using SudokuSolver.PuzzleFormats.Native;
 using SudokuSolverService.Protocol;
+using System.Security.Cryptography;
+using System.Text;
 
 namespace SudokuSolverService;
 
@@ -10,6 +13,8 @@ public sealed class NativeOperationRunner
     private const int SupportedProtocolVersion = 1;
     private readonly bool _singleThreaded;
     private readonly Func<Solver, CancellationToken, bool> _findSolution;
+    private readonly object _logicalSessionLock = new();
+    private readonly Dictionary<LogicalSessionKey, LogicalSession> _logicalSessions = [];
 
     /// <summary>Initializes a native operation runner.</summary>
     /// <param name="singleThreaded">Whether solver algorithms must avoid internal parallelism.</param>
@@ -111,6 +116,12 @@ public sealed class NativeOperationRunner
                         trueCandidatesProjection,
                         sendResponse,
                         cancellationToken);
+                    break;
+                case "logical.create":
+                    RunLogicalCreate(request, verifiedHash, projectionId, sendResponse, cancellationToken);
+                    break;
+                case "logical.apply":
+                    RunLogicalApply(request, verifiedHash, projectionId, sendResponse, cancellationToken);
                     break;
                 default:
                     sendResponse(Error(
@@ -336,6 +347,225 @@ public sealed class NativeOperationRunner
         };
     }
 
+    private void RunLogicalCreate(
+        SolverRequest request,
+        string verifiedHash,
+        string projectionId,
+        Action<SolverResponse> sendResponse,
+        CancellationToken cancellationToken)
+    {
+        LogicalCreateOptionsDto options = request.LogicalCreateOptions!;
+        ValidateRequiredText(options.ProjectionId, "Logical create projectionId");
+        if (options.AppliedDeductionIds is null
+            || options.AppliedDeductionIds.Any(string.IsNullOrWhiteSpace))
+        {
+            throw new ArgumentException("Logical create appliedDeductionIds must contain valid IDs.", nameof(request));
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        NativeProjectionResult projection = NativePuzzleProjector.Project(request.Puzzle, projectionId);
+        NativeSolverProjection selectedProjection = GetSelectedProjection(request.Puzzle, projectionId);
+        LogicalPosition position = new(
+            projection.Solver,
+            projection.CellIdByIndex,
+            selectedProjection.ValueIdsBySolverValue,
+            verifiedHash);
+        List<string> history = [];
+        foreach (string deductionId in options.AppliedDeductionIds)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LogicalDeduction? deduction = LogicalDeductionService.FindAvailable(position).SingleOrDefault(candidate =>
+                string.Equals(candidate.Id, deductionId, StringComparison.Ordinal));
+            if (deduction is null)
+            {
+                sendResponse(Error(
+                    request,
+                    verifiedHash,
+                    "staleContext",
+                    $"Logical replay deduction {deductionId} is not available."));
+                return;
+            }
+            _ = LogicalDeductionService.Apply(position, deduction);
+            history.Add(deductionId);
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        LogicalSessionKey key = GetLogicalSessionKey(request, verifiedHash);
+        LogicalSession session = new(
+            CreateLogicalSessionId(key, projectionId),
+            projectionId,
+            position,
+            history.ToArray());
+        lock (_logicalSessionLock)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _logicalSessions[key] = session;
+        }
+        sendResponse(Result(request, verifiedHash, logical: MapLogicalSession(session)));
+    }
+
+    private void RunLogicalApply(
+        SolverRequest request,
+        string verifiedHash,
+        string projectionId,
+        Action<SolverResponse> sendResponse,
+        CancellationToken cancellationToken)
+    {
+        LogicalApplyOptionsDto options = request.LogicalApplyOptions!;
+        ValidateRequiredText(options.ProjectionId, "Logical apply projectionId");
+        ValidateRequiredText(options.SessionId, "Logical apply sessionId");
+        ValidateRequiredText(options.PositionHash, "Logical apply positionHash");
+        ValidateRequiredText(options.DeductionId, "Logical apply deductionId");
+        cancellationToken.ThrowIfCancellationRequested();
+
+        LogicalResultDto? result = null;
+        LogicalSessionKey key = GetLogicalSessionKey(request, verifiedHash);
+        lock (_logicalSessionLock)
+        {
+            if (!_logicalSessions.TryGetValue(key, out LogicalSession? current)
+                || !string.Equals(current.SessionId, options.SessionId, StringComparison.Ordinal)
+                || !string.Equals(current.ProjectionId, projectionId, StringComparison.Ordinal)
+                || !string.Equals(current.Position.PositionHash, options.PositionHash, StringComparison.Ordinal))
+            {
+                sendResponse(Error(request, verifiedHash, "staleContext", "The logical session context is stale."));
+                return;
+            }
+
+            LogicalDeduction? deduction = LogicalDeductionService.FindAvailable(current.Position)
+                .SingleOrDefault(candidate => string.Equals(candidate.Id, options.DeductionId, StringComparison.Ordinal));
+            if (deduction is null)
+            {
+                sendResponse(Error(
+                    request,
+                    verifiedHash,
+                    "staleContext",
+                    "The logical deduction is forged, stale, or no longer available."));
+                return;
+            }
+
+            LogicalPosition nextPosition = current.Position.Clone();
+            try
+            {
+                _ = LogicalDeductionService.Apply(nextPosition, deduction);
+            }
+            catch (InvalidOperationException)
+            {
+                sendResponse(Error(
+                    request,
+                    verifiedHash,
+                    "staleContext",
+                    "The logical deduction is forged, stale, or no longer available."));
+                return;
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            LogicalSession next = current with
+            {
+                Position = nextPosition,
+                HistoryDeductionIds = [.. current.HistoryDeductionIds, deduction.Id],
+            };
+            _logicalSessions[key] = next;
+            result = MapLogicalSession(next);
+        }
+        sendResponse(Result(request, verifiedHash, logical: result));
+    }
+
+    private static LogicalResultDto MapLogicalSession(LogicalSession session)
+        => new()
+        {
+            SessionId = session.SessionId,
+            PositionHash = session.Position.PositionHash,
+            Cells = session.Position.GetCells().Select(MapLogicalCell).ToArray(),
+            AvailableDeductions = LogicalDeductionService.FindAvailable(session.Position)
+                .Select(MapLogicalDeduction)
+                .ToArray(),
+            HistoryDeductionIds = session.HistoryDeductionIds.ToArray(),
+        };
+
+    private static LogicalCellStateDto MapLogicalCell(LogicalCellState cell)
+        => new()
+        {
+            CellId = cell.CellId,
+            ValueId = cell.ValueId,
+            CandidateValueIds = cell.CandidateValueIds.ToArray(),
+        };
+
+    private static LogicalDeductionDto MapLogicalDeduction(LogicalDeduction deduction)
+        => new()
+        {
+            Id = deduction.Id,
+            TechniqueId = deduction.TechniqueId,
+            OwningConstraintId = deduction.OwningConstraintId,
+            PreconditionHash = deduction.PreconditionHash,
+            Premises = deduction.Premises.Select(premise => new LogicalPremiseDto
+            {
+                Kind = premise.Kind,
+                CellId = premise.CellId,
+                ValueId = premise.ValueId,
+            }).ToArray(),
+            Delta = new LogicalDeltaDto
+            {
+                Placements = deduction.Delta.Placements.Select(placement => new LogicalPlacementDto
+                {
+                    CellId = placement.CellId,
+                    ValueId = placement.ValueId,
+                }).ToArray(),
+                Eliminations = deduction.Delta.Eliminations.Select(elimination => new LogicalEliminationDto
+                {
+                    CellId = elimination.CellId,
+                    ValueId = elimination.ValueId,
+                }).ToArray(),
+            },
+            Frames = deduction.Frames.Select(frame => new LogicalWalkthroughFrameDto
+            {
+                Focus = frame.Focus.Select(MapLogicalReference).ToArray(),
+                Dim = frame.Dim.Select(MapLogicalReference).ToArray(),
+                Highlight = frame.Highlight.Select(MapLogicalReference).ToArray(),
+                Explanation = new LogicalExplanationDto
+                {
+                    Key = frame.Explanation.Key,
+                    Arguments = frame.Explanation.Arguments.Select(argument => new LogicalExplanationArgumentDto
+                    {
+                        Kind = argument.Kind,
+                        Value = argument.Value,
+                    }).ToArray(),
+                },
+            }).ToArray(),
+        };
+
+    private static LogicalEntityReferenceDto MapLogicalReference(LogicalEntityReference reference)
+        => new() { Kind = reference.Kind, Id = reference.Id };
+
+    private static NativeSolverProjection GetSelectedProjection(
+        NativePuzzlePackage package,
+        string projectionId)
+        => package.SolverProjections.Single(projection =>
+            string.Equals(projection.Id, projectionId, StringComparison.Ordinal));
+
+    private static LogicalSessionKey GetLogicalSessionKey(SolverRequest request, string verifiedHash)
+        => new(request.ContextId, request.SemanticRevision, verifiedHash);
+
+    private static string CreateLogicalSessionId(LogicalSessionKey key, string projectionId)
+    {
+        using MemoryStream stream = new();
+        using (BinaryWriter writer = new(stream, new UTF8Encoding(false), leaveOpen: true))
+        {
+            writer.Write("logical-session-v1");
+            writer.Write(key.ContextId);
+            writer.Write(key.SemanticRevision);
+            writer.Write(key.SemanticHash);
+            writer.Write(projectionId);
+        }
+        return $"sha256:{Convert.ToHexString(SHA256.HashData(stream.ToArray())).ToLowerInvariant()}";
+    }
+
+    private static void ValidateRequiredText(string? value, string fieldName)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new ArgumentException($"{fieldName} is required.");
+        }
+    }
+
     private static string GetProjectionId(SolverRequest request)
         => request.Operation switch
         {
@@ -347,10 +577,16 @@ public sealed class NativeOperationRunner
                 ?? throw new ArgumentException("Native countOptions are required.", nameof(request)),
             "trueCandidates" => request.TrueCandidatesOptions?.ProjectionId
                 ?? throw new ArgumentException("Native trueCandidatesOptions are required.", nameof(request)),
+            "logical.create" => request.LogicalCreateOptions?.ProjectionId
+                ?? throw new ArgumentException("Native logicalCreateOptions are required.", nameof(request)),
+            "logical.apply" => request.LogicalApplyOptions?.ProjectionId
+                ?? throw new ArgumentException("Native logicalApplyOptions are required.", nameof(request)),
             _ => request.ValidateOptions?.ProjectionId
                 ?? request.SolveOptions?.ProjectionId
                 ?? request.CountOptions?.ProjectionId
                 ?? request.TrueCandidatesOptions?.ProjectionId
+                ?? request.LogicalCreateOptions?.ProjectionId
+                ?? request.LogicalApplyOptions?.ProjectionId
                 ?? throw new ArgumentException("Native operation options are required.", nameof(request)),
         };
 
@@ -407,8 +643,9 @@ public sealed class NativeOperationRunner
         CapabilityResultDto? capability = null,
         SolveResultDto? solve = null,
         CountResultDto? count = null,
-        TrueCandidatesResultDto? trueCandidates = null)
-        => CreateResponse(request, verifiedHash, "result", capability, solve, count, trueCandidates);
+        TrueCandidatesResultDto? trueCandidates = null,
+        LogicalResultDto? logical = null)
+        => CreateResponse(request, verifiedHash, "result", capability, solve, count, trueCandidates, logical);
 
     private static SolverResponse Error(
         SolverRequest request,
@@ -429,6 +666,7 @@ public sealed class NativeOperationRunner
         SolveResultDto? solve = null,
         CountResultDto? count = null,
         TrueCandidatesResultDto? trueCandidates = null,
+        LogicalResultDto? logical = null,
         SolverErrorDto? error = null)
         => new()
         {
@@ -444,8 +682,20 @@ public sealed class NativeOperationRunner
             Solve = solve,
             Count = count,
             TrueCandidates = trueCandidates,
+            Logical = logical,
             Error = error,
         };
+
+    private readonly record struct LogicalSessionKey(
+        string ContextId,
+        long SemanticRevision,
+        string SemanticHash);
+
+    private sealed record LogicalSession(
+        string SessionId,
+        string ProjectionId,
+        LogicalPosition Position,
+        string[] HistoryDeductionIds);
 
     private sealed class UnsupportedProjectionException(string message) : Exception(message);
 }

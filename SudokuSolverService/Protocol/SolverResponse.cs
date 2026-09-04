@@ -125,13 +125,152 @@ public sealed class TrueCandidatesResultDto
 }
 
 /// <summary>Contains a typed logical-session result without open-ended payload values.</summary>
-public sealed class LogicalResultDto
+public sealed record LogicalResultDto
 {
     /// <summary>Gets the stable logical session identifier.</summary>
     public required string SessionId { get; init; }
 
-    /// <summary>Gets the available stable deduction identifiers.</summary>
-    public required string[] DeductionIds { get; init; }
+    /// <summary>Gets the deterministic hash of the session's current position.</summary>
+    public required string PositionHash { get; init; }
+
+    /// <summary>Gets the current projected board in stable cell order.</summary>
+    public required LogicalCellStateDto[] Cells { get; init; }
+
+    /// <summary>Gets the complete currently available structured deductions.</summary>
+    public required LogicalDeductionDto[] AvailableDeductions { get; init; }
+
+    /// <summary>Gets ordered deduction identifiers already applied to the session.</summary>
+    public required string[] HistoryDeductionIds { get; init; }
+
+    /// <summary>Gets available identifiers for compatibility with the initial protocol scaffold.</summary>
+    public string[] DeductionIds => AvailableDeductions.Select(deduction => deduction.Id).ToArray();
+}
+
+/// <summary>Contains one stable cell's current logical value or candidates.</summary>
+public sealed class LogicalCellStateDto
+{
+    /// <summary>Gets the stable cell identifier.</summary>
+    public required string CellId { get; init; }
+
+    /// <summary>Gets the stable placed value identifier, or <see langword="null"/> when unset.</summary>
+    public string? ValueId { get; init; }
+
+    /// <summary>Gets stable candidate value identifiers when unset.</summary>
+    public required string[] CandidateValueIds { get; init; }
+}
+
+/// <summary>Contains one fully typed logical deduction for native transport.</summary>
+public sealed class LogicalDeductionDto
+{
+    /// <summary>Gets the deterministic deduction identifier.</summary>
+    public required string Id { get; init; }
+
+    /// <summary>Gets the stable technique identifier.</summary>
+    public required string TechniqueId { get; init; }
+
+    /// <summary>Gets the stable owning constraint identifier.</summary>
+    public required string OwningConstraintId { get; init; }
+
+    /// <summary>Gets the exact position hash required by this deduction.</summary>
+    public required string PreconditionHash { get; init; }
+
+    /// <summary>Gets typed premises used by the deduction.</summary>
+    public required LogicalPremiseDto[] Premises { get; init; }
+
+    /// <summary>Gets the stable-ID semantic delta.</summary>
+    public required LogicalDeltaDto Delta { get; init; }
+
+    /// <summary>Gets ordered semantic walkthrough frames.</summary>
+    public required LogicalWalkthroughFrameDto[] Frames { get; init; }
+}
+
+/// <summary>Contains one typed logical premise.</summary>
+public sealed class LogicalPremiseDto
+{
+    /// <summary>Gets the stable premise kind.</summary>
+    public required string Kind { get; init; }
+
+    /// <summary>Gets an optional stable cell identifier.</summary>
+    public string? CellId { get; init; }
+
+    /// <summary>Gets an optional stable value identifier.</summary>
+    public string? ValueId { get; init; }
+}
+
+/// <summary>Contains one typed logical board delta.</summary>
+public sealed class LogicalDeltaDto
+{
+    /// <summary>Gets stable placements.</summary>
+    public required LogicalPlacementDto[] Placements { get; init; }
+
+    /// <summary>Gets stable eliminations.</summary>
+    public required LogicalEliminationDto[] Eliminations { get; init; }
+}
+
+/// <summary>Contains one stable placement.</summary>
+public sealed class LogicalPlacementDto
+{
+    /// <summary>Gets the stable cell identifier.</summary>
+    public required string CellId { get; init; }
+
+    /// <summary>Gets the stable value identifier.</summary>
+    public required string ValueId { get; init; }
+}
+
+/// <summary>Contains one stable candidate elimination.</summary>
+public sealed class LogicalEliminationDto
+{
+    /// <summary>Gets the stable cell identifier.</summary>
+    public required string CellId { get; init; }
+
+    /// <summary>Gets the stable value identifier.</summary>
+    public required string ValueId { get; init; }
+}
+
+/// <summary>Contains one semantic walkthrough frame.</summary>
+public sealed class LogicalWalkthroughFrameDto
+{
+    /// <summary>Gets normally focused semantic entities.</summary>
+    public required LogicalEntityReferenceDto[] Focus { get; init; }
+
+    /// <summary>Gets semantically de-emphasized entities.</summary>
+    public required LogicalEntityReferenceDto[] Dim { get; init; }
+
+    /// <summary>Gets emphasized semantic entities.</summary>
+    public required LogicalEntityReferenceDto[] Highlight { get; init; }
+
+    /// <summary>Gets typed explanation content.</summary>
+    public required LogicalExplanationDto Explanation { get; init; }
+}
+
+/// <summary>References one stable semantic entity.</summary>
+public sealed class LogicalEntityReferenceDto
+{
+    /// <summary>Gets the stable entity kind.</summary>
+    public required string Kind { get; init; }
+
+    /// <summary>Gets the stable entity identifier.</summary>
+    public required string Id { get; init; }
+}
+
+/// <summary>Contains one localization key and ordered typed arguments.</summary>
+public sealed class LogicalExplanationDto
+{
+    /// <summary>Gets the stable localization key.</summary>
+    public required string Key { get; init; }
+
+    /// <summary>Gets ordered typed arguments.</summary>
+    public required LogicalExplanationArgumentDto[] Arguments { get; init; }
+}
+
+/// <summary>Contains one typed explanation argument.</summary>
+public sealed class LogicalExplanationArgumentDto
+{
+    /// <summary>Gets the semantic argument kind.</summary>
+    public required string Kind { get; init; }
+
+    /// <summary>Gets the stable identifier or literal argument value.</summary>
+    public required string Value { get; init; }
 }
 
 /// <summary>Contains a machine-readable native solver error.</summary>
