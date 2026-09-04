@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { act, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 
@@ -46,6 +46,46 @@ describe("Logical Solver panel and walkthrough", () => {
     expect(screen.queryByRole("region", { name: "Logical walkthrough" })).toBeNull();
   });
 
+  it.each([
+    ["manual", { id: "logical-solver", name: "Replacement notes", kind: "manual" }, "setterNotes"],
+    ["true candidates", {
+      id: "logical-solver",
+      name: "Replacement candidates",
+      kind: "trueCandidates",
+      refresh: "automatic",
+      display: "possibility",
+      solutionCountCap: 1,
+    }, "trueCandidates"],
+  ] as const)("closes when the active context ID is replaced by %s", async (_label, replacement, panelKind) => {
+    const { controller, user } = await renderLiveLogical();
+    await user.click(screen.getByRole("button", { name: "Open Walkthrough" }));
+    screen.getByRole("button", { name: "Next Frame" }).focus();
+    const puzzleDocument = structuredClone(controller.puzzle.getSnapshot().document);
+    puzzleDocument.authoring.candidateContexts = puzzleDocument.authoring.candidateContexts.map(
+      (context) => context.id === "logical-solver"
+        ? replacement
+        : context,
+    );
+
+    act(() => {
+      controller.candidates.onPuzzleChanged({
+        documentRevision: puzzleDocument.revision + 1,
+        semanticRevision: puzzleDocument.semanticRevision,
+        semanticHash: "sha256:logical-fixture",
+        semantic: false,
+        document: puzzleDocument,
+      });
+    });
+
+    expect(controller.getSnapshot()).toMatchObject({
+      workspace: "set",
+      walkthroughOpen: false,
+    });
+    expect(controller.candidates.getPanelDescriptor().panelKind).toBe(panelKind);
+    expect(screen.queryByRole("region", { name: "Logical walkthrough" })).toBeNull();
+    expect(document.body).toHaveFocus();
+  });
+
   it("keeps Next Step and logical controls out of the DOM until Logical Solver is active", async () => {
     const { controller, user } = await renderLiveLogical();
     expect(screen.getByRole("button", { name: "Next Step" })).toBeVisible();
@@ -83,6 +123,9 @@ describe("Logical Solver panel and walkthrough", () => {
     expect(screen.getByRole("tab", { name: "Playtest" })).toBeVisible();
     expect(screen.getByText("logical.nakedSingle.place")).toBeVisible();
     expect(screen.getByText("cell: r1c1")).toBeVisible();
+    expect(screen.getAllByText("3").some((element) =>
+      element.getAttribute("data-logical-emphasis") === "highlight"
+    )).toBe(true);
     expect(controller.getSnapshot().workspace).toBe("set");
 
     await user.click(screen.getByRole("button", { name: "Back to workspace" }));
@@ -104,7 +147,10 @@ describe("Logical Solver panel and walkthrough", () => {
     })));
     await settle();
 
-    expect(screen.getByText(nakedSingle.id)).toBeVisible();
+    const history = screen.getByRole("complementary", { name: "Logical history" });
+    expect(history).toHaveTextContent("basic.naked-single");
+    expect(history).toHaveTextContent("Placement cell r1c1 = value 3");
+    expect(history).toHaveTextContent("logical.nakedSingle.place");
     await user.click(screen.getByRole("button", { name: "Reset logical session" }));
     expect(solver.requests.at(-1)).toMatchObject({
       operation: "logical.create",
@@ -114,7 +160,17 @@ describe("Logical Solver panel and walkthrough", () => {
   });
 
   it("shows archived revision history as read-only", async () => {
-    const { controller, solver } = await renderLiveLogical();
+    const { controller, solver, user } = await renderLiveLogical();
+    await user.click(screen.getByRole("button", { name: "Open Walkthrough" }));
+    await user.click(screen.getByRole("button", { name: "Next Step" }));
+    const apply = solver.requests.at(-1) as LogicalApplySolverRequest;
+    solver.resolve(apply.requestId, logicalResponse(apply, logicalState({
+      semanticRevision: 1,
+      deductions: [],
+      history: [nakedSingle.id],
+      positionHash: "sha256:position-2",
+    })));
+    await settle();
     controller.candidates.onPuzzleChanged({
       documentRevision: 2,
       semanticRevision: 2,
@@ -133,5 +189,10 @@ describe("Logical Solver panel and walkthrough", () => {
 
     expect(screen.getByText("Revision 1 · archived")).toBeVisible();
     expect(screen.getByText("Read-only history")).toBeVisible();
+    const archived = screen.getByText("Revision 1 · archived").closest("section");
+    expect(archived).toHaveTextContent("basic.naked-single");
+    expect(archived).toHaveTextContent("Placement cell r1c1 = value 3");
+    expect(archived).toHaveTextContent("logical.nakedSingle.place");
+    expect(archived?.querySelector("button")).toBeNull();
   });
 });

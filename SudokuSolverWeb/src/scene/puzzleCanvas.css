@@ -87,6 +87,26 @@
   font-weight: 700;
 }
 
+.puzzle-cell__candidate--logical-dim,
+.puzzle-cell__value--logical-dim {
+  opacity: 0.3;
+}
+
+.puzzle-cell__candidate--logical-focus,
+.puzzle-cell__value--logical-focus {
+  fill: #087fa5;
+  font-weight: 800;
+}
+
+.puzzle-cell__candidate--logical-highlight,
+.puzzle-cell__value--logical-highlight {
+  fill: #bf5b20;
+  font-weight: 800;
+  paint-order: stroke;
+  stroke: #fff;
+  stroke-width: 0.05px;
+}
+
 .puzzle-scene-path {
   fill: none;
   pointer-events: none;

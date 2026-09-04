@@ -71,6 +71,21 @@
   background: #f7f9fa;
 }
 
+.logical-walkthrough__history ol {
+  padding-inline-start: 1.25rem;
+}
+
+.logical-history-summary {
+  display: grid;
+  gap: 0.25rem;
+  margin-block: 0.6rem;
+}
+
+.logical-history-summary span,
+.logical-history-summary small {
+  overflow-wrap: anywhere;
+}
+
 .logical-explanation dl div {
   display: grid;
   grid-template-columns: 5rem minmax(0, 1fr);

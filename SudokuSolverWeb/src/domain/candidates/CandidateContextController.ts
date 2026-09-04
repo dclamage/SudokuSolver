@@ -97,8 +97,25 @@ interface ActiveLogicalWork {
   readonly request: LogicalCreateSolverRequest | LogicalApplySolverRequest;
   readonly expectedHistory: readonly string[];
   readonly selectedDeductionId: string | null;
+  readonly appliedDeduction: LogicalResult["availableDeductions"][number] | null;
   readonly job: SolverJob;
   readonly unsubscribeProgress: () => void;
+}
+
+function requestedLogicalProjection(work: ActiveLogicalWork) {
+  const projectionId =
+    work.request.operation === "logical.create"
+      ? work.request.logicalCreateOptions.projectionId
+      : work.request.logicalApplyOptions.projectionId;
+  const projection = work.request.puzzle.solverProjections.find(
+    (candidate) => candidate.id === projectionId,
+  );
+  if (projection === undefined) {
+    throw new Error(
+      "Logical Solver returned identifiers outside the requested projection",
+    );
+  }
+  return projection;
 }
 
 interface DefinitionReconciliation {
@@ -183,6 +200,7 @@ function initialRuntime(
           values: Object.freeze({}),
           availableDeductions: Object.freeze([]),
           historyDeductionIds: Object.freeze([]),
+          appliedDeductions: Object.freeze([]),
           selectedDeductionId: null,
           selectedFrameIndex: 0,
           applyingDeductionId: null,
@@ -391,14 +409,15 @@ export class CandidateContextController {
     const definition = this.findDefinition(this.activeContextId);
     const runtime = this.contexts[this.activeContextId];
     const logical = runtime.logical;
+    const deduction = logical?.availableDeductions.find(
+      (candidate) => candidate.id === deductionId,
+    );
     if (
       !isLogicalSolverCandidateContext(definition) ||
       logical?.sessionId === null ||
       logical?.positionHash === null ||
       logical?.applyingDeductionId !== null ||
-      !logical?.availableDeductions.some(
-        (deduction) => deduction.id === deductionId,
-      ) ||
+      deduction === undefined ||
       this.semanticHash === null
     ) {
       return Promise.resolve();
@@ -445,6 +464,7 @@ export class CandidateContextController {
         deductionId,
       ]),
       selectedDeductionId: deductionId,
+      appliedDeduction: deduction,
       job,
       unsubscribeProgress: () => unsubscribeProgress(),
     };
@@ -687,6 +707,7 @@ export class CandidateContextController {
       request,
       expectedHistory: Object.freeze([...history]),
       selectedDeductionId: null,
+      appliedDeduction: null,
       job,
       unsubscribeProgress: () => unsubscribeProgress(),
     };
@@ -731,6 +752,7 @@ export class CandidateContextController {
       }
       validateLogicalResult(
         work.request.puzzle,
+        requestedLogicalProjection(work),
         response.logical,
         work.expectedHistory,
       );
@@ -787,10 +809,25 @@ export class CandidateContextController {
     ) {
       throw new Error("Logical Solver returned a different session");
     }
-    validateLogicalResult(work.request.puzzle, result, work.expectedHistory);
+    validateLogicalResult(
+      work.request.puzzle,
+      requestedLogicalProjection(work),
+      result,
+      work.expectedHistory,
+    );
     const board = projectLogicalBoard(result);
     const previous = this.contexts[work.contextId];
     const logical = previous.logical!;
+    const summaryCandidates =
+      work.appliedDeduction === null
+        ? logical.appliedDeductions
+        : [...logical.appliedDeductions, work.appliedDeduction];
+    const appliedDeductions = result.historyDeductionIds.map((deductionId) =>
+      summaryCandidates.find((deduction) => deduction.id === deductionId),
+    );
+    if (appliedDeductions.some((deduction) => deduction === undefined)) {
+      throw new Error("Logical Solver history is missing an applied deduction summary");
+    }
     const selectedDeductionId =
       result.availableDeductions.some(
         (deduction) => deduction.id === logical.selectedDeductionId,
@@ -813,6 +850,9 @@ export class CandidateContextController {
         values: board.values,
         availableDeductions: Object.freeze([...result.availableDeductions]),
         historyDeductionIds: Object.freeze([...result.historyDeductionIds]),
+        appliedDeductions: Object.freeze(
+          appliedDeductions.filter((deduction) => deduction !== undefined),
+        ),
         selectedDeductionId,
         selectedFrameIndex: 0,
         applyingDeductionId: null,
@@ -865,7 +905,7 @@ export class CandidateContextController {
         semanticRevision: runtime.baseSemanticRevision,
         semanticHash: runtime.baseSemanticHash,
         historyDeductionIds: Object.freeze([...logical.historyDeductionIds]),
-        deductions: Object.freeze([...logical.availableDeductions]),
+        appliedDeductions: Object.freeze([...logical.appliedDeductions]),
       });
       next = Object.freeze({
         ...next,

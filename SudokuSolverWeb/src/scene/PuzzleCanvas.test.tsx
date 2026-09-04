@@ -1831,6 +1831,47 @@ describe("PuzzleCanvas", () => {
     expect(annotationSegments[0].to.y).toBeCloseTo(4.5, 9);
   });
 
+  it("resolves every logical entity kind and emphasis through scene geometry", () => {
+    const annotatedPuzzle = structuredClone(puzzle);
+    annotatedPuzzle.constraints = [{
+      id: "constraint-1",
+      typeId: "test.bound-cell",
+      bindings: { cells: [{ kind: "cell", id: "r1c2" }] },
+      parameters: {},
+    }];
+
+    render(
+      <PuzzleCanvas
+        puzzle={annotatedPuzzle}
+        view={{
+          ...emptySceneView,
+          candidates: { r1c1: ["3"] },
+          annotations: [
+            { id: "cell-focus", entity: { kind: "cell", id: "r1c1" }, emphasis: "focus" },
+            { id: "group-dim", entity: { kind: "group", id: "row-1" }, emphasis: "dim" },
+            { id: "value-highlight", entity: { kind: "value", id: "3" }, emphasis: "highlight" },
+            { id: "constraint-focus", entity: { kind: "constraint", id: "constraint-1" }, emphasis: "focus" },
+          ],
+        }}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    expect(screen.getByTestId("annotation-cell-focus")).toHaveClass(
+      "puzzle-scene-path--focus",
+    );
+    expect(screen.getByTestId("annotation-group-dim")).toHaveClass(
+      "puzzle-scene-path--dim",
+    );
+    expect(screen.getByText("3")).toHaveAttribute(
+      "data-logical-emphasis",
+      "highlight",
+    );
+    expect(
+      screen.getByTestId("annotation-constraint-focus-binding-cell-r1c2"),
+    ).toHaveClass("puzzle-scene-path--focus");
+  });
+
   it("labels the SVG and exposes each cell as a focusable control", () => {
     render(
       <PuzzleCanvas

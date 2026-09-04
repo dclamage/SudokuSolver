@@ -2,6 +2,7 @@ import type { PuzzlePackageV1 } from "../domain/puzzle/types";
 import type { CapabilityEntityResult } from "../solver/protocol";
 import {
   MIN_NORMALIZED_FEATURE_SIZE,
+  normalizeNativePoint,
   normalizePuzzleGeometry,
   normalizedCoordinate,
 } from "./normalizeSceneGeometry";
@@ -587,6 +588,7 @@ function projectCornerCandidateNodes(
         x: region.minX + ((column + 0.5) * regionWidth) / columns,
         y: region.minY + ((row + 0.5) * regionHeight) / columns,
         text: value.label,
+        valueId: value.id,
         role: "candidate" as const,
         candidateKind,
         candidateTone: candidatePresentation?.[value.id]?.tone,
@@ -633,6 +635,7 @@ function projectCellContent(
       x: region.center.x,
       y: region.center.y,
       text: value.label,
+      valueId: value.id,
       role,
     },
   ];
@@ -1090,7 +1093,7 @@ export function projectPuzzleScene(
   const geometryByCellId = new Map<string, ProjectedShape>();
   const selectedCellIds = new Set(view.selectedCellIds);
 
-  const nodes: SceneCellNode[] = Object.values(puzzle.cells).map(
+  let nodes: SceneCellNode[] = Object.values(puzzle.cells).map(
     (cell, cellIndex) => {
       const normalizedCell = normalizedGeometry.cells.get(cell.id);
       const geometry =
@@ -1146,15 +1149,19 @@ export function projectPuzzleScene(
     },
   );
 
+  const groupPaths = new Map(Object.values(puzzle.groups).map((group) => [
+    group.id,
+    projectGroupBorder(
+      group.cellIds,
+      geometryByCellId,
+      normalizedGeometry.displayScale,
+    ),
+  ]));
   const groupBorders = Object.values(puzzle.groups).flatMap((group) => {
     if (!group.roles.includes("region")) {
       return [];
     }
-    const border = projectGroupBorder(
-      group.cellIds,
-      geometryByCellId,
-      normalizedGeometry.displayScale,
-    );
+    const border = groupPaths.get(group.id)!;
     return [
       {
         kind: "path" as const,
@@ -1166,6 +1173,35 @@ export function projectPuzzleScene(
       },
     ];
   });
+  const entityAnnotations = deduplicateAnnotations(view).filter(
+    (annotation) => "entity" in annotation,
+  );
+  const emphasisPriority = { dim: 0, focus: 1, highlight: 2 } as const;
+  const valueEmphasis = new Map<string, "focus" | "dim" | "highlight">();
+  for (const annotation of entityAnnotations) {
+    if (annotation.entity.kind !== "value") {
+      continue;
+    }
+    const current = valueEmphasis.get(annotation.entity.id);
+    if (
+      current === undefined ||
+      emphasisPriority[annotation.emphasis] > emphasisPriority[current]
+    ) {
+      valueEmphasis.set(annotation.entity.id, annotation.emphasis);
+    }
+  }
+  if (valueEmphasis.size > 0) {
+    nodes = nodes.map((node) => ({
+      ...node,
+      content: node.content.map((content) => ({
+        ...content,
+        annotationEmphasis:
+          content.valueId === undefined
+            ? undefined
+            : valueEmphasis.get(content.valueId),
+      })),
+    }));
+  }
   const selections = [...selectedCellIds].flatMap((cellId) => {
     const geometry = geometryByCellId.get(cellId);
     return geometry === undefined
@@ -1182,25 +1218,85 @@ export function projectPuzzleScene(
   const annotations: ScenePathNode[] = deduplicateAnnotations(view).flatMap(
     (annotation): ScenePathNode[] => {
       if ("entity" in annotation) {
-        const d =
-          annotation.entity.kind === "cell"
-            ? geometryByCellId.get(annotation.entity.id)?.path
-            : annotation.entity.kind === "group"
-              ? groupBorders.find(
-                  (border) => border.id === `group-border-${annotation.entity.id}`,
-                )?.d
-              : undefined;
-        return d === undefined || d === ""
-          ? []
-          : [{
-              kind: "path" as const,
-              id: `annotation-${annotation.id}`,
-              d,
-              role: "annotation" as const,
-              label: annotation.label,
-              annotationEmphasis: annotation.emphasis,
-              geometryIssues: [],
+        const bindingPaths = (kind: string, id: string) => {
+          if (kind === "cell") {
+            const d = geometryByCellId.get(id)?.path;
+            return d === undefined || d === "" ? [] : [{ key: `cell-${id}`, d }];
+          }
+          if (kind === "group") {
+            const d = groupPaths.get(id)?.d;
+            return d === undefined || d === "" ? [] : [{ key: `group-${id}`, d }];
+          }
+          const frame = normalizedGeometry.nativeToSceneFrame;
+          if (frame === undefined) {
+            return [];
+          }
+          if (kind === "edge") {
+            const edge = puzzle.edges[id];
+            const from = edge === undefined ? undefined : puzzle.points[edge.fromPointId];
+            const to = edge === undefined ? undefined : puzzle.points[edge.toPointId];
+            if (from === undefined || to === undefined) {
+              return [];
+            }
+            const sceneFrom = normalizeNativePoint(from, frame);
+            const sceneTo = normalizeNativePoint(to, frame);
+            return [{
+              key: `edge-${id}`,
+              d: `M ${sceneCoordinate(sceneFrom.x)} ${sceneCoordinate(sceneFrom.y)} L ${sceneCoordinate(sceneTo.x)} ${sceneCoordinate(sceneTo.y)}`,
             }];
+          }
+          if (kind === "path") {
+            const path = puzzle.paths[id];
+            const points = path?.pointIds.flatMap((pointId) => {
+              const point = puzzle.points[pointId];
+              return point === undefined ? [] : [normalizeNativePoint(point, frame)];
+            }) ?? [];
+            if (path === undefined || points.length < 2) {
+              return [];
+            }
+            return [{
+              key: `path-${id}`,
+              d: `${points.map((point, index) => `${index === 0 ? "M" : "L"} ${sceneCoordinate(point.x)} ${sceneCoordinate(point.y)}`).join(" ")}${path.closed ? " Z" : ""}`,
+            }];
+          }
+          return [];
+        };
+        const paths =
+          annotation.entity.kind === "constraint"
+            ? (() => {
+                const constraint = puzzle.constraints.find(
+                  (candidate) => candidate.id === annotation.entity.id,
+                );
+                if (constraint === undefined) {
+                  return [];
+                }
+                const seen = new Set<string>();
+                return Object.values(constraint.bindings)
+                  .flat()
+                  .flatMap((binding) => bindingPaths(binding.kind, binding.id))
+                  .filter((path) => {
+                    if (seen.has(path.key)) {
+                      return false;
+                    }
+                    seen.add(path.key);
+                    return true;
+                  });
+              })()
+            : bindingPaths(annotation.entity.kind, annotation.entity.id);
+        return paths.map((path, index) => ({
+          kind: "path" as const,
+          id:
+            annotation.entity.kind === "constraint"
+              ? `annotation-${annotation.id}-binding-${path.key}`
+              : index === 0
+                ? `annotation-${annotation.id}`
+                : `annotation-${annotation.id}-${path.key}`,
+          d: path.d,
+          role: "annotation" as const,
+          label: annotation.label,
+          annotationEmphasis: annotation.emphasis,
+          geometryIssues: [],
+        }));
       }
       const normalizedPath =
         normalizedGeometry.nativeToSceneFrame === undefined

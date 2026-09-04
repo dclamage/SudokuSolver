@@ -22,6 +22,8 @@ function nonempty(value: unknown): value is string {
 
 function assertCellValue(
   document: PuzzlePackageV1,
+  projectionCellIds: ReadonlySet<string>,
+  projectionValueIds: ReadonlySet<string>,
   cellId: string,
   valueId: string,
 ) {
@@ -30,21 +32,28 @@ function assertCellValue(
   if (
     cell === undefined ||
     domain === undefined ||
+    !projectionCellIds.has(cellId) ||
+    !projectionValueIds.has(valueId) ||
     !domain.values.some((value) => value.id === valueId)
   ) {
     throw new Error(`Logical Solver returned unknown cell/value ${cellId}/${valueId}`);
   }
 }
 
-function assertEntity(document: PuzzlePackageV1, entity: LogicalEntityReference) {
+function assertEntity(
+  document: PuzzlePackageV1,
+  projectionCellIds: ReadonlySet<string>,
+  projectionValueIds: ReadonlySet<string>,
+  entity: LogicalEntityReference,
+) {
   if (!nonempty(entity.kind) || !nonempty(entity.id)) {
     throw new Error("Logical Solver returned an invalid entity reference");
   }
   const valid =
-    (entity.kind === "cell" && document.cells[entity.id] !== undefined) ||
+    (entity.kind === "cell" && projectionCellIds.has(entity.id)) ||
     (entity.kind === "group" && document.groups[entity.id] !== undefined) ||
     (entity.kind === "constraint" && document.constraints.some((item) => item.id === entity.id)) ||
-    (entity.kind === "value" && Object.values(document.domains).some((domain) => domain.values.some((value) => value.id === entity.id)));
+    (entity.kind === "value" && projectionValueIds.has(entity.id));
   if (!valid) {
     throw new Error(`Logical Solver returned unknown ${entity.kind} ${entity.id}`);
   }
@@ -52,6 +61,7 @@ function assertEntity(document: PuzzlePackageV1, entity: LogicalEntityReference)
 
 export function validateLogicalResult(
   document: PuzzlePackageV1,
+  projection: PuzzlePackageV1["solverProjections"][number],
   result: LogicalResult,
   expectedHistory: readonly string[],
 ): void {
@@ -64,6 +74,17 @@ export function validateLogicalResult(
   ) {
     throw new Error("Logical Solver returned unexpected history");
   }
+  const expectedCellIds = projection.cellIdsByRow.flat();
+  if (
+    result.cells.length !== expectedCellIds.length ||
+    result.cells.some((cell, index) => cell.cellId !== expectedCellIds[index])
+  ) {
+    throw new Error(
+      "Logical Solver returned cells outside the requested projection",
+    );
+  }
+  const projectionValueIds = new Set(projection.valueIdsBySolverValue);
+  const projectionCellIds = new Set(expectedCellIds);
   const seenCells = new Set<string>();
   for (const cell of result.cells) {
     if (!nonempty(cell.cellId) || seenCells.has(cell.cellId) || document.cells[cell.cellId] === undefined) {
@@ -71,14 +92,26 @@ export function validateLogicalResult(
     }
     seenCells.add(cell.cellId);
     if (cell.valueId !== null) {
-      assertCellValue(document, cell.cellId, cell.valueId);
+      assertCellValue(
+        document,
+        projectionCellIds,
+        projectionValueIds,
+        cell.cellId,
+        cell.valueId,
+      );
       if (cell.candidateValueIds.length > 0) {
         throw new Error("Logical Solver returned candidates for a placed cell");
       }
     }
     const seenValues = new Set<string>();
     for (const valueId of cell.candidateValueIds) {
-      assertCellValue(document, cell.cellId, valueId);
+      assertCellValue(
+        document,
+        projectionCellIds,
+        projectionValueIds,
+        cell.cellId,
+        valueId,
+      );
       if (seenValues.has(valueId)) {
         throw new Error("Logical Solver returned duplicate candidates");
       }
@@ -87,7 +120,13 @@ export function validateLogicalResult(
   }
   const seenDeductions = new Set<string>();
   for (const deduction of result.availableDeductions) {
-    validateDeduction(document, result.positionHash, deduction);
+    validateDeduction(
+      document,
+      projectionCellIds,
+      projectionValueIds,
+      result.positionHash,
+      deduction,
+    );
     if (seenDeductions.has(deduction.id)) {
       throw new Error("Logical Solver returned duplicate deductions");
     }
@@ -97,6 +136,8 @@ export function validateLogicalResult(
 
 function validateDeduction(
   document: PuzzlePackageV1,
+  projectionCellIds: ReadonlySet<string>,
+  projectionValueIds: ReadonlySet<string>,
   positionHash: string,
   deduction: LogicalDeduction,
 ) {
@@ -110,17 +151,35 @@ function validateDeduction(
     throw new Error("Logical Solver returned an invalid deduction");
   }
   for (const placement of deduction.delta.placements) {
-    assertCellValue(document, placement.cellId, placement.valueId);
+    assertCellValue(
+      document,
+      projectionCellIds,
+      projectionValueIds,
+      placement.cellId,
+      placement.valueId,
+    );
   }
   for (const elimination of deduction.delta.eliminations) {
-    assertCellValue(document, elimination.cellId, elimination.valueId);
+    assertCellValue(
+      document,
+      projectionCellIds,
+      projectionValueIds,
+      elimination.cellId,
+      elimination.valueId,
+    );
   }
   for (const premise of deduction.premises) {
     if (!nonempty(premise.kind)) {
       throw new Error("Logical Solver returned an invalid premise");
     }
     if (premise.cellId !== null && premise.valueId !== null) {
-      assertCellValue(document, premise.cellId, premise.valueId);
+      assertCellValue(
+        document,
+        projectionCellIds,
+        projectionValueIds,
+        premise.cellId,
+        premise.valueId,
+      );
     }
   }
   for (const frame of deduction.frames) {
@@ -128,7 +187,12 @@ function validateDeduction(
       throw new Error("Logical Solver returned an invalid explanation");
     }
     for (const entity of [...frame.focus, ...frame.dim, ...frame.highlight]) {
-      assertEntity(document, entity);
+      assertEntity(
+        document,
+        projectionCellIds,
+        projectionValueIds,
+        entity,
+      );
     }
     for (const argument of frame.explanation.arguments) {
       if (!nonempty(argument.kind) || !nonempty(argument.value)) {
@@ -212,6 +276,7 @@ export const logicalSolverBehavior: CandidateContextBehavior = Object.freeze({
           values: EMPTY_VALUES,
           availableDeductions: Object.freeze([]),
           historyDeductionIds: Object.freeze([]),
+          appliedDeductions: Object.freeze([]),
           selectedDeductionId: null,
           selectedFrameIndex: 0,
           applyingDeductionId: null,

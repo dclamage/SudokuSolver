@@ -318,6 +318,7 @@ export class AppController {
 
   private readonly listeners = new Set<StoreListener>();
   private readonly unsubscribePuzzle: () => void;
+  private readonly unsubscribeCandidates: () => void;
   private candidateHashGeneration = 0;
   private snapshot: AppControllerSnapshot = Object.freeze({
     workspace: "set",
@@ -350,6 +351,14 @@ export class AppController {
       createRequestId,
       initialDocument,
     );
+    this.unsubscribeCandidates = this.candidates.subscribe(() => {
+      if (
+        this.snapshot.walkthroughOpen &&
+        this.candidates.getPanelDescriptor().panelKind !== "logicalSolver"
+      ) {
+        this.closeWalkthrough();
+      }
+    });
     this.unsubscribePuzzle = this.puzzle.subscribe(() => {
       const puzzleSnapshot = this.puzzle.getSnapshot();
       options.persist?.(puzzleSnapshot.document);
@@ -405,6 +414,7 @@ export class AppController {
 
   public dispose(): void {
     this.unsubscribePuzzle();
+    this.unsubscribeCandidates();
     this.candidateHashGeneration += 1;
     this.candidates.dispose();
     this.validation.dispose();

@@ -92,6 +92,7 @@ describe("Logical Solver candidate behavior", () => {
     await Promise.all([first, second]);
 
     expect(controller.candidates.getSnapshot().contexts["logical-solver"].logical?.historyDeductionIds).toEqual([nakedSingle.id]);
+    expect(controller.candidates.getSnapshot().contexts["logical-solver"].logical?.appliedDeductions).toEqual([nakedSingle]);
     expect(controller.puzzle.getSnapshot().document).toEqual(puzzleBefore);
     expect(controller.playtest.getSnapshot()).toEqual(playtestBefore);
   });
@@ -151,7 +152,11 @@ describe("Logical Solver candidate behavior", () => {
     const runtime = controller.candidates.getSnapshot().contexts["logical-solver"];
     expect(runtime.status).toBe("calculating");
     expect(runtime.logical?.archivedRevisions).toHaveLength(1);
-    expect(runtime.logical?.archivedRevisions[0]).toMatchObject({ semanticRevision: 1, historyDeductionIds: [nakedSingle.id] });
+    expect(runtime.logical?.archivedRevisions[0]).toMatchObject({
+      semanticRevision: 1,
+      historyDeductionIds: [nakedSingle.id],
+      appliedDeductions: [nakedSingle],
+    });
     expect(solver.requests.at(-1)?.operation).toBe("logical.create");
   });
 
@@ -205,6 +210,15 @@ describe("Logical Solver candidate behavior", () => {
       operation: "logical.create",
       logicalCreateOptions: { appliedDeductionIds: [nakedSingle.id] },
     });
+    const replay = solver.requests.at(-1) as LogicalCreateSolverRequest;
+    solver.resolve(replay.requestId, logicalResponse(replay, logicalState({
+      semanticRevision: 1,
+      deductions: [secondSingle],
+      history: [nakedSingle.id],
+      positionHash: "sha256:position-2",
+    })));
+    await settle();
+    expect(controller.candidates.getSnapshot().contexts["logical-solver"].logical?.appliedDeductions).toEqual([nakedSingle]);
   });
 
   it("recovers when the real client rejects staleContext as a typed error", async () => {
@@ -263,7 +277,34 @@ describe("Logical Solver candidate behavior", () => {
     expect(controller.candidates.getSnapshot().contexts["logical-solver"]).toMatchObject({
       status: "error",
       candidates: {},
-      error: expect.stringContaining("invalid cell identities"),
+      error: expect.stringContaining("requested projection"),
+    });
+  });
+
+  it.each([
+    ["missing", (cells: ReturnType<typeof logicalState>["cells"]) => cells.slice(0, -1)],
+    ["extra", (cells: ReturnType<typeof logicalState>["cells"]) => [...cells, cells[0]]],
+    ["reordered", (cells: ReturnType<typeof logicalState>["cells"]) => [cells[1], cells[0], ...cells.slice(2)]],
+    ["auxiliary", (cells: ReturnType<typeof logicalState>["cells"]) => [
+      ...cells.slice(0, -1),
+      { cellId: "aux-1", valueId: null, candidateValueIds: ["1"] },
+    ]],
+  ] as const)("rejects a %s cell sequence outside the requested projection", async (_case, changeCells) => {
+    const { controller, solver } = createLogicalHarness();
+    controller.candidates.activate("logical-solver");
+    const request = solver.requests.at(-1) as LogicalCreateSolverRequest;
+    const state = logicalState({ semanticRevision: 1, deductions: [nakedSingle] });
+
+    solver.resolve(request.requestId, logicalResponse(request, {
+      ...state,
+      cells: changeCells(state.cells),
+    }));
+    await settle();
+
+    expect(controller.candidates.getSnapshot().contexts["logical-solver"]).toMatchObject({
+      status: "error",
+      candidates: {},
+      error: expect.stringContaining("requested projection"),
     });
   });
 
@@ -286,7 +327,7 @@ describe("Logical Solver candidate behavior", () => {
     expect(controller.candidates.getSnapshot().contexts["logical-solver"]).toMatchObject({
       status: "error",
       candidates: {},
-      error: expect.stringContaining("invalid cell identities"),
+      error: expect.stringContaining("requested projection"),
     });
   });
 

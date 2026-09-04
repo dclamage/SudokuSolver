@@ -41,7 +41,7 @@ export interface ArchivedLogicalRevision {
   readonly semanticRevision: number;
   readonly semanticHash: string;
   readonly historyDeductionIds: readonly string[];
-  readonly deductions: readonly LogicalDeduction[];
+  readonly appliedDeductions: readonly LogicalDeduction[];
 }
 
 export interface LogicalCandidateRuntime {
@@ -51,6 +51,7 @@ export interface LogicalCandidateRuntime {
   readonly values: Readonly<Record<CellId, ValueId>>;
   readonly availableDeductions: readonly LogicalDeduction[];
   readonly historyDeductionIds: readonly string[];
+  readonly appliedDeductions: readonly LogicalDeduction[];
   readonly selectedDeductionId: string | null;
   readonly selectedFrameIndex: number;
   readonly applyingDeductionId: string | null;

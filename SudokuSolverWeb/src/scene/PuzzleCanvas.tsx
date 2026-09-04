@@ -21,10 +21,12 @@ function textNodesEqual(
     first.x === second.x &&
     first.y === second.y &&
     first.text === second.text &&
+    first.valueId === second.valueId &&
     first.role === second.role &&
     first.candidateKind === second.candidateKind &&
     first.candidateTone === second.candidateTone &&
     first.candidateLabel === second.candidateLabel &&
+    first.annotationEmphasis === second.annotationEmphasis &&
     first.clip?.id === second.clip?.id &&
     first.clip?.x === second.clip?.x &&
     first.clip?.y === second.clip?.y &&
@@ -67,7 +69,7 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
       ? undefined
       : ({ "--puzzle-cell-fill": node.fill.color } as CSSProperties);
   const candidateClassName = (candidate: SceneCellNode["content"][number]) =>
-    `puzzle-cell__candidate${candidate.candidateKind === undefined ? "" : ` puzzle-cell__candidate--${candidate.candidateKind}`}${candidate.candidateTone === undefined ? "" : ` puzzle-cell__candidate--${candidate.candidateTone}`}`;
+    `puzzle-cell__candidate${candidate.candidateKind === undefined ? "" : ` puzzle-cell__candidate--${candidate.candidateKind}`}${candidate.candidateTone === undefined ? "" : ` puzzle-cell__candidate--${candidate.candidateTone}`}${candidate.annotationEmphasis === undefined ? "" : ` puzzle-cell__candidate--logical-${candidate.annotationEmphasis}`}`;
 
   return (
     <g
@@ -85,7 +87,8 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
       <path className="puzzle-cell__surface" d={node.path} style={surfaceStyle} />
       {displayedValue === undefined ? null : (
         <text
-          className={`puzzle-cell__value puzzle-cell__value--${displayedValue.role}`}
+          className={`puzzle-cell__value puzzle-cell__value--${displayedValue.role}${displayedValue.annotationEmphasis === undefined ? "" : ` puzzle-cell__value--logical-${displayedValue.annotationEmphasis}`}`}
+          data-logical-emphasis={displayedValue.annotationEmphasis}
           data-testid={displayedValue.id}
           x={displayedValue.x}
           y={displayedValue.y}
@@ -112,6 +115,7 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
                 <text
                   className={candidateClassName(candidate)}
                   data-candidate-label={candidate.candidateLabel}
+                  data-logical-emphasis={candidate.annotationEmphasis}
                   key={candidate.id}
                   x={candidate.x}
                   y={candidate.y}
@@ -132,6 +136,7 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
                   <text
                     className={candidateClassName(candidate)}
                     data-candidate-label={candidate.candidateLabel}
+                    data-logical-emphasis={candidate.annotationEmphasis}
                     x={candidate.x}
                     y={candidate.y}
                   >

@@ -44,6 +44,12 @@ export const nakedSingle: LogicalDeduction = Object.freeze({
   ]),
 });
 
+const MAIN_CELL_IDS = Array.from(
+  { length: 9 },
+  (_, row) => Array.from({ length: 9 }, (_value, column) => `r${row + 1}c${column + 1}`),
+).flat();
+const DIGIT_VALUE_IDS = Array.from({ length: 9 }, (_value, index) => `${index + 1}`);
+
 export function logicalState({
   semanticRevision,
   deductions,
@@ -60,13 +66,16 @@ export function logicalState({
   return {
     sessionId,
     positionHash,
-    cells: [
-      {
-        cellId: "r1c1",
-        valueId: history.length > 0 ? "3" : null,
-        candidateValueIds: history.length > 0 ? [] : ["3"],
-      },
-    ],
+    cells: MAIN_CELL_IDS.map((cellId) => ({
+      cellId,
+      valueId: cellId === "r1c1" && history.length > 0 ? "3" : null,
+      candidateValueIds:
+        cellId === "r1c1" && history.length === 0
+          ? ["3"]
+          : cellId === "r1c1"
+            ? []
+            : DIGIT_VALUE_IDS,
+    })),
     availableDeductions: [...deductions],
     historyDeductionIds: [...history],
   };

@@ -4,10 +4,39 @@ import type { AppController } from "../../app/AppController";
 import { useExternalStore } from "../../app/useExternalStore";
 import { PuzzleCanvas } from "../../scene/PuzzleCanvas";
 import type { PuzzleSceneView } from "../../scene/types";
+import type { LogicalDeduction } from "../../solver/protocol";
 import "./walkthrough.css";
 
 export interface LogicalWalkthroughProps {
   controller: AppController;
+}
+
+function LogicalHistorySummary({ deduction }: { deduction: LogicalDeduction }) {
+  const affected = new Set<string>();
+  for (const frame of deduction.frames) {
+    for (const entity of [...frame.focus, ...frame.highlight]) {
+      affected.add(`${entity.kind} ${entity.id}`);
+    }
+  }
+  return (
+    <article className="logical-history-summary">
+      <strong>{deduction.techniqueId}</strong>
+      <span>Affected: {[...affected].join(", ")}</span>
+      {deduction.delta.placements.map((placement) => (
+        <span key={`placement-${placement.cellId}-${placement.valueId}`}>
+          Placement cell {placement.cellId} = value {placement.valueId}
+        </span>
+      ))}
+      {deduction.delta.eliminations.map((elimination) => (
+        <span key={`elimination-${elimination.cellId}-${elimination.valueId}`}>
+          Elimination cell {elimination.cellId} ≠ value {elimination.valueId}
+        </span>
+      ))}
+      {deduction.frames[0] === undefined ? null : (
+        <small>{deduction.frames[0].explanation.key}</small>
+      )}
+    </article>
+  );
 }
 
 export function LogicalWalkthrough({ controller }: LogicalWalkthroughProps) {
@@ -54,8 +83,12 @@ export function LogicalWalkthrough({ controller }: LogicalWalkthroughProps) {
             <p>No steps applied yet.</p>
           ) : (
             <ol>
-              {logical?.historyDeductionIds.map((deductionId) => (
-                <li key={deductionId}>{deductionId}</li>
+              {logical?.historyDeductionIds.map((deductionId, index) => (
+                <li key={`${deductionId}-${index}`}>
+                  {logical.appliedDeductions[index] === undefined
+                    ? deductionId
+                    : <LogicalHistorySummary deduction={logical.appliedDeductions[index]} />}
+                </li>
               ))}
             </ol>
           )}
@@ -63,7 +96,15 @@ export function LogicalWalkthrough({ controller }: LogicalWalkthroughProps) {
             <section className="logical-walkthrough__archive" key={`${archive.semanticRevision}-${archive.semanticHash}`}>
               <h3>Revision {archive.semanticRevision} · archived</h3>
               <p>Read-only history</p>
-              <ol>{archive.historyDeductionIds.map((id) => <li key={id}>{id}</li>)}</ol>
+              <ol>
+                {archive.historyDeductionIds.map((id, index) => (
+                  <li key={`${id}-${index}`}>
+                    {archive.appliedDeductions[index] === undefined
+                      ? id
+                      : <LogicalHistorySummary deduction={archive.appliedDeductions[index]} />}
+                  </li>
+                ))}
+              </ol>
             </section>
           ))}
         </aside>

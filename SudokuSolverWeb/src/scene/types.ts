@@ -31,10 +31,12 @@ export interface SceneTextNode {
   x: number;
   y: number;
   text: string;
+  valueId?: ValueId;
   role: "given" | "value" | "candidate";
   candidateKind?: "corner" | "centre";
   candidateTone?: TrueCandidateTone;
   candidateLabel?: string;
+  annotationEmphasis?: "focus" | "dim" | "highlight";
   clip?: SceneClipRect;
 }
 
