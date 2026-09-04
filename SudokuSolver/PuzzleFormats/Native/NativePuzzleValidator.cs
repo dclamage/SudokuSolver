@@ -472,13 +472,11 @@ internal static class NativePuzzleValidator
                     {
                         Invalid($"candidate context {context.Id} has invalid display mode");
                     }
-                    if (!context.SolutionCountCap.HasValue)
+                    if (context.SolutionCountCap is not long solutionCountCap ||
+                        solutionCountCap is < 1 or > 1024)
                     {
-                        Invalid($"candidate context {context.Id} solutionCountCap must be a non-negative safe integer");
+                        Invalid($"candidate context {context.Id} solutionCountCap must be between 1 and 1024");
                     }
-                    RequireNonNegativeSafeInteger(
-                        context.SolutionCountCap.Value,
-                        $"candidate context {context.Id} solutionCountCap");
                     break;
                 case "logicalSolver":
                     if (context.FollowPuzzleRevision is not true)

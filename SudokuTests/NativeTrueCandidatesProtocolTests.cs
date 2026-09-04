@@ -96,6 +96,22 @@ public sealed class NativeTrueCandidatesProtocolTests
             "Comparison masks must contain a logical elimination beyond the projected givens.");
     }
 
+    /// <summary>Verifies every display reports an unsatisfiable but locally consistent puzzle as contradictory.</summary>
+    [TestMethod]
+    [DataRow("possibility")]
+    [DataRow("solutionFrequency")]
+    [DataRow("logicComparison")]
+    public void TrueCandidatesRejectUnsatisfiablePuzzle(string display)
+    {
+        SolverResponse response = RunRaw(
+            NativeRequestFixtures.TrueCandidatesForUnsatisfiableClassic(display));
+
+        Assert.AreEqual("error", response.Kind);
+        Assert.AreEqual("contradiction", response.Error?.Code);
+        StringAssert.Contains(response.Error?.Message, "No solutions found");
+        Assert.IsNull(response.TrueCandidates);
+    }
+
     private static SolverResponse RunTrueCandidates(string display, long cap)
     {
         SolverResponse response = RunRaw(display, cap);

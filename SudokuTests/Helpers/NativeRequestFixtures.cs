@@ -127,6 +127,16 @@ internal static class NativeRequestFixtures
     internal static string TrueCandidatesForClassic()
         => TrueCandidates(ClassicPackage(), "logicComparison", 1, "true-candidates");
 
+    /// <summary>Creates a native true-candidates request for a locally consistent unsatisfiable classic.</summary>
+    /// <param name="display">The requested candidate display mode.</param>
+    /// <returns>The serialized native request.</returns>
+    internal static string TrueCandidatesForUnsatisfiableClassic(string display)
+    {
+        NativePuzzlePackage package = ClassicPackage();
+        package.Givens["r1c1"] = "2";
+        return TrueCandidates(package, display, 1, "true-candidates");
+    }
+
     /// <summary>Creates an independent native package for the shared classic puzzle.</summary>
     /// <returns>The native package populated with classic givens.</returns>
     internal static NativePuzzlePackage ClassicPackage()

@@ -311,4 +311,117 @@ describe("true candidate context behavior", () => {
     await settle();
     expect(controller.getSnapshot().contexts["true-candidates"].status).not.toBe("live");
   });
+
+  it.each(["automatic", "onRequest"] as const)(
+    "clears rendered runtime output when a live %s context becomes semantically stale",
+    async (refresh) => {
+      const { controller, scheduled, solver } = createHarness({
+        active: true,
+        refresh,
+      });
+      controller.refresh();
+      scheduled[0].run();
+      const request = solver.requests[0] as TrueCandidatesSolverRequest;
+      solver.resolve(request.requestId, responseFor(request, nativeResultFor(request)));
+      await settle();
+      expect(controller.getSceneProjection().candidates).toEqual({ r1c1: ["1"] });
+
+      controller.onPuzzleChanged({
+        documentRevision: 2,
+        semanticRevision: 2,
+        semanticHash: "sha256:semantic-change",
+        semantic: true,
+      });
+
+      const snapshot = controller.getSnapshot();
+      const runtime = snapshot.contexts["true-candidates"];
+      expect(runtime.status).toBe(refresh === "automatic" ? "calculating" : "stale");
+      expect(runtime.candidates).toEqual({});
+      expect(runtime.candidatePresentation).toBeUndefined();
+      expect(runtime.trueCandidates).toBeUndefined();
+      expect(runtime.progress).toBeUndefined();
+      expect(snapshot.sceneProjection.candidates).toEqual({});
+      expect(snapshot.sceneProjection.candidatePresentation).toBeUndefined();
+      expect(scheduled).toHaveLength(refresh === "automatic" ? 2 : 1);
+    },
+  );
+
+  it.each(["automatic", "onRequest"] as const)(
+    "clears rendered runtime output when a live %s context configuration changes",
+    async (refresh) => {
+      const { controller, document, scheduled, solver } = createHarness({
+        active: true,
+        refresh,
+      });
+      controller.refresh();
+      scheduled[0].run();
+      const request = solver.requests[0] as TrueCandidatesSolverRequest;
+      solver.resolve(request.requestId, responseFor(request, nativeResultFor(request)));
+      await settle();
+      expect(controller.getSceneProjection().candidates).toEqual({ r1c1: ["1"] });
+
+      const configured = structuredClone(document) as PuzzlePackageV1;
+      configured.revision = 2;
+      configured.authoring.candidateContexts =
+        configured.authoring.candidateContexts.map((context) =>
+          context.id === "true-candidates" && context.kind === "trueCandidates"
+            ? {
+                ...context,
+                display: "solutionFrequency",
+                solutionCountCap: 8,
+              }
+            : context,
+        );
+      controller.onPuzzleChanged({
+        documentRevision: 2,
+        semanticRevision: 1,
+        semanticHash: hash,
+        semantic: false,
+        document: configured,
+      });
+
+      const snapshot = controller.getSnapshot();
+      const runtime = snapshot.contexts["true-candidates"];
+      expect(runtime.status).toBe(refresh === "automatic" ? "calculating" : "stale");
+      expect(runtime.candidates).toEqual({});
+      expect(runtime.candidatePresentation).toBeUndefined();
+      expect(runtime.trueCandidates).toBeUndefined();
+      expect(runtime.progress).toBeUndefined();
+      expect(snapshot.sceneProjection.candidates).toEqual({});
+      expect(snapshot.sceneProjection.candidatePresentation).toBeUndefined();
+      expect(scheduled).toHaveLength(refresh === "automatic" ? 2 : 1);
+    },
+  );
+
+  it("clears live output when a different native document keeps the same semantic identity", async () => {
+    const { controller, document, scheduled, solver } = createHarness({
+      active: true,
+      refresh: "onRequest",
+    });
+    controller.refresh();
+    scheduled[0].run();
+    const request = solver.requests[0] as TrueCandidatesSolverRequest;
+    solver.resolve(request.requestId, responseFor(request, nativeResultFor(request)));
+    await settle();
+
+    const replacement = structuredClone(document);
+    replacement.id = "replacement-document";
+    replacement.revision = 2;
+    controller.onPuzzleChanged({
+      documentRevision: 2,
+      semanticRevision: 1,
+      semanticHash: hash,
+      semantic: false,
+      document: replacement,
+    });
+
+    const snapshot = controller.getSnapshot();
+    expect(snapshot.contexts["true-candidates"]).toMatchObject({
+      status: "stale",
+      candidates: {},
+    });
+    expect(snapshot.contexts["true-candidates"].trueCandidates).toBeUndefined();
+    expect(snapshot.contexts["true-candidates"].progress).toBeUndefined();
+    expect(snapshot.sceneProjection.candidates).toEqual({});
+  });
 });

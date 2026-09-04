@@ -459,6 +459,59 @@ public class NativePuzzleProjectionTests
         Assert.ThrowsExactly<ArgumentException>(() => NativeSemanticHasher.Compute(package));
     }
 
+    /// <summary>Enforces the shared persisted True Candidates cap range during parsing and hashing.</summary>
+    [TestMethod]
+    [DataRow(0L, false)]
+    [DataRow(1L, true)]
+    [DataRow(1024L, true)]
+    [DataRow(1025L, false)]
+    public void TrueCandidatesCapUsesCrossRuntimeBoundary(long cap, bool valid)
+    {
+        JsonNode root = ReadFixtureNode("classic-with-auxiliary.json");
+        JsonObject serializedContext = root["authoring"]!["candidateContexts"]!
+            .AsArray()
+            .Select(node => node!.AsObject())
+            .Single(context => context["kind"]!.GetValue<string>() == "trueCandidates");
+        serializedContext["solutionCountCap"] = cap;
+
+        if (valid)
+        {
+            NativePuzzlePackage parsed = NativePuzzlePackage.Parse(root.ToJsonString());
+            StringAssert.StartsWith(NativeSemanticHasher.Compute(parsed), "sha256:");
+        }
+        else
+        {
+            ArgumentException parseError = Assert.ThrowsExactly<ArgumentException>(
+                () => NativePuzzlePackage.Parse(root.ToJsonString()));
+            StringAssert.Contains(parseError.Message, "solutionCountCap must be between 1 and 1024");
+        }
+
+        NativePuzzlePackage mutated = ReadPackage("classic-with-auxiliary.json");
+        int contextIndex = mutated.Authoring.CandidateContexts.FindIndex(
+            context => context.Kind == "trueCandidates");
+        NativeCandidateContext original = mutated.Authoring.CandidateContexts[contextIndex];
+        mutated.Authoring.CandidateContexts[contextIndex] = new NativeCandidateContext
+        {
+            Id = original.Id,
+            Name = original.Name,
+            Kind = original.Kind,
+            Refresh = original.Refresh,
+            Display = original.Display,
+            SolutionCountCap = cap,
+        };
+
+        if (valid)
+        {
+            StringAssert.StartsWith(NativeSemanticHasher.Compute(mutated), "sha256:");
+        }
+        else
+        {
+            ArgumentException hashError = Assert.ThrowsExactly<ArgumentException>(
+                () => NativeSemanticHasher.Compute(mutated));
+            StringAssert.Contains(hashError.Message, "solutionCountCap must be between 1 and 1024");
+        }
+    }
+
     /// <summary>
     /// Reports the representation status of every semantic entity kind used by a package.
     /// </summary>

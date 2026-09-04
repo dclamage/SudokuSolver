@@ -1608,37 +1608,47 @@ describe("PuzzleCanvas", () => {
     expect(screen.queryByTestId("candidates-r1c3")).toBeNull();
   });
 
-  it("renders the active True Candidates presentation on each candidate", () => {
-    render(
-      <PuzzleCanvas
-        puzzle={puzzle}
-        view={{
-          ...emptySceneView,
-          candidates: { r1c2: ["1"] },
-          candidatePresentation: {
-            r1c2: {
-              "1": {
-                tone: "bruteForceOnly",
-                label: "Brute-force possible only",
+  it.each([
+    ["possible", "Possible in at least one solution"],
+    ["frequencyLow", "Low solution frequency"],
+    ["frequencyMedium", "Medium solution frequency"],
+    ["frequencyHigh", "High solution frequency"],
+    ["both", "Possible and logical"],
+    ["bruteForceOnly", "Brute-force possible only"],
+    ["logicalOnly", "Logical candidate only"],
+  ] as const)(
+    "renders and accessibly describes the %s True Candidates cue",
+    (tone, label) => {
+      render(
+        <PuzzleCanvas
+          puzzle={puzzle}
+          view={{
+            ...emptySceneView,
+            candidates: { r1c2: ["1"] },
+            candidatePresentation: {
+              r1c2: {
+                "1": {
+                  tone,
+                  label,
+                },
               },
             },
-          },
-        }}
-        onSelectCell={() => undefined}
-      />,
-    );
+          }}
+          onSelectCell={() => undefined}
+        />,
+      );
 
-    const candidate = screen.getByText("1", {
-      selector: ".puzzle-cell__candidate",
-    });
-    expect(candidate).toHaveClass(
-      "puzzle-cell__candidate--bruteForceOnly",
-    );
-    expect(candidate).toHaveAttribute(
-      "data-candidate-label",
-      "Brute-force possible only",
-    );
-  });
+      const candidate = screen.getByText("1", {
+        selector: ".puzzle-cell__candidate",
+      });
+      expect(candidate).toHaveClass(`puzzle-cell__candidate--${tone}`);
+      expect(candidate).toHaveAttribute("data-candidate-label", label);
+      expect(screen.getByTestId("cell-r1c2")).toHaveAttribute(
+        "aria-label",
+        `Cell r1c2, candidates 1 (${label})`,
+      );
+    },
+  );
 
   it("projects polygon cells through normalized scene geometry", () => {
     const polygonPuzzle = structuredClone(puzzle);

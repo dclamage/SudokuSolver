@@ -66,17 +66,32 @@ describe("True Candidates controls", () => {
     const controller = createTestAppController();
     render(<App controller={controller} />);
     await userEvent.click(screen.getByRole("tab", { name: "True candidates" }));
-    await userEvent.click(
-      screen.getByRole("button", { name: "True candidates options" }),
-    );
+    const optionsTrigger = screen.getByRole("button", {
+      name: "True candidates options",
+    });
+    await userEvent.click(optionsTrigger);
 
-    expect(
-      screen.getByRole("button", { name: "Close True Candidates options" }),
-    ).toHaveFocus();
+    const closeButton = screen.getByRole("button", {
+      name: "Close True Candidates options",
+    });
+    expect(closeButton).toHaveFocus();
+    await userEvent.click(
+      screen.getByRole("radio", { name: "Solution frequency" }),
+    );
     await userEvent.keyboard("{Escape}");
 
     expect(
       screen.queryByRole("dialog", { name: "True candidates options" }),
     ).toBeNull();
+    expect(optionsTrigger).toHaveFocus();
+
+    await userEvent.click(optionsTrigger);
+    await userEvent.click(
+      screen.getByRole("button", { name: "Close True Candidates options" }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "True candidates options" }),
+    ).toBeNull();
+    expect(optionsTrigger).toHaveFocus();
   });
 });

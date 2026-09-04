@@ -10,6 +10,7 @@ import type {
 } from "./types";
 
 const EMPTY_ANNOTATIONS = Object.freeze([]);
+const EMPTY_CANDIDATES = Object.freeze({});
 const NO_ACTIONS = Object.freeze({ manualCandidateEntry: false });
 
 const POSSIBILITY_LEGEND = Object.freeze([
@@ -163,6 +164,10 @@ export const trueCandidatesBehavior: CandidateContextBehavior = Object.freeze({
         baseSemanticRevision: null,
         baseSemanticHash: null,
         status: "stale" as const,
+        candidates: EMPTY_CANDIDATES,
+        candidatePresentation: undefined,
+        trueCandidates: undefined,
+        progress: undefined,
         error: null,
       }),
       requestWork:

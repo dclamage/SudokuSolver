@@ -653,7 +653,11 @@ function describeCellContent(
       .filter(
         (node) => node.role === "candidate" && node.candidateKind === kind,
       )
-      .map((node) => node.text);
+      .map((node) =>
+        node.candidateLabel === undefined
+          ? node.text
+          : `${node.text} (${node.candidateLabel})`,
+      );
     return values.length === 0 ? undefined : values.join(", ");
   };
   const legacy = describeCandidates(undefined);

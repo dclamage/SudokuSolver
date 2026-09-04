@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { AppController } from "../../app/AppController";
 import { useExternalStore } from "../../app/useExternalStore";
@@ -15,12 +15,22 @@ export function CandidateContextTabs({
 }: CandidateContextTabsProps) {
   const candidateState = useExternalStore(controller.candidates);
   const [optionsContextId, setOptionsContextId] = useState<string | null>(null);
+  const optionsTriggerRef = useRef<HTMLButtonElement>(null);
+  const restoreOptionsFocusRef = useRef(false);
   const optionsContext = candidateState.definitions.find(
     (definition) =>
       definition.id === optionsContextId &&
       definition.id === candidateState.activeContextId &&
       isTrueCandidatesContext(definition),
   );
+
+  useEffect(() => {
+    if (optionsContextId !== null || !restoreOptionsFocusRef.current) {
+      return;
+    }
+    restoreOptionsFocusRef.current = false;
+    optionsTriggerRef.current?.focus();
+  }, [optionsContextId]);
 
   return (
     <div className="candidate-context-navigation">
@@ -57,6 +67,7 @@ export function CandidateContextTabs({
               {active && isTrueCandidatesContext(definition) ? (
                 <div className="candidate-context-options-anchor">
                   <button
+                    ref={optionsTriggerRef}
                     className="candidate-context-settings"
                     type="button"
                     aria-label={`${definition.name} options`}
@@ -80,7 +91,10 @@ export function CandidateContextTabs({
         <TrueCandidatesOptionsPopover
           controller={controller}
           context={optionsContext}
-          onClose={() => setOptionsContextId(null)}
+          onClose={() => {
+            restoreOptionsFocusRef.current = true;
+            setOptionsContextId(null);
+          }}
         />
       ) : null}
       <button

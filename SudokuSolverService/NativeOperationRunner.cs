@@ -287,6 +287,11 @@ public sealed class NativeOperationRunner
             numSolutionsCap: options.SolutionCountCap,
             cancellationToken: cancellationToken);
         cancellationToken.ThrowIfCancellationRequested();
+        if (!counts.Any(count => count > 0))
+        {
+            sendResponse(Error(request, verifiedHash, "contradiction", "No solutions found."));
+            return;
+        }
         sendResponse(Result(
             request,
             verifiedHash,
