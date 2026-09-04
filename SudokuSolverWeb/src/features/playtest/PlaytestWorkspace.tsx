@@ -88,6 +88,9 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
       candidateMarks: manualCandidateEntry
         ? playtest.manualCandidates
         : undefined,
+      candidatePresentation: manualCandidateEntry
+        ? undefined
+        : candidates.sceneProjection.candidatePresentation,
       cellFills,
       selectedCellIds: editor.selectedCellIds,
       annotations: candidates.sceneProjection.annotations,

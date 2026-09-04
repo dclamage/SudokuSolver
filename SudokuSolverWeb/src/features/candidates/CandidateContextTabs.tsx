@@ -1,5 +1,9 @@
+import { useState } from "react";
+
 import type { AppController } from "../../app/AppController";
 import { useExternalStore } from "../../app/useExternalStore";
+import { isTrueCandidatesContext } from "../../domain/puzzle/types";
+import { TrueCandidatesOptionsPopover } from "./TrueCandidatesOptionsPopover";
 import "./candidateContexts.css";
 
 export interface CandidateContextTabsProps {
@@ -10,6 +14,13 @@ export function CandidateContextTabs({
   controller,
 }: CandidateContextTabsProps) {
   const candidateState = useExternalStore(controller.candidates);
+  const [optionsContextId, setOptionsContextId] = useState<string | null>(null);
+  const optionsContext = candidateState.definitions.find(
+    (definition) =>
+      definition.id === optionsContextId &&
+      definition.id === candidateState.activeContextId &&
+      isTrueCandidatesContext(definition),
+  );
 
   return (
     <div className="candidate-context-navigation">
@@ -28,30 +39,50 @@ export function CandidateContextTabs({
                 className="candidate-context-tab"
                 type="button"
                 role="tab"
+                aria-label={definition.name}
                 aria-controls={`candidate-context-panel-${definition.id}`}
                 aria-selected={active}
                 tabIndex={active ? 0 : -1}
                 data-status={runtime.status}
                 onClick={() => controller.candidates.activate(definition.id)}
               >
-                <span>{definition.name}</span>
+                <span>
+                  {definition.name}
+                  {isTrueCandidatesContext(definition)
+                    ? ` | ${definition.refresh === "automatic" ? "Auto" : "On request"}`
+                    : ""}
+                </span>
                 <small aria-hidden="true">{runtime.status}</small>
               </button>
-              {active && definition.kind === "trueCandidates" ? (
-                <button
-                  className="candidate-context-settings"
-                  type="button"
-                  aria-label={`Open settings for ${definition.name}`}
-                  aria-haspopup="dialog"
-                  title="True Candidates settings are introduced in Task 11"
-                >
-                  <span aria-hidden="true">⌄</span>
-                </button>
+              {active && isTrueCandidatesContext(definition) ? (
+                <div className="candidate-context-options-anchor">
+                  <button
+                    className="candidate-context-settings"
+                    type="button"
+                    aria-label={`${definition.name} options`}
+                    aria-haspopup="dialog"
+                    aria-expanded={optionsContextId === definition.id}
+                    onClick={() =>
+                      setOptionsContextId((current) =>
+                        current === definition.id ? null : definition.id,
+                      )
+                    }
+                  >
+                    <span aria-hidden="true">⌄</span>
+                  </button>
+                </div>
               ) : null}
             </div>
           );
         })}
       </div>
+      {optionsContext !== undefined && isTrueCandidatesContext(optionsContext) ? (
+        <TrueCandidatesOptionsPopover
+          controller={controller}
+          context={optionsContext}
+          onClose={() => setOptionsContextId(null)}
+        />
+      ) : null}
       <button
         className="candidate-context-add"
         type="button"

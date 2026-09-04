@@ -233,10 +233,18 @@ function parseCandidateContext(
       kind: "trueCandidates",
       refresh: context.refresh,
       display: context.display,
-      solutionCountCap: expectNonNegativeSafeInteger(
-        context.solutionCountCap,
-        `candidate context ${id} solutionCountCap`,
-      ),
+      solutionCountCap: (() => {
+        const cap = expectNonNegativeSafeInteger(
+          context.solutionCountCap,
+          `candidate context ${id} solutionCountCap`,
+        );
+        if (cap < 1 || cap > 1024) {
+          throw new Error(
+            `candidate context ${id} solutionCountCap must be between 1 and 1024`,
+          );
+        }
+        return cap;
+      })(),
     };
   }
   if (kind === "logicalSolver") {

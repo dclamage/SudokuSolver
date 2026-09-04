@@ -126,6 +126,7 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
       values: {},
       candidates: candidates.sceneProjection.candidates,
       candidateMarks: candidates.sceneProjection.candidateMarks,
+      candidatePresentation: candidates.sceneProjection.candidatePresentation,
       cellFills: presentManualCellColors(
         candidates.sceneProjection.cellColors,
       ),

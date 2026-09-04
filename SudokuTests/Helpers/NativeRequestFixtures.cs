@@ -107,6 +107,65 @@ internal static class NativeRequestFixtures
             },
         });
 
+    /// <summary>Creates a native true-candidates request for the shared fixture.</summary>
+    /// <param name="display">The requested candidate display mode.</param>
+    /// <param name="solutionCountCap">The per-candidate solution-count cap.</param>
+    /// <param name="contextId">The candidate context identifier to echo.</param>
+    /// <returns>The serialized native request.</returns>
+    internal static string TrueCandidates(
+        string display,
+        long solutionCountCap,
+        string contextId)
+        => TrueCandidates(
+            PackageValue.Value,
+            display,
+            solutionCountCap,
+            contextId);
+
+    /// <summary>Creates a native true-candidates request for the shared classic puzzle.</summary>
+    /// <returns>The serialized native request.</returns>
+    internal static string TrueCandidatesForClassic()
+        => TrueCandidates(ClassicPackage(), "logicComparison", 1, "true-candidates");
+
+    /// <summary>Creates an independent native package for the shared classic puzzle.</summary>
+    /// <returns>The native package populated with classic givens.</returns>
+    internal static NativePuzzlePackage ClassicPackage()
+    {
+        NativePuzzlePackage package = NativePuzzlePackage.Parse(PackageValue.Value.ToJson());
+        string givens = Puzzles.uniqueClassics[0].Item1;
+        for (int index = 0; index < givens.Length; index++)
+        {
+            if (givens[index] is >= '1' and <= '9')
+            {
+                package.Givens[$"r{index / 9 + 1}c{index % 9 + 1}"] = givens[index].ToString();
+            }
+        }
+        return package;
+    }
+
+    private static string TrueCandidates(
+        NativePuzzlePackage package,
+        string display,
+        long solutionCountCap,
+        string contextId)
+        => Serialize(new SolverRequest
+        {
+            ProtocolVersion = 1,
+            RequestId = $"true-candidates-{display}-{solutionCountCap}",
+            DocumentRevision = 1,
+            SemanticRevision = 1,
+            SemanticHash = NativeSemanticHasher.Compute(package),
+            ContextId = contextId,
+            Operation = "trueCandidates",
+            Puzzle = package,
+            TrueCandidatesOptions = new TrueCandidatesOptionsDto
+            {
+                ProjectionId = "main-latin-square",
+                Display = display,
+                SolutionCountCap = solutionCountCap,
+            },
+        });
+
     private static string Serialize(SolverRequest request)
         => System.Text.Json.JsonSerializer.Serialize(request, ProtocolJsonContext.Default.SolverRequest);
 

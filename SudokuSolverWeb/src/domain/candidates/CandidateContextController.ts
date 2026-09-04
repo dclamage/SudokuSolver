@@ -1,8 +1,9 @@
 import type { SolverClient, SolverJob } from "../../solver/SolverClient";
 import {
   SOLVER_PROTOCOL_VERSION,
-  type CountSolverRequest,
   type SolverResponse,
+  type TrueCandidatesResult,
+  type TrueCandidatesSolverRequest,
 } from "../../solver/protocol";
 import type {
   CandidateContext,
@@ -27,6 +28,10 @@ import type {
   CandidateSceneProjection,
 } from "./types";
 import { manualCandidateBehavior } from "./manualCandidateBehavior";
+import {
+  projectTrueCandidates,
+  trueCandidatesBehavior,
+} from "./trueCandidatesBehavior";
 
 const EMPTY_CANDIDATES = Object.freeze({});
 const EMPTY_ANNOTATIONS = Object.freeze([]);
@@ -67,8 +72,12 @@ interface ScheduledWork {
 
 interface ActiveWork {
   readonly contextId: CandidateContextId;
-  readonly request: CountSolverRequest;
+  readonly generation: number;
+  readonly documentId: string;
+  readonly configurationKey: string;
+  readonly request: TrueCandidatesSolverRequest;
   readonly job: SolverJob;
+  readonly unsubscribeProgress: () => void;
 }
 
 interface DefinitionReconciliation {
@@ -114,33 +123,6 @@ function withStatus(
     error: null,
   });
 }
-
-const trueCandidatesBehavior: CandidateContextBehavior = Object.freeze({
-  panelKind: "trueCandidates",
-  actions: NO_ACTIONS,
-  activate(input: CandidateBehaviorInput) {
-    return {
-      runtime: input.runtime,
-      requestWork:
-        isTrueCandidatesContext(input.definition) &&
-        input.definition.refresh === "automatic" &&
-        input.runtime.status === "stale" &&
-        input.semanticHash !== null,
-    };
-  },
-  invalidate(input: CandidateBehaviorInput) {
-    const runtime = withStatus(input.runtime, "stale", null, null);
-    return {
-      runtime,
-      requestWork:
-        input.active &&
-        isTrueCandidatesContext(input.definition) &&
-        input.definition.refresh === "automatic" &&
-        input.semanticHash !== null,
-    };
-  },
-  getSceneProjection: runtimeProjection,
-});
 
 const logicalSolverBehavior: CandidateContextBehavior = Object.freeze({
   panelKind: "logicalSolver",
@@ -233,6 +215,7 @@ export class CandidateContextController {
   >;
   private scheduledWork: ScheduledWork | null = null;
   private activeWork: ActiveWork | null = null;
+  private workGeneration = 0;
   private snapshot: CandidateContextSnapshot;
 
   public constructor(options: CandidateContextControllerOptions) {
@@ -308,8 +291,25 @@ export class CandidateContextController {
     });
     this.publish();
     if (transition.requestWork) {
-      this.scheduleAutomaticWork(definition);
+      this.scheduleTrueCandidateWork(definition);
     }
+  }
+
+  public refresh(): void {
+    const definition = this.findDefinition(this.activeContextId);
+    if (!isTrueCandidatesContext(definition)) {
+      return;
+    }
+    this.scheduleTrueCandidateWork(definition);
+  }
+
+  public cancel(): void {
+    const contextId = this.activeContextId;
+    if (!isTrueCandidatesContext(this.findDefinition(contextId))) {
+      return;
+    }
+    this.cancelWork(true);
+    this.publish();
   }
 
   public onPuzzleChanged(change: CandidatePuzzleChange): void {
@@ -325,6 +325,8 @@ export class CandidateContextController {
     const semanticIdentityChanged =
       change.semanticRevision !== this.semanticRevision ||
       nextSemanticHash !== this.semanticHash;
+    const documentIdentityChanged =
+      change.document !== undefined && change.document.id !== this.document.id;
     this.documentRevision = change.documentRevision;
     this.semanticRevision = change.semanticRevision;
     this.semanticHash = nextSemanticHash;
@@ -340,6 +342,7 @@ export class CandidateContextController {
     }
     if (
       !semanticIdentityChanged &&
+      !documentIdentityChanged &&
       reconciliation.changedContextIds.size === 0 &&
       !reconciliation.activeReplaced
     ) {
@@ -349,6 +352,7 @@ export class CandidateContextController {
 
     if (
       semanticIdentityChanged ||
+      documentIdentityChanged ||
       reconciliation.activeReplaced ||
       reconciliation.changedContextIds.has(this.activeContextId)
     ) {
@@ -359,6 +363,7 @@ export class CandidateContextController {
     for (const definition of this.definitions) {
       if (
         !semanticIdentityChanged &&
+        !documentIdentityChanged &&
         !reconciliation.changedContextIds.has(definition.id)
       ) {
         continue;
@@ -391,7 +396,7 @@ export class CandidateContextController {
     this.contexts = nextContexts;
     this.publish();
     if (shouldRequestActiveWork) {
-      this.scheduleAutomaticWork(this.findDefinition(this.activeContextId));
+      this.scheduleTrueCandidateWork(this.findDefinition(this.activeContextId));
     }
   }
 
@@ -450,11 +455,10 @@ export class CandidateContextController {
     return { changedContextIds, activeReplaced };
   }
 
-  private scheduleAutomaticWork(definition: CandidateContext): void {
+  private scheduleTrueCandidateWork(definition: CandidateContext): void {
     if (
       definition.id !== this.activeContextId ||
       !isTrueCandidatesContext(definition) ||
-      definition.refresh !== "automatic" ||
       this.semanticHash === null
     ) {
       return;
@@ -479,14 +483,14 @@ export class CandidateContextController {
         return;
       }
       this.scheduledWork = null;
-      this.startAutomaticWork(definition, projection.id);
+      this.startTrueCandidateWork(definition, projection.id);
     });
     if (this.scheduledWork === scheduled) {
       scheduled.cancel = cancel;
     }
   }
 
-  private startAutomaticWork(
+  private startTrueCandidateWork(
     definition: TrueCandidatesContext,
     projectionId: string,
   ): void {
@@ -496,18 +500,30 @@ export class CandidateContextController {
     ) {
       return;
     }
-    const request: CountSolverRequest = {
+    const currentDefinition = this.findDefinition(definition.id);
+    if (
+      !isTrueCandidatesContext(currentDefinition) ||
+      trueCandidateConfigurationKey(currentDefinition) !==
+        trueCandidateConfigurationKey(definition)
+    ) {
+      return;
+    }
+    const request: TrueCandidatesSolverRequest = {
       protocolVersion: SOLVER_PROTOCOL_VERSION,
       requestId: this.createRequestId(),
-      operation: "count",
+      operation: "trueCandidates",
       documentRevision: this.documentRevision,
       semanticRevision: this.semanticRevision,
       semanticHash: this.semanticHash,
       contextId: definition.id,
       puzzle: this.document,
-      countOptions: {
+      trueCandidatesOptions: {
         projectionId,
-        maxSolutions: definition.solutionCountCap,
+        display: definition.display,
+        solutionCountCap:
+          definition.display === "solutionFrequency"
+            ? definition.solutionCountCap
+            : 1,
       },
     };
     let job: SolverJob;
@@ -517,27 +533,57 @@ export class CandidateContextController {
       this.setRuntimeError(definition.id, errorMessage(error));
       return;
     }
+    const generation = ++this.workGeneration;
+    let unsubscribeProgress: () => void = () => undefined;
     const activeWork: ActiveWork = {
       contextId: definition.id,
+      generation,
+      documentId: this.document.id,
+      configurationKey: trueCandidateConfigurationKey(definition),
       request,
       job,
+      unsubscribeProgress: () => unsubscribeProgress(),
     };
+    unsubscribeProgress = job.subscribe((response) =>
+      this.applyProgress(activeWork, response),
+    );
     this.activeWork = activeWork;
     void job.result
       .then((response) => this.applyResponse(activeWork, response))
       .catch((error: unknown) => {
-        if (this.activeWork !== activeWork) {
+        if (!this.isCurrentWork(activeWork)) {
           return;
         }
+        activeWork.unsubscribeProgress();
         this.activeWork = null;
         this.setRuntimeError(definition.id, errorMessage(error));
       });
   }
 
-  private applyResponse(work: ActiveWork, response: SolverResponse): void {
-    if (this.activeWork !== work) {
+  private applyProgress(work: ActiveWork, response: SolverResponse): void {
+    if (
+      !this.isCurrentWork(work) ||
+      response.kind !== "progress" ||
+      !isCorrelatedCandidateResponse(work.request, response) ||
+      response.trueCandidates === undefined
+    ) {
       return;
     }
+    try {
+      this.applyTrueCandidateResult(work, response.trueCandidates, "calculating");
+    } catch (error) {
+      work.job.cancel();
+      work.unsubscribeProgress();
+      this.activeWork = null;
+      this.setRuntimeError(work.contextId, errorMessage(error));
+    }
+  }
+
+  private applyResponse(work: ActiveWork, response: SolverResponse): void {
+    if (!this.isCurrentWork(work)) {
+      return;
+    }
+    work.unsubscribeProgress();
     this.activeWork = null;
     if (!isCorrelatedCandidateResponse(work.request, response)) {
       this.setRuntime(
@@ -550,21 +596,114 @@ export class CandidateContextController {
       this.setRuntimeError(work.contextId, response.error.message);
       return;
     }
-    if (response.kind !== "result") {
+    if (response.kind !== "result" || response.trueCandidates === undefined) {
       this.setRuntime(
         work.contextId,
         withStatus(this.contexts[work.contextId], "stale", null, null),
       );
       return;
     }
+    try {
+      this.applyTrueCandidateResult(work, response.trueCandidates, "live");
+    } catch (error) {
+      this.setRuntimeError(work.contextId, errorMessage(error));
+    }
+  }
+
+  private applyTrueCandidateResult(
+    work: ActiveWork,
+    result: TrueCandidatesResult,
+    status: "calculating" | "live",
+  ): void {
+    const definition = this.findDefinition(work.contextId);
+    if (!isTrueCandidatesContext(definition)) {
+      return;
+    }
+    this.validateTrueCandidateResult(work, result);
+    const projection = projectTrueCandidates(result, definition.display);
     this.setRuntime(
       work.contextId,
-      withStatus(
-        this.contexts[work.contextId],
-        "live",
-        response.semanticRevision,
-        response.semanticHash,
-      ),
+      Object.freeze({
+        ...this.contexts[work.contextId],
+        baseSemanticRevision:
+          status === "live" ? work.request.semanticRevision : null,
+        baseSemanticHash: status === "live" ? work.request.semanticHash : null,
+        status,
+        candidates: projection.candidates,
+        candidatePresentation: projection.presentation,
+        trueCandidates: Object.freeze({
+          solutionCounts: Object.freeze([...result.solutionCounts]),
+          logicalCandidateMasks:
+            result.logicalCandidateMasks === undefined
+              ? undefined
+              : Object.freeze([...result.logicalCandidateMasks]),
+          solutionCountCap: result.solutionCountCap,
+          legend: projection.legend,
+        }),
+        progress: Object.freeze({
+          discoveredCandidates: result.solutionCounts.filter((count) => count > 0).length,
+          candidateSlots: result.solutionCounts.length,
+        }),
+        error: null,
+      }),
+    );
+  }
+
+  private validateTrueCandidateResult(
+    work: ActiveWork,
+    result: TrueCandidatesResult,
+  ): void {
+    const projection = work.request.puzzle.solverProjections.find(
+      (candidate) =>
+        candidate.id === work.request.trueCandidatesOptions.projectionId,
+    );
+    if (projection === undefined) {
+      throw new Error(
+        "True Candidates returned identifiers outside the requested projection",
+      );
+    }
+    const expectedCellIds = projection.cellIdsByRow.flat();
+    if (
+      expectedCellIds.length !== result.cellIds.length ||
+      expectedCellIds.some((cellId, index) => cellId !== result.cellIds[index]) ||
+      projection.valueIdsBySolverValue.length !==
+        result.valueIdsBySolverValue.length ||
+      projection.valueIdsBySolverValue.some(
+        (valueId, index) => valueId !== result.valueIdsBySolverValue[index],
+      )
+    ) {
+      throw new Error(
+        "True Candidates returned identifiers outside the requested projection",
+      );
+    }
+    if (
+      result.solutionCountCap !==
+      work.request.trueCandidatesOptions.solutionCountCap
+    ) {
+      throw new Error(
+        "True Candidates returned a count cap outside the current configuration",
+      );
+    }
+  }
+
+  private isCurrentWork(work: ActiveWork): boolean {
+    if (
+      this.activeWork !== work ||
+      work.generation !== this.workGeneration ||
+      work.contextId !== this.activeContextId ||
+      work.documentId !== this.document.id ||
+      work.request.semanticRevision !== this.semanticRevision ||
+      work.request.semanticHash !== this.semanticHash
+    ) {
+      return false;
+    }
+    const definition = this.definitions.find(
+      (candidate) => candidate.id === work.contextId,
+    );
+    return (
+      definition !== undefined &&
+      isTrueCandidatesContext(definition) &&
+      trueCandidateConfigurationKey(definition) === work.configurationKey
     );
   }
 
@@ -573,8 +712,10 @@ export class CandidateContextController {
       this.activeWork?.contextId ?? this.scheduledWork?.contextId;
     this.scheduledWork?.cancel();
     this.scheduledWork = null;
+    this.activeWork?.unsubscribeProgress();
     this.activeWork?.job.cancel();
     this.activeWork = null;
+    this.workGeneration += 1;
     if (
       markStale &&
       contextId !== undefined &&
@@ -674,7 +815,7 @@ export class CandidateContextController {
 }
 
 function isCorrelatedCandidateResponse(
-  request: CountSolverRequest,
+  request: TrueCandidatesSolverRequest,
   response: SolverResponse,
 ): boolean {
   return (
@@ -685,6 +826,12 @@ function isCorrelatedCandidateResponse(
     response.semanticHash === request.semanticHash &&
     response.contextId === request.contextId
   );
+}
+
+function trueCandidateConfigurationKey(
+  definition: TrueCandidatesContext,
+): string {
+  return `${definition.refresh}:${definition.display}:${definition.solutionCountCap}`;
 }
 
 function behaviorConfigurationChanged(

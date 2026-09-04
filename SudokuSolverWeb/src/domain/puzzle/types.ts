@@ -134,7 +134,8 @@ function hasValidTrueCandidatesConfiguration(
       candidate.display === "logicComparison") &&
     typeof candidate.solutionCountCap === "number" &&
     Number.isSafeInteger(candidate.solutionCountCap) &&
-    candidate.solutionCountCap >= 0
+    candidate.solutionCountCap >= 1 &&
+    candidate.solutionCountCap <= 1024
   );
 }
 
@@ -215,9 +216,10 @@ export function assertValidCandidateContext(
     if (
       typeof candidate.solutionCountCap !== "number" ||
       !Number.isSafeInteger(candidate.solutionCountCap) ||
-      candidate.solutionCountCap < 0
+      candidate.solutionCountCap < 1 ||
+      candidate.solutionCountCap > 1024
     ) {
-      throw new Error("solutionCountCap must be a non-negative safe integer");
+      throw new Error("solutionCountCap must be an integer between 1 and 1024");
     }
     return;
   }

@@ -23,6 +23,8 @@ function textNodesEqual(
     first.text === second.text &&
     first.role === second.role &&
     first.candidateKind === second.candidateKind &&
+    first.candidateTone === second.candidateTone &&
+    first.candidateLabel === second.candidateLabel &&
     first.clip?.id === second.clip?.id &&
     first.clip?.x === second.clip?.x &&
     first.clip?.y === second.clip?.y &&
@@ -64,6 +66,8 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
     node.fill === undefined
       ? undefined
       : ({ "--puzzle-cell-fill": node.fill.color } as CSSProperties);
+  const candidateClassName = (candidate: SceneCellNode["content"][number]) =>
+    `puzzle-cell__candidate${candidate.candidateKind === undefined ? "" : ` puzzle-cell__candidate--${candidate.candidateKind}`}${candidate.candidateTone === undefined ? "" : ` puzzle-cell__candidate--${candidate.candidateTone}`}`;
 
   return (
     <g
@@ -106,7 +110,8 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
             {markedCandidates.map((candidate) =>
               candidate.clip === undefined ? (
                 <text
-                  className={`puzzle-cell__candidate${candidate.candidateKind === undefined ? "" : ` puzzle-cell__candidate--${candidate.candidateKind}`}`}
+                  className={candidateClassName(candidate)}
+                  data-candidate-label={candidate.candidateLabel}
                   key={candidate.id}
                   x={candidate.x}
                   y={candidate.y}
@@ -125,7 +130,8 @@ const CellNode = memo(function CellNode({ node }: { node: SceneCellNode }) {
                   overflow="hidden"
                 >
                   <text
-                    className={`puzzle-cell__candidate${candidate.candidateKind === undefined ? "" : ` puzzle-cell__candidate--${candidate.candidateKind}`}`}
+                    className={candidateClassName(candidate)}
+                    data-candidate-label={candidate.candidateLabel}
                     x={candidate.x}
                     y={candidate.y}
                   >

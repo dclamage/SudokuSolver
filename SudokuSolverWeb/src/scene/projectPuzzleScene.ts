@@ -15,6 +15,7 @@ import type {
   SceneGeometryIssue,
   SceneTextNode,
 } from "./types";
+import type { TrueCandidatePresentation } from "../domain/candidates/types";
 
 export { MIN_NORMALIZED_FEATURE_SIZE } from "./normalizeSceneGeometry";
 
@@ -509,6 +510,8 @@ function projectCandidateNodes(
       cellIndex,
       region,
       view.candidates[cellId],
+      undefined,
+      view.candidatePresentation?.[cellId],
     );
   }
 
@@ -553,6 +556,7 @@ function projectCornerCandidateNodes(
   region: ContentRegion,
   candidateIds: readonly string[] | undefined,
   candidateKind?: "corner",
+  candidatePresentation?: Readonly<Record<string, TrueCandidatePresentation>>,
 ): SceneTextNode[] {
   if (candidateIds === undefined || candidateIds.length === 0) {
     return [];
@@ -584,6 +588,8 @@ function projectCornerCandidateNodes(
         text: value.label,
         role: "candidate" as const,
         candidateKind,
+        candidateTone: candidatePresentation?.[value.id]?.tone,
+        candidateLabel: candidatePresentation?.[value.id]?.label,
         clip: createCandidateClip(
           `candidate-clip-${cellIndex}-${domainIndex}`,
           region,

@@ -101,6 +101,17 @@ public sealed class NativeOperationRunner
                     NativeProjectionResult countProjection = NativePuzzleProjector.Project(request.Puzzle, projectionId);
                     RunCount(request, verifiedHash, countProjection, sendResponse, cancellationToken);
                     break;
+                case "trueCandidates":
+                    NativeProjectionResult trueCandidatesProjection = NativePuzzleProjector.Project(
+                        request.Puzzle,
+                        projectionId);
+                    RunTrueCandidates(
+                        request,
+                        verifiedHash,
+                        trueCandidatesProjection,
+                        sendResponse,
+                        cancellationToken);
+                    break;
                 default:
                     sendResponse(Error(
                         request,
@@ -219,6 +230,107 @@ public sealed class NativeOperationRunner
             }));
     }
 
+    private void RunTrueCandidates(
+        SolverRequest request,
+        string verifiedHash,
+        NativeProjectionResult projection,
+        Action<SolverResponse> sendResponse,
+        CancellationToken cancellationToken)
+    {
+        TrueCandidatesOptionsDto options = request.TrueCandidatesOptions!;
+        if (options.Display is not ("possibility" or "solutionFrequency" or "logicComparison"))
+        {
+            throw new ArgumentException(
+                $"True Candidates display {options.Display} is invalid.",
+                nameof(request));
+        }
+        if (options.SolutionCountCap is < 1 or > 1024)
+        {
+            throw new ArgumentException(
+                "True Candidates solutionCountCap must be between 1 and 1024.",
+                nameof(request));
+        }
+
+        NativeSolverProjection selectedProjection = request.Puzzle.SolverProjections.Single(
+            candidate => string.Equals(
+                candidate.Id,
+                options.ProjectionId,
+                StringComparison.Ordinal));
+        int[]? logicalCandidateMasks = null;
+        if (options.Display == "logicComparison")
+        {
+            Solver logicalSolver = projection.Solver.Clone(willRunNonSinglesLogic: true);
+            LogicResult logicalResult = logicalSolver.ConsolidateBoard(cancellationToken: cancellationToken);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (logicalResult == LogicResult.Invalid)
+            {
+                sendResponse(Error(request, verifiedHash, "contradiction", "No solutions found."));
+                return;
+            }
+            logicalCandidateMasks = logicalSolver.FlatBoard
+                .Select(mask => unchecked((int)(mask & ~SolverUtility.valueSetMask)))
+                .ToArray();
+        }
+
+        long[] counts = projection.Solver.TrueCandidates(
+            multiThread: !_singleThreaded,
+            progressEvent: progress => sendResponse(CreateResponse(
+                request,
+                verifiedHash,
+                "progress",
+                trueCandidates: MapTrueCandidates(
+                    projection,
+                    selectedProjection,
+                    progress,
+                    options.SolutionCountCap,
+                    logicalCandidateMasks))),
+            numSolutionsCap: options.SolutionCountCap,
+            cancellationToken: cancellationToken);
+        cancellationToken.ThrowIfCancellationRequested();
+        sendResponse(Result(
+            request,
+            verifiedHash,
+            trueCandidates: MapTrueCandidates(
+                projection,
+                selectedProjection,
+                counts,
+                options.SolutionCountCap,
+                logicalCandidateMasks)));
+    }
+
+    private static TrueCandidatesResultDto MapTrueCandidates(
+        NativeProjectionResult projection,
+        NativeSolverProjection selectedProjection,
+        IReadOnlyList<long> counts,
+        long solutionCountCap,
+        int[]? logicalCandidateMasks)
+    {
+        int expectedCount = projection.CellIdByIndex.Count * selectedProjection.ValueIdsBySolverValue.Count;
+        if (counts.Count != expectedCount)
+        {
+            throw new InvalidOperationException(
+                $"True Candidates returned {counts.Count} counts for {expectedCount} projected candidates.");
+        }
+        if (logicalCandidateMasks is not null &&
+            logicalCandidateMasks.Length != projection.CellIdByIndex.Count)
+        {
+            throw new InvalidOperationException(
+                "True Candidates returned logical masks with an invalid projected shape.");
+        }
+
+        long[] solutionCounts = counts
+            .Select(count => Math.Clamp(count, 0, solutionCountCap))
+            .ToArray();
+        return new TrueCandidatesResultDto
+        {
+            CellIds = projection.CellIdByIndex.ToArray(),
+            ValueIdsBySolverValue = selectedProjection.ValueIdsBySolverValue.ToArray(),
+            SolutionCounts = solutionCounts,
+            LogicalCandidateMasks = logicalCandidateMasks,
+            SolutionCountCap = solutionCountCap,
+        };
+    }
+
     private static string GetProjectionId(SolverRequest request)
         => request.Operation switch
         {
@@ -228,9 +340,12 @@ public sealed class NativeOperationRunner
                 ?? throw new ArgumentException("Native solveOptions are required.", nameof(request)),
             "count" => request.CountOptions?.ProjectionId
                 ?? throw new ArgumentException("Native countOptions are required.", nameof(request)),
+            "trueCandidates" => request.TrueCandidatesOptions?.ProjectionId
+                ?? throw new ArgumentException("Native trueCandidatesOptions are required.", nameof(request)),
             _ => request.ValidateOptions?.ProjectionId
                 ?? request.SolveOptions?.ProjectionId
                 ?? request.CountOptions?.ProjectionId
+                ?? request.TrueCandidatesOptions?.ProjectionId
                 ?? throw new ArgumentException("Native operation options are required.", nameof(request)),
         };
 
@@ -286,8 +401,9 @@ public sealed class NativeOperationRunner
         string verifiedHash,
         CapabilityResultDto? capability = null,
         SolveResultDto? solve = null,
-        CountResultDto? count = null)
-        => CreateResponse(request, verifiedHash, "result", capability, solve, count);
+        CountResultDto? count = null,
+        TrueCandidatesResultDto? trueCandidates = null)
+        => CreateResponse(request, verifiedHash, "result", capability, solve, count, trueCandidates);
 
     private static SolverResponse Error(
         SolverRequest request,
@@ -307,6 +423,7 @@ public sealed class NativeOperationRunner
         CapabilityResultDto? capability = null,
         SolveResultDto? solve = null,
         CountResultDto? count = null,
+        TrueCandidatesResultDto? trueCandidates = null,
         SolverErrorDto? error = null)
         => new()
         {
@@ -321,6 +438,7 @@ public sealed class NativeOperationRunner
             Capability = capability,
             Solve = solve,
             Count = count,
+            TrueCandidates = trueCandidates,
             Error = error,
         };
 

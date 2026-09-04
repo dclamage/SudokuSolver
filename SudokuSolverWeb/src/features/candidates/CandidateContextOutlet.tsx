@@ -7,6 +7,7 @@ import type {
   CandidatePanelDescriptor,
 } from "../../domain/candidates/types";
 import { SetterNotesPanel } from "./SetterNotesPanel";
+import { TrueCandidatesPanel } from "./TrueCandidatesPanel";
 
 export interface CandidateContextOutletProps {
   controller: AppController;
@@ -40,10 +41,10 @@ function SetterNotesPanelOutlet({ panel, controller }: CandidatePanelProps) {
   );
 }
 
-function TrueCandidatesPanel({ panel }: CandidatePanelProps) {
+function TrueCandidatesPanelOutlet({ panel, controller }: CandidatePanelProps) {
   return (
     <PanelFrame panel={panel}>
-      <p>Solver candidates use this layer only while it is active.</p>
+      <TrueCandidatesPanel controller={controller} />
     </PanelFrame>
   );
 }
@@ -96,7 +97,7 @@ const panelRegistry: Readonly<
   Record<string, (props: CandidatePanelProps) => ReactNode>
 > = Object.freeze({
   setterNotes: SetterNotesPanelOutlet,
-  trueCandidates: TrueCandidatesPanel,
+  trueCandidates: TrueCandidatesPanelOutlet,
   logicalSolver: LogicalSolverPanel,
 });
 

@@ -332,15 +332,37 @@ describe("PuzzleStore", () => {
       error: "display is invalid",
     },
     {
-      name: "solution count cap",
+      name: "zero solution count cap",
       command: {
         type: "configureTrueCandidates",
         contextId: "true-candidates",
         refresh: "automatic",
         display: "possibility",
-        solutionCountCap: -1,
+        solutionCountCap: 0,
       },
-      error: "solutionCountCap must be a non-negative safe integer",
+      error: "solutionCountCap must be an integer between 1 and 1024",
+    },
+    {
+      name: "oversized solution count cap",
+      command: {
+        type: "configureTrueCandidates",
+        contextId: "true-candidates",
+        refresh: "automatic",
+        display: "solutionFrequency",
+        solutionCountCap: 1025,
+      },
+      error: "solutionCountCap must be an integer between 1 and 1024",
+    },
+    {
+      name: "fractional solution count cap",
+      command: {
+        type: "configureTrueCandidates",
+        contextId: "true-candidates",
+        refresh: "automatic",
+        display: "solutionFrequency",
+        solutionCountCap: 1.5,
+      },
+      error: "solutionCountCap must be an integer between 1 and 1024",
     },
   ])("rejects an invalid runtime $name configuration", ({ command, error }) => {
     const store = new PuzzleStore(createStarterPuzzle(() => "invalid-config"));
@@ -456,16 +478,16 @@ describe("PuzzleStore", () => {
       error: "display is invalid",
     },
     {
-      name: "invalid True Candidates count cap",
+      name: "invalid True Candidates zero count cap",
       context: {
         id: "invalid-true",
         name: "Invalid true",
         kind: "trueCandidates",
         refresh: "automatic",
         display: "possibility",
-        solutionCountCap: -1,
+        solutionCountCap: 0,
       },
-      error: "solutionCountCap must be a non-negative safe integer",
+      error: "solutionCountCap must be an integer between 1 and 1024",
     },
     {
       name: "invalid Logical Solver follow flag",

@@ -1608,6 +1608,38 @@ describe("PuzzleCanvas", () => {
     expect(screen.queryByTestId("candidates-r1c3")).toBeNull();
   });
 
+  it("renders the active True Candidates presentation on each candidate", () => {
+    render(
+      <PuzzleCanvas
+        puzzle={puzzle}
+        view={{
+          ...emptySceneView,
+          candidates: { r1c2: ["1"] },
+          candidatePresentation: {
+            r1c2: {
+              "1": {
+                tone: "bruteForceOnly",
+                label: "Brute-force possible only",
+              },
+            },
+          },
+        }}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    const candidate = screen.getByText("1", {
+      selector: ".puzzle-cell__candidate",
+    });
+    expect(candidate).toHaveClass(
+      "puzzle-cell__candidate--bruteForceOnly",
+    );
+    expect(candidate).toHaveAttribute(
+      "data-candidate-label",
+      "Brute-force possible only",
+    );
+  });
+
   it("projects polygon cells through normalized scene geometry", () => {
     const polygonPuzzle = structuredClone(puzzle);
     polygonPuzzle.cells["aux-1"].shape = {

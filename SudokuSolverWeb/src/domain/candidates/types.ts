@@ -28,7 +28,45 @@ export interface CandidateContextRuntime {
   readonly baseSemanticHash: string | null;
   readonly status: CandidateContextStatus;
   readonly candidates: Readonly<Record<CellId, readonly ValueId[]>>;
+  readonly candidatePresentation?: TrueCandidatePresentationMap;
+  readonly trueCandidates?: TrueCandidateRuntimeResult | null;
+  readonly progress?: TrueCandidateProgress | null;
   readonly error: string | null;
+}
+
+export type TrueCandidateTone =
+  | "possible"
+  | "frequencyLow"
+  | "frequencyMedium"
+  | "frequencyHigh"
+  | "both"
+  | "bruteForceOnly"
+  | "logicalOnly";
+
+export interface TrueCandidatePresentation {
+  readonly tone: TrueCandidateTone;
+  readonly label: string;
+}
+
+export type TrueCandidatePresentationMap = Readonly<
+  Record<CellId, Readonly<Record<ValueId, TrueCandidatePresentation>>>
+>;
+
+export interface TrueCandidateLegendEntry {
+  readonly tone: TrueCandidateTone;
+  readonly label: string;
+}
+
+export interface TrueCandidateProgress {
+  readonly discoveredCandidates: number;
+  readonly candidateSlots: number;
+}
+
+export interface TrueCandidateRuntimeResult {
+  readonly solutionCounts: readonly number[];
+  readonly logicalCandidateMasks?: readonly number[];
+  readonly solutionCountCap: number;
+  readonly legend: readonly TrueCandidateLegendEntry[];
 }
 
 export interface CandidateSceneProjection {
@@ -39,6 +77,7 @@ export interface CandidateSceneProjection {
     readonly centre: Readonly<Record<CellId, readonly ValueId[]>>;
   };
   readonly cellColors?: Readonly<Record<CellId, ManualColorToken>>;
+  readonly candidatePresentation?: TrueCandidatePresentationMap;
   readonly annotations: readonly SceneAnnotation[];
 }
 

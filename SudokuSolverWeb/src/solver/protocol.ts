@@ -2,7 +2,7 @@ import type { PuzzlePackageV1 } from "../domain/puzzle/types";
 
 export const SOLVER_PROTOCOL_VERSION = 1 as const;
 
-export type SolverOperation = "validate" | "solve" | "count";
+export type SolverOperation = "validate" | "solve" | "count" | "trueCandidates";
 
 interface SolverRequestEnvelope {
   protocolVersion: typeof SOLVER_PROTOCOL_VERSION;
@@ -29,10 +29,20 @@ export interface CountSolverRequest extends SolverRequestEnvelope {
   countOptions: { projectionId: string; maxSolutions: number };
 }
 
+export interface TrueCandidatesSolverRequest extends SolverRequestEnvelope {
+  operation: "trueCandidates";
+  trueCandidatesOptions: {
+    projectionId: string;
+    display: "possibility" | "solutionFrequency" | "logicComparison";
+    solutionCountCap: number;
+  };
+}
+
 export type SolverRequest =
   | ValidateSolverRequest
   | SolveSolverRequest
-  | CountSolverRequest;
+  | CountSolverRequest
+  | TrueCandidatesSolverRequest;
 
 interface SolverResponseEnvelope {
   protocolVersion: typeof SOLVER_PROTOCOL_VERSION;

@@ -55,7 +55,7 @@ describe("CandidateContextTabs", () => {
       screen.queryByRole("tabpanel", { name: "Setter notes" }),
     ).toBeNull();
     expect(
-      screen.getByRole("button", { name: "Open settings for Analysis Scratch" }),
+      screen.getByRole("button", { name: "Analysis Scratch options" }),
     ).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "Open settings for Setter notes" }),

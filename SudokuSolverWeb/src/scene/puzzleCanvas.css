@@ -40,6 +40,26 @@
   font-weight: 600;
 }
 
+.puzzle-cell__candidate--frequencyLow,
+.puzzle-cell__candidate--logicalOnly {
+  fill: #77858e;
+}
+
+.puzzle-cell__candidate--frequencyMedium,
+.puzzle-cell__candidate--both {
+  fill: #087fa5;
+}
+
+.puzzle-cell__candidate--frequencyHigh {
+  fill: #005a78;
+  font-weight: 700;
+}
+
+.puzzle-cell__candidate--bruteForceOnly {
+  fill: #bf5b20;
+  font-weight: 700;
+}
+
 .puzzle-cell__value {
   dominant-baseline: central;
   fill: #12191f;

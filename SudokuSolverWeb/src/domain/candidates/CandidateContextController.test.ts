@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import { createStarterPuzzle } from "../puzzle/createStarterPuzzle";
 import type { CandidateContext, PuzzlePackageV1 } from "../puzzle/types";
-import type { CountSolverRequest, SolverResultResponse } from "../../solver/protocol";
+import type {
+  SolverResultResponse,
+  TrueCandidatesSolverRequest,
+} from "../../solver/protocol";
 import { FakeSolverClient } from "../../test/FakeSolverClient";
 import {
   CandidateContextController,
@@ -42,9 +45,15 @@ function createCandidateController(
 }
 
 function resultFor(
-  request: CountSolverRequest,
+  request: TrueCandidatesSolverRequest,
   overrides: Partial<SolverResultResponse> = {},
 ): SolverResultResponse {
+  const projection = request.puzzle.solverProjections[0];
+  const cellIds = projection.cellIdsByRow.flat();
+  const solutionCounts = Array.from(
+    { length: cellIds.length * projection.valueIdsBySolverValue.length },
+    (_, index) => (index === 0 ? 1 : 0),
+  );
   return {
     protocolVersion: request.protocolVersion,
     requestId: request.requestId,
@@ -54,10 +63,15 @@ function resultFor(
     semanticHash: request.semanticHash,
     contextId: request.contextId,
     kind: "result",
-    count: {
-      solutionCount: 1,
-      maxSolutions: request.countOptions.maxSolutions,
-      isClamped: false,
+    trueCandidates: {
+      cellIds,
+      valueIdsBySolverValue: [...projection.valueIdsBySolverValue],
+      solutionCounts,
+      logicalCandidateMasks:
+        request.trueCandidatesOptions.display === "logicComparison"
+          ? Array.from({ length: cellIds.length }, () => 0)
+          : undefined,
+      solutionCountCap: request.trueCandidatesOptions.solutionCountCap,
     },
     ...overrides,
   };
@@ -220,7 +234,7 @@ describe("CandidateContextController", () => {
   it("accepts a live result across cosmetic document revisions", async () => {
     const { controller, solver } = createCandidateController();
     controller.activate("true-candidates");
-    const request = solver.requests[0] as CountSolverRequest;
+    const request = solver.requests[0] as TrueCandidatesSolverRequest;
 
     controller.onPuzzleChanged({
       documentRevision: 2,
@@ -253,7 +267,7 @@ describe("CandidateContextController", () => {
   ] as const)("rejects a response with a mismatched %s", async (_field, mismatch) => {
     const { controller, solver } = createCandidateController();
     controller.activate("true-candidates");
-    const request = solver.requests[0] as CountSolverRequest;
+    const request = solver.requests[0] as TrueCandidatesSolverRequest;
 
     solver.resolve(request.requestId, resultFor(request, mismatch));
     await settle();

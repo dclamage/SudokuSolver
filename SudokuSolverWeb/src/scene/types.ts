@@ -1,4 +1,8 @@
 import type { CellId, ValueId } from "../domain/puzzle/types";
+import type {
+  TrueCandidatePresentationMap,
+  TrueCandidateTone,
+} from "../domain/candidates/types";
 import type { CapabilityEntityResult } from "../solver/protocol";
 
 export type SolverParticipation =
@@ -29,6 +33,8 @@ export interface SceneTextNode {
   text: string;
   role: "given" | "value" | "candidate";
   candidateKind?: "corner" | "centre";
+  candidateTone?: TrueCandidateTone;
+  candidateLabel?: string;
   clip?: SceneClipRect;
 }
 
@@ -84,6 +90,7 @@ export interface PuzzleSceneView {
     corner: Readonly<Record<CellId, readonly ValueId[]>>;
     centre: Readonly<Record<CellId, readonly ValueId[]>>;
   };
+  candidatePresentation?: TrueCandidatePresentationMap;
   cellFills?: Readonly<Record<CellId, SceneCellFill>>;
   selectedCellIds: readonly CellId[];
   annotations: readonly SceneAnnotation[];

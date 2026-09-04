@@ -65,6 +65,9 @@ public sealed class SolverRequest
 
     /// <summary>Gets bounded-count options when <see cref="Operation"/> is <c>count</c>.</summary>
     public CountOptionsDto? CountOptions { get; init; }
+
+    /// <summary>Gets true-candidate options when <see cref="Operation"/> is <c>trueCandidates</c>.</summary>
+    public TrueCandidatesOptionsDto? TrueCandidatesOptions { get; init; }
 }
 
 /// <summary>Uses the native package's authoritative parser and serializer at the protocol boundary.</summary>
@@ -113,4 +116,17 @@ public sealed class CountOptionsDto
 
     /// <summary>Gets the maximum solution count to return.</summary>
     public required long MaxSolutions { get; init; }
+}
+
+/// <summary>Contains options for a native true-candidates calculation.</summary>
+public sealed class TrueCandidatesOptionsDto
+{
+    /// <summary>Gets the stable native projection identifier.</summary>
+    public required string ProjectionId { get; init; }
+
+    /// <summary>Gets the requested candidate display mode.</summary>
+    public required string Display { get; init; }
+
+    /// <summary>Gets the maximum solution count retained for each candidate.</summary>
+    public required long SolutionCountCap { get; init; }
 }

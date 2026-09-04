@@ -332,11 +332,25 @@ describe("validatePuzzlePackage", () => {
       error: "candidate context true-candidates has invalid display mode",
     },
     {
-      name: "True Candidates solution count cap",
+      name: "True Candidates zero solution count cap",
+      contextId: "true-candidates",
+      property: "solutionCountCap",
+      value: 0,
+      error: "candidate context true-candidates solutionCountCap must be between 1 and 1024",
+    },
+    {
+      name: "True Candidates oversized solution count cap",
+      contextId: "true-candidates",
+      property: "solutionCountCap",
+      value: 1025,
+      error: "candidate context true-candidates solutionCountCap must be between 1 and 1024",
+    },
+    {
+      name: "True Candidates fractional solution count cap",
       contextId: "true-candidates",
       property: "solutionCountCap",
       value: 1.5,
-      error: "solutionCountCap must be a non-negative safe integer",
+      error: "candidate context true-candidates solutionCountCap must be a non-negative safe integer",
     },
     {
       name: "Logical Solver follow flag",
