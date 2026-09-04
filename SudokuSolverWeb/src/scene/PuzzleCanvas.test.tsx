@@ -1872,6 +1872,82 @@ describe("PuzzleCanvas", () => {
     ).toHaveClass("puzzle-scene-path--focus");
   });
 
+  it.each(["focus", "dim", "highlight"] as const)(
+    "renders an accessible visible %s marker for a point-only constraint",
+    (emphasis) => {
+      const pointPuzzle = structuredClone(puzzle);
+      pointPuzzle.points["focus-point"] = {
+        id: "focus-point",
+        x: 0.5,
+        y: 0.5,
+      };
+      pointPuzzle.constraints = [{
+        id: "point-only",
+        typeId: "test.bound-point",
+        bindings: { point: [{ kind: "point", id: "focus-point" }] },
+        parameters: {},
+      }];
+
+      render(
+        <PuzzleCanvas
+          puzzle={pointPuzzle}
+          view={{
+            ...emptySceneView,
+            annotations: [{
+              id: `point-only-${emphasis}`,
+              entity: { kind: "constraint", id: "point-only" },
+              emphasis,
+              label: `${emphasis} point-only constraint`,
+            }],
+          }}
+          onSelectCell={() => undefined}
+        />,
+      );
+
+      const marker = screen.getByRole("img", {
+        name: `${emphasis} point-only constraint`,
+      });
+      expect(marker).toHaveAttribute(
+        "data-testid",
+        `annotation-point-only-${emphasis}-binding-point-focus-point`,
+      );
+      expect(marker).toHaveClass(`puzzle-scene-path--${emphasis}`);
+      expect(marker).toHaveClass("puzzle-scene-path--point");
+      expect(marker).toHaveStyle({ strokeWidth: "8px" });
+      const segments = readLineSegments(marker);
+      expect(segments).toHaveLength(1);
+      expect(segments[0].from).toEqual(segments[0].to);
+    },
+  );
+
+  it("limits value emphasis to cells in the active logical board", () => {
+    const auxiliaryValuePuzzle = structuredClone(puzzle);
+    auxiliaryValuePuzzle.givens["aux-1"] = "3";
+
+    render(
+      <PuzzleCanvas
+        puzzle={auxiliaryValuePuzzle}
+        view={{
+          ...emptySceneView,
+          candidates: { r1c1: ["3"] },
+          annotations: [{
+            id: "value-highlight",
+            entity: { kind: "value", id: "3" },
+            emphasis: "highlight",
+          }],
+        }}
+        onSelectCell={() => undefined}
+      />,
+    );
+
+    expect(
+      screen.getByTestId("candidates-r1c1").querySelector("text"),
+    ).toHaveAttribute("data-logical-emphasis", "highlight");
+    expect(screen.getByTestId("given-aux-1")).not.toHaveAttribute(
+      "data-logical-emphasis",
+    );
+  });
+
   it("labels the SVG and exposes each cell as a focusable control", () => {
     render(
       <PuzzleCanvas

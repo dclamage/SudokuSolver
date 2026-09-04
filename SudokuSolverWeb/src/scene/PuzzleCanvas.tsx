@@ -214,13 +214,14 @@ export function PuzzleCanvas({
           <CellNode key={node.id} node={node} />
         ) : (
           <path
-            className={`puzzle-scene-path puzzle-scene-path--${node.role}${node.annotationEmphasis === undefined ? "" : ` puzzle-scene-path--${node.annotationEmphasis}`}`}
+            className={`puzzle-scene-path puzzle-scene-path--${node.role}${node.annotationShape === undefined ? "" : ` puzzle-scene-path--${node.annotationShape}`}${node.annotationEmphasis === undefined ? "" : ` puzzle-scene-path--${node.annotationEmphasis}`}`}
             data-testid={node.id}
             d={node.d}
             key={node.id}
             role={node.label === undefined ? undefined : "img"}
             aria-label={node.label}
             aria-hidden={node.label === undefined ? "true" : undefined}
+            style={node.annotationShape === "point" ? { strokeWidth: "8px" } : undefined}
           />
         ),
       )}

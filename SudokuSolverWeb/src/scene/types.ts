@@ -73,6 +73,7 @@ export interface ScenePathNode {
   d: string;
   role: "grid" | "selection" | "annotation";
   label?: string;
+  annotationShape?: "point";
   annotationEmphasis?: "focus" | "dim" | "highlight";
   geometryIssue?: SceneGeometryIssue;
   geometryIssues?: readonly SceneGeometryIssue[];

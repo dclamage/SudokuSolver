@@ -37,6 +37,12 @@ interface Point {
   y: number;
 }
 
+interface ResolvedAnnotationPath {
+  key: string;
+  d: string;
+  annotationShape?: "point";
+}
+
 interface Segment {
   from: Point;
   to: Point;
@@ -1191,16 +1197,24 @@ export function projectPuzzleScene(
     }
   }
   if (valueEmphasis.size > 0) {
-    nodes = nodes.map((node) => ({
-      ...node,
-      content: node.content.map((content) => ({
-        ...content,
-        annotationEmphasis:
-          content.valueId === undefined
-            ? undefined
-            : valueEmphasis.get(content.valueId),
-      })),
-    }));
+    const logicalCellIds = new Set([
+      ...Object.keys(view.values),
+      ...Object.keys(view.candidates),
+    ]);
+    nodes = nodes.map((node) =>
+      logicalCellIds.has(node.cellId)
+        ? {
+            ...node,
+            content: node.content.map((content) => ({
+              ...content,
+              annotationEmphasis:
+                content.valueId === undefined
+                  ? undefined
+                  : valueEmphasis.get(content.valueId),
+            })),
+          }
+        : node,
+    );
   }
   const selections = [...selectedCellIds].flatMap((cellId) => {
     const geometry = geometryByCellId.get(cellId);
@@ -1218,7 +1232,10 @@ export function projectPuzzleScene(
   const annotations: ScenePathNode[] = deduplicateAnnotations(view).flatMap(
     (annotation): ScenePathNode[] => {
       if ("entity" in annotation) {
-        const bindingPaths = (kind: string, id: string) => {
+        const bindingPaths = (
+          kind: string,
+          id: string,
+        ): ResolvedAnnotationPath[] => {
           if (kind === "cell") {
             const d = geometryByCellId.get(id)?.path;
             return d === undefined || d === "" ? [] : [{ key: `cell-${id}`, d }];
@@ -1259,6 +1276,20 @@ export function projectPuzzleScene(
               d: `${points.map((point, index) => `${index === 0 ? "M" : "L"} ${sceneCoordinate(point.x)} ${sceneCoordinate(point.y)}`).join(" ")}${path.closed ? " Z" : ""}`,
             }];
           }
+          if (kind === "point") {
+            const point = puzzle.points[id];
+            if (point === undefined) {
+              return [];
+            }
+            const scenePoint = normalizeNativePoint(point, frame);
+            const x = sceneCoordinate(scenePoint.x);
+            const y = sceneCoordinate(scenePoint.y);
+            return [{
+              key: `point-${id}`,
+              d: `M ${x} ${y} L ${x} ${y}`,
+              annotationShape: "point" as const,
+            }];
+          }
           return [];
         };
         const paths =
@@ -1294,6 +1325,7 @@ export function projectPuzzleScene(
           d: path.d,
           role: "annotation" as const,
           label: annotation.label,
+          annotationShape: path.annotationShape,
           annotationEmphasis: annotation.emphasis,
           geometryIssues: [],
         }));
