@@ -8,6 +8,7 @@ import type {
 } from "../../domain/candidates/types";
 import { SetterNotesPanel } from "./SetterNotesPanel";
 import { TrueCandidatesPanel } from "./TrueCandidatesPanel";
+import { LogicalSolverPanel } from "./LogicalSolverPanel";
 
 export interface CandidateContextOutletProps {
   controller: AppController;
@@ -49,10 +50,10 @@ function TrueCandidatesPanelOutlet({ panel, controller }: CandidatePanelProps) {
   );
 }
 
-function LogicalSolverPanel({ panel }: CandidatePanelProps) {
+function LogicalSolverPanelOutlet({ panel, controller }: CandidatePanelProps) {
   return (
     <PanelFrame panel={panel}>
-      <p>The logical candidate-board seam is ready for structured deductions.</p>
+      <LogicalSolverPanel controller={controller} />
     </PanelFrame>
   );
 }
@@ -98,7 +99,7 @@ const panelRegistry: Readonly<
 > = Object.freeze({
   setterNotes: SetterNotesPanelOutlet,
   trueCandidates: TrueCandidatesPanelOutlet,
-  logicalSolver: LogicalSolverPanel,
+  logicalSolver: LogicalSolverPanelOutlet,
 });
 
 export function CandidateContextOutlet({

@@ -81,7 +81,7 @@ export function PlaytestWorkspace({ controller }: PlaytestWorkspaceProps) {
   );
   const sceneView = useMemo<PuzzleSceneView>(
     () => ({
-      values: playtest.values,
+      values: candidates.sceneProjection.values ?? playtest.values,
       candidates: manualCandidateEntry
         ? EMPTY_CANDIDATES
         : candidates.sceneProjection.candidates,

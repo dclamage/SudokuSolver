@@ -2,6 +2,7 @@ import type { AppController } from "./AppController";
 import { useExternalStore } from "./useExternalStore";
 import { PlaytestWorkspace } from "../features/playtest/PlaytestWorkspace";
 import { SetWorkspace } from "../features/set/SetWorkspace";
+import { LogicalWalkthrough } from "../features/walkthrough/LogicalWalkthrough";
 import "./appShell.css";
 
 export interface AppProps {
@@ -158,7 +159,9 @@ export function App({ controller }: AppProps) {
   return (
     <main className="app-shell">
       <AppHeader controller={controller} workspace={app.workspace} />
-      {app.workspace === "set" ? (
+      {app.walkthroughOpen ? (
+        <LogicalWalkthrough controller={controller} />
+      ) : app.workspace === "set" ? (
         <SetWorkspace controller={controller} />
       ) : (
         <PlaytestWorkspace controller={controller} />

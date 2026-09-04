@@ -123,7 +123,7 @@ export function SetWorkspace({ controller }: SetWorkspaceProps) {
     editor.setterNotesInputMode === "digit";
   const sceneView = useMemo<PuzzleSceneView>(
     () => ({
-      values: {},
+      values: candidates.sceneProjection.values ?? {},
       candidates: candidates.sceneProjection.candidates,
       candidateMarks: candidates.sceneProjection.candidateMarks,
       candidatePresentation: candidates.sceneProjection.candidatePresentation,

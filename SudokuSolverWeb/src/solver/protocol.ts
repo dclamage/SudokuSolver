@@ -2,7 +2,13 @@ import type { PuzzlePackageV1 } from "../domain/puzzle/types";
 
 export const SOLVER_PROTOCOL_VERSION = 1 as const;
 
-export type SolverOperation = "validate" | "solve" | "count" | "trueCandidates";
+export type SolverOperation =
+  | "validate"
+  | "solve"
+  | "count"
+  | "trueCandidates"
+  | "logical.create"
+  | "logical.apply";
 
 interface SolverRequestEnvelope {
   protocolVersion: typeof SOLVER_PROTOCOL_VERSION;
@@ -38,11 +44,31 @@ export interface TrueCandidatesSolverRequest extends SolverRequestEnvelope {
   };
 }
 
+export interface LogicalCreateSolverRequest extends SolverRequestEnvelope {
+  operation: "logical.create";
+  logicalCreateOptions: {
+    projectionId: string;
+    appliedDeductionIds: readonly string[];
+  };
+}
+
+export interface LogicalApplySolverRequest extends SolverRequestEnvelope {
+  operation: "logical.apply";
+  logicalApplyOptions: {
+    projectionId: string;
+    sessionId: string;
+    positionHash: string;
+    deductionId: string;
+  };
+}
+
 export type SolverRequest =
   | ValidateSolverRequest
   | SolveSolverRequest
   | CountSolverRequest
-  | TrueCandidatesSolverRequest;
+  | TrueCandidatesSolverRequest
+  | LogicalCreateSolverRequest
+  | LogicalApplySolverRequest;
 
 interface SolverResponseEnvelope {
   protocolVersion: typeof SOLVER_PROTOCOL_VERSION;
@@ -91,9 +117,55 @@ export interface TrueCandidatesResult {
   solutionCountCap: number;
 }
 
+export interface LogicalCellState {
+  cellId: string;
+  valueId: string | null;
+  candidateValueIds: readonly string[];
+}
+
+export interface LogicalEntityReference {
+  kind: string;
+  id: string;
+}
+
+export interface LogicalExplanationArgument {
+  kind: string;
+  value: string;
+}
+
+export interface LogicalWalkthroughFrame {
+  focus: readonly LogicalEntityReference[];
+  dim: readonly LogicalEntityReference[];
+  highlight: readonly LogicalEntityReference[];
+  explanation: {
+    key: string;
+    arguments: readonly LogicalExplanationArgument[];
+  };
+}
+
+export interface LogicalDeduction {
+  id: string;
+  techniqueId: string;
+  owningConstraintId: string;
+  preconditionHash: string;
+  premises: readonly {
+    kind: string;
+    cellId: string | null;
+    valueId: string | null;
+  }[];
+  delta: {
+    placements: readonly { cellId: string; valueId: string }[];
+    eliminations: readonly { cellId: string; valueId: string }[];
+  };
+  frames: readonly LogicalWalkthroughFrame[];
+}
+
 export interface LogicalResult {
   sessionId: string;
-  deductionIds: string[];
+  positionHash: string;
+  cells: readonly LogicalCellState[];
+  availableDeductions: readonly LogicalDeduction[];
+  historyDeductionIds: readonly string[];
 }
 
 export interface SolverError {

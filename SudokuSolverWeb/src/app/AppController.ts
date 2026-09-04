@@ -340,8 +340,10 @@ export class AppController {
       solver: options.solver,
       createRequestId,
       schedule: options.scheduleCandidateWork,
-      onActiveContextChanged: (contextId) =>
-        this.editor.setActiveContext(contextId),
+      onActiveContextChanged: (contextId) => {
+        this.editor.setActiveContext(contextId);
+        this.closeWalkthrough();
+      },
     });
     this.validation = new DocumentValidationStore(
       options.solver,
@@ -383,11 +385,14 @@ export class AppController {
     } else {
       this.playtest.pauseTimer();
     }
-    this.update({ workspace });
+    this.update({ workspace, walkthroughOpen: false });
   }
 
   public openWalkthrough(): void {
-    if (!this.snapshot.walkthroughOpen) {
+    if (
+      !this.snapshot.walkthroughOpen &&
+      this.candidates.getPanelDescriptor().panelKind === "logicalSolver"
+    ) {
       this.update({ walkthroughOpen: true });
     }
   }

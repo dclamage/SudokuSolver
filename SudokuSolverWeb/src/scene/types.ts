@@ -71,17 +71,27 @@ export interface ScenePathNode {
   d: string;
   role: "grid" | "selection" | "annotation";
   label?: string;
+  annotationEmphasis?: "focus" | "dim" | "highlight";
   geometryIssue?: SceneGeometryIssue;
   geometryIssues?: readonly SceneGeometryIssue[];
 }
 
 export type SceneNode = SceneCellNode | ScenePathNode;
 
-export interface SceneAnnotation {
+export interface ScenePathAnnotation {
   id: string;
   d: string;
   label?: string;
 }
+
+export interface SceneEntityAnnotation {
+  id: string;
+  entity: { kind: string; id: string };
+  emphasis: "focus" | "dim" | "highlight";
+  label?: string;
+}
+
+export type SceneAnnotation = ScenePathAnnotation | SceneEntityAnnotation;
 
 export interface PuzzleSceneView {
   values: Readonly<Record<CellId, ValueId>>;

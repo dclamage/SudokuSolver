@@ -163,6 +163,69 @@
   align-items: start;
 }
 
+.candidate-context-panel[data-panel-kind="logicalSolver"] {
+  align-items: start;
+}
+
+.logical-solver-panel {
+  display: grid;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.logical-solver-panel__current,
+.logical-archives > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.logical-solver-panel__current span,
+.logical-archives span,
+.logical-archives small {
+  color: #5d6a73;
+  font-size: 0.78rem;
+}
+
+.logical-deduction-list,
+.logical-archives {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.logical-deduction-list button,
+.logical-solver-panel__actions button {
+  min-height: var(--control-min-size);
+  padding-inline: 0.75rem;
+  border-color: #b8c4ca;
+  color: #172027;
+}
+
+.logical-deduction-list button[aria-pressed="true"] {
+  border-color: #138eb5;
+  background: #dff6fd;
+}
+
+.logical-archives {
+  padding-top: 0.5rem;
+  border-top: 1px solid #d4dadd;
+}
+
+.puzzle-scene-path--focus {
+  fill: rgb(38 200 242 / 10%);
+  stroke: #0a8eb4;
+}
+
+.puzzle-scene-path--highlight {
+  fill: rgb(255 191 71 / 22%);
+  stroke: #cf7900;
+  stroke-width: 0.075;
+}
+
+.puzzle-scene-path--dim {
+  fill: rgb(17 24 30 / 12%);
+  stroke: #75828a;
+}
+
 .true-candidates-panel {
   display: grid;
   gap: 0.65rem;

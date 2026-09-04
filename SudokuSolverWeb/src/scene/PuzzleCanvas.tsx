@@ -209,7 +209,7 @@ export function PuzzleCanvas({
           <CellNode key={node.id} node={node} />
         ) : (
           <path
-            className={`puzzle-scene-path puzzle-scene-path--${node.role}`}
+            className={`puzzle-scene-path puzzle-scene-path--${node.role}${node.annotationEmphasis === undefined ? "" : ` puzzle-scene-path--${node.annotationEmphasis}`}`}
             data-testid={node.id}
             d={node.d}
             key={node.id}

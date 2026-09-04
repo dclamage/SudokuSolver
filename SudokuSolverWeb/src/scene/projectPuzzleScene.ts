@@ -13,6 +13,7 @@ import type {
   SceneCellNode,
   SceneClipRect,
   SceneGeometryIssue,
+  ScenePathNode,
   SceneTextNode,
 } from "./types";
 import type { TrueCandidatePresentation } from "../domain/candidates/types";
@@ -1178,38 +1179,61 @@ export function projectPuzzleScene(
           },
         ];
   });
-  const annotations = deduplicateAnnotations(view).map((annotation) => {
-    const normalizedPath =
-      normalizedGeometry.nativeToSceneFrame === undefined
-        ? {
-            error: "the scene normalization frame is unavailable.",
-            code: "annotation-frame-unavailable" as const,
-          }
-        : {
-            ...normalizeSvgPathData(
-              annotation.d,
-              normalizedGeometry.nativeToSceneFrame,
-            ),
-            code: "malformed-annotation-path" as const,
-          };
-    const geometryIssue =
-      normalizedPath.error === undefined
-        ? undefined
-        : {
-            code: normalizedPath.code,
-            affects: "topology-and-content" as const,
-            message: normalizedPath.error,
-          };
-    return {
-      kind: "path" as const,
-      id: `annotation-${annotation.id}`,
-      d: "d" in normalizedPath ? (normalizedPath.d ?? "") : "",
-      role: "annotation" as const,
-      label: annotation.label,
-      geometryIssue,
-      geometryIssues: geometryIssue === undefined ? [] : [geometryIssue],
-    };
-  });
+  const annotations: ScenePathNode[] = deduplicateAnnotations(view).flatMap(
+    (annotation): ScenePathNode[] => {
+      if ("entity" in annotation) {
+        const d =
+          annotation.entity.kind === "cell"
+            ? geometryByCellId.get(annotation.entity.id)?.path
+            : annotation.entity.kind === "group"
+              ? groupBorders.find(
+                  (border) => border.id === `group-border-${annotation.entity.id}`,
+                )?.d
+              : undefined;
+        return d === undefined || d === ""
+          ? []
+          : [{
+              kind: "path" as const,
+              id: `annotation-${annotation.id}`,
+              d,
+              role: "annotation" as const,
+              label: annotation.label,
+              annotationEmphasis: annotation.emphasis,
+              geometryIssues: [],
+            }];
+      }
+      const normalizedPath =
+        normalizedGeometry.nativeToSceneFrame === undefined
+          ? {
+              error: "the scene normalization frame is unavailable.",
+              code: "annotation-frame-unavailable" as const,
+            }
+          : {
+              ...normalizeSvgPathData(
+                annotation.d,
+                normalizedGeometry.nativeToSceneFrame,
+              ),
+              code: "malformed-annotation-path" as const,
+            };
+      const geometryIssue =
+        normalizedPath.error === undefined
+          ? undefined
+          : {
+              code: normalizedPath.code,
+              affects: "topology-and-content" as const,
+              message: normalizedPath.error,
+            };
+      return [{
+        kind: "path" as const,
+        id: `annotation-${annotation.id}`,
+        d: "d" in normalizedPath ? (normalizedPath.d ?? "") : "",
+        role: "annotation" as const,
+        label: annotation.label,
+        geometryIssue,
+        geometryIssues: geometryIssue === undefined ? [] : [geometryIssue],
+      }];
+    },
+  );
   const clips = nodes.flatMap((node) =>
     node.content.flatMap((content) =>
       content.clip === undefined ? [] : [content.clip],

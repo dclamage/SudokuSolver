@@ -7,6 +7,7 @@ import type {
   ValueId,
 } from "../puzzle/types";
 import type { SceneAnnotation } from "../../scene/types";
+import type { LogicalDeduction } from "../../solver/protocol";
 
 export type CandidateContextStatus =
   | "idle"
@@ -28,10 +29,32 @@ export interface CandidateContextRuntime {
   readonly baseSemanticHash: string | null;
   readonly status: CandidateContextStatus;
   readonly candidates: Readonly<Record<CellId, readonly ValueId[]>>;
+  readonly values?: Readonly<Record<CellId, ValueId>>;
   readonly candidatePresentation?: TrueCandidatePresentationMap;
   readonly trueCandidates?: TrueCandidateRuntimeResult | null;
   readonly progress?: TrueCandidateProgress | null;
   readonly error: string | null;
+  readonly logical?: LogicalCandidateRuntime;
+}
+
+export interface ArchivedLogicalRevision {
+  readonly semanticRevision: number;
+  readonly semanticHash: string;
+  readonly historyDeductionIds: readonly string[];
+  readonly deductions: readonly LogicalDeduction[];
+}
+
+export interface LogicalCandidateRuntime {
+  readonly sessionId: string | null;
+  readonly positionHash: string | null;
+  readonly candidates: Readonly<Record<CellId, readonly ValueId[]>>;
+  readonly values: Readonly<Record<CellId, ValueId>>;
+  readonly availableDeductions: readonly LogicalDeduction[];
+  readonly historyDeductionIds: readonly string[];
+  readonly selectedDeductionId: string | null;
+  readonly selectedFrameIndex: number;
+  readonly applyingDeductionId: string | null;
+  readonly archivedRevisions: readonly ArchivedLogicalRevision[];
 }
 
 export type TrueCandidateTone =
@@ -72,6 +95,7 @@ export interface TrueCandidateRuntimeResult {
 export interface CandidateSceneProjection {
   readonly contextId: CandidateContextId;
   readonly candidates: Readonly<Record<CellId, readonly ValueId[]>>;
+  readonly values?: Readonly<Record<CellId, ValueId>>;
   readonly candidateMarks?: {
     readonly corner: Readonly<Record<CellId, readonly ValueId[]>>;
     readonly centre: Readonly<Record<CellId, readonly ValueId[]>>;
